@@ -45,21 +45,32 @@ router.get('/tables', async (req, res) => {
   }
 });
 
-// GET /api/health/columns?table=nome_da_tabela -> lista colunas reais de uma tabela.
+// GET /api/health/columns?table=nome_da_tabela[,outra_tabela,...]
+// Lista colunas reais de uma ou mais tabelas (separadas por vírgula).
 router.get('/columns', async (req, res) => {
   try {
     const { table } = req.query;
     if (!table) {
       return res.status(400).json({ ok: false, error: 'missing_table_param' });
     }
+    const tables = String(table).split(',').map((t) => t.trim()).filter(Boolean);
     const result = await query(
-      `select column_name, data_type, is_nullable
+      `select table_name, column_name, data_type, is_nullable
        from information_schema.columns
-       where table_schema = 'public' and table_name = $1
-       order by ordinal_position`,
-      [table]
+       where table_schema = 'public' and table_name = any($1)
+       order by table_name, ordinal_position`,
+      [tables]
     );
-    res.json({ ok: true, count: result.rowCount, columns: result.rows });
+    const byTable = {};
+    result.rows.forEach((row) => {
+      if (!byTable[row.table_name]) byTable[row.table_name] = [];
+      byTable[row.table_name].push({
+        column: row.column_name,
+        type: row.data_type,
+        nullable: row.is_nullable,
+      });
+    });
+    res.json({ ok: true, tables: byTable });
   } catch (err) {
     console.error('[health/columns] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
