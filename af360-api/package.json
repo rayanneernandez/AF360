@@ -1,0 +1,22 @@
+{
+  "name": "af360-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API intermediária entre o app AF360 e o banco Postgres (rede AF360). Roda como funções serverless no Vercel.",
+  "main": "src/app.js",
+  "scripts": {
+    "dev": "node local-server.js",
+    "start": "node local-server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "pg": "^8.11.5"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
