@@ -52,6 +52,7 @@ import {
   RHRelatoriosScreen,
   RHConfiguracoesScreen,
 } from './RH';
+import { fetchConversas, fetchMensagens, type ConversaResumo, type ConversaMensagem } from './api';
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -85,6 +86,8 @@ export type RootStackParamList = {
   GnvMetrics: undefined;
   ProcessMap: undefined;
   DirectorNotifications: undefined;
+  DirectorConversas: undefined;
+  DirectorConversaDetalhe: { telefone: string };
   RHDashboard: undefined;
   RHProfile: undefined;
   RHColaboradores: undefined;
@@ -342,6 +345,7 @@ type DirectorSideMenuRoute =
   | 'GnvMetrics'
   | 'ProcessMap'
   | 'DirectorNotifications'
+  | 'DirectorConversas'
   | 'DirectorProfile';
 
 export type RHSideMenuRoute =
@@ -1463,6 +1467,12 @@ const directorSideMenuSections: Array<{
     items: [
       { id: 'process-map', label: 'Mapa de Processos', icon: 'git-branch', route: 'ProcessMap' },
       { id: 'director-notifications', label: 'Notificações', icon: 'bell', route: 'DirectorNotifications' },
+    ],
+  },
+  {
+    title: 'COMUNICAÇÃO',
+    items: [
+      { id: 'director-conversas', label: 'Fale com a Diretoria', icon: 'message-circle', route: 'DirectorConversas' },
     ],
   },
   {
@@ -2919,6 +2929,8 @@ export default function App() {
                     <Stack.Screen name="GnvMetrics" component={GnvMetricsScreen} />
                     <Stack.Screen name="ProcessMap" component={ProcessMapScreen} />
                     <Stack.Screen name="DirectorNotifications" component={DirectorNotificationsScreen} />
+                    <Stack.Screen name="DirectorConversas" component={DirectorConversasScreen} />
+                    <Stack.Screen name="DirectorConversaDetalhe" component={DirectorConversaDetalheScreen} />
                     <Stack.Screen name="RHDashboard" component={RHDashboardScreen} />
                     <Stack.Screen name="RHProfile" component={RHProfileScreen} />
                     <Stack.Screen name="RHColaboradores" component={RHColaboradoresScreen} />
@@ -8359,6 +8371,656 @@ function DirectorNotificationsScreen({ navigation }: ScreenProps<'DirectorNotifi
   );
 }
 
+// --- Fale com a Diretoria (conversas de WhatsApp) ---
+
+type ConversaLocalStatus = 'fila' | 'ativos' | 'finalizada';
+
+type ConversaLocalInfo = {
+  status: ConversaLocalStatus | null; // null = ainda não teve override manual
+  tags: string[];
+  notas: string;
+  silenciada: boolean;
+  bloqueada: boolean;
+};
+
+const conversaLocalStore = new Map<string, ConversaLocalInfo>();
+const conversaLocalListeners = new Set<() => void>();
+
+function getConversaLocalInfo(telefone: string): ConversaLocalInfo {
+  return (
+    conversaLocalStore.get(telefone) ?? {
+      status: null,
+      tags: [],
+      notas: '',
+      silenciada: false,
+      bloqueada: false,
+    }
+  );
+}
+
+function setConversaLocalInfo(telefone: string, patch: Partial<ConversaLocalInfo>) {
+  const current = getConversaLocalInfo(telefone);
+  conversaLocalStore.set(telefone, { ...current, ...patch });
+  conversaLocalListeners.forEach((listener) => listener());
+}
+
+function useConversaLocalInfo(telefone: string) {
+  const [, forceRender] = useState(0);
+  useEffect(() => {
+    const listener = () => forceRender((n) => n + 1);
+    conversaLocalListeners.add(listener);
+    return () => {
+      conversaLocalListeners.delete(listener);
+    };
+  }, []);
+  return getConversaLocalInfo(telefone);
+}
+
+function getEffectiveConversaStatus(conversa: ConversaResumo): ConversaLocalStatus {
+  const local = getConversaLocalInfo(conversa.telefone);
+  if (local.status) return local.status;
+  return conversa.pendentes > 0 ? 'fila' : 'ativos';
+}
+
+const conversaStatusMeta: Record<ConversaLocalStatus, { label: string; color: string; tint: string }> = {
+  fila: { label: 'Fila', color: '#B7791F', tint: '#FCF4DE' },
+  ativos: { label: 'Ativo', color: '#18955A', tint: '#E2F4EA' },
+  finalizada: { label: 'Finalizada', color: '#5B6472', tint: '#EEF0F4' },
+};
+
+const AVATAR_PALETTE = ['#E6213D', '#3457D5', '#18955A', '#B7791F', '#7B4FE0', '#0E8AA3'];
+
+function getAvatarColor(seed: string) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) % 1000000;
+  }
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+
+function getConversaInitials(nome: string | null, telefone: string) {
+  const base = nome && nome.trim().length > 0 ? nome.trim() : telefone;
+  const parts = base.split(' ').filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+function formatConversaListTime(iso: string) {
+  const date = new Date(iso);
+  const now = new Date();
+  const sameDay =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+  if (sameDay) {
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  }
+  return formatDateBR(date);
+}
+
+function formatConversaBubbleTime(iso: string) {
+  const date = new Date(iso);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+const LONG_MONTHS_PT = [
+  'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
+];
+
+function formatConversaLongDate(iso: string) {
+  const date = new Date(iso);
+  return `${date.getDate()} de ${LONG_MONTHS_PT[date.getMonth()]} de ${date.getFullYear()}`;
+}
+
+function getConversaMessagePreview(conversa: ConversaResumo) {
+  if (conversa.texto && conversa.texto.trim().length > 0) return conversa.texto;
+  if (conversa.tipo_mensagem === 'audio') return '🎤 Mensagem de áudio';
+  if (conversa.tipo_mensagem === 'image') return '📷 Imagem';
+  if (conversa.tipo_mensagem === 'document') return '📄 Documento';
+  return conversa.tipo_mensagem;
+}
+
+function DirectorConversasScreen({ navigation }: ScreenProps<'DirectorConversas'>) {
+  const [conversas, setConversas] = useState<ConversaResumo[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [activeFilter, setActiveFilter] = useState<'todos' | ConversaLocalStatus>('todos');
+  const [isNovaConversaOpen, setIsNovaConversaOpen] = useState(false);
+
+  const loadConversas = useCallback(async (query?: string) => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const data = await fetchConversas(query);
+      setConversas(data);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as conversas.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadConversas();
+  }, [loadConversas]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      loadConversas(searchText.trim() || undefined);
+    }, 400);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchText]);
+
+  const stats = useMemo(() => {
+    let naFila = 0;
+    let emAtendimento = 0;
+    let finalizadas = 0;
+    conversas.forEach((conversa) => {
+      const status = getEffectiveConversaStatus(conversa);
+      if (status === 'fila') naFila += 1;
+      else if (status === 'ativos') emAtendimento += 1;
+      else finalizadas += 1;
+    });
+    return { naFila, emAtendimento, finalizadas, total: conversas.length };
+  }, [conversas]);
+
+  const filteredConversas = useMemo(() => {
+    if (activeFilter === 'todos') return conversas;
+    return conversas.filter((conversa) => getEffectiveConversaStatus(conversa) === activeFilter);
+  }, [conversas, activeFilter]);
+
+  const filterTabs: Array<{ id: 'todos' | ConversaLocalStatus; label: string; count: number }> = [
+    { id: 'todos', label: 'Todos', count: stats.total },
+    { id: 'fila', label: 'Fila', count: stats.naFila },
+    { id: 'ativos', label: 'Ativos', count: stats.emAtendimento },
+    { id: 'finalizada', label: 'Final.', count: stats.finalizadas },
+  ];
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={directorUserInitials}
+          variant="diretoria"
+          onAvatarPress={() => navigation.navigate('DirectorProfile')}
+        />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.directorPageHeaderRow}>
+          <View style={styles.directorPageTitleRow}>
+            <View style={[styles.iconShell, { backgroundColor: '#FCE4E8' }]}>
+              <Feather name="message-circle" size={18} color="#E0002A" />
+            </View>
+            <Text style={styles.pageTitle}>Fale com a Diretoria</Text>
+          </View>
+        </View>
+        <Text style={styles.pageSubtitle}>Canal direto com clientes e postos</Text>
+
+        <View style={styles.conversaStatsGrid}>
+          <View style={styles.conversaStatCard}>
+            <Feather name="clock" size={16} color="#B7791F" />
+            <Text style={styles.conversaStatValue}>{stats.naFila}</Text>
+            <Text style={styles.conversaStatLabel}>NA FILA</Text>
+          </View>
+          <View style={styles.conversaStatCard}>
+            <Feather name="message-square" size={16} color="#3457D5" />
+            <Text style={styles.conversaStatValue}>{stats.emAtendimento}</Text>
+            <Text style={styles.conversaStatLabel}>EM ATENDIMENTO</Text>
+          </View>
+          <View style={styles.conversaStatCard}>
+            <Feather name="check-circle" size={16} color="#18955A" />
+            <Text style={styles.conversaStatValue}>{stats.finalizadas}</Text>
+            <Text style={styles.conversaStatLabel}>FINALIZADAS</Text>
+          </View>
+          <View style={styles.conversaStatCard}>
+            <Feather name="users" size={16} color="#7B4FE0" />
+            <Text style={styles.conversaStatValue}>{stats.total}</Text>
+            <Text style={styles.conversaStatLabel}>TOTAL CONVERSAS</Text>
+          </View>
+        </View>
+
+        <Pressable style={styles.novaConversaButton} onPress={() => setIsNovaConversaOpen(true)}>
+          <Feather name="phone" size={16} color="#FFFFFF" />
+          <Text style={styles.novaConversaButtonText}>Nova conversa</Text>
+        </Pressable>
+
+        <View style={styles.conversaSearchRow}>
+          <Feather name="search" size={16} color="#8A8F9C" />
+          <TextInput
+            style={styles.conversaSearchInput}
+            placeholder="Buscar por nome, telefone ou tag..."
+            placeholderTextColor="#8A8F9C"
+            value={searchText}
+            onChangeText={setSearchText}
+          />
+        </View>
+
+        <View style={styles.conversaFilterRow}>
+          {filterTabs.map((tab) => (
+            <Pressable
+              key={tab.id}
+              style={[styles.conversaFilterTab, activeFilter === tab.id && styles.conversaFilterTabActive]}
+              onPress={() => setActiveFilter(tab.id)}
+            >
+              <Text
+                style={[
+                  styles.conversaFilterTabText,
+                  activeFilter === tab.id && styles.conversaFilterTabTextActive,
+                ]}
+              >
+                {tab.label} ({tab.count})
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando conversas...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : filteredConversas.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhuma conversa encontrada.</Text>
+        ) : (
+          filteredConversas.map((conversa) => {
+            const status = getEffectiveConversaStatus(conversa);
+            const statusMeta = conversaStatusMeta[status];
+            const initials = getConversaInitials(conversa.nome_contato, conversa.telefone);
+            const avatarColor = getAvatarColor(conversa.telefone);
+
+            return (
+              <Pressable
+                key={conversa.telefone}
+                style={styles.conversaListItem}
+                onPress={() => navigation.navigate('DirectorConversaDetalhe', { telefone: conversa.telefone })}
+              >
+                <View style={[styles.conversaAvatar, { backgroundColor: `${avatarColor}22` }]}>
+                  <Text style={[styles.conversaAvatarText, { color: avatarColor }]}>{initials}</Text>
+                </View>
+                <View style={styles.conversaListItemBody}>
+                  <View style={styles.conversaListItemTopRow}>
+                    <Text style={styles.conversaListItemName} numberOfLines={1}>
+                      {conversa.nome_contato || conversa.telefone}
+                    </Text>
+                    <Text style={styles.conversaListItemTime}>{formatConversaListTime(conversa.criado_em)}</Text>
+                  </View>
+                  <Text style={styles.conversaListItemPreview} numberOfLines={1}>
+                    {getConversaMessagePreview(conversa)}
+                  </Text>
+                  <View style={styles.conversaListItemBottomRow}>
+                    <View style={[styles.conversaStatusPill, { backgroundColor: statusMeta.tint }]}>
+                      <Text style={[styles.conversaStatusPillText, { color: statusMeta.color }]}>
+                        {statusMeta.label}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+                {conversa.pendentes > 0 ? (
+                  <View style={styles.conversaUnreadBadge}>
+                    <Text style={styles.conversaUnreadBadgeText}>
+                      {conversa.pendentes > 9 ? '9+' : conversa.pendentes}
+                    </Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            );
+          })
+        )}
+      </ScrollView>
+
+      <NovaConversaModal visible={isNovaConversaOpen} onClose={() => setIsNovaConversaOpen(false)} />
+    </SafeAreaView>
+  );
+}
+
+function NovaConversaModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const [phone, setPhone] = useState('');
+  const [name, setName] = useState('');
+
+  const handleStart = () => {
+    Alert.alert(
+      'Envio ainda não conectado',
+      'A lista e o histórico já vêm do WhatsApp real. Iniciar uma conversa nova a partir do app ainda depende da integração de envio (Z-API) — assim que estiver liberado, esse botão já vai funcionar de verdade.'
+    );
+    setPhone('');
+    setName('');
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Iniciar nova conversa</Text>
+            <Pressable onPress={onClose}>
+              <Feather name="x" size={20} color="#313951" />
+            </Pressable>
+          </View>
+          <Text style={styles.conversaModalSubtitle}>Informe o número e nome do contato para abrir uma nova conversa.</Text>
+
+          <Text style={styles.requestFieldLabel}>Número</Text>
+          <TextInput
+            style={styles.processTextInput}
+            placeholder="(21) 9 9999-9999"
+            placeholderTextColor="#8A8F9C"
+            keyboardType="phone-pad"
+            value={phone}
+            onChangeText={setPhone}
+          />
+
+          <Text style={styles.requestFieldLabel}>Nome (opcional)</Text>
+          <TextInput
+            style={styles.processTextInput}
+            placeholder="Nome do contato"
+            placeholderTextColor="#8A8F9C"
+            value={name}
+            onChangeText={setName}
+          />
+
+          <View style={styles.conversaModalButtonRow}>
+            <Pressable style={styles.conversaModalCancelButton} onPress={onClose}>
+              <Text style={styles.conversaModalCancelButtonText}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.conversaModalStartButton, !phone && styles.conversaModalStartButtonDisabled]}
+              disabled={!phone}
+              onPress={handleStart}
+            >
+              <Text style={styles.conversaModalStartButtonText}>Iniciar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function DirectorConversaDetalheScreen({ navigation, route }: ScreenProps<'DirectorConversaDetalhe'>) {
+  const { telefone } = route.params;
+  const [mensagens, setMensagens] = useState<ConversaMensagem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [isAcoesOpen, setIsAcoesOpen] = useState(false);
+  const localInfo = useConversaLocalInfo(telefone);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    fetchMensagens(telefone)
+      .then((data) => {
+        if (isMounted) setMensagens(data);
+      })
+      .catch((err) => {
+        if (isMounted) setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar a conversa.');
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [telefone]);
+
+  const nomeContato = mensagens.find((m) => m.nome_contato)?.nome_contato || telefone;
+  const initials = getConversaInitials(nomeContato, telefone);
+  const avatarColor = getAvatarColor(telefone);
+  const effectiveStatus: ConversaLocalStatus =
+    localInfo.status ?? (mensagens[mensagens.length - 1]?.direcao === 'in' ? 'fila' : 'ativos');
+  const statusMeta = conversaStatusMeta[effectiveStatus];
+
+  const handleSend = () => {
+    if (!draft.trim()) return;
+    const optimistic: ConversaMensagem = {
+      id: Date.now(),
+      mensagem_id_zapi: null,
+      telefone,
+      nome_contato: nomeContato,
+      direcao: 'out',
+      tipo_mensagem: 'text',
+      texto: draft.trim(),
+      audio_url: null,
+      criado_em: new Date().toISOString(),
+      metadata: null,
+    };
+    setMensagens((current) => [...current, optimistic]);
+    setDraft('');
+  };
+
+  let lastDateLabel = '';
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.conversaDetalheHeader}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.conversaBackButton}>
+          <Feather name="arrow-left" size={20} color="#313951" />
+        </Pressable>
+        <View style={[styles.conversaAvatar, { backgroundColor: `${avatarColor}22` }]}>
+          <Text style={[styles.conversaAvatarText, { color: avatarColor }]}>{initials}</Text>
+        </View>
+        <View style={styles.conversaDetalheHeaderBody}>
+          <Text style={styles.conversaDetalheHeaderName} numberOfLines={1}>
+            {nomeContato}
+          </Text>
+          <View style={[styles.conversaStatusPill, { backgroundColor: statusMeta.tint, alignSelf: 'flex-start' }]}>
+            <Text style={[styles.conversaStatusPillText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
+          </View>
+        </View>
+        <Pressable style={styles.conversaMenuButton} onPress={() => setIsAcoesOpen(true)}>
+          <Feather name="more-vertical" size={20} color="#313951" />
+        </Pressable>
+      </View>
+
+      <ScrollView
+        style={styles.conversaThreadScroll}
+        contentContainerStyle={styles.conversaThreadContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando mensagens...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : mensagens.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhuma mensagem ainda.</Text>
+        ) : (
+          mensagens.map((mensagem) => {
+            const dateLabel = formatConversaLongDate(mensagem.criado_em);
+            const showDateSeparator = dateLabel !== lastDateLabel;
+            lastDateLabel = dateLabel;
+            const isOut = mensagem.direcao === 'out';
+            const bodyText =
+              mensagem.texto ||
+              (mensagem.tipo_mensagem === 'audio' ? '🎤 Mensagem de áudio' : mensagem.tipo_mensagem);
+
+            return (
+              <View key={mensagem.id}>
+                {showDateSeparator ? (
+                  <View style={styles.conversaDateSeparator}>
+                    <Text style={styles.conversaDateSeparatorText}>{dateLabel}</Text>
+                  </View>
+                ) : null}
+                <View
+                  style={[
+                    styles.conversaBubble,
+                    isOut ? styles.conversaBubbleOut : styles.conversaBubbleIn,
+                  ]}
+                >
+                  <Text style={[styles.conversaBubbleText, isOut && styles.conversaBubbleTextOut]}>
+                    {bodyText}
+                  </Text>
+                  <View style={styles.conversaBubbleFooter}>
+                    <Text
+                      style={[styles.conversaBubbleTime, isOut && styles.conversaBubbleTimeOut]}
+                    >
+                      {formatConversaBubbleTime(mensagem.criado_em)}
+                    </Text>
+                    {isOut ? <Feather name="check" size={12} color="#FFFFFF" /> : null}
+                  </View>
+                </View>
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
+
+      <View style={styles.conversaInputBar}>
+        <TextInput
+          style={styles.conversaInput}
+          placeholder="Digite uma mensagem..."
+          placeholderTextColor="#8A8F9C"
+          value={draft}
+          onChangeText={setDraft}
+          multiline
+        />
+        <Pressable style={styles.conversaSendButton} onPress={handleSend} disabled={!draft.trim()}>
+          <Feather name="send" size={16} color="#FFFFFF" />
+        </Pressable>
+      </View>
+
+      <ConversaAcoesModal
+        visible={isAcoesOpen}
+        telefone={telefone}
+        nomeContato={nomeContato}
+        onClose={() => setIsAcoesOpen(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
+function ConversaAcoesModal({
+  visible,
+  telefone,
+  nomeContato,
+  onClose,
+}: {
+  visible: boolean;
+  telefone: string;
+  nomeContato: string;
+  onClose: () => void;
+}) {
+  const localInfo = useConversaLocalInfo(telefone);
+  const [novaTag, setNovaTag] = useState('');
+  const initials = getConversaInitials(nomeContato, telefone);
+
+  const handleAddTag = () => {
+    const tag = novaTag.trim();
+    if (!tag) return;
+    if (localInfo.tags.includes(tag)) {
+      setNovaTag('');
+      return;
+    }
+    setConversaLocalInfo(telefone, { tags: [...localInfo.tags, tag] });
+    setNovaTag('');
+  };
+
+  const handleRemoveTag = (tag: string) => {
+    setConversaLocalInfo(telefone, { tags: localInfo.tags.filter((t) => t !== tag) });
+  };
+
+  const handleAction = (status: ConversaLocalStatus) => {
+    setConversaLocalInfo(telefone, { status });
+    onClose();
+  };
+
+  const handleToggleSilenciar = () => {
+    setConversaLocalInfo(telefone, { silenciada: !localInfo.silenciada });
+  };
+
+  const handleBloquear = () => {
+    Alert.alert('Bloquear contato', `Tem certeza que deseja bloquear ${nomeContato}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Bloquear',
+        style: 'destructive',
+        onPress: () => {
+          setConversaLocalInfo(telefone, { bloqueada: true });
+          onClose();
+        },
+      },
+    ]);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={onClose}>
+        <Pressable style={styles.conversaAcoesCard} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.conversaAcoesHeader}>
+            <View style={[styles.conversaAvatar, styles.conversaAcoesAvatar]}>
+              <Text style={styles.conversaAvatarText}>{initials}</Text>
+            </View>
+            <Text style={styles.conversaAcoesContactName} numberOfLines={1}>
+              {nomeContato}
+            </Text>
+            <Text style={styles.conversaAcoesContactSub} numberOfLines={1}>
+              {telefone}
+            </Text>
+          </View>
+
+          <Text style={styles.conversaAcoesSectionLabel}>TAGS</Text>
+          <View style={styles.conversaTagInputRow}>
+            <TextInput
+              style={styles.conversaTagInput}
+              placeholder="Nova tag..."
+              placeholderTextColor="#8A8F9C"
+              value={novaTag}
+              onChangeText={setNovaTag}
+              onSubmitEditing={handleAddTag}
+            />
+            <Pressable style={styles.conversaTagAddButton} onPress={handleAddTag}>
+              <Feather name="plus" size={16} color="#FFFFFF" />
+            </Pressable>
+          </View>
+          {localInfo.tags.length > 0 ? (
+            <View style={styles.conversaTagChipRow}>
+              {localInfo.tags.map((tag) => (
+                <Pressable key={tag} style={styles.conversaTagChip} onPress={() => handleRemoveTag(tag)}>
+                  <Text style={styles.conversaTagChipText}>{tag}</Text>
+                  <Feather name="x" size={12} color="#5B6472" />
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          <Text style={[styles.conversaAcoesSectionLabel, styles.spacingTop]}>NOTAS</Text>
+          <TextInput
+            style={styles.conversaNotasInput}
+            placeholder="Adicione uma nota..."
+            placeholderTextColor="#8A8F9C"
+            value={localInfo.notas}
+            onChangeText={(text) => setConversaLocalInfo(telefone, { notas: text })}
+            multiline
+          />
+
+          <View style={styles.conversaAcoesDivider} />
+
+          <Pressable style={styles.conversaAcaoRow} onPress={() => handleAction('fila')}>
+            <Feather name="corner-up-left" size={16} color="#3A415C" />
+            <Text style={styles.conversaAcaoRowText}>Devolver para fila</Text>
+          </Pressable>
+          <Pressable style={styles.conversaAcaoRow} onPress={() => handleAction('finalizada')}>
+            <Feather name="check" size={16} color="#3A415C" />
+            <Text style={styles.conversaAcaoRowText}>Finalizar conversa</Text>
+          </Pressable>
+          <Pressable style={styles.conversaAcaoRow} onPress={handleToggleSilenciar}>
+            <Feather name={localInfo.silenciada ? 'bell' : 'bell-off'} size={16} color="#3A415C" />
+            <Text style={styles.conversaAcaoRowText}>{localInfo.silenciada ? 'Reativar notificações' : 'Silenciar'}</Text>
+          </Pressable>
+          <Pressable style={styles.conversaAcaoRow} onPress={handleBloquear}>
+            <Feather name="slash" size={16} color="#E0002A" />
+            <Text style={[styles.conversaAcaoRowText, styles.conversaAcaoRowTextDanger]}>Bloquear</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 export function SideMenuOverlay({
   initials,
   currentRoute,
@@ -13777,5 +14439,427 @@ export const styles = StyleSheet.create({
     color: '#7C8397',
     fontSize: 12,
     fontWeight: '600',
+  },
+
+  // --- Fale com a Diretoria ---
+  conversaStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 16,
+  },
+  conversaStatCard: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EEF0F4',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    gap: 4,
+  },
+  conversaStatValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1B2130',
+  },
+  conversaStatLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#8A8F9C',
+    letterSpacing: 0.4,
+  },
+  novaConversaButton: {
+    marginTop: 16,
+    backgroundColor: '#E0002A',
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  novaConversaButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  conversaSearchRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#EEF0F4',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  conversaSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#1B2130',
+  },
+  conversaFilterRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  conversaFilterTab: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 9,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EEF0F4',
+  },
+  conversaFilterTabActive: {
+    backgroundColor: '#E0002A',
+    borderColor: '#E0002A',
+  },
+  conversaFilterTabText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#5B6472',
+  },
+  conversaFilterTabTextActive: {
+    color: '#FFFFFF',
+  },
+  conversaEmptyText: {
+    marginTop: 24,
+    textAlign: 'center',
+    color: '#9AA1B5',
+    fontSize: 13,
+  },
+  conversaListItem: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EEF0F4',
+    padding: 12,
+    gap: 10,
+  },
+  conversaAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  conversaAvatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  conversaListItemBody: {
+    flex: 1,
+    gap: 3,
+  },
+  conversaListItemTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  conversaListItemName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1B2130',
+    marginRight: 8,
+  },
+  conversaListItemTime: {
+    fontSize: 11,
+    color: '#9AA1B5',
+  },
+  conversaListItemPreview: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  conversaListItemBottomRow: {
+    flexDirection: 'row',
+    marginTop: 2,
+  },
+  conversaStatusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  conversaStatusPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  conversaUnreadBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#E0002A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  conversaUnreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  conversaModalSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 12,
+  },
+  conversaModalButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  conversaModalCancelButton: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#F4F5F9',
+  },
+  conversaModalCancelButtonText: {
+    color: '#3A415C',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  conversaModalStartButton: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#E0002A',
+  },
+  conversaModalStartButtonDisabled: {
+    opacity: 0.5,
+  },
+  conversaModalStartButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  conversaDetalheHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 54,
+    paddingBottom: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF0F4',
+  },
+  conversaBackButton: {
+    padding: 4,
+  },
+  conversaDetalheHeaderBody: {
+    flex: 1,
+    gap: 4,
+  },
+  conversaDetalheHeaderName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1B2130',
+  },
+  conversaMenuButton: {
+    padding: 6,
+  },
+  conversaThreadScroll: {
+    flex: 1,
+    backgroundColor: '#F7F8FA',
+  },
+  conversaThreadContent: {
+    padding: 16,
+    paddingBottom: 24,
+  },
+  conversaDateSeparator: {
+    alignSelf: 'center',
+    backgroundColor: '#E9EBF1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginVertical: 10,
+  },
+  conversaDateSeparatorText: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  conversaBubble: {
+    maxWidth: '80%',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 8,
+  },
+  conversaBubbleIn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 4,
+  },
+  conversaBubbleOut: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#E0002A',
+    borderBottomRightRadius: 4,
+  },
+  conversaBubbleText: {
+    fontSize: 13,
+    color: '#1B2130',
+    lineHeight: 18,
+  },
+  conversaBubbleTextOut: {
+    color: '#FFFFFF',
+  },
+  conversaBubbleFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  conversaBubbleTime: {
+    fontSize: 10,
+    color: '#9AA1B5',
+  },
+  conversaBubbleTimeOut: {
+    color: 'rgba(255,255,255,0.8)',
+  },
+  conversaInputBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    padding: 10,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#EEF0F4',
+  },
+  conversaInput: {
+    flex: 1,
+    backgroundColor: '#F4F5F9',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: '#1B2130',
+    maxHeight: 100,
+  },
+  conversaSendButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#E0002A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  conversaAcoesCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
+  },
+  conversaAcoesHeader: {
+    alignItems: 'center',
+    marginBottom: 14,
+    gap: 4,
+  },
+  conversaAcoesAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#F4F5F9',
+    marginBottom: 6,
+  },
+  conversaAcoesContactName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1B2130',
+  },
+  conversaAcoesContactSub: {
+    fontSize: 12,
+    color: '#9AA1B5',
+  },
+  conversaAcoesSectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8A8F9C',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+  conversaTagInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  conversaTagInput: {
+    flex: 1,
+    backgroundColor: '#F4F5F9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 13,
+    color: '#1B2130',
+  },
+  conversaTagAddButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#E0002A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  conversaTagChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  conversaTagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F4F5F9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  conversaTagChipText: {
+    fontSize: 12,
+    color: '#3A415C',
+    fontWeight: '600',
+  },
+  conversaNotasInput: {
+    backgroundColor: '#F4F5F9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: '#1B2130',
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  conversaAcoesDivider: {
+    height: 1,
+    backgroundColor: '#EEF0F4',
+    marginVertical: 14,
+  },
+  conversaAcaoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 11,
+  },
+  conversaAcaoRowText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#3A415C',
+  },
+  conversaAcaoRowTextDanger: {
+    color: '#E0002A',
   },
 });

@@ -8,6 +8,7 @@ const cargosRoutes = require('./routes/cargos');
 const setoresRoutes = require('./routes/setores');
 const colaboradoresRoutes = require('./routes/colaboradores');
 const diretoriaRoutes = require('./routes/diretoria');
+const conversasRoutes = require('./routes/conversas');
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use('/api/rh/cargos', cargosRoutes);
 app.use('/api/rh/setores', setoresRoutes);
 app.use('/api/rh/colaboradores', colaboradoresRoutes);
 app.use('/api/diretoria', diretoriaRoutes);
+app.use('/api/diretoria/conversas', conversasRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'af360-api', message: 'Veja /api/health' });
