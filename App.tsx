@@ -8563,24 +8563,20 @@ function DirectorConversasScreen({ navigation }: ScreenProps<'DirectorConversas'
 
         <View style={styles.conversaStatsGrid}>
           <View style={styles.conversaStatCard}>
-            <Feather name="clock" size={16} color="#B7791F" />
-            <Text style={styles.conversaStatValue}>{stats.naFila}</Text>
-            <Text style={styles.conversaStatLabel}>NA FILA</Text>
+            <Text style={styles.conversaStatLabel}>Na fila</Text>
+            <Text style={[styles.conversaStatValue, { color: '#B7791F' }]}>{stats.naFila}</Text>
           </View>
           <View style={styles.conversaStatCard}>
-            <Feather name="message-square" size={16} color="#3457D5" />
-            <Text style={styles.conversaStatValue}>{stats.emAtendimento}</Text>
-            <Text style={styles.conversaStatLabel}>EM ATENDIMENTO</Text>
+            <Text style={styles.conversaStatLabel}>Em atend.</Text>
+            <Text style={[styles.conversaStatValue, { color: '#3457D5' }]}>{stats.emAtendimento}</Text>
           </View>
           <View style={styles.conversaStatCard}>
-            <Feather name="check-circle" size={16} color="#18955A" />
-            <Text style={styles.conversaStatValue}>{stats.finalizadas}</Text>
-            <Text style={styles.conversaStatLabel}>FINALIZADAS</Text>
+            <Text style={styles.conversaStatLabel}>Finalizadas</Text>
+            <Text style={[styles.conversaStatValue, { color: '#18955A' }]}>{stats.finalizadas}</Text>
           </View>
           <View style={styles.conversaStatCard}>
-            <Feather name="users" size={16} color="#7B4FE0" />
-            <Text style={styles.conversaStatValue}>{stats.total}</Text>
-            <Text style={styles.conversaStatLabel}>TOTAL CONVERSAS</Text>
+            <Text style={styles.conversaStatLabel}>Total</Text>
+            <Text style={[styles.conversaStatValue, { color: '#7B4FE0' }]}>{stats.total}</Text>
           </View>
         </View>
 
@@ -8797,6 +8793,13 @@ function DirectorConversaDetalheScreen({ navigation, route }: ScreenProps<'Direc
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={directorUserInitials}
+          variant="diretoria"
+          onAvatarPress={() => navigation.navigate('DirectorProfile')}
+        />
+      </View>
       <View style={styles.conversaDetalheHeader}>
         <Pressable onPress={() => navigation.goBack()} style={styles.conversaBackButton}>
           <Feather name="arrow-left" size={20} color="#313951" />
@@ -14445,30 +14448,30 @@ export const styles = StyleSheet.create({
   conversaStatsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 16,
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 2,
   },
   conversaStatCard: {
-    flexBasis: '47%',
     flexGrow: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#EEF0F4',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    gap: 4,
+    minWidth: '22%',
+    backgroundColor: '#F7F8FA',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   conversaStatValue: {
-    fontSize: 20,
-    fontWeight: '700',
+    marginTop: 2,
+    fontSize: 16,
+    fontWeight: '800',
     color: '#1B2130',
   },
   conversaStatLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
     color: '#8A8F9C',
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   novaConversaButton: {
     marginTop: 16,
@@ -14649,7 +14652,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 16,
-    paddingTop: 54,
+    paddingTop: 12,
     paddingBottom: 14,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
