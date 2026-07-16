@@ -95,6 +95,26 @@ async function fetchTable(name, { select, limit, offset, order, count, filters =
   });
 }
 
+/**
+ * Igual a fetchTable, mas ignora o teto de 2000 por chamada (e um possível
+ * "Max Rows" configurado no Supabase deles, que corta silenciosamente em
+ * 1000 mesmo pedindo mais) — pagina em pedaços de 1000 até a página vir
+ * incompleta, e junta tudo. Use para telas que precisam da lista inteira
+ * (ex: Colaboradores), não para buscas já filtradas/pequenas.
+ */
+async function fetchAllRows(name, { select, order, filters = {}, pageSize = 1000, hardCap = 20000 } = {}) {
+  const allRows = [];
+  let offset = 0;
+  for (let i = 0; i < Math.ceil(hardCap / pageSize); i++) {
+    const json = await fetchTable(name, { select, order, filters, limit: pageSize, offset });
+    const rows = json.data || [];
+    allRows.push(...rows);
+    if (rows.length < pageSize) break;
+    offset += pageSize;
+  }
+  return { data: allRows, count: allRows.length };
+}
+
 async function fetchRhStats() {
   return lovableGet('/api/public/internal/rh-stats');
 }
@@ -103,4 +123,4 @@ async function patchDirContato(phone, body) {
   return lovablePatch('/api/public/internal/dir-contato', { phone }, body);
 }
 
-module.exports = { fetchTable, fetchRhStats, patchDirContato };
+module.exports = { fetchTable, fetchAllRows, fetchRhStats, patchDirContato };

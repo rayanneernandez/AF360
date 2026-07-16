@@ -7,6 +7,7 @@ const empresasRoutes = require('./routes/empresas');
 const cargosRoutes = require('./routes/cargos');
 const setoresRoutes = require('./routes/setores');
 const colaboradoresRoutes = require('./routes/colaboradores');
+const rhDashboardRoutes = require('./routes/rhDashboard');
 const diretoriaRoutes = require('./routes/diretoria');
 const conversasRoutes = require('./routes/conversas');
 
@@ -26,6 +27,7 @@ app.use('/api/empresas', empresasRoutes);
 app.use('/api/rh/cargos', cargosRoutes);
 app.use('/api/rh/setores', setoresRoutes);
 app.use('/api/rh/colaboradores', colaboradoresRoutes);
+app.use('/api/rh/dashboard', rhDashboardRoutes);
 app.use('/api/diretoria', diretoriaRoutes);
 app.use('/api/diretoria/conversas', conversasRoutes);
 

@@ -1,23 +1,30 @@
 const express = require('express');
-const { fetchTable, fetchRhStats } = require('../lovable');
+const { fetchTable, fetchAllRows, fetchRhStats } = require('../lovable');
 
 const router = express.Router();
 
 // GET /api/rh/colaboradores
 // Filtros aceitos: status (aceita csv, vira status__in), q (busca por nome_completo)
+// ?all=1 (ou sem limit/offset) -> ignora o teto de 2000/1000 por chamada do
+// Lovable e pagina internamente até trazer TODOS os colaboradores. Passe
+// limit/offset explicitamente se quiser uma página só (ex: telas com scroll
+// infinito no futuro).
 router.get('/', async (req, res) => {
   try {
-    const { limit = 200, offset = 0, q, status } = req.query;
+    const { limit, offset, q, status, all } = req.query;
     const filters = {};
     if (status) filters['status__in'] = status;
     if (q) filters['nome_completo__ilike'] = `%${q}%`;
 
-    const json = await fetchTable('rh_colaboradores', {
-      limit,
-      offset,
-      order: 'nome_completo:asc',
-      filters,
-    });
+    const wantsAll = all === '1' || (!limit && !offset);
+    const json = wantsAll
+      ? await fetchAllRows('rh_colaboradores', { order: 'nome_completo:asc', filters })
+      : await fetchTable('rh_colaboradores', {
+          limit: limit ?? 200,
+          offset: offset ?? 0,
+          order: 'nome_completo:asc',
+          filters,
+        });
     res.json({ ok: true, count: json.count ?? json.data.length, data: json.data });
   } catch (err) {
     console.error('[rh/colaboradores] erro:', err.message);

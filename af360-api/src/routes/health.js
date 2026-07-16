@@ -114,17 +114,23 @@ router.get('/conversas-diag', async (req, res) => {
   }
 });
 
-// GET /api/health/lovable -> diagnóstico da conexão com os endpoints internos
-// do Lovable (base URL, secret configurado, e uma chamada real de teste).
+// GET /api/health/lovable?table=rh_colaboradores&limit=5&select=id,nome_completo,status
+// Diagnóstico da conexão com os endpoints internos do Lovable (base URL,
+// secret configurado, e uma chamada real de teste). Por padrão testa
+// dir_contatos, mas dá pra apontar pra qualquer tabela da allowlist.
 router.get('/lovable', async (req, res) => {
   const baseUrl = process.env.LOVABLE_BASE_URL || 'https://af-360-hub.lovable.app';
   const hasSecret = Boolean(process.env.INTERNAL_API_SECRET);
+  const table = req.query.table || 'dir_contatos';
+  const limit = req.query.limit ? Number(req.query.limit) : 1;
+  const select = req.query.select || undefined;
   try {
-    const json = await fetchTable('dir_contatos', { limit: 1, count: true });
+    const json = await fetchTable(table, { limit, select, count: true });
     res.json({
       ok: true,
       base_url: baseUrl,
       secret_configurado: hasSecret,
+      tabela_testada: table,
       resposta: json,
     });
   } catch (err) {
@@ -135,6 +141,7 @@ router.get('/lovable', async (req, res) => {
       message: err.message,
       base_url: baseUrl,
       secret_configurado: hasSecret,
+      tabela_testada: table,
       url_chamada: err.lovableUrl || null,
       status_recebido: err.lovableStatus || null,
       corpo_resposta: err.lovableBody || null,

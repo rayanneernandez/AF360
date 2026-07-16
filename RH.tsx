@@ -37,12 +37,22 @@ import type {
   NotificationTemplateItem,
   NotificationChannels,
 } from './App';
+import {
+  fetchRhColaboradores,
+  fetchRhStats,
+  fetchRhTurnover,
+  fetchRhDashboardResumo,
+  type RhColaboradorRaw,
+  type RhStats,
+  type RhTurnoverData,
+  type RhDashboardResumo,
+} from './api';
 
 // ---------- Types ----------
 
 type EmployeeStatus = 'ativo' | 'ferias' | 'afastado' | 'desligado';
 
-type Employee = {
+export type Employee = {
   id: string;
   fullName: string;
   role: string;
@@ -136,51 +146,8 @@ function formatFileSize(size?: number | null) {
 }
 
 // ---------- Mock data ----------
-
-const rhKpiData = {
-  turnoverPct: '0,0%',
-  movimentacaoPct: '0,0%',
-  admissoes: 0,
-  admissoesChangePct: '↓100%',
-  demissoes: 0,
-  demissoesRescisao: 'R$ 0',
-  folhaAtivos: 'R$ 1.738.469',
-  quadro: { ativos: 968, ferias: 27, afastados: 1, novos90d: 115 },
-  engajamento: { aderencia: '0%', cobertura: '49%', tempoCasa: '2,6', exp30d: 18 },
-};
-
-const rhAdmissoesDemissoesChart: Array<{ label: string; adm: number; dem: number }> = [
-  { label: 'Fev', adm: 38, dem: 48 },
-  { label: 'Mar', adm: 30, dem: 22 },
-  { label: 'Abr', adm: 44, dem: 40 },
-  { label: 'Mai', adm: 26, dem: 35 },
-  { label: 'Jun', adm: 18, dem: 15 },
-];
-
-const rhHeadcountEvolution: number[] = [935, 940, 946, 951, 948, 955, 960, 958, 963, 966, 964, 968];
-const rhHeadcountMonths = ['Ago', 'Set', 'Out', 'Nov', 'Dez', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul'];
-
-const rhTopSetores: Array<{ label: string; value: number }> = [
-  { label: 'GERAL', value: 257 },
-  { label: 'FUNCIONARIO', value: 178 },
-  { label: 'FUNCIONARIOS', value: 116 },
-  { label: 'DEPARTAMENTO GERAL', value: 94 },
-  { label: 'UNICO', value: 50 },
-];
-
-const rhTopUnidades: Array<{ name: string; value: number }> = [
-  { name: 'Posto Monalisa', value: 43 },
-  { name: 'Petromasa Irajá', value: 39 },
-  { name: 'Posto Abast. V. Marques', value: 36 },
-  { name: 'Centro Automotivo Central', value: 30 },
-  { name: 'Auto Posto Mem de Sá', value: 30 },
-];
-
-const rhGenderDistribution = [
-  { label: 'Masculino', pct: 91, count: 878, color: '#3457D5' },
-  { label: 'Feminino', pct: 9, count: 84, color: '#E0559C' },
-  { label: 'Não informado', pct: 1, count: 6, color: '#B7BDCC' },
-];
+// KPIs, gráficos e rankings do Dashboard agora vêm de fetchRhDashboardResumo
+// (real, calculado no af360-api). Os mocks antigos foram removidos.
 
 const rhEmployees: Employee[] = [
   {
@@ -304,13 +271,62 @@ const rhEmployeeStatusMeta: Record<EmployeeStatus, { label: string; color: strin
   desligado: { label: 'Desligado', color: '#E6213D', tint: '#FCE8EC' },
 };
 
-const rhColaboradorStats = {
-  quadro: 1930,
-  ativos: 968,
-  afastados: 1,
-  ferias: 27,
-  desligados: 934,
-};
+// ---------- RH real (rh_colaboradores via af360-api) ----------
+// A tabela real tem ~87 colunas — só mapeamos as que a lista usa hoje.
+// Qualquer status fora de ativo/ferias/afastado cai no balde "desligado",
+// igual ao agrupamento visual do app (e do próprio site).
+
+function mapStatusFromApi(raw: string | null | undefined): EmployeeStatus {
+  const value = (raw ?? '').trim().toLowerCase();
+  if (value === 'ativo') return 'ativo';
+  if (value === 'ferias' || value === 'férias') return 'ferias';
+  if (value === 'afastado') return 'afastado';
+  return 'desligado';
+}
+
+// Colunas "date" do Supabase vêm como texto date-only (ex: "2021-11-05"),
+// sem timezone. Nunca usar `new Date(iso)` direto aqui — em horários da
+// noite no Brasil isso rola pro dia anterior por causa do UTC. Extraímos os
+// números da própria string.
+function formatDateOnlyBR(raw: string | null | undefined): string {
+  if (!raw) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (!match) return raw;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
+function mapRhColaboradorToEmployee(row: RhColaboradorRaw): Employee {
+  const salarioRaw = row.salario_base;
+  const salario = typeof salarioRaw === 'number' ? salarioRaw : Number(salarioRaw ?? 0) || 0;
+
+  return {
+    id: row.id,
+    fullName: row.nome_completo ?? '(sem nome)',
+    role: row.cargo ?? '—',
+    unit: row.posto_trabalho ?? '—',
+    setor: row.setor ?? '—',
+    registration: row.matricula ?? '',
+    codigoInterno: row.codigo_interno ?? '',
+    cpf: row.cpf ?? '',
+    admissionLabel: formatDateOnlyBR(row.data_admissao),
+    status: mapStatusFromApi(row.status),
+    email: row.email_corporativo ?? row.email_pessoal ?? '',
+    celular: row.celular ?? row.whatsapp ?? '',
+    salario,
+    pendentesCount: 0,
+  };
+}
+
+function computeRhStatsBreakdown(stats: RhStats | null) {
+  const total = stats?.total ?? 0;
+  const byStatus = stats?.by_status ?? {};
+  const ativos = byStatus['ativo'] ?? 0;
+  const ferias = (byStatus['ferias'] ?? 0) + (byStatus['férias'] ?? 0);
+  const afastados = byStatus['afastado'] ?? 0;
+  const desligados = Math.max(0, total - ativos - ferias - afastados);
+  return { quadro: total, ativos, afastados, ferias, desligados };
+}
 
 const rhUnidadesList: string[] = [
   'Auto Posto ML de Ana N.',
@@ -897,7 +913,16 @@ function useRHPeriodFilter() {
 
   const handleReset = () => setPeriodDate(new Date());
 
-  return { granularity, setGranularity, label, handlePrev, handleNext, handleReset };
+  return {
+    granularity,
+    setGranularity,
+    label,
+    handlePrev,
+    handleNext,
+    handleReset,
+    year: periodDate.getFullYear(),
+    month: periodDate.getMonth() + 1,
+  };
 }
 
 function RHPeriodFilterBar({
@@ -1135,59 +1160,8 @@ function RHCategoryBarList({
 }
 
 // ---------- Dashboard detail data ----------
-
-const rhTurnoverDetailMes = {
-  geralPct: '0,0%',
-  geralMeta: '0 desligamentos / 996 hc',
-  voluntarioPct: '0,0%',
-  voluntarioMeta: '0 pediram demissão',
-  involuntarioPct: '0,0%',
-  involuntarioMeta: '0 desligados pela empresa',
-  regioes: [
-    { nome: 'Baixada', hc: 107, saidas: 0, taxa: '0%' },
-    { nome: 'Zona Norte', hc: 591, saidas: 0, taxa: '0%' },
-    { nome: 'Não informado', hc: 11, saidas: 0, taxa: '0%' },
-    { nome: 'Lagos', hc: 64, saidas: 0, taxa: '0%' },
-    { nome: 'Niterói/SG', hc: 202, saidas: 0, taxa: '0%' },
-    { nome: 'Zona Oeste', hc: 21, saidas: 0, taxa: '0%' },
-  ],
-  ate90diasPct: '0,0%',
-  ate90diasMeta: '0 de 0 contratados saíram em ≤ 90 dias',
-  motivos: null as Array<{ label: string; count: number; pct: number; color: string }> | null,
-  motivosVazio: 'Sem desligamentos no período.',
-  historicoLabels: ['Ago', 'Set', 'Out', 'Nov', 'Dez', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul'],
-  historicoGeral: [4.3, 4.6, 4.2, 4.2, 4.2, 6.4, 5.7, 5.7, 7.1, 6.0, 4.6, 0.2],
-  historicoVoluntario: [0.6, 1.0, 0.5, 0.5, 0.5, 0.8, 1.7, 1.4, 1.4, 1.3, 1.1, 0.1],
-};
-
-const rhTurnoverDetailAno = {
-  geralPct: '30,5%',
-  geralMeta: '315 desligamentos / 1034 hc',
-  voluntarioPct: '7,4%',
-  voluntarioMeta: '76 pediram demissão',
-  involuntarioPct: '23,1%',
-  involuntarioMeta: '239 desligados pela empresa',
-  regioes: [
-    { nome: 'Baixada', hc: 109, saidas: 36, taxa: '33%' },
-    { nome: 'Zona Norte', hc: 615, saidas: 192, taxa: '31,2%' },
-    { nome: 'Zona Oeste', hc: 20, saidas: 6, taxa: '30%' },
-    { nome: 'Niterói/SG', hc: 217, saidas: 62, taxa: '28,6%' },
-    { nome: 'Lagos', hc: 66, saidas: 18, taxa: '27,3%' },
-    { nome: 'Não informado', hc: 7, saidas: 1, taxa: '14,3%' },
-  ],
-  ate90diasPct: '36,1%',
-  ate90diasMeta: '100 de 277 contratados saíram em ≤ 90 dias',
-  motivos: [
-    { label: 'Sem justa causa', count: 118, pct: 37.5, color: '#18955A' },
-    { label: 'Pedido de demissão', count: 76, pct: 24.1, color: '#D79A22' },
-    { label: 'Justa causa', count: 61, pct: 19.4, color: '#E6213D' },
-    { label: 'Fim do contrato de experiência', count: 60, pct: 19.0, color: '#3457D5' },
-  ] as Array<{ label: string; count: number; pct: number; color: string }> | null,
-  motivosVazio: 'Sem desligamentos no período.',
-  historicoLabels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
-  historicoGeral: [6.2, 6.0, 5.8, 6.3, 5.0, 3.0, 0.2, 0, 0, 0, 0, 0],
-  historicoVoluntario: [1.0, 1.5, 1.3, 1.4, 1.0, 0.6, 0.1, 0, 0, 0, 0, 0],
-};
+// Turnover agora é real (fetchRhTurnover, calculado no af360-api a partir de
+// rh_colaboradores + empresas.regiao) — os mocks antigos foram removidos.
 
 const rhAdmissoesDetailMes = {
   total: 0,
@@ -1330,8 +1304,58 @@ const rhDemissoesDetailAno = {
 
 function TurnoverDetailModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const filter = useRHPeriodFilter();
-  const data = filter.granularity === 'ano' ? rhTurnoverDetailAno : rhTurnoverDetailMes;
+  const [data, setData] = useState<RhTurnoverData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedTurnoverIndex, setSelectedTurnoverIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    let isMounted = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhTurnover({ granularity: filter.granularity, year: filter.year, month: filter.month })
+      .then((result) => {
+        if (isMounted) setData(result);
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar o turnover.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [visible, filter.granularity, filter.year, filter.month]);
+
+  if (!data) {
+    return (
+      <RHDetailModal
+        visible={visible}
+        icon="user"
+        iconColor="#1B6E3A"
+        title="Turnover — Detalhamento"
+        onClose={onClose}
+        periodFilter={
+          <RHPeriodFilterBar
+            granularity={filter.granularity}
+            onChangeGranularity={filter.setGranularity}
+            label={filter.label}
+            onPrev={filter.handlePrev}
+            onNext={filter.handleNext}
+            onReset={filter.handleReset}
+          />
+        }
+      >
+        <Text style={rhStyles.detailNoteText}>
+          {isLoading ? 'Carregando turnover...' : errorMessage ?? 'Sem dados.'}
+        </Text>
+      </RHDetailModal>
+    );
+  }
 
   return (
     <RHDetailModal
@@ -1370,10 +1394,7 @@ function TurnoverDetailModal({ visible, onClose }: { visible: boolean; onClose: 
         </View>
       </View>
 
-      <Text style={rhStyles.detailNoteText}>
-        Saídas concentradas em pedido de demissão —{' '}
-        <Text style={rhStyles.detailNoteHighlight}>atenção à atratividade e clima.</Text>
-      </Text>
+      {data.insight ? <Text style={rhStyles.detailNoteText}>{data.insight}</Text> : null}
 
       <RHSectionHeading text="2. Turnover por região" />
       <RHMiniTable
@@ -1743,9 +1764,57 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
   const [isDemissoesModalOpen, setIsDemissoesModalOpen] = useState(false);
   const [selectedAdmDemIndex, setSelectedAdmDemIndex] = useState<number | null>(null);
   const [selectedHeadcountIndex, setSelectedHeadcountIndex] = useState<number | null>(null);
+  const [resumo, setResumo] = useState<RhDashboardResumo | null>(null);
+  const [isResumoLoading, setIsResumoLoading] = useState(true);
+  const [resumoError, setResumoError] = useState<string | null>(null);
 
-  const maxBarValue = Math.max(...rhAdmissoesDemissoesChart.flatMap((item) => [item.adm, item.dem]));
+  useEffect(() => {
+    let isMounted = true;
+    setIsResumoLoading(true);
+    setResumoError(null);
+    fetchRhDashboardResumo({
+      granularity: dashboardFilter.granularity,
+      year: dashboardFilter.year,
+      month: dashboardFilter.month,
+    })
+      .then((result) => {
+        if (isMounted) setResumo(result);
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setResumoError(err instanceof Error ? err.message : 'Não foi possível carregar o dashboard.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsResumoLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [dashboardFilter.granularity, dashboardFilter.year, dashboardFilter.month]);
+
   const chartHeight = 90;
+  const admissoesDemissoesChart = resumo?.admissoesDemissoesChart ?? [];
+  const maxBarValue =
+    admissoesDemissoesChart.length > 0
+      ? Math.max(1, ...admissoesDemissoesChart.flatMap((item) => [item.adm, item.dem]))
+      : 1;
+
+  if (!resumo) {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <StatusBar style="dark" />
+        <View style={styles.topBarContainer}>
+          <TopBar initials={rhUserInitials} variant="rh" onAvatarPress={() => navigation.navigate('RHProfile')} />
+        </View>
+        <View style={styles.processEmptyCard}>
+          <Text style={styles.processEmptyText}>
+            {isResumoLoading ? 'Carregando dashboard...' : resumoError ?? 'Sem dados.'}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -1778,14 +1847,14 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
           <View style={styles.gridItem}>
             <Pressable style={[rhStyles.kpiCard, rhStyles.kpiCardAccentGreen]} onPress={() => setIsTurnoverModalOpen(true)}>
               <Text style={rhStyles.kpiLabel}>TURNOVER</Text>
-              <Text style={rhStyles.kpiValue}>{rhKpiData.turnoverPct}</Text>
+              <Text style={rhStyles.kpiValue}>{resumo.turnoverPct}</Text>
               <Text style={rhStyles.kpiMeta}>Clique para detalhar</Text>
             </Pressable>
           </View>
           <View style={styles.gridItem}>
             <View style={[rhStyles.kpiCard, rhStyles.kpiCardAccentGray]}>
               <Text style={rhStyles.kpiLabel}>MOVIMENTAÇÃO</Text>
-              <Text style={rhStyles.kpiValue}>{rhKpiData.movimentacaoPct}</Text>
+              <Text style={rhStyles.kpiValue}>{resumo.movimentacaoPct}</Text>
               <Text style={rhStyles.kpiMeta}>(Adm. + Dem.) / 2</Text>
             </View>
           </View>
@@ -1795,11 +1864,11 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
                 <Text style={rhStyles.kpiLabel}>ADMISSÕES</Text>
                 <View style={[rhStyles.kpiPill, rhStyles.kpiPillDown]}>
                   <Text style={[rhStyles.kpiPillText, rhStyles.kpiPillTextDown]}>
-                    {rhKpiData.admissoesChangePct}
+                    {resumo.admissoesChangePct}
                   </Text>
                 </View>
               </View>
-              <Text style={rhStyles.kpiValue}>{rhKpiData.admissoes}</Text>
+              <Text style={rhStyles.kpiValue}>{resumo.admissoes}</Text>
               <Text style={rhStyles.kpiMeta}>No mês selecionado</Text>
             </Pressable>
           </View>
@@ -1809,19 +1878,19 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
                 <Text style={rhStyles.kpiLabel}>DEMISSÕES</Text>
                 <View style={[rhStyles.kpiPill, rhStyles.kpiPillUp]}>
                   <Text style={[rhStyles.kpiPillText, rhStyles.kpiPillTextUp]}>
-                    {rhKpiData.admissoesChangePct}
+                    {resumo.admissoesChangePct}
                   </Text>
                 </View>
               </View>
-              <Text style={rhStyles.kpiValue}>{rhKpiData.demissoes}</Text>
-              <Text style={rhStyles.kpiMeta}>Rescisões: {rhKpiData.demissoesRescisao}</Text>
+              <Text style={rhStyles.kpiValue}>{resumo.demissoes}</Text>
+              <Text style={rhStyles.kpiMeta}>Rescisões: {resumo.demissoesRescisao}</Text>
             </Pressable>
           </View>
         </View>
 
         <View style={rhStyles.sectionCard}>
           <Text style={rhStyles.sectionLabel}>FOLHA (ATIVOS)</Text>
-          <Text style={rhStyles.sectionBigValue}>{rhKpiData.folhaAtivos}</Text>
+          <Text style={rhStyles.sectionBigValue}>{resumo.folhaAtivos}</Text>
           <Text style={rhStyles.kpiMeta}>Soma dos salários base</Text>
         </View>
 
@@ -1829,19 +1898,19 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
           <Text style={rhStyles.sectionTitle}>Quadro atual</Text>
           <View style={rhStyles.statGridRow}>
             <View style={rhStyles.statGridItem}>
-              <Text style={rhStyles.statGridValue}>{rhKpiData.quadro.ativos}</Text>
+              <Text style={rhStyles.statGridValue}>{resumo.quadro.ativos}</Text>
               <Text style={rhStyles.statGridLabel}>Ativos</Text>
             </View>
             <View style={rhStyles.statGridItem}>
-              <Text style={[rhStyles.statGridValue, rhStyles.statGridValueGold]}>{rhKpiData.quadro.ferias}</Text>
+              <Text style={[rhStyles.statGridValue, rhStyles.statGridValueGold]}>{resumo.quadro.ferias}</Text>
               <Text style={rhStyles.statGridLabel}>Em férias</Text>
             </View>
             <View style={rhStyles.statGridItem}>
-              <Text style={rhStyles.statGridValue}>{rhKpiData.quadro.afastados}</Text>
+              <Text style={rhStyles.statGridValue}>{resumo.quadro.afastados}</Text>
               <Text style={rhStyles.statGridLabel}>Afastados</Text>
             </View>
             <View style={rhStyles.statGridItem}>
-              <Text style={[rhStyles.statGridValue, rhStyles.statGridValueGreen]}>{rhKpiData.quadro.novos90d}</Text>
+              <Text style={[rhStyles.statGridValue, rhStyles.statGridValueGreen]}>{resumo.quadro.novos90d}</Text>
               <Text style={rhStyles.statGridLabel}>Novos 90d</Text>
             </View>
           </View>
@@ -1851,19 +1920,19 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
           <Text style={rhStyles.sectionTitle}>Engajamento & cultura</Text>
           <View style={rhStyles.statGridRow}>
             <View style={rhStyles.statGridItem}>
-              <Text style={rhStyles.statGridValue}>{rhKpiData.engajamento.aderencia}</Text>
+              <Text style={rhStyles.statGridValue}>{resumo.engajamento.aderencia ?? '—'}</Text>
               <Text style={rhStyles.statGridLabel}>Aderência</Text>
             </View>
             <View style={rhStyles.statGridItem}>
-              <Text style={rhStyles.statGridValue}>{rhKpiData.engajamento.cobertura}</Text>
+              <Text style={rhStyles.statGridValue}>{resumo.engajamento.cobertura}</Text>
               <Text style={rhStyles.statGridLabel}>Cobertura</Text>
             </View>
             <View style={rhStyles.statGridItem}>
-              <Text style={rhStyles.statGridValue}>{rhKpiData.engajamento.tempoCasa}</Text>
+              <Text style={rhStyles.statGridValue}>{resumo.engajamento.tempoCasa}</Text>
               <Text style={rhStyles.statGridLabel}>Tempo casa</Text>
             </View>
             <View style={rhStyles.statGridItem}>
-              <Text style={rhStyles.statGridValue}>{rhKpiData.engajamento.exp30d}</Text>
+              <Text style={rhStyles.statGridValue}>{resumo.engajamento.exp30d}</Text>
               <Text style={rhStyles.statGridLabel}>Exp. 30d</Text>
             </View>
           </View>
@@ -1885,7 +1954,7 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
           </View>
 
           <View style={rhStyles.barChartRow}>
-            {rhAdmissoesDemissoesChart.map((item, index) => (
+            {admissoesDemissoesChart.map((item, index) => (
               <Pressable
                 key={item.label}
                 style={[rhStyles.barGroup, selectedAdmDemIndex === index ? rhStyles.barGroupSelected : null]}
@@ -1912,10 +1981,10 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
 
           {selectedAdmDemIndex !== null ? (
             <RHChartTooltipCard
-              title={rhAdmissoesDemissoesChart[selectedAdmDemIndex].label}
+              title={admissoesDemissoesChart[selectedAdmDemIndex].label}
               lines={[
-                { label: 'Admissões', value: rhAdmissoesDemissoesChart[selectedAdmDemIndex].adm, color: '#18955A' },
-                { label: 'Demissões', value: rhAdmissoesDemissoesChart[selectedAdmDemIndex].dem, color: '#E6213D' },
+                { label: 'Admissões', value: admissoesDemissoesChart[selectedAdmDemIndex].adm, color: '#18955A' },
+                { label: 'Demissões', value: admissoesDemissoesChart[selectedAdmDemIndex].dem, color: '#E6213D' },
               ]}
             />
           ) : null}
@@ -1926,8 +1995,8 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
           <Text style={rhStyles.kpiMeta}>Últimos 12 meses</Text>
           <View style={rhStyles.lineChartWrap}>
             <RHHeadcountChart
-              values={rhHeadcountEvolution}
-              labels={rhHeadcountMonths}
+              values={resumo.headcountEvolution}
+              labels={resumo.headcountMonths}
               selectedIndex={selectedHeadcountIndex}
               onSelectIndex={setSelectedHeadcountIndex}
             />
@@ -1941,12 +2010,12 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
             </View>
             <Text style={rhStyles.sectionTitle}>Top setores (ativos)</Text>
           </View>
-          <RHRankBarList items={rhTopSetores} color="#18955A" />
+          <RHRankBarList items={resumo.topSetores} color="#18955A" />
         </View>
 
         <View style={rhStyles.sectionCard}>
           <Text style={rhStyles.sectionTitle}>Top unidades</Text>
-          {rhTopUnidades.map((item, index) => (
+          {resumo.topUnidades.map((item, index) => (
             <View key={item.name} style={rhStyles.rankRow}>
               <Text style={rhStyles.rankNumber}>{index + 1}</Text>
               <Text style={rhStyles.rankName} numberOfLines={1}>
@@ -1960,7 +2029,7 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
         <View style={[rhStyles.sectionCard, rhStyles.lastSectionCard]}>
           <Text style={rhStyles.sectionTitle}>Distribuição por gênero</Text>
           <View style={rhStyles.genderBarTrack}>
-            {rhGenderDistribution.map((segment) => (
+            {resumo.genderDistribution.map((segment) => (
               <View
                 key={segment.label}
                 style={[
@@ -1970,7 +2039,7 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
               />
             ))}
           </View>
-          {rhGenderDistribution.map((segment) => (
+          {resumo.genderDistribution.map((segment) => (
             <View key={segment.label} style={rhStyles.genderLegendRow}>
               <View style={[rhStyles.genderDot, { backgroundColor: segment.color }]} />
               <Text style={rhStyles.genderLabel}>{segment.label}</Text>
@@ -2300,7 +2369,10 @@ function NovoColaboradorModal({
 }
 
 export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaboradores'>) {
-  const [employees, setEmployees] = useState<Employee[]>(rhEmployees);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [stats, setStats] = useState<RhStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [unidadeFilter, setUnidadeFilter] = useState('Todas as unidades');
   const [statusFilter, setStatusFilter] = useState('Todos os status');
@@ -2309,10 +2381,42 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
   const [isNovoModalOpen, setIsNovoModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [selectedImportFile, setSelectedImportFile] = useState<ImportedCsvFile | null>(null);
+  const [page, setPage] = useState(1);
   const pageSize = 7;
 
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    Promise.all([fetchRhColaboradores(), fetchRhStats()])
+      .then(([rows, statsResult]) => {
+        if (!isMounted) return;
+        setEmployees(rows.map(mapRhColaboradorToEmployee));
+        setStats(statsResult);
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os colaboradores.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const statsBreakdown = useMemo(() => computeRhStatsBreakdown(stats), [stats]);
+
   const statusFilterOptions = ['Todos os status', 'Ativo', 'Em férias', 'Afastado', 'Desligado'];
-  const unidadeFilterOptions = ['Todas as unidades', ...rhUnidadesList];
+  const unidadeFilterOptions = useMemo(() => {
+    const unique = new Set<string>();
+    employees.forEach((employee) => {
+      if (employee.unit && employee.unit !== '—') unique.add(employee.unit);
+    });
+    return ['Todas as unidades', ...Array.from(unique).sort((a, b) => a.localeCompare(b, 'pt-BR'))];
+  }, [employees]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -2331,6 +2435,16 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
   }, [employees, search, unidadeFilter, statusFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, unidadeFilter, statusFilter]);
+
+  const pageItems = useMemo(
+    () => filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filtered, currentPage]
+  );
 
   const handleSaveNewEmployee = (employee: Employee) => {
     setEmployees((current) => [employee, ...current]);
@@ -2437,23 +2551,23 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
         <View style={rhStyles.statsPillRow}>
           <View style={rhStyles.statsPill}>
             <Text style={rhStyles.statsPillLabel}>Quadro</Text>
-            <Text style={rhStyles.statsPillValue}>{rhColaboradorStats.quadro.toLocaleString('pt-BR')}</Text>
+            <Text style={rhStyles.statsPillValue}>{statsBreakdown.quadro.toLocaleString('pt-BR')}</Text>
           </View>
           <View style={[rhStyles.statsPill, { backgroundColor: '#E3F5EA' }]}>
             <Text style={[rhStyles.statsPillLabel, { color: '#18955A' }]}>Ativos</Text>
-            <Text style={[rhStyles.statsPillValue, { color: '#18955A' }]}>{rhColaboradorStats.ativos}</Text>
+            <Text style={[rhStyles.statsPillValue, { color: '#18955A' }]}>{statsBreakdown.ativos}</Text>
           </View>
           <View style={[rhStyles.statsPill, { backgroundColor: '#F1F2F7' }]}>
             <Text style={[rhStyles.statsPillLabel, { color: '#5E667D' }]}>Afastados</Text>
-            <Text style={[rhStyles.statsPillValue, { color: '#5E667D' }]}>{rhColaboradorStats.afastados}</Text>
+            <Text style={[rhStyles.statsPillValue, { color: '#5E667D' }]}>{statsBreakdown.afastados}</Text>
           </View>
           <View style={[rhStyles.statsPill, { backgroundColor: '#FCEFDA' }]}>
             <Text style={[rhStyles.statsPillLabel, { color: '#B07A1E' }]}>Férias</Text>
-            <Text style={[rhStyles.statsPillValue, { color: '#B07A1E' }]}>{rhColaboradorStats.ferias}</Text>
+            <Text style={[rhStyles.statsPillValue, { color: '#B07A1E' }]}>{statsBreakdown.ferias}</Text>
           </View>
           <View style={[rhStyles.statsPill, { backgroundColor: '#FCE8EC' }]}>
             <Text style={[rhStyles.statsPillLabel, { color: '#E6213D' }]}>Desligados</Text>
-            <Text style={[rhStyles.statsPillValue, { color: '#E6213D' }]}>{rhColaboradorStats.desligados}</Text>
+            <Text style={[rhStyles.statsPillValue, { color: '#E6213D' }]}>{statsBreakdown.desligados}</Text>
           </View>
         </View>
 
@@ -2490,12 +2604,20 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
           </View>
         </View>
 
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Carregando colaboradores...</Text>
+          </View>
+        ) : errorMessage ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>{errorMessage}</Text>
+          </View>
+        ) : filtered.length === 0 ? (
           <View style={styles.processEmptyCard}>
             <Text style={styles.processEmptyText}>Nenhum colaborador encontrado.</Text>
           </View>
         ) : (
-          filtered.slice(0, pageSize).map((employee) => {
+          pageItems.map((employee) => {
             const statusMeta = rhEmployeeStatusMeta[employee.status];
             const initials = employee.fullName
               .split(' ')
@@ -2508,7 +2630,12 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
               <Pressable
                 key={employee.id}
                 style={rhStyles.employeeCard}
-                onPress={() => navigation.navigate('RHColaboradorDetalhe', { employeeId: employee.id })}
+                onPress={() =>
+                  navigation.navigate('RHColaboradorDetalhe', {
+                    employeeId: employee.id,
+                    employeeInicial: employee,
+                  })
+                }
               >
                 <View style={rhStyles.employeeAvatar}>
                   <Text style={rhStyles.employeeAvatarText}>{initials}</Text>
@@ -2536,7 +2663,21 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
 
         {filtered.length > 0 ? (
           <View style={rhStyles.paginationRow}>
-            <Text style={rhStyles.paginationText}>Pág. 1 de {pageCount}</Text>
+            <Pressable
+              style={[rhStyles.paginationButton, currentPage <= 1 && rhStyles.paginationButtonDisabled]}
+              disabled={currentPage <= 1}
+              onPress={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <Feather name="chevron-left" size={16} color="#3A415C" />
+            </Pressable>
+            <Text style={rhStyles.paginationText}>Pág. {currentPage} de {pageCount}</Text>
+            <Pressable
+              style={[rhStyles.paginationButton, currentPage >= pageCount && rhStyles.paginationButtonDisabled]}
+              disabled={currentPage >= pageCount}
+              onPress={() => setPage((p) => Math.min(pageCount, p + 1))}
+            >
+              <Feather name="chevron-right" size={16} color="#3A415C" />
+            </Pressable>
           </View>
         ) : null}
       </ScrollView>
@@ -5072,8 +5213,13 @@ function DesligamentoModal({
 }
 
 export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'RHColaboradorDetalhe'>) {
-  const { employeeId } = route.params;
-  const [employees, setEmployees] = useState<Employee[]>(rhEmployees);
+  const { employeeId, employeeInicial } = route.params;
+  // employeeInicial vem da lista real (RHColaboradoresScreen); colocamos ele
+  // na frente do mock pra "find" abaixo achar o colaborador de verdade em vez
+  // de sempre cair no employees[0] mockado (que não tem o id real da API).
+  const [employees, setEmployees] = useState<Employee[]>(() =>
+    employeeInicial ? [employeeInicial, ...rhEmployees] : rhEmployees
+  );
   const employee = employees.find((item) => item.id === employeeId) ?? employees[0];
   const [activeQuickAction, setActiveQuickAction] = useState<QuickActionKey | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -7816,7 +7962,10 @@ const rhStyles = StyleSheet.create({
     fontWeight: '800',
   },
   paginationRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
     marginTop: 4,
     marginBottom: 8,
   },
@@ -7824,6 +7973,17 @@ const rhStyles = StyleSheet.create({
     color: '#9AA1B5',
     fontSize: 12,
     fontWeight: '600',
+  },
+  paginationButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F2F7',
+  },
+  paginationButtonDisabled: {
+    opacity: 0.4,
   },
   tripleStatRow: {
     flexDirection: 'row',

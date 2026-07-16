@@ -99,7 +99,7 @@ export type RootStackParamList = {
   RHDashboard: undefined;
   RHProfile: undefined;
   RHColaboradores: undefined;
-  RHColaboradorDetalhe: { employeeId: string };
+  RHColaboradorDetalhe: { employeeId: string; employeeInicial?: import('./RH').Employee };
   RHTransferencias: undefined;
   RHComunicados: undefined;
   RHSolicitacoes: undefined;

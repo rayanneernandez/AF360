@@ -88,3 +88,119 @@ export async function updateConversa(
   const json = await api.patch(`/api/diretoria/conversas/${encodeURIComponent(telefone)}`, patch);
   return json.data;
 }
+
+// --- RH: colaboradores (rh_colaboradores no Supabase do Lovable) ---
+// Tipo "cru" — reflete as colunas reais da tabela (ver af360-api/src/LOVABLE_API.md).
+// Deixamos solto (Record) porque rh_colaboradores tem ~87 colunas e só usamos
+// um subconjunto por vez; os campos abaixo são os que já sabemos que existem.
+
+export type RhColaboradorRaw = {
+  id: string;
+  nome_completo: string | null;
+  cargo: string | null;
+  setor: string | null;
+  posto_trabalho: string | null;
+  matricula: string | null;
+  codigo_interno: string | null;
+  cpf: string | null;
+  data_admissao: string | null;
+  data_demissao: string | null;
+  status: string | null;
+  email_pessoal: string | null;
+  email_corporativo: string | null;
+  celular: string | null;
+  whatsapp: string | null;
+  salario_base: number | null;
+  [key: string]: unknown;
+};
+
+export type RhStats = {
+  total: number;
+  by_status: Record<string, number>;
+};
+
+// Sem limit/offset o backend traz TODOS os colaboradores, paginando
+// internamente por conta própria (o Lovable corta em 1000/2000 por
+// chamada, então isso é feito em vários pedidos, não um só).
+export async function fetchRhColaboradores(params: { q?: string } = {}): Promise<RhColaboradorRaw[]> {
+  const search = new URLSearchParams();
+  if (params.q) search.set('q', params.q);
+  search.set('all', '1');
+  const json = await api.get(`/api/rh/colaboradores?${search.toString()}`);
+  return json.data as RhColaboradorRaw[];
+}
+
+export async function fetchRhStats(): Promise<RhStats> {
+  const json = await api.get('/api/rh/colaboradores/stats');
+  return json.data as RhStats;
+}
+
+// --- RH: Dashboard (métricas calculadas em cima de rh_colaboradores/empresas) ---
+
+export type RhRegiaoTurnover = { nome: string; hc: number; saidas: number; taxa: string };
+export type RhMotivoDesligamento = { label: string; count: number; pct: number; color: string };
+
+export type RhTurnoverData = {
+  geralPct: string;
+  geralMeta: string;
+  voluntarioPct: string;
+  voluntarioMeta: string;
+  involuntarioPct: string;
+  involuntarioMeta: string;
+  insight: string | null;
+  regioes: RhRegiaoTurnover[];
+  ate90diasPct: string;
+  ate90diasMeta: string;
+  motivos: RhMotivoDesligamento[] | null;
+  motivosVazio: string;
+  historicoLabels: string[];
+  historicoGeral: number[];
+  historicoVoluntario: number[];
+};
+
+export async function fetchRhTurnover(params: {
+  granularity: 'mes' | 'ano';
+  year: number;
+  month: number;
+}): Promise<RhTurnoverData> {
+  const search = new URLSearchParams({
+    granularity: params.granularity,
+    year: String(params.year),
+    month: String(params.month),
+  });
+  const json = await api.get(`/api/rh/dashboard/turnover?${search.toString()}`);
+  return json.data as RhTurnoverData;
+}
+
+export type RhDashboardResumo = {
+  turnoverPct: string;
+  movimentacaoPct: string;
+  admissoes: number;
+  admissoesChangePct: string;
+  demissoes: number;
+  demissoesChangePct: string;
+  demissoesRescisao: string;
+  folhaAtivos: string;
+  quadro: { ativos: number; ferias: number; afastados: number; novos90d: number };
+  engajamento: { aderencia: string | null; cobertura: string; tempoCasa: string; exp30d: number };
+  admissoesDemissoesChart: Array<{ label: string; adm: number; dem: number }>;
+  headcountEvolution: number[];
+  headcountMonths: string[];
+  topSetores: Array<{ label: string; value: number }>;
+  topUnidades: Array<{ name: string; value: number }>;
+  genderDistribution: Array<{ label: string; color: string; count: number; pct: number }>;
+};
+
+export async function fetchRhDashboardResumo(params: {
+  granularity: 'mes' | 'ano';
+  year: number;
+  month: number;
+}): Promise<RhDashboardResumo> {
+  const search = new URLSearchParams({
+    granularity: params.granularity,
+    year: String(params.year),
+    month: String(params.month),
+  });
+  const json = await api.get(`/api/rh/dashboard/resumo?${search.toString()}`);
+  return json.data as RhDashboardResumo;
+}
