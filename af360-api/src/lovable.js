@@ -8,7 +8,11 @@
 //   GET   /api/public/internal/rh-stats
 //   PATCH /api/public/internal/dir-contato?phone=...
 
-const LOVABLE_BASE_URL = process.env.LOVABLE_BASE_URL || 'https://af-360-hub.lovable.app';
+// URL estável de produção (não muda mesmo se o domínio custom mudar de nome).
+// af-360-hub.lovable.app e americanfuel.com.br também funcionam depois do
+// publish, mas essa é a recomendada pelo próprio Lovable.
+const LOVABLE_BASE_URL =
+  process.env.LOVABLE_BASE_URL || 'https://project--f9a2d9ec-6a30-46c7-8ddd-b5e275064f7b.lovable.app';
 
 function getSecret() {
   const secret = process.env.INTERNAL_API_SECRET;

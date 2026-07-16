@@ -9,8 +9,10 @@ function isPendente(contato) {
   return new Date(contato.last_inbound_at) > new Date(contato.last_outbound_at);
 }
 
+// dir_mensagens.direction já é o enum 'in'/'out' (confirmado na doc oficial
+// do Lovable) — antes assumíamos 'inbound'/'outbound' por engano.
 function mapDirection(direction) {
-  return direction === 'outbound' ? 'out' : 'in';
+  return direction === 'out' ? 'out' : 'in';
 }
 
 // GET /api/diretoria/conversas?q=busca
@@ -38,7 +40,7 @@ router.get('/', async (req, res) => {
             limit: 1,
           }).catch(() => ({ data: [] })),
           fetchTable('dir_mensagens', {
-            filters: { phone: contato.phone, direction: 'inbound' },
+            filters: { phone: contato.phone, direction: 'in' },
             limit: 1,
             count: true,
           }).catch(() => ({ count: 0 })),
