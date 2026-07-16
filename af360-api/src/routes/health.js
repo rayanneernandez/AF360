@@ -77,4 +77,40 @@ router.get('/columns', async (req, res) => {
   }
 });
 
+// GET /api/health/conversas-diag -> diagnóstico temporário para entender
+// por que o app mostra muito mais conversas que o painel web.
+router.get('/conversas-diag', async (req, res) => {
+  try {
+    const tipoMensagem = await query(
+      `select tipo_mensagem, direcao, count(*)::int as total
+       from fale_diretoria_mensagens
+       group by tipo_mensagem, direcao
+       order by total desc`
+    );
+    const contatos = await query(
+      `select
+         count(distinct telefone)::int as telefones_distintos,
+         count(distinct telefone) filter (where nome_contato is null)::int as telefones_sem_nome,
+         count(distinct telefone) filter (where nome_contato is not null)::int as telefones_com_nome
+       from fale_diretoria_mensagens`
+    );
+    const desconhecido = await query(
+      `select telefone, nome_contato, texto, tipo_mensagem, direcao, criado_em
+       from fale_diretoria_mensagens
+       where texto ilike '%desconhecido%' or tipo_mensagem ilike '%desconhecido%'
+       order by criado_em desc
+       limit 10`
+    );
+    res.json({
+      ok: true,
+      tipo_mensagem_stats: tipoMensagem.rows,
+      contatos: contatos.rows[0],
+      amostra_desconhecido: desconhecido.rows,
+    });
+  } catch (err) {
+    console.error('[health/conversas-diag] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
 module.exports = router;
