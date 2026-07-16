@@ -15,10 +15,18 @@ router.get('/', async (req, res) => {
       params.push(`%${q}%`);
       filtro = `where nome_contato ilike $${params.length} or telefone ilike $${params.length}`;
     }
+    // "desconhecido" é um tipo real gravado pela Z-API para eventos que ela
+    // não conseguiu classificar (webhooks de protocolo, números/lids sem
+    // conteúdo real). Não são conversas de verdade, então ficam de fora.
     const sql = `
-      with last_out as (
-        select telefone, max(criado_em) as last_out_em
+      with mensagens_validas as (
+        select *
         from fale_diretoria_mensagens
+        where tipo_mensagem <> 'desconhecido'
+      ),
+      last_out as (
+        select telefone, max(criado_em) as last_out_em
+        from mensagens_validas
         where direcao = 'out'
         group by telefone
       ),
@@ -30,13 +38,13 @@ router.get('/', async (req, res) => {
             where m.direcao = 'in'
               and (lo.last_out_em is null or m.criado_em > lo.last_out_em)
           ) as pendentes
-        from fale_diretoria_mensagens m
+        from mensagens_validas m
         left join last_out lo on lo.telefone = m.telefone
         group by m.telefone
       ),
       last_msg as (
         select distinct on (telefone) telefone, nome_contato, texto, tipo_mensagem, direcao, criado_em
-        from fale_diretoria_mensagens
+        from mensagens_validas
         order by telefone, criado_em desc
       )
       select lm.telefone, lm.nome_contato, lm.texto, lm.tipo_mensagem, lm.direcao, lm.criado_em,
@@ -62,7 +70,7 @@ router.get('/:telefone/mensagens', async (req, res) => {
     const result = await query(
       `select id, mensagem_id_zapi, telefone, nome_contato, direcao, tipo_mensagem, texto, audio_url, criado_em, metadata
        from fale_diretoria_mensagens
-       where telefone = $1
+       where telefone = $1 and tipo_mensagem <> 'desconhecido'
        order by criado_em asc`,
       [telefone]
     );
