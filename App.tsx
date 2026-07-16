@@ -52,7 +52,15 @@ import {
   RHRelatoriosScreen,
   RHConfiguracoesScreen,
 } from './RH';
-import { fetchConversas, fetchMensagens, type ConversaResumo, type ConversaMensagem } from './api';
+import {
+  fetchConversas,
+  fetchMensagens,
+  updateConversa,
+  type ConversaResumo,
+  type ConversaMensagem,
+  type ConversaChatStatus,
+  type ConversaMetadata,
+} from './api';
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -87,7 +95,7 @@ export type RootStackParamList = {
   ProcessMap: undefined;
   DirectorNotifications: undefined;
   DirectorConversas: undefined;
-  DirectorConversaDetalhe: { telefone: string };
+  DirectorConversaDetalhe: { telefone: string; conversaInicial?: import('./api').ConversaResumo };
   RHDashboard: undefined;
   RHProfile: undefined;
   RHColaboradores: undefined;
@@ -8372,60 +8380,17 @@ function DirectorNotificationsScreen({ navigation }: ScreenProps<'DirectorNotifi
 }
 
 // --- Fale com a Diretoria (conversas de WhatsApp) ---
+// Status/tags/notas agora são reais (dir_contatos no Supabase do Lovable),
+// persistidos via updateConversa() — não é mais um controle só local.
 
-type ConversaLocalStatus = 'fila' | 'ativos' | 'finalizada';
-
-type ConversaLocalInfo = {
-  status: ConversaLocalStatus | null; // null = ainda não teve override manual
-  tags: string[];
-  notas: string;
-  silenciada: boolean;
-  bloqueada: boolean;
-};
-
-const conversaLocalStore = new Map<string, ConversaLocalInfo>();
-const conversaLocalListeners = new Set<() => void>();
-
-function getConversaLocalInfo(telefone: string): ConversaLocalInfo {
-  return (
-    conversaLocalStore.get(telefone) ?? {
-      status: null,
-      tags: [],
-      notas: '',
-      silenciada: false,
-      bloqueada: false,
-    }
-  );
+function getEffectiveConversaStatus(conversa: ConversaResumo): ConversaChatStatus {
+  return conversa.chat_status ?? (conversa.pendentes > 0 ? 'fila' : 'ativo');
 }
 
-function setConversaLocalInfo(telefone: string, patch: Partial<ConversaLocalInfo>) {
-  const current = getConversaLocalInfo(telefone);
-  conversaLocalStore.set(telefone, { ...current, ...patch });
-  conversaLocalListeners.forEach((listener) => listener());
-}
-
-function useConversaLocalInfo(telefone: string) {
-  const [, forceRender] = useState(0);
-  useEffect(() => {
-    const listener = () => forceRender((n) => n + 1);
-    conversaLocalListeners.add(listener);
-    return () => {
-      conversaLocalListeners.delete(listener);
-    };
-  }, []);
-  return getConversaLocalInfo(telefone);
-}
-
-function getEffectiveConversaStatus(conversa: ConversaResumo): ConversaLocalStatus {
-  const local = getConversaLocalInfo(conversa.telefone);
-  if (local.status) return local.status;
-  return conversa.pendentes > 0 ? 'fila' : 'ativos';
-}
-
-const conversaStatusMeta: Record<ConversaLocalStatus, { label: string; color: string; tint: string }> = {
+const conversaStatusMeta: Record<ConversaChatStatus, { label: string; color: string; tint: string }> = {
   fila: { label: 'Fila', color: '#B7791F', tint: '#FCF4DE' },
-  ativos: { label: 'Ativo', color: '#18955A', tint: '#E2F4EA' },
-  finalizada: { label: 'Finalizada', color: '#5B6472', tint: '#EEF0F4' },
+  ativo: { label: 'Ativo', color: '#18955A', tint: '#E2F4EA' },
+  finalizado: { label: 'Finalizada', color: '#5B6472', tint: '#EEF0F4' },
 };
 
 const AVATAR_PALETTE = ['#E6213D', '#3457D5', '#18955A', '#B7791F', '#7B4FE0', '#0E8AA3'];
@@ -8445,7 +8410,8 @@ function getConversaInitials(nome: string | null, telefone: string) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-function formatConversaListTime(iso: string) {
+function formatConversaListTime(iso: string | null | undefined) {
+  if (!iso) return '';
   const date = new Date(iso);
   const now = new Date();
   const sameDay =
@@ -8458,7 +8424,8 @@ function formatConversaListTime(iso: string) {
   return formatDateBR(date);
 }
 
-function formatConversaBubbleTime(iso: string) {
+function formatConversaBubbleTime(iso: string | null | undefined) {
+  if (!iso) return '';
   const date = new Date(iso);
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
@@ -8486,7 +8453,7 @@ function DirectorConversasScreen({ navigation }: ScreenProps<'DirectorConversas'
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'todos' | ConversaLocalStatus>('todos');
+  const [activeFilter, setActiveFilter] = useState<'todos' | ConversaChatStatus>('todos');
   const [isNovaConversaOpen, setIsNovaConversaOpen] = useState(false);
 
   const loadConversas = useCallback(async (query?: string) => {
@@ -8521,7 +8488,7 @@ function DirectorConversasScreen({ navigation }: ScreenProps<'DirectorConversas'
     conversas.forEach((conversa) => {
       const status = getEffectiveConversaStatus(conversa);
       if (status === 'fila') naFila += 1;
-      else if (status === 'ativos') emAtendimento += 1;
+      else if (status === 'ativo') emAtendimento += 1;
       else finalizadas += 1;
     });
     return { naFila, emAtendimento, finalizadas, total: conversas.length };
@@ -8532,11 +8499,11 @@ function DirectorConversasScreen({ navigation }: ScreenProps<'DirectorConversas'
     return conversas.filter((conversa) => getEffectiveConversaStatus(conversa) === activeFilter);
   }, [conversas, activeFilter]);
 
-  const filterTabs: Array<{ id: 'todos' | ConversaLocalStatus; label: string; count: number }> = [
+  const filterTabs: Array<{ id: 'todos' | ConversaChatStatus; label: string; count: number }> = [
     { id: 'todos', label: 'Todos', count: stats.total },
     { id: 'fila', label: 'Fila', count: stats.naFila },
-    { id: 'ativos', label: 'Ativos', count: stats.emAtendimento },
-    { id: 'finalizada', label: 'Final.', count: stats.finalizadas },
+    { id: 'ativo', label: 'Ativos', count: stats.emAtendimento },
+    { id: 'finalizado', label: 'Final.', count: stats.finalizadas },
   ];
 
   return (
@@ -8632,7 +8599,12 @@ function DirectorConversasScreen({ navigation }: ScreenProps<'DirectorConversas'
               <Pressable
                 key={conversa.telefone}
                 style={styles.conversaListItem}
-                onPress={() => navigation.navigate('DirectorConversaDetalhe', { telefone: conversa.telefone })}
+                onPress={() =>
+                  navigation.navigate('DirectorConversaDetalhe', {
+                    telefone: conversa.telefone,
+                    conversaInicial: conversa,
+                  })
+                }
               >
                 <View style={[styles.conversaAvatar, { backgroundColor: `${avatarColor}22` }]}>
                   <Text style={[styles.conversaAvatarText, { color: avatarColor }]}>{initials}</Text>
@@ -8737,13 +8709,13 @@ function NovaConversaModal({ visible, onClose }: { visible: boolean; onClose: ()
 }
 
 function DirectorConversaDetalheScreen({ navigation, route }: ScreenProps<'DirectorConversaDetalhe'>) {
-  const { telefone } = route.params;
+  const { telefone, conversaInicial } = route.params;
   const [mensagens, setMensagens] = useState<ConversaMensagem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [isAcoesOpen, setIsAcoesOpen] = useState(false);
-  const localInfo = useConversaLocalInfo(telefone);
+  const [conversaInfo, setConversaInfo] = useState<ConversaResumo | null>(conversaInicial ?? null);
 
   useEffect(() => {
     let isMounted = true;
@@ -8763,12 +8735,20 @@ function DirectorConversaDetalheScreen({ navigation, route }: ScreenProps<'Direc
     };
   }, [telefone]);
 
-  const nomeContato = mensagens.find((m) => m.nome_contato)?.nome_contato || telefone;
+  const nomeContato =
+    conversaInfo?.nome_contato || mensagens.find((m) => m.nome_contato)?.nome_contato || telefone;
   const initials = getConversaInitials(nomeContato, telefone);
   const avatarColor = getAvatarColor(telefone);
-  const effectiveStatus: ConversaLocalStatus =
-    localInfo.status ?? (mensagens[mensagens.length - 1]?.direcao === 'in' ? 'fila' : 'ativos');
+  const effectiveStatus: ConversaChatStatus = conversaInfo
+    ? getEffectiveConversaStatus(conversaInfo)
+    : mensagens[mensagens.length - 1]?.direcao === 'in'
+    ? 'fila'
+    : 'ativo';
   const statusMeta = conversaStatusMeta[effectiveStatus];
+
+  const handleConversaUpdate = useCallback((patch: Partial<ConversaResumo>) => {
+    setConversaInfo((current) => (current ? { ...current, ...patch } : current));
+  }, []);
 
   const handleSend = () => {
     if (!draft.trim()) return;
@@ -8890,6 +8870,8 @@ function DirectorConversaDetalheScreen({ navigation, route }: ScreenProps<'Direc
         visible={isAcoesOpen}
         telefone={telefone}
         nomeContato={nomeContato}
+        conversaInfo={conversaInfo}
+        onUpdate={handleConversaUpdate}
         onClose={() => setIsAcoesOpen(false)}
       />
     </SafeAreaView>
@@ -8900,39 +8882,70 @@ function ConversaAcoesModal({
   visible,
   telefone,
   nomeContato,
+  conversaInfo,
+  onUpdate,
   onClose,
 }: {
   visible: boolean;
   telefone: string;
   nomeContato: string;
+  conversaInfo: ConversaResumo | null;
+  onUpdate: (patch: Partial<ConversaResumo>) => void;
   onClose: () => void;
 }) {
-  const localInfo = useConversaLocalInfo(telefone);
   const [novaTag, setNovaTag] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const initials = getConversaInitials(nomeContato, telefone);
+
+  const tags = conversaInfo?.metadata?.tags ?? [];
+  const notas = conversaInfo?.metadata?.notas ?? '';
+  // muted/blocked reais existem em dir_contatos, mas o PATCH atual só aceita
+  // chat_status/metadata — até pedirmos ao Lovable para expor esses campos no
+  // PATCH, guardamos silenciar/bloquear como flags dentro de metadata.
+  const isSilenciada = Boolean(conversaInfo?.metadata?.muted);
+
+  const salvarMetadata = async (patchMetadata: ConversaMetadata) => {
+    const novaMetadata: ConversaMetadata = { ...(conversaInfo?.metadata ?? {}), ...patchMetadata };
+    setIsSaving(true);
+    try {
+      await updateConversa(telefone, { metadata: novaMetadata });
+      onUpdate({ metadata: novaMetadata });
+    } catch (err) {
+      Alert.alert('Erro', err instanceof Error ? err.message : 'Não foi possível salvar.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleAddTag = () => {
     const tag = novaTag.trim();
-    if (!tag) return;
-    if (localInfo.tags.includes(tag)) {
+    if (!tag || tags.includes(tag)) {
       setNovaTag('');
       return;
     }
-    setConversaLocalInfo(telefone, { tags: [...localInfo.tags, tag] });
     setNovaTag('');
+    salvarMetadata({ tags: [...tags, tag] });
   };
 
   const handleRemoveTag = (tag: string) => {
-    setConversaLocalInfo(telefone, { tags: localInfo.tags.filter((t) => t !== tag) });
+    salvarMetadata({ tags: tags.filter((t) => t !== tag) });
   };
 
-  const handleAction = (status: ConversaLocalStatus) => {
-    setConversaLocalInfo(telefone, { status });
-    onClose();
+  const handleAction = async (status: ConversaChatStatus) => {
+    setIsSaving(true);
+    try {
+      await updateConversa(telefone, { chat_status: status });
+      onUpdate({ chat_status: status });
+      onClose();
+    } catch (err) {
+      Alert.alert('Erro', err instanceof Error ? err.message : 'Não foi possível atualizar a conversa.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleToggleSilenciar = () => {
-    setConversaLocalInfo(telefone, { silenciada: !localInfo.silenciada });
+    salvarMetadata({ muted: !isSilenciada });
   };
 
   const handleBloquear = () => {
@@ -8942,7 +8955,7 @@ function ConversaAcoesModal({
         text: 'Bloquear',
         style: 'destructive',
         onPress: () => {
-          setConversaLocalInfo(telefone, { bloqueada: true });
+          salvarMetadata({ blocked: true });
           onClose();
         },
       },
@@ -8974,14 +8987,15 @@ function ConversaAcoesModal({
               value={novaTag}
               onChangeText={setNovaTag}
               onSubmitEditing={handleAddTag}
+              editable={!isSaving}
             />
-            <Pressable style={styles.conversaTagAddButton} onPress={handleAddTag}>
+            <Pressable style={styles.conversaTagAddButton} onPress={handleAddTag} disabled={isSaving}>
               <Feather name="plus" size={16} color="#FFFFFF" />
             </Pressable>
           </View>
-          {localInfo.tags.length > 0 ? (
+          {tags.length > 0 ? (
             <View style={styles.conversaTagChipRow}>
-              {localInfo.tags.map((tag) => (
+              {tags.map((tag) => (
                 <Pressable key={tag} style={styles.conversaTagChip} onPress={() => handleRemoveTag(tag)}>
                   <Text style={styles.conversaTagChipText}>{tag}</Text>
                   <Feather name="x" size={12} color="#5B6472" />
@@ -8995,26 +9009,27 @@ function ConversaAcoesModal({
             style={styles.conversaNotasInput}
             placeholder="Adicione uma nota..."
             placeholderTextColor="#8A8F9C"
-            value={localInfo.notas}
-            onChangeText={(text) => setConversaLocalInfo(telefone, { notas: text })}
+            value={notas}
+            onChangeText={(text) => salvarMetadata({ notas: text })}
+            editable={!isSaving}
             multiline
           />
 
           <View style={styles.conversaAcoesDivider} />
 
-          <Pressable style={styles.conversaAcaoRow} onPress={() => handleAction('fila')}>
+          <Pressable style={styles.conversaAcaoRow} onPress={() => handleAction('fila')} disabled={isSaving}>
             <Feather name="corner-up-left" size={16} color="#3A415C" />
             <Text style={styles.conversaAcaoRowText}>Devolver para fila</Text>
           </Pressable>
-          <Pressable style={styles.conversaAcaoRow} onPress={() => handleAction('finalizada')}>
+          <Pressable style={styles.conversaAcaoRow} onPress={() => handleAction('finalizado')} disabled={isSaving}>
             <Feather name="check" size={16} color="#3A415C" />
             <Text style={styles.conversaAcaoRowText}>Finalizar conversa</Text>
           </Pressable>
-          <Pressable style={styles.conversaAcaoRow} onPress={handleToggleSilenciar}>
-            <Feather name={localInfo.silenciada ? 'bell' : 'bell-off'} size={16} color="#3A415C" />
-            <Text style={styles.conversaAcaoRowText}>{localInfo.silenciada ? 'Reativar notificações' : 'Silenciar'}</Text>
+          <Pressable style={styles.conversaAcaoRow} onPress={handleToggleSilenciar} disabled={isSaving}>
+            <Feather name={isSilenciada ? 'bell' : 'bell-off'} size={16} color="#3A415C" />
+            <Text style={styles.conversaAcaoRowText}>{isSilenciada ? 'Reativar notificações' : 'Silenciar'}</Text>
           </Pressable>
-          <Pressable style={styles.conversaAcaoRow} onPress={handleBloquear}>
+          <Pressable style={styles.conversaAcaoRow} onPress={handleBloquear} disabled={isSaving}>
             <Feather name="slash" size={16} color="#E0002A" />
             <Text style={[styles.conversaAcaoRowText, styles.conversaAcaoRowTextDanger]}>Bloquear</Text>
           </Pressable>

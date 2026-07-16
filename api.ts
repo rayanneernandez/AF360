@@ -27,9 +27,20 @@ async function request(path: string, options: { method?: string; body?: unknown 
 export const api = {
   get: (path: string) => request(path),
   post: (path: string, body?: unknown) => request(path, { method: 'POST', body }),
+  patch: (path: string, body?: unknown) => request(path, { method: 'PATCH', body }),
 };
 
 // --- Diretoria: Fale com a Diretoria (conversas de WhatsApp) ---
+// Status real vem de dir_contatos.chat_status (fonte de verdade no Supabase
+// do Lovable) — não é mais um controle só local do app.
+
+export type ConversaChatStatus = 'fila' | 'ativo' | 'finalizado';
+
+export type ConversaMetadata = {
+  tags?: string[];
+  notas?: string;
+  [key: string]: unknown;
+};
 
 export type ConversaResumo = {
   telefone: string;
@@ -37,13 +48,17 @@ export type ConversaResumo = {
   texto: string | null;
   tipo_mensagem: string;
   direcao: 'in' | 'out';
-  criado_em: string;
-  total_mensagens: number;
+  criado_em: string | null;
+  total_mensagens: number | null;
   pendentes: number;
+  chat_status: ConversaChatStatus;
+  blocked: boolean;
+  muted: boolean;
+  metadata: ConversaMetadata | null;
 };
 
 export type ConversaMensagem = {
-  id: number;
+  id: string | number;
   mensagem_id_zapi: string | null;
   telefone: string;
   nome_contato: string | null;
@@ -64,4 +79,12 @@ export async function fetchConversas(q?: string): Promise<ConversaResumo[]> {
 export async function fetchMensagens(telefone: string): Promise<ConversaMensagem[]> {
   const json = await api.get(`/api/diretoria/conversas/${encodeURIComponent(telefone)}/mensagens`);
   return json.data as ConversaMensagem[];
+}
+
+export async function updateConversa(
+  telefone: string,
+  patch: { chat_status?: ConversaChatStatus; metadata?: ConversaMetadata }
+): Promise<Record<string, unknown>> {
+  const json = await api.patch(`/api/diretoria/conversas/${encodeURIComponent(telefone)}`, patch);
+  return json.data;
 }
