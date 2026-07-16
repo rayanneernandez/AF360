@@ -1,5 +1,6 @@
 const express = require('express');
 const { query } = require('../db');
+const { fetchTable } = require('../lovable');
 
 const router = express.Router();
 
@@ -110,6 +111,34 @@ router.get('/conversas-diag', async (req, res) => {
   } catch (err) {
     console.error('[health/conversas-diag] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/health/lovable -> diagnóstico da conexão com os endpoints internos
+// do Lovable (base URL, secret configurado, e uma chamada real de teste).
+router.get('/lovable', async (req, res) => {
+  const baseUrl = process.env.LOVABLE_BASE_URL || 'https://af-360-hub.lovable.app';
+  const hasSecret = Boolean(process.env.INTERNAL_API_SECRET);
+  try {
+    const json = await fetchTable('dir_contatos', { limit: 1, count: true });
+    res.json({
+      ok: true,
+      base_url: baseUrl,
+      secret_configurado: hasSecret,
+      resposta: json,
+    });
+  } catch (err) {
+    console.error('[health/lovable] erro:', err.message, err.lovableUrl, err.lovableStatus);
+    res.status(502).json({
+      ok: false,
+      error: 'lovable_unreachable',
+      message: err.message,
+      base_url: baseUrl,
+      secret_configurado: hasSecret,
+      url_chamada: err.lovableUrl || null,
+      status_recebido: err.lovableStatus || null,
+      corpo_resposta: err.lovableBody || null,
+    });
   }
 });
 

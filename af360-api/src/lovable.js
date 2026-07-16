@@ -27,11 +27,21 @@ function buildUrl(path, params = {}) {
   return url;
 }
 
-async function parseResponse(response) {
-  const json = await response.json().catch(() => null);
+async function parseResponse(response, url) {
+  const rawText = await response.text().catch(() => '');
+  let json = null;
+  try {
+    json = rawText ? JSON.parse(rawText) : null;
+  } catch (e) {
+    json = null;
+  }
   if (!response.ok) {
     const message = json?.message || json?.error || `Lovable API respondeu ${response.status}`;
-    throw new Error(message);
+    const err = new Error(message);
+    err.lovableUrl = url.toString();
+    err.lovableStatus = response.status;
+    err.lovableBody = rawText?.slice(0, 500);
+    throw err;
   }
   return json;
 }
@@ -41,7 +51,7 @@ async function lovableGet(path, params = {}) {
   const response = await fetch(url, {
     headers: { 'x-internal-secret': getSecret() },
   });
-  return parseResponse(response);
+  return parseResponse(response, url);
 }
 
 async function lovablePatch(path, params = {}, body = {}) {
@@ -54,7 +64,7 @@ async function lovablePatch(path, params = {}, body = {}) {
     },
     body: JSON.stringify(body),
   });
-  return parseResponse(response);
+  return parseResponse(response, url);
 }
 
 /**
