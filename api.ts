@@ -204,3 +204,192 @@ export async function fetchRhDashboardResumo(params: {
   const json = await api.get(`/api/rh/dashboard/resumo?${search.toString()}`);
   return json.data as RhDashboardResumo;
 }
+
+export type RhCategoryBreakdown = { label: string; count: number; value: string };
+
+export type RhAdmissoesDetalhe = {
+  total: number;
+  comSalarioInformado: number;
+  custoAdicional: string;
+  salarioMedio: string;
+  aindaAtivos: number;
+  jaDesligados: number;
+  aindaAtivosPct: number;
+  jaDesligadosPct: number;
+  maioresSalarios: Array<{ nome: string; cargo: string; setor: string; admissao: string; salario: string }>;
+  maioresSalariosVazio: string;
+  porCargo: RhCategoryBreakdown[];
+  porSetor: RhCategoryBreakdown[];
+  porEmpresa: RhCategoryBreakdown[];
+  historicoLabels: string[];
+  historicoAdmissoes: number[];
+  historicoCusto: number[];
+};
+
+export type RhDemissoesDetalhe = {
+  total: number;
+  comRescisaoLancada: number;
+  totalRescisoes: string;
+  ticketMedio: string;
+  tempoCasa: string;
+  voluntario: number;
+  voluntarioPct: number;
+  involuntario: number;
+  involuntarioPct: number;
+  maioresValores: Array<{ nome: string; motivo: string; tempoCasa: string; demissao: string; valor: string }>;
+  maioresValoresVazio: string;
+  motivos: Array<{ label: string; count: number; pct: number; valor: string; color: string }>;
+  motivosVazio: string;
+  porCargo: RhCategoryBreakdown[];
+  porSetor: RhCategoryBreakdown[];
+  porEmpresa: RhCategoryBreakdown[];
+  historicoLabels: string[];
+  historicoDemissoes: number[];
+  historicoRescisoes: number[];
+};
+
+export async function fetchRhAdmissoesDetalhe(params: {
+  granularity: 'mes' | 'ano';
+  year: number;
+  month: number;
+}): Promise<RhAdmissoesDetalhe> {
+  const search = new URLSearchParams({
+    granularity: params.granularity,
+    year: String(params.year),
+    month: String(params.month),
+  });
+  const json = await api.get(`/api/rh/dashboard/admissoes?${search.toString()}`);
+  return json.data as RhAdmissoesDetalhe;
+}
+
+export async function fetchRhDemissoesDetalhe(params: {
+  granularity: 'mes' | 'ano';
+  year: number;
+  month: number;
+}): Promise<RhDemissoesDetalhe> {
+  const search = new URLSearchParams({
+    granularity: params.granularity,
+    year: String(params.year),
+    month: String(params.month),
+  });
+  const json = await api.get(`/api/rh/dashboard/demissoes?${search.toString()}`);
+  return json.data as RhDemissoesDetalhe;
+}
+
+// --- RH: Férias (rh_ferias) ---
+
+export type RhFeriasItem = {
+  id: string;
+  nome: string;
+  unidade: string;
+  inicioLabel: string;
+  fimLabel: string;
+  dias: number | null;
+  statusRaw: string;
+  statusLabel: string;
+  statusColor: string;
+  statusTint: string;
+};
+
+export type RhFeriasDetalhe = {
+  stats: { andamento: number; programadas: number; concluidas: number };
+  itens: RhFeriasItem[];
+};
+
+export async function fetchRhFeriasDetalhe(): Promise<RhFeriasDetalhe> {
+  const json = await api.get('/api/rh/dashboard/ferias');
+  return json.data as RhFeriasDetalhe;
+}
+
+// --- RH: Período de Experiência (derivado de rh_colaboradores) ---
+
+export type RhExperienciaItem = {
+  id: string;
+  nome: string;
+  cargo: string;
+  unidade: string;
+  totalDays: number | null;
+  remainingDays: number;
+  dueLabel: string;
+};
+
+export type RhExperienciaDetalhe = {
+  stats: { emExperiencia: number; vencem7d: number; vencem30d: number };
+  itens: RhExperienciaItem[];
+};
+
+export async function fetchRhExperienciaDetalhe(): Promise<RhExperienciaDetalhe> {
+  const json = await api.get('/api/rh/dashboard/experiencia');
+  return json.data as RhExperienciaDetalhe;
+}
+
+// --- RH: Transferências (rh_transferencias) ---
+
+export type RhTransferenciaItem = {
+  id: string;
+  colaboradorNome: string;
+  empresaOrigemNome: string | null;
+  empresaDestinoNome: string | null;
+  setorOrigem: string | null;
+  setorDestino: string | null;
+  cargoOrigem: string | null;
+  cargoDestino: string | null;
+  salarioAnterior: string | null;
+  salarioNovo: string | null;
+  motivo: string | null;
+  observacao: string | null;
+  status: string | null;
+  statusLabel: string;
+  statusColor: string;
+  statusTint: string;
+  vigenciaLabel: string;
+};
+
+export type RhStatusCount = {
+  status: string | null;
+  label: string;
+  color: string;
+  tint: string;
+  count: number;
+};
+
+export type RhTransferenciasDetalhe = {
+  items: RhTransferenciaItem[];
+  total: number;
+  statusSummary: RhStatusCount[];
+};
+
+export async function fetchRhTransferenciasDetalhe(): Promise<RhTransferenciasDetalhe> {
+  const json = await api.get('/api/rh/dashboard/transferencias');
+  return json.data as RhTransferenciasDetalhe;
+}
+
+// --- RH: Folha de Pagamento (rh_folha_competencias) ---
+
+export type RhFolhaCompetencia = {
+  id: string;
+  ano: number;
+  mes: number;
+  label: string;
+  status: string | null;
+  statusLabel: string;
+  statusColor: string;
+  statusTint: string;
+  totalColaboradores: number | null;
+  totalBruto: string | null;
+  totalLiquido: string | null;
+  totalFgts: string | null;
+  dataPagamentoLabel: string | null;
+  dataPrevistaPagamentoLabel: string | null;
+  observacao: string | null;
+};
+
+export type RhFolhaDetalhe = {
+  items: RhFolhaCompetencia[];
+  total: number;
+};
+
+export async function fetchRhFolhaDetalhe(): Promise<RhFolhaDetalhe> {
+  const json = await api.get('/api/rh/dashboard/folha');
+  return json.data as RhFolhaDetalhe;
+}

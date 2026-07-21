@@ -202,3 +202,73 @@ curl -s -H "x-internal-secret: $SECRET" \
 ```
 
 Deve retornar `{ "total": ..., "by_status": {...} }`.
+
+---
+
+## 6. Tabelas liberadas v2 (confirmadas 21/07/2026 — 27 tabelas novas)
+
+Documentação recebida do time Lovable para o próximo lote de telas (Comunicados,
+Solicitações, Metas, Ponto, Notificações, Importações, Papéis/permissões,
+Recursos operacionais). Publicado e liberado no allowlist do
+`GET /api/public/internal/table`. Ainda **não wireado** no app/backend — usar
+esta seção como referência ao implementar cada tela.
+
+### 6.1 Comunicados internos
+
+**`rh_comunicados`** — `titulo, conteudo (html/md), publico (enum rh_comunicado_publico: todos|empresa|grupo|colaborador), empresa_id, grupo_id, colaborador_id, publicar_em, expira_em, anexo_url` (+ padrão: id, created_at, updated_at, created_by)
+
+**`rh_comunicado_leituras`** — `comunicado_id, colaborador_id, lido_em`. Não-lidos = comunicados ativos − leituras do colaborador.
+
+### 6.2 Solicitações / tickets de RH
+
+**`rh_solicitacoes`** — `protocolo (ex: SOL-2026-0001), colaborador_id, setor (enum rh_solicitacao_setor: rh|dp|documentos|outros), assunto (enum rh_solicitacao_assunto, 14 valores — ver abaixo), titulo, mensagem, status (enum rh_solicitacao_status: aberta|em_analise|respondida|encerrada|cancelada), atribuido_a (FK profiles.id), respondido_em, encerrado_em`
+
+`assunto`: `rh_ferias, rh_beneficios, rh_atestado, rh_turno, rh_reclamacao, rh_outros, dp_holerite, dp_vt, dp_vr, dp_adiantamento, dp_rescisao, dp_outros, doc_atestado, doc_residencia, doc_rgcpf, doc_ctps, doc_diploma, doc_outros, out_sugestao, out_elogio, out_reclamacao, out_duvida`
+
+**`rh_solicitacao_mensagens`** — `solicitacao_id, autor_profile_id, mensagem, e_interna (bool — true = nota interna, não aparece pro colaborador)`
+
+**`rh_solicitacao_anexos`** — `solicitacao_id, nome_arquivo, storage_path, mime_type, tamanho_bytes`
+
+### 6.3 Metas de RH
+
+**`rh_metas`** — `colaborador_id, titulo, descricao, periodo_inicio (date), periodo_fim (date), meta_alvo (numeric), resultado (numeric), status (enum rh_meta_status: aberta|atingida|nao_atingida|cancelada), avaliacao`
+
+### 6.4 Ponto / presença
+
+**`rh_ponto_apuracao`** — agregado mensal (não há batidas individuais no banco): `competencia_id (FK rh_folha_competencias.id), colaborador_id, horas_trabalhadas, he_50, he_100, faltas_dias, dsr_perdido_dias, adicional_noturno_horas, observacao`
+
+### 6.5 Notificações
+
+**`<modulo>_notificacoes`** (rotinas; módulos: rh_, fin_, gst_, adm_, admin_, colab_, marketing_, diretoria_, rs_) — `nome, titulo, mensagem ({{variaveis}}), template_id (FK notif_templates.id), tipo_gatilho (enum notif_gatilho: recorrente|evento|manual), cron_expressao, evento_codigo, canais (text[]: app/email/whatsapp), publico_tipo (enum notif_publico: todos|colaboradores|postos|cargos), publico_ids (text[]), status (enum notif_status: rascunho|agendada|enviando|enviada|falha), ativa (bool), agendada_para, enviada_em, ultima_execucao, proxima_execucao, total_destinos, total_enviados`
+
+**`notif_templates`** — `modulo, codigo (slug único por módulo), nome, titulo, mensagem, variaveis (text[]), padrao (bool — template do sistema), ativo`
+
+**`notif_inbox`** — caixa do colaborador: `colaborador_id, modulo, notificacao_id, titulo, mensagem, lido_em (null = não lido)`. Não lidas: `where colaborador_id=? and lido_em is null`.
+
+**`notif_entregas`** — log de envio: `modulo, notificacao_id, colaborador_id, canal (enum notif_canal: app|email|whatsapp), status (enviado|falha|pendente), destino, erro, enviada_em`
+
+### 6.6 Histórico de importações
+
+**`rh_import_jobs`** (CSV/lote) — `status (queued|running|done|error), dry_run, rows (jsonb), total_count, processed_count, totals (jsonb: {criados,atualizados,erros}), results (jsonb), error, started_at, finished_at, created_by`
+
+**`rh_pdf_imports`** (holerites/termos PDF) — `arquivo_path, arquivo_nome, arquivo_mime, arquivo_tamanho, tipo (enum rh_pdf_import_tipo: admissao|desligamento|experiencia|outro), status (enum rh_pdf_import_status: pendente|processando|pronto|aplicado|erro), extracao_json (jsonb), modelo_ia, confianca (0-1), cpf_extraido, nome_extraido, colaborador_id, erro, aplicado_em, aplicado_por, resultado_aplicacao (jsonb)`
+
+### 6.7 Papéis e permissões
+
+**`roles`** — `name, slug, group_type (interno/colaborador/etc.), default_modules (text[]), is_active`. `profiles.role_id → roles.id`.
+
+**`role_permissions`** — `role_id (FK roles.id), feature_id (FK module_features.id), can_read, can_write, can_edit, can_delete (bool, default false)`
+
+**`user_permissions`** (override por usuário, sobrepõe role_permissions) — `user_id (FK profiles.id), feature_id (FK module_features.id), can_read, can_write, can_edit, can_delete`
+
+**`user_modules`** (módulos extras além da role) — `user_id (FK profiles.id), module_id (FK modules.id)`
+
+Resolução efetiva: `user_permissions` (se existir p/ user+feature) vence → senão `role_permissions` da `profiles.role_id`. Módulos visíveis = `roles.default_modules ∪ user_modules` do usuário.
+
+### 6.8 Recursos operacionais (uniformes/equipamentos) — resumo, detalhar depois
+
+Tabelas: `rh_op_categorias, rh_op_itens, rh_op_item_tamanhos, rh_op_kit_cargo, rh_op_pedidos, rh_op_pedido_itens, rh_op_entregas, rh_op_movimentacoes, rh_op_cobrancas, rh_op_termos`.
+
+Fluxo: `rh_op_pedidos (tipo: admissao|reposicao|desligamento, status: pendente_ciencia|em_aprovacao|aguardando_gerente|aguardando_gestao|aprovado|pendente_entrega|entregue|recusado|cancelado)` → `rh_op_pedido_itens (item, tamanho, qtd, estado_devolucao: pendente|ok|danificado|nao_devolveu)` → `rh_op_entregas` (entrega física) / `rh_op_movimentacoes (tipo: entrada|saida|ajuste|devolucao)` (estoque) / `rh_op_cobrancas (status: pendente|lancada|cancelada)` (desconto em folha).
+
+Pedir documentação coluna-a-coluna dessas 10 tabelas quando entrarem no roadmap.

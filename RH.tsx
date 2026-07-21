@@ -42,10 +42,22 @@ import {
   fetchRhStats,
   fetchRhTurnover,
   fetchRhDashboardResumo,
+  fetchRhAdmissoesDetalhe,
+  fetchRhDemissoesDetalhe,
+  fetchRhTransferenciasDetalhe,
+  fetchRhFolhaDetalhe,
+  fetchRhFeriasDetalhe,
+  fetchRhExperienciaDetalhe,
   type RhColaboradorRaw,
   type RhStats,
   type RhTurnoverData,
   type RhDashboardResumo,
+  type RhAdmissoesDetalhe,
+  type RhDemissoesDetalhe,
+  type RhTransferenciasDetalhe,
+  type RhFolhaDetalhe,
+  type RhFeriasDetalhe,
+  type RhExperienciaDetalhe,
 } from './api';
 
 // ---------- Types ----------
@@ -70,15 +82,6 @@ export type Employee = {
 };
 
 type TransferStatus = 'pendente' | 'aprovada' | 'efetivada';
-
-type TransferItem = {
-  id: string;
-  employeeName: string;
-  fromUnit: string;
-  toUnit: string;
-  status: TransferStatus;
-  requestedAtLabel: string;
-};
 
 type AnnouncementCategory = 'RH' | 'SST' | 'DP';
 
@@ -364,7 +367,9 @@ const rhPromocaoMotivos: string[] = ['Promoção', 'Reajuste salarial', 'Mérito
 
 const rhRateioOptions: string[] = ['Proporcional (dias)', 'Integral no mês', 'Próximo mês'];
 
-const rhTransfers: TransferItem[] = [];
+// A tela de Transferências (RHTransferenciasScreen) agora busca dados reais
+// via fetchRhTransferenciasDetalhe (rh_transferencias) — o mock antigo
+// (lista fixa vazia) foi removido.
 
 const rhAnnouncementMeta: Record<AnnouncementCategory, { color: string; tint: string }> = {
   RH: { color: '#3457D5', tint: '#E9EEFF' },
@@ -1160,147 +1165,9 @@ function RHCategoryBarList({
 }
 
 // ---------- Dashboard detail data ----------
-// Turnover agora é real (fetchRhTurnover, calculado no af360-api a partir de
-// rh_colaboradores + empresas.regiao) — os mocks antigos foram removidos.
-
-const rhAdmissoesDetailMes = {
-  total: 0,
-  comSalarioInformado: 0,
-  custoAdicional: 'R$ 0',
-  salarioMedio: 'R$ 0',
-  aindaAtivos: 0,
-  jaDesligados: 0,
-  aindaAtivosPct: 0,
-  jaDesligadosPct: 0,
-  maioresSalarios: [] as Array<{ nome: string; cargo: string; setor: string; admissao: string; salario: string }>,
-  maioresSalariosVazio: 'Nenhuma admissão com salário lançado no período.',
-  porCargo: [] as Array<{ label: string; count: number; value: string }>,
-  porSetor: [] as Array<{ label: string; count: number; value: string }>,
-  porEmpresa: [] as Array<{ label: string; count: number; value: string }>,
-  historicoLabels: ['Ago', 'Set', 'Out', 'Nov', 'Dez', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul'],
-  historicoAdmissoes: [40, 44, 57, 34, 15, 32, 50, 41, 35, 55, 44, 0],
-  historicoCusto: [16000, 14000, 22000, 13000, 2000, 15000, 30000, 20000, 19000, 56000, 30000, 0],
-};
-
-const rhAdmissoesDetailAno = {
-  total: 40,
-  comSalarioInformado: 18,
-  custoAdicional: 'R$ 29.367',
-  salarioMedio: 'R$ 1.632',
-  aindaAtivos: 17,
-  jaDesligados: 23,
-  aindaAtivosPct: 43,
-  jaDesligadosPct: 57,
-  maioresSalarios: [
-    { nome: 'Rodrigo Moreira Lima', cargo: 'Sub Gerente de Posto', setor: 'Funcionario', admissao: '26/08', salario: 'R$ 2.088,49' },
-    { nome: 'Fernanda Silva Soares', cargo: 'Subgerente', setor: 'Geral', admissao: '01/08', salario: 'R$ 2.067,40' },
-    { nome: 'Eduardo Silva do Nascimento', cargo: 'Frentista', setor: 'Unico', admissao: '28/08', salario: 'R$ 1.668,17' },
-    { nome: 'Ronald Caetano Souza Marques da Silva', cargo: 'Frentista', setor: 'Unico', admissao: '18/08', salario: 'R$ 1.668,17' },
-    { nome: 'Humberto Oliveira de Paula', cargo: 'Frentista', setor: 'Funcionario', admissao: '01/08', salario: 'R$ 1.647,48' },
-    { nome: 'Ericris Barreto Ferreira', cargo: 'Frentista', setor: 'Funcionarios', admissao: '22/08', salario: 'R$ 1.622,63' },
-    { nome: 'Paulo Mauricio Francisco Protazio', cargo: 'Frentista', setor: 'Funcionário', admissao: '16/08', salario: 'R$ 1.621,00' },
-    { nome: 'Cassio Heredia dos Santos da Silva', cargo: 'Frentista', setor: 'Geral', admissao: '08/08', salario: 'R$ 1.621,00' },
-    { nome: 'Evaldo Jose Nunes', cargo: 'Frentista', setor: 'Geral', admissao: '04/08', salario: 'R$ 1.621,00' },
-    { nome: 'Gabriel Freitas Silva', cargo: 'Frentista', setor: 'Geral', admissao: '08/08', salario: 'R$ 1.621,00' },
-  ],
-  maioresSalariosVazio: 'Nenhuma admissão com salário lançado no período.',
-  porCargo: [
-    { label: 'Sem cargo', count: 22, value: 'R$ 0' },
-    { label: 'Frentista', count: 14, value: 'R$ 22.816' },
-    { label: 'Atendente', count: 1, value: 'R$ 1.621' },
-    { label: 'Jovem Aprendiz - Frentista', count: 1, value: 'R$ 774' },
-    { label: 'Sub Gerente de Posto', count: 1, value: 'R$ 2.088' },
-    { label: 'Subgerente', count: 1, value: 'R$ 2.067' },
-  ],
-  porSetor: [
-    { label: 'Sem setor', count: 23, value: 'R$ 1.621' },
-    { label: 'Geral', count: 8, value: 'R$ 12.567' },
-    { label: 'Departamento Geral', count: 2, value: 'R$ 3.242' },
-    { label: 'Funcionarios', count: 2, value: 'R$ 3.244' },
-    { label: 'Funcionario', count: 2, value: 'R$ 3.736' },
-    { label: 'Unico', count: 2, value: 'R$ 3.336' },
-  ],
-  porEmpresa: [
-    { label: 'Auto Posto do Trabalho Sa...', count: 5, value: 'R$ 5.309' },
-    { label: 'Frosinone Posto de GNV Ltda', count: 4, value: 'R$ 3.242' },
-    { label: 'Posto Boa Viagem Ltda', count: 3, value: 'R$ 3.336' },
-    { label: 'Chacrinha Posto de Serviç...', count: 3, value: 'R$ 2.088' },
-    { label: 'Auto Posto do Trabalho Sao...', count: 3, value: 'R$ 774' },
-    { label: 'Auto Posto Mem de Sá Ltda', count: 2, value: 'R$ 1.621' },
-  ],
-  historicoLabels: ['Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez', 'Jan'],
-  historicoAdmissoes: [63, 62, 68, 49, 59, 67, 40, 42, 58, 34, 15, 36],
-  historicoCusto: [46000, 45000, 50000, 36000, 43000, 49000, 29000, 31000, 42000, 25000, 11000, 26000],
-};
-
-const rhDemissoesDetailMes = {
-  total: 0,
-  comRescisaoLancada: 0,
-  totalRescisoes: 'R$ 0',
-  ticketMedio: 'R$ 0',
-  tempoCasa: '0,0',
-  voluntario: 0,
-  voluntarioPct: 0,
-  involuntario: 0,
-  involuntarioPct: 0,
-  maioresValores: [] as Array<{ nome: string; motivo: string; tempoCasa: string; demissao: string; valor: string }>,
-  maioresValoresVazio: 'Nenhuma demissão com rescisão lançada no período.',
-  motivos: [] as Array<{ label: string; count: number; pct: number; valor: string; color: string }>,
-  motivosVazio: 'Sem desligamentos no período.',
-  porCargo: [] as Array<{ label: string; count: number; value: string }>,
-  porSetor: [] as Array<{ label: string; count: number; value: string }>,
-  porEmpresa: [] as Array<{ label: string; count: number; value: string }>,
-  historicoLabels: ['Ago', 'Set', 'Out', 'Nov', 'Dez', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul'],
-  historicoDemissoes: [18, 20, 25, 22, 30, 28, 24, 20, 15, 10, 6, 0],
-  historicoRescisoes: [40000, 42000, 50000, 45000, 60000, 55000, 48000, 40000, 30000, 20000, 10000, 0],
-};
-
-const rhDemissoesDetailAno = {
-  total: 47,
-  comRescisaoLancada: 39,
-  totalRescisoes: 'R$ 114.244',
-  ticketMedio: 'R$ 2.929',
-  tempoCasa: '1,1',
-  voluntario: 5,
-  voluntarioPct: 11,
-  involuntario: 42,
-  involuntarioPct: 89,
-  maioresValores: [
-    { nome: 'Marcos Jonathan Santos Damasceno', motivo: 'Sem justa causa', tempoCasa: '2.5a', demissao: '13/08', valor: 'R$ 8.911,44' },
-    { nome: 'Andre Guilherme Gomes Pinto', motivo: 'Sem justa causa', tempoCasa: '2.5a', demissao: '31/08', valor: 'R$ 7.730,33' },
-    { nome: 'Carlos Moreira Reis', motivo: 'Sem justa causa', tempoCasa: '2.0a', demissao: '13/08', valor: 'R$ 7.570,66' },
-    { nome: 'Anderson Gomes', motivo: 'Sem justa causa', tempoCasa: '4.6a', demissao: '11/08', valor: 'R$ 6.888,66' },
-    { nome: 'Nata Lopes de Oliveira', motivo: 'Sem justa causa', tempoCasa: '2.2a', demissao: '31/08', valor: 'R$ 6.475,00' },
-    { nome: 'Yuri de Souza Santana', motivo: 'Sem justa causa', tempoCasa: '2.3a', demissao: '18/08', valor: 'R$ 6.228,04' },
-    { nome: 'Aldemir de Castro Moreira', motivo: 'Sem justa causa', tempoCasa: '4.9a', demissao: '01/08', valor: 'R$ 4.569,92' },
-    { nome: 'Antonny Marcello Carvalho de Mello', motivo: 'Justa causa', tempoCasa: '1.1a', demissao: '20/08', valor: 'R$ 4.197,72' },
-    { nome: 'Diego de Souza Adriao', motivo: 'Justa causa', tempoCasa: '5.1a', demissao: '22/08', valor: 'R$ 3.953,93' },
-    { nome: 'Gabriel Luiz de Carvalho', motivo: 'Sem justa causa', tempoCasa: '1.9a', demissao: '30/08', valor: 'R$ 3.854,17' },
-  ],
-  maioresValoresVazio: 'Nenhuma demissão com rescisão lançada no período.',
-  motivos: [
-    { label: 'Sem justa causa', count: 21, pct: 44.7, valor: 'R$ 73.713', color: '#E6213D' },
-    { label: 'Fim do contrato de experiência', count: 14, pct: 29.8, valor: 'R$ 22.898', color: '#D79A22' },
-    { label: 'Justa causa', count: 7, pct: 14.9, valor: 'R$ 12.523', color: '#18955A' },
-    { label: 'Pedido de demissão', count: 5, pct: 10.6, valor: 'R$ 5.111', color: '#3457D5' },
-  ],
-  motivosVazio: 'Sem desligamentos no período.',
-  porCargo: [{ label: 'Sem cargo', count: 47, value: 'R$ 114.244' }],
-  porSetor: [{ label: 'Sem setor', count: 47, value: 'R$ 114.244' }],
-  porEmpresa: [
-    { label: 'Auto Posto do Trabalho S...', count: 5, value: 'R$ 15.546' },
-    { label: 'Posto Boa Viagem Ltda', count: 3, value: 'R$ 4.997' },
-    { label: 'Mega Nova Iguaçu Posto De...', count: 3, value: 'R$ 3.791' },
-    { label: 'Auto Posto do Trabalho S... (2)', count: 3, value: 'R$ 11.378' },
-    { label: 'Posto Super Brasil Ltda', count: 3, value: 'R$ 4.128' },
-    { label: 'Vicente Souza e Cia Ltda', count: 3, value: 'R$ 635' },
-    { label: 'Nossa Senhora da Penha L...', count: 2, value: 'R$ 16.482' },
-    { label: 'Auto Posto Manilha Mage L...', count: 2, value: 'R$ 7.775' },
-  ],
-  historicoLabels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
-  historicoDemissoes: [55, 58, 60, 50, 45, 40, 42, 47, 18, 20, 22, 25],
-  historicoRescisoes: [110000, 113000, 115974, 100000, 90000, 85000, 95000, 114244, 40000, 42000, 45000, 50000],
-};
+// Turnover, Admissões e Demissões agora são reais (fetchRhTurnover/
+// fetchRhAdmissoesDetalhe/fetchRhDemissoesDetalhe, calculados no af360-api
+// a partir de rh_colaboradores + empresas) — os mocks antigos foram removidos.
 
 function TurnoverDetailModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const filter = useRHPeriodFilter();
@@ -1464,8 +1331,56 @@ function TurnoverDetailModal({ visible, onClose }: { visible: boolean; onClose: 
 
 function AdmissoesDetailModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const filter = useRHPeriodFilter();
-  const data = filter.granularity === 'ano' ? rhAdmissoesDetailAno : rhAdmissoesDetailMes;
+  const [data, setData] = useState<RhAdmissoesDetalhe | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedAdmissoesHistIndex, setSelectedAdmissoesHistIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    let isMounted = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhAdmissoesDetalhe({ granularity: filter.granularity, year: filter.year, month: filter.month })
+      .then((result) => {
+        if (isMounted) setData(result);
+      })
+      .catch((err) => {
+        if (isMounted) setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar admissões.');
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [visible, filter.granularity, filter.year, filter.month]);
+
+  if (!data) {
+    return (
+      <RHDetailModal
+        visible={visible}
+        icon="user-plus"
+        iconColor="#18955A"
+        title="Admissões — Detalhamento"
+        onClose={onClose}
+        periodFilter={
+          <RHPeriodFilterBar
+            granularity={filter.granularity}
+            onChangeGranularity={filter.setGranularity}
+            label={filter.label}
+            onPrev={filter.handlePrev}
+            onNext={filter.handleNext}
+            onReset={filter.handleReset}
+          />
+        }
+      >
+        <Text style={rhStyles.detailNoteText}>
+          {isLoading ? 'Carregando admissões...' : errorMessage ?? 'Sem dados.'}
+        </Text>
+      </RHDetailModal>
+    );
+  }
 
   return (
     <RHDetailModal
@@ -1594,8 +1509,56 @@ function AdmissoesDetailModal({ visible, onClose }: { visible: boolean; onClose:
 
 function DemissoesDetailModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const filter = useRHPeriodFilter();
-  const data = filter.granularity === 'ano' ? rhDemissoesDetailAno : rhDemissoesDetailMes;
+  const [data, setData] = useState<RhDemissoesDetalhe | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedDemissoesHistIndex, setSelectedDemissoesHistIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    let isMounted = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhDemissoesDetalhe({ granularity: filter.granularity, year: filter.year, month: filter.month })
+      .then((result) => {
+        if (isMounted) setData(result);
+      })
+      .catch((err) => {
+        if (isMounted) setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar demissões.');
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [visible, filter.granularity, filter.year, filter.month]);
+
+  if (!data) {
+    return (
+      <RHDetailModal
+        visible={visible}
+        icon="user-x"
+        iconColor="#E6213D"
+        title="Demissões — Detalhamento"
+        onClose={onClose}
+        periodFilter={
+          <RHPeriodFilterBar
+            granularity={filter.granularity}
+            onChangeGranularity={filter.setGranularity}
+            label={filter.label}
+            onPrev={filter.handlePrev}
+            onNext={filter.handleNext}
+            onReset={filter.handleReset}
+          />
+        }
+      >
+        <Text style={rhStyles.detailNoteText}>
+          {isLoading ? 'Carregando demissões...' : errorMessage ?? 'Sem dados.'}
+        </Text>
+      </RHDetailModal>
+    );
+  }
 
   return (
     <RHDetailModal
@@ -5426,9 +5389,30 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
 // ---------- Transferências ----------
 
 export function RHTransferenciasScreen({ navigation }: ScreenProps<'RHTransferencias'>) {
-  const pendentes = rhTransfers.filter((item) => item.status === 'pendente').length;
-  const aprovadas = rhTransfers.filter((item) => item.status === 'aprovada').length;
-  const efetivadas = rhTransfers.filter((item) => item.status === 'efetivada').length;
+  const [data, setData] = useState<RhTransferenciasDetalhe | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhTransferenciasDetalhe()
+      .then((result) => {
+        if (isMounted) setData(result);
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as transferências.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -5444,36 +5428,64 @@ export function RHTransferenciasScreen({ navigation }: ScreenProps<'RHTransferen
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <RHPageHeader icon="repeat" title="Transferências" subtitle="Movimentação entre unidades" />
 
-        <View style={rhStyles.tripleStatRow}>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueGold]}>{pendentes}</Text>
-            <Text style={rhStyles.tripleStatLabel}>Pendentes</Text>
-          </View>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueBlue]}>{aprovadas}</Text>
-            <Text style={rhStyles.tripleStatLabel}>Aprovadas</Text>
-          </View>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueGreen]}>{efetivadas}</Text>
-            <Text style={rhStyles.tripleStatLabel}>Efetivadas</Text>
-          </View>
-        </View>
-
-        {rhTransfers.length === 0 ? (
+        {!data ? (
           <View style={styles.processEmptyCard}>
-            <Text style={styles.processEmptyText}>Nenhuma transferência registrada.</Text>
+            <Text style={styles.processEmptyText}>
+              {isLoading ? 'Carregando transferências...' : errorMessage ?? 'Sem dados.'}
+            </Text>
           </View>
         ) : (
-          rhTransfers.map((item) => (
-            <View key={item.id} style={rhStyles.employeeCard}>
-              <View style={rhStyles.employeeInfo}>
-                <Text style={rhStyles.employeeName}>{item.employeeName}</Text>
-                <Text style={rhStyles.employeeRoleUnit}>
-                  {item.fromUnit} → {item.toUnit}
-                </Text>
+          <>
+            {data.statusSummary.length > 0 ? (
+              <View style={rhStyles.tripleStatRow}>
+                {data.statusSummary.map((status) => (
+                  <View key={status.status ?? 'sem_status'} style={rhStyles.tripleStatCard}>
+                    <Text style={[rhStyles.tripleStatValue, { color: status.color }]}>{status.count}</Text>
+                    <Text style={rhStyles.tripleStatLabel}>{status.label}</Text>
+                  </View>
+                ))}
               </View>
-            </View>
-          ))
+            ) : null}
+
+            {data.items.length === 0 ? (
+              <View style={styles.processEmptyCard}>
+                <Text style={styles.processEmptyText}>Nenhuma transferência registrada.</Text>
+              </View>
+            ) : (
+              data.items.map((item) => (
+                <View key={item.id} style={rhStyles.historyCard}>
+                  <View style={rhStyles.docCardTopRow}>
+                    <Text style={rhStyles.historyCardTitle} numberOfLines={2}>
+                      {item.colaboradorNome}
+                    </Text>
+                    <View style={[rhStyles.employeeStatusPill, { backgroundColor: item.statusTint }]}>
+                      <Text style={[rhStyles.employeeStatusText, { color: item.statusColor }]}>
+                        {item.statusLabel}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={rhStyles.historyCardMeta}>
+                    {item.empresaOrigemNome || item.setorOrigem || 'Origem não informada'} →{' '}
+                    {item.empresaDestinoNome || item.setorDestino || 'Destino não informado'}
+                  </Text>
+                  {item.cargoOrigem || item.cargoDestino ? (
+                    <Text style={rhStyles.historyCardMeta}>
+                      Cargo: {item.cargoOrigem ?? '—'} → {item.cargoDestino ?? '—'}
+                    </Text>
+                  ) : null}
+                  {item.salarioAnterior || item.salarioNovo ? (
+                    <Text style={rhStyles.historyCardMeta}>
+                      Salário: {item.salarioAnterior ?? '—'} → {item.salarioNovo ?? '—'}
+                    </Text>
+                  ) : null}
+                  <Text style={rhStyles.historyCardMeta}>
+                    Vigência: {item.vigenciaLabel}
+                    {item.motivo ? ` · Motivo: ${item.motivo}` : ''}
+                  </Text>
+                </View>
+              ))
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -6335,34 +6347,35 @@ export function RHPontoScreen({ navigation }: ScreenProps<'RHPonto'>) {
 }
 
 // ---------- Férias ----------
-
-type VacationStatus = 'andamento' | 'programada' | 'concluida';
-type VacationItem = {
-  id: string;
-  name: string;
-  unit: string;
-  startLabel: string;
-  endLabel: string;
-  days: number;
-  status: VacationStatus;
-};
-
-const rhVacationStatusMeta: Record<VacationStatus, { label: string; color: string; tint: string }> = {
-  andamento: { label: 'Em andamento', color: '#18955A', tint: '#E3F5EA' },
-  programada: { label: 'Programada', color: '#3457D5', tint: '#E9EEFF' },
-  concluida: { label: 'Concluída', color: '#7C8397', tint: '#F1F2F7' },
-};
-
-const rhVacationStats = { andamento: 6, programadas: 23, concluidas: 88 };
-
-const rhVacations: VacationItem[] = [
-  { id: 'v-1', name: 'Carlos Dias', unit: 'Posto Geriba', startLabel: '01/07', endLabel: '30/07/2026', days: 30, status: 'andamento' },
-  { id: 'v-2', name: 'Ana Souza', unit: 'Posto Monalisa', startLabel: '15/07', endLabel: '29/07/2026', days: 15, status: 'programada' },
-  { id: 'v-3', name: 'Pedro Lima', unit: 'Petromasa Irajá', startLabel: '01/08', endLabel: '20/08/2026', days: 20, status: 'programada' },
-  { id: 'v-4', name: 'Marina Reis', unit: 'Posto SG', startLabel: '10/06', endLabel: '09/07/2026', days: 30, status: 'concluida' },
-];
+// Dados reais vêm de fetchRhFeriasDetalhe (rh_ferias + rh_colaboradores,
+// calculados no af360-api) — o mock antigo foi removido.
 
 export function RHFeriasScreen({ navigation }: ScreenProps<'RHFerias'>) {
+  const [data, setData] = useState<RhFeriasDetalhe | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhFeriasDetalhe()
+      .then((result) => {
+        if (isMounted) setData(result);
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as férias.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -6379,15 +6392,19 @@ export function RHFeriasScreen({ navigation }: ScreenProps<'RHFerias'>) {
 
         <View style={rhStyles.tripleStatRow}>
           <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueGreen]}>{rhVacationStats.andamento}</Text>
+            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueGreen]}>
+              {data ? data.stats.andamento : '—'}
+            </Text>
             <Text style={rhStyles.tripleStatLabel}>Em andamento</Text>
           </View>
           <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueBlue]}>{rhVacationStats.programadas}</Text>
+            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueBlue]}>
+              {data ? data.stats.programadas : '—'}
+            </Text>
             <Text style={rhStyles.tripleStatLabel}>Programadas</Text>
           </View>
           <View style={rhStyles.tripleStatCard}>
-            <Text style={rhStyles.tripleStatValue}>{rhVacationStats.concluidas}</Text>
+            <Text style={rhStyles.tripleStatValue}>{data ? data.stats.concluidas : '—'}</Text>
             <Text style={rhStyles.tripleStatLabel}>Concluídas</Text>
           </View>
         </View>
@@ -6400,47 +6417,43 @@ export function RHFeriasScreen({ navigation }: ScreenProps<'RHFerias'>) {
           <Text style={styles.primaryButtonText}>Lançar férias</Text>
         </Pressable>
 
-        {rhVacations.map((item) => {
-          const meta = rhVacationStatusMeta[item.status];
-          return (
+        {isLoading ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Carregando férias...</Text>
+          </View>
+        ) : errorMessage ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>{errorMessage}</Text>
+          </View>
+        ) : !data || data.itens.length === 0 ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Nenhuma férias lançada.</Text>
+          </View>
+        ) : (
+          data.itens.map((item) => (
             <View key={item.id} style={rhStyles.announcementCard}>
               <View style={rhStyles.announcementTopRow}>
-                <Text style={rhStyles.employeeName}>{item.name}</Text>
-                <View style={[rhStyles.employeeStatusPill, { backgroundColor: meta.tint }]}>
-                  <Text style={[rhStyles.employeeStatusText, { color: meta.color }]}>{meta.label}</Text>
+                <Text style={rhStyles.employeeName}>{item.nome}</Text>
+                <View style={[rhStyles.employeeStatusPill, { backgroundColor: item.statusTint }]}>
+                  <Text style={[rhStyles.employeeStatusText, { color: item.statusColor }]}>{item.statusLabel}</Text>
                 </View>
               </View>
               <Text style={rhStyles.employeeRoleUnit}>
-                {item.startLabel} a {item.endLabel} · {item.days} dias
+                {item.inicioLabel} a {item.fimLabel} · {item.dias !== null ? `${item.dias} dias` : '— dias'}
               </Text>
-              <Text style={rhStyles.employeeMeta}>{item.unit}</Text>
+              <Text style={rhStyles.employeeMeta}>{item.unidade}</Text>
             </View>
-          );
-        })}
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 // ---------- Período de Experiência ----------
-
-type ExperienceItem = {
-  id: string;
-  name: string;
-  roleUnit: string;
-  totalDays: number;
-  remainingDays: number;
-  dueLabel: string;
-};
-
-const rhExperienceStats = { emExperiencia: 42, vencem7d: 7, vencem30d: 18 };
-
-const rhExperienceItems: ExperienceItem[] = [
-  { id: 'exp-1', name: 'Bruno Alves', roleUnit: 'Frentista · Posto Monalisa', totalDays: 45, remainingDays: 5, dueLabel: '08/07' },
-  { id: 'exp-2', name: 'Camila Rocha', roleUnit: 'Atendente de Loja · Posto Geriba', totalDays: 90, remainingDays: 19, dueLabel: '22/07' },
-  { id: 'exp-3', name: 'Diego Nunes', roleUnit: 'Frentista caixa · Posto Vianense', totalDays: 45, remainingDays: 30, dueLabel: '02/08' },
-  { id: 'exp-4', name: 'Elaine Souza', roleUnit: 'Sub-gerente · Petromasa Irajá', totalDays: 90, remainingDays: 48, dueLabel: '20/08' },
-];
+// Não existe tabela própria: derivado de rh_colaboradores.vencimento_experiencia
+// + status = 'ativo' (fetchRhExperienciaDetalhe, calculado no af360-api).
+// O mock antigo foi removido.
 
 function getExperienceTone(remainingDays: number) {
   if (remainingDays <= 7) {
@@ -6453,6 +6466,31 @@ function getExperienceTone(remainingDays: number) {
 }
 
 export function RHExperienciaScreen({ navigation }: ScreenProps<'RHExperiencia'>) {
+  const [data, setData] = useState<RhExperienciaDetalhe | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhExperienciaDetalhe()
+      .then((result) => {
+        if (isMounted) setData(result);
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar o período de experiência.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -6469,73 +6507,102 @@ export function RHExperienciaScreen({ navigation }: ScreenProps<'RHExperiencia'>
 
         <View style={rhStyles.tripleStatRow}>
           <View style={rhStyles.tripleStatCard}>
-            <Text style={rhStyles.tripleStatValue}>{rhExperienceStats.emExperiencia}</Text>
+            <Text style={rhStyles.tripleStatValue}>{data ? data.stats.emExperiencia : '—'}</Text>
             <Text style={rhStyles.tripleStatLabel}>Em experiência</Text>
           </View>
           <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, { color: '#E6213D' }]}>{rhExperienceStats.vencem7d}</Text>
+            <Text style={[rhStyles.tripleStatValue, { color: '#E6213D' }]}>
+              {data ? data.stats.vencem7d : '—'}
+            </Text>
             <Text style={rhStyles.tripleStatLabel}>Vencem em 7d</Text>
           </View>
           <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueGold]}>{rhExperienceStats.vencem30d}</Text>
+            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueGold]}>
+              {data ? data.stats.vencem30d : '—'}
+            </Text>
             <Text style={rhStyles.tripleStatLabel}>Vencem em 30d</Text>
           </View>
         </View>
 
-        {rhExperienceItems.map((item) => {
-          const tone = getExperienceTone(item.remainingDays);
-          const elapsedPct = ((item.totalDays - item.remainingDays) / item.totalDays) * 100;
+        {isLoading ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Carregando período de experiência...</Text>
+          </View>
+        ) : errorMessage ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>{errorMessage}</Text>
+          </View>
+        ) : !data || data.itens.length === 0 ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Nenhum colaborador em período de experiência.</Text>
+          </View>
+        ) : (
+          data.itens.map((item) => {
+            const tone = getExperienceTone(item.remainingDays);
+            const elapsedPct =
+              item.totalDays !== null ? ((item.totalDays - item.remainingDays) / item.totalDays) * 100 : 0;
+            const remainingLabel = item.remainingDays < 0 ? 'Vencido' : `${item.remainingDays} dias`;
 
-          return (
-            <View key={item.id} style={rhStyles.experienceCard}>
-              <View style={rhStyles.announcementTopRow}>
-                <Text style={rhStyles.employeeName}>{item.name}</Text>
-                <View style={[rhStyles.employeeStatusPill, { backgroundColor: tone.pillTint }]}>
-                  <Text style={[rhStyles.employeeStatusText, { color: tone.pillColor }]}>
-                    {item.remainingDays} dias
+            return (
+              <View key={item.id} style={rhStyles.experienceCard}>
+                <View style={rhStyles.announcementTopRow}>
+                  <Text style={rhStyles.employeeName}>{item.nome}</Text>
+                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: tone.pillTint }]}>
+                    <Text style={[rhStyles.employeeStatusText, { color: tone.pillColor }]}>{remainingLabel}</Text>
+                  </View>
+                </View>
+                <Text style={rhStyles.employeeRoleUnit}>
+                  {item.cargo} · {item.unidade}
+                </Text>
+                <View style={rhStyles.experienceProgressRow}>
+                  <Text style={rhStyles.experienceProgressLabel}>
+                    {item.totalDays !== null ? `${item.totalDays} dias` : '— dias'}
                   </Text>
+                  <View style={rhStyles.experienceProgressBarWrap}>
+                    <RHProgressBar pct={elapsedPct} color={tone.barColor} />
+                  </View>
+                  <Text style={rhStyles.experienceProgressLabel}>Vence {item.dueLabel}</Text>
                 </View>
               </View>
-              <Text style={rhStyles.employeeRoleUnit}>{item.roleUnit}</Text>
-              <View style={rhStyles.experienceProgressRow}>
-                <Text style={rhStyles.experienceProgressLabel}>{item.totalDays} dias</Text>
-                <View style={rhStyles.experienceProgressBarWrap}>
-                  <RHProgressBar pct={elapsedPct} color={tone.barColor} />
-                </View>
-                <Text style={rhStyles.experienceProgressLabel}>Vence {item.dueLabel}</Text>
-              </View>
-            </View>
-          );
-        })}
+            );
+          })
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 // ---------- Folha de Pagamento ----------
-
-type PayrollStatus = 'aberta' | 'fechada';
-type PayrollCompetency = {
-  id: string;
-  label: string;
-  status: PayrollStatus;
-  bruto: string;
-  liquido: string;
-  fgts: string;
-};
-
-const rhPayrollStatusMeta: Record<PayrollStatus, { label: string; color: string; tint: string }> = {
-  aberta: { label: 'Aberta', color: '#3457D5', tint: '#E9EEFF' },
-  fechada: { label: 'Fechada', color: '#18955A', tint: '#E3F5EA' },
-};
-
-const rhPayrollCompetencies: PayrollCompetency[] = [
-  { id: 'pay-may', label: 'Maio / 2026', status: 'aberta', bruto: 'R$ 0,00', liquido: 'R$ 0,00', fgts: 'R$ 0,00' },
-  { id: 'pay-apr', label: 'Abril / 2026', status: 'fechada', bruto: 'R$ 1.812.400', liquido: 'R$ 1.402.118', fgts: 'R$ 145.192' },
-  { id: 'pay-mar', label: 'Março / 2026', status: 'fechada', bruto: 'R$ 1.798.230', liquido: 'R$ 1.390.552', fgts: 'R$ 143.858' },
-];
+// Competências (rh_folha_competencias) agora vêm de fetchRhFolhaDetalhe —
+// cada item já traz status/cor calculados no af360-api (folhaStatusMeta),
+// então não precisamos mais de um mapa estático de status aqui.
 
 export function RHFolhaPagamentoScreen({ navigation }: ScreenProps<'RHFolhaPagamento'>) {
+  const [data, setData] = useState<RhFolhaDetalhe | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhFolhaDetalhe()
+      .then((result) => {
+        if (isMounted) setData(result);
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar a folha de pagamento.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -6561,30 +6628,47 @@ export function RHFolhaPagamentoScreen({ navigation }: ScreenProps<'RHFolhaPagam
           Crie a competência do mês e calcule a folha. INSS/IRRF conforme tabela 2026.
         </Text>
 
-        {rhPayrollCompetencies.map((item) => {
-          const meta = rhPayrollStatusMeta[item.status];
-          return (
+        {!data ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>
+              {isLoading ? 'Carregando folha de pagamento...' : errorMessage ?? 'Sem dados.'}
+            </Text>
+          </View>
+        ) : data.items.length === 0 ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Nenhuma competência de folha cadastrada.</Text>
+          </View>
+        ) : (
+          data.items.map((item) => (
             <View key={item.id} style={rhStyles.sectionCard}>
               <View style={rhStyles.announcementTopRow}>
                 <Text style={rhStyles.employeeName}>{item.label}</Text>
-                <View style={[rhStyles.employeeStatusPill, { backgroundColor: meta.tint }]}>
-                  <Text style={[rhStyles.employeeStatusText, { color: meta.color }]}>{meta.label}</Text>
+                <View style={[rhStyles.employeeStatusPill, { backgroundColor: item.statusTint }]}>
+                  <Text style={[rhStyles.employeeStatusText, { color: item.statusColor }]}>{item.statusLabel}</Text>
                 </View>
               </View>
               <View style={rhStyles.payrollStatsRow}>
                 <View style={rhStyles.payrollStatItem}>
                   <Text style={rhStyles.payrollStatLabel}>Bruto</Text>
-                  <Text style={rhStyles.payrollStatValue}>{item.bruto}</Text>
+                  <Text style={rhStyles.payrollStatValue}>{item.totalBruto ?? '—'}</Text>
                 </View>
                 <View style={rhStyles.payrollStatItem}>
                   <Text style={rhStyles.payrollStatLabel}>Líquido</Text>
-                  <Text style={rhStyles.payrollStatValue}>{item.liquido}</Text>
+                  <Text style={rhStyles.payrollStatValue}>{item.totalLiquido ?? '—'}</Text>
                 </View>
                 <View style={rhStyles.payrollStatItem}>
                   <Text style={rhStyles.payrollStatLabel}>FGTS</Text>
-                  <Text style={rhStyles.payrollStatValue}>{item.fgts}</Text>
+                  <Text style={rhStyles.payrollStatValue}>{item.totalFgts ?? '—'}</Text>
                 </View>
               </View>
+              <Text style={rhStyles.historyCardMeta}>
+                {item.totalColaboradores != null ? `${item.totalColaboradores} colaborador(es)` : 'Colaboradores: —'}
+                {item.dataPagamentoLabel
+                  ? ` · Pago em ${item.dataPagamentoLabel}`
+                  : item.dataPrevistaPagamentoLabel
+                  ? ` · Previsão de pagamento: ${item.dataPrevistaPagamentoLabel}`
+                  : ''}
+              </Text>
               <Pressable
                 style={rhStyles.outlineButton}
                 onPress={() => Alert.alert(item.label, 'Detalhamento da folha em breve.')}
@@ -6592,8 +6676,8 @@ export function RHFolhaPagamentoScreen({ navigation }: ScreenProps<'RHFolhaPagam
                 <Text style={rhStyles.outlineButtonText}>Abrir</Text>
               </Pressable>
             </View>
-          );
-        })}
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
