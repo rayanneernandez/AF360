@@ -2796,6 +2796,69 @@ export default function App() {
   const [isTwoFactorEnabled, setIsTwoFactorEnabled] = useState(true);
   const [isBiometricLoginEnabled, setIsBiometricLoginEnabled] = useState(false);
   const [courseProgress, setCourseProgress] = useState<Record<string, TrainingCourseProgress>>({});
+
+  // Precisam ser estáveis entre renders (useCallback) porque telas como
+  // TrainingExamScreen usam essas funções em dependência de useEffect —
+  // se a referência mudasse a cada render (como era antes, com funções
+  // inline direto no value do Provider), o efeito reexecutava a cada
+  // render, chamava setCourseProgress de novo, o App re-renderizava, gerava
+  // uma função nova de novo... loop infinito ("Maximum update depth
+  // exceeded"). É exatamente o bug reportado na tela de prova do treinamento.
+  const updateLessonWatchTime = useCallback(
+    (courseId: string, lessonId: string, watchedSeconds: number, durationSeconds: number) => {
+      setCourseProgress((current) => {
+        const currentCourse = current[courseId] ?? { lessons: {} };
+        const currentLesson = currentCourse.lessons[lessonId];
+        const nextWatchedSeconds = Math.max(currentLesson?.watchedSeconds ?? 0, watchedSeconds);
+
+        return {
+          ...current,
+          [courseId]: {
+            ...currentCourse,
+            lessons: {
+              ...currentCourse.lessons,
+              [lessonId]: {
+                watchedSeconds: Math.min(nextWatchedSeconds, durationSeconds),
+                completed: nextWatchedSeconds >= durationSeconds,
+              },
+            },
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const saveExamAttempt = useCallback((courseId: string, attempt: TrainingExamAttempt) => {
+    setCourseProgress((current) => ({
+      ...current,
+      [courseId]: {
+        ...(current[courseId] ?? { lessons: {} }),
+        examAttempt: attempt,
+      },
+    }));
+  }, []);
+
+  const resetExamAttempt = useCallback((courseId: string) => {
+    setCourseProgress((current) => ({
+      ...current,
+      [courseId]: {
+        ...(current[courseId] ?? { lessons: {} }),
+        examAttempt: undefined,
+      },
+    }));
+  }, []);
+
+  const trainingProgressContextValue = useMemo(
+    () => ({
+      courseProgress,
+      updateLessonWatchTime,
+      saveExamAttempt,
+      resetExamAttempt,
+    }),
+    [courseProgress, updateLessonWatchTime, saveExamAttempt, resetExamAttempt]
+  );
+
   const [activeRole, setActiveRole] = useState<UserRole>('colaborador');
   const [identity, setIdentity] = useState<AuthIdentity | null>(null);
 
@@ -2836,47 +2899,7 @@ export default function App() {
             setIsBiometricLoginEnabled,
           }}
         >
-          <TrainingProgressContext.Provider
-            value={{
-              courseProgress,
-              updateLessonWatchTime: (courseId, lessonId, watchedSeconds, durationSeconds) =>
-                setCourseProgress((current) => {
-                  const currentCourse = current[courseId] ?? { lessons: {} };
-                  const currentLesson = currentCourse.lessons[lessonId];
-                  const nextWatchedSeconds = Math.max(currentLesson?.watchedSeconds ?? 0, watchedSeconds);
-
-                  return {
-                    ...current,
-                    [courseId]: {
-                      ...currentCourse,
-                      lessons: {
-                        ...currentCourse.lessons,
-                        [lessonId]: {
-                          watchedSeconds: Math.min(nextWatchedSeconds, durationSeconds),
-                          completed: nextWatchedSeconds >= durationSeconds,
-                        },
-                      },
-                    },
-                  };
-                }),
-              saveExamAttempt: (courseId, attempt) =>
-                setCourseProgress((current) => ({
-                  ...current,
-                  [courseId]: {
-                    ...(current[courseId] ?? { lessons: {} }),
-                    examAttempt: attempt,
-                  },
-                })),
-              resetExamAttempt: (courseId) =>
-                setCourseProgress((current) => ({
-                  ...current,
-                  [courseId]: {
-                    ...(current[courseId] ?? { lessons: {} }),
-                    examAttempt: undefined,
-                  },
-                })),
-            }}
-          >
+          <TrainingProgressContext.Provider value={trainingProgressContextValue}>
             <MenuContext.Provider
               value={{
                 openMenu: () => setIsMenuOpen(true),
