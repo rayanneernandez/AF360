@@ -1,5 +1,5 @@
 const express = require('express');
-const { fetchAllRows } = require('../lovable');
+const { fetchAllRows, fetchTable } = require('../lovable');
 
 const router = express.Router();
 
@@ -462,6 +462,14 @@ function formatBRL(value) {
   return `R$ ${Math.round(value).toLocaleString('pt-BR')}`;
 }
 
+// Variante com centavos — formatBRL() acima arredonda pra inteiro, o que
+// serve bem pra KPIs agregados (folha total, ticket médio, etc.) mas
+// esconderia centavos num valor individual como o líquido de um contracheque
+// específico (ex: R$ 3.842,17 viraria "R$ 3.842").
+function formatBRLCentavos(value) {
+  return `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function changePct(current, previous) {
   if (previous === 0) return current === 0 ? '—' : '↑100%';
   const pct = Math.round(((current - previous) / previous) * 100);
@@ -914,6 +922,150 @@ router.get('/folha', async (req, res) => {
     });
   } catch (err) {
     console.error('[rh/dashboard/folha] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// ---------- Meu Painel (colaborador) ----------
+// tempoLabel relativo tipo "há 2 dias"/"há 3h" a partir de um timestamp
+// completo (publicar_em vem com hora, diferente das colunas "date only"
+// tratadas por parseDateOnly acima).
+function tempoRelativoLabel(rawTimestamp, nowMs) {
+  if (!rawTimestamp) return '';
+  const ms = Date.parse(rawTimestamp);
+  if (Number.isNaN(ms)) return '';
+  const diffMs = Math.max(0, nowMs - ms);
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffH = Math.floor(diffMin / 60);
+  const diffD = Math.floor(diffH / 24);
+  if (diffD >= 1) return `há ${diffD} dia${diffD === 1 ? '' : 's'}`;
+  if (diffH >= 1) return `há ${diffH}h`;
+  if (diffMin >= 1) return `há ${diffMin} min`;
+  return 'agora';
+}
+
+function capitalizeLabel(raw) {
+  const key = (raw ?? '').trim();
+  if (!key) return 'Não informado';
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+// GET /api/rh/dashboard/colaborador-home?colaboradorId=...
+// Agrega os dados da tela "Meu Painel" do colaborador: comunicados
+// (filtrados no código por público-alvo, já que não dá pra fazer OR
+// complexo direto na query do Lovable), chamados abertos, treinamentos
+// pendentes e o último contracheque.
+router.get('/colaborador-home', async (req, res) => {
+  try {
+    const colaboradorId = req.query.colaboradorId;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaboradorId' });
+    }
+
+    const colaboradorJson = await fetchTable('rh_colaboradores', {
+      select: 'id,empresa_id',
+      filters: { id: colaboradorId },
+      limit: 1,
+    });
+    const colaborador = (colaboradorJson.data || [])[0] || null;
+    const empresaId = colaborador?.empresa_id || null;
+
+    const [comunicadosJson, leiturasJson, chamadosJson, treinamentosJson, contrachequeJson] = await Promise.all([
+      fetchAllRows('rh_comunicados', {
+        select: 'id,titulo,publico,empresa_id,colaborador_id,publicar_em,expira_em',
+      }),
+      fetchAllRows('rh_comunicado_leituras', {
+        select: 'comunicado_id,colaborador_id,lido_em',
+        filters: { colaborador_id: colaboradorId },
+      }),
+      fetchTable('rh_solicitacoes', {
+        filters: { colaborador_id: colaboradorId, status__in: 'aberta,em_analise,respondida' },
+        limit: 1,
+        count: true,
+      }),
+      fetchAllRows('rh_treinamento_inscricoes', {
+        select: 'id,colaborador_id,status,concluido_em',
+        filters: { colaborador_id: colaboradorId },
+      }),
+      fetchTable('rh_contracheques', {
+        filters: { colaborador_id: colaboradorId },
+        order: 'competencia:desc',
+        limit: 1,
+      }),
+    ]);
+
+    const nowMs = Date.now();
+
+    // Comunicados: fica só com o que vale pra esse colaborador (público
+    // 'todos', 'empresa' com empresa_id batendo, ou 'colaborador' com
+    // colaborador_id batendo). 'grupo' fica de fora — ainda não temos como
+    // resolver o vínculo colaborador↔grupo_id nesta rota, e é mais seguro
+    // não mostrar do que mostrar errado.
+    const comunicadosRelevantes = (comunicadosJson.data || []).filter((c) => {
+      const publicarMs = c.publicar_em ? Date.parse(c.publicar_em) : null;
+      const expiraMs = c.expira_em ? Date.parse(c.expira_em) : null;
+      if (publicarMs !== null && !Number.isNaN(publicarMs) && publicarMs > nowMs) return false;
+      if (expiraMs !== null && !Number.isNaN(expiraMs) && expiraMs < nowMs) return false;
+
+      const publico = (c.publico ?? '').trim().toLowerCase();
+      if (publico === 'todos') return true;
+      if (publico === 'empresa') return Boolean(empresaId) && c.empresa_id === empresaId;
+      if (publico === 'colaborador') return c.colaborador_id === colaboradorId;
+      return false;
+    });
+
+    const lidosSet = new Set(
+      (leiturasJson.data || []).filter((l) => l.lido_em).map((l) => l.comunicado_id)
+    );
+    const naoLidos = comunicadosRelevantes.filter((c) => !lidosSet.has(c.id));
+
+    const comunicadosRecentes = [...comunicadosRelevantes]
+      .sort((a, b) => (Date.parse(b.publicar_em || 0) || 0) - (Date.parse(a.publicar_em || 0) || 0))
+      .slice(0, 3)
+      .map((c) => ({
+        id: c.id,
+        titulo: c.titulo,
+        tempoLabel: tempoRelativoLabel(c.publicar_em, nowMs) || capitalizeLabel(c.publico),
+      }));
+
+    const chamadosAbertos = chamadosJson.count ?? (chamadosJson.data || []).length ?? 0;
+
+    // Treinamentos pendentes: se algum dia o enum real de status divergir
+    // de 'concluido', concluido_em (coluna confirmada em LOVABLE_API.md)
+    // continua sendo o sinal confiável de "terminou ou não".
+    const treinamentosPendentes = (treinamentosJson.data || []).filter((t) => !t.concluido_em).length;
+
+    const contrachequeRaw = (contrachequeJson.data || [])[0] || null;
+    let ultimoContracheque = null;
+    if (contrachequeRaw) {
+      const competenciaMs = parseDateOnly(contrachequeRaw.competencia);
+      const competenciaLabel =
+        competenciaMs !== null
+          ? `${MONTH_NAMES_LONG[new Date(competenciaMs).getUTCMonth()]} · ${new Date(competenciaMs).getUTCFullYear()}`
+          : '—';
+      ultimoContracheque = {
+        competenciaLabel,
+        valorLiquido: formatBRLCentavos(Number(contrachequeRaw.valor_liquido) || 0),
+      };
+    }
+
+    res.json({
+      ok: true,
+      data: {
+        comunicadosNaoLidos: naoLidos.length,
+        comunicadosRecentes,
+        chamadosAbertos,
+        treinamentosPendentes,
+        // Não existe tabela de eventos/calendário no schema documentado hoje
+        // (conferido em af360-api/src/LOVABLE_API.md inteiro) — se algum dia
+        // for implementar essa seção, é preciso pedir ao time Lovable uma
+        // tabela nova (ex.: algo como rh_eventos).
+        eventosProximos: null,
+        ultimoContracheque,
+      },
+    });
+  } catch (err) {
+    console.error('[rh/dashboard/colaborador-home] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
   }
 });

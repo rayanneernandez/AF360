@@ -56,10 +56,14 @@ import {
   fetchConversas,
   fetchMensagens,
   updateConversa,
+  login,
+  fetchColaboradorHome,
   type ConversaResumo,
   type ConversaMensagem,
   type ConversaChatStatus,
   type ConversaMetadata,
+  type AuthIdentity,
+  type ColaboradorHomeData,
 } from './api';
 
 export type RootStackParamList = {
@@ -565,37 +569,6 @@ const MenuContext = createContext<{
   openMenu: () => {},
   closeMenu: () => {},
 });
-
-const dashboardCards: DashboardCardProps[] = [
-  {
-    icon: 'megaphone-outline',
-    iconColor: '#F03A51',
-    tintColor: '#FCE8EC',
-    label: 'Comunicados',
-    value: '3',
-  },
-  {
-    icon: 'calendar-outline',
-    iconColor: '#5F6DB3',
-    tintColor: '#EDF1FF',
-    label: 'Próximos eventos',
-    value: '2',
-  },
-  {
-    icon: 'briefcase-outline',
-    iconColor: '#B18316',
-    tintColor: '#FCF4DE',
-    label: 'Chamados em aberto',
-    value: '1',
-  },
-  {
-    icon: 'school-outline',
-    iconColor: '#2D9E6A',
-    tintColor: '#E4F5EE',
-    label: 'Treinamentos',
-    value: '2',
-  },
-];
 
 const payslips: PayslipItem[] = [
   {
@@ -1226,6 +1199,19 @@ export const UserRoleContext = createContext<{
 }>({
   activeRole: 'colaborador',
   setActiveRole: () => {},
+});
+
+// Identidade real retornada pelo POST /api/auth/login (Supabase Auth por trás
+// da af360-api). Fica em memória apenas (sem @react-native-async-storage/async-storage
+// instalado no projeto ainda) — ou seja, a sessão se perde ao fechar o app.
+// Se/quando o pacote for adicionado ao package.json, dá pra persistir e
+// restaurar isso no boot (ex.: dentro de um useEffect no App()).
+export const AuthIdentityContext = createContext<{
+  identity: AuthIdentity | null;
+  setIdentity: (identity: AuthIdentity | null) => void;
+}>({
+  identity: null,
+  setIdentity: () => {},
 });
 
 const communications: CommunicationItem[] = [
@@ -2811,9 +2797,11 @@ export default function App() {
   const [isBiometricLoginEnabled, setIsBiometricLoginEnabled] = useState(false);
   const [courseProgress, setCourseProgress] = useState<Record<string, TrainingCourseProgress>>({});
   const [activeRole, setActiveRole] = useState<UserRole>('colaborador');
+  const [identity, setIdentity] = useState<AuthIdentity | null>(null);
 
   return (
     <SafeAreaProvider>
+      <AuthIdentityContext.Provider value={{ identity, setIdentity }}>
       <UserRoleContext.Provider value={{ activeRole, setActiveRole }}>
       <UniformReceiptContext.Provider
         value={{
@@ -2982,6 +2970,7 @@ export default function App() {
         </PayslipAcknowledgementContext.Provider>
       </UniformReceiptContext.Provider>
       </UserRoleContext.Provider>
+      </AuthIdentityContext.Provider>
     </SafeAreaProvider>
   );
 }
@@ -3028,30 +3017,55 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
   const [keepConnected, setKeepConnected] = useState(true);
   const [email, setEmail] = useState('bruno.lima@americanfuel.com.br');
   const [password, setPassword] = useState('12345678');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { isTwoFactorEnabled, isBiometricLoginEnabled } = useContext(SecurityPreferencesContext);
   const { setActiveRole } = useContext(UserRoleContext);
+  const { setIdentity } = useContext(AuthIdentityContext);
   const { width: windowWidth } = useWindowDimensions();
   const bannerHeight = windowWidth * (1214 / 1920);
 
-  const handleLogin = () => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const isDirectorLogin = normalizedEmail === directorUser.email.toLowerCase();
-    const isRHLogin = normalizedEmail === rhUser.email.toLowerCase();
-    const nextRole: UserRole = isDirectorLogin ? 'diretoria' : isRHLogin ? 'rh' : 'colaborador';
-    const dashboardRoute = isDirectorLogin ? 'DirectorDashboard' : isRHLogin ? 'RHDashboard' : 'Dashboard';
-    setActiveRole(nextRole);
+  const handleLogin = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
-    if (isBiometricLoginEnabled) {
-      navigation.replace('DeviceAuth');
-      return;
+    try {
+      const identity = await login(email.trim(), password);
+
+      // Perfil de colaborador sem colaboradorId vinculado ainda (ex.: usuário
+      // criado no Auth mas sem linha correspondente em rh_colaboradores):
+      // não dá pra fabricar um colaboradorId falso, então bloqueamos a entrada
+      // no painel pessoal e avisamos o usuário em vez de deixar o Dashboard
+      // quebrado/silenciosamente vazio.
+      if (identity.role === 'colaborador' && !identity.colaboradorId) {
+        Alert.alert(
+          'Cadastro sem colaborador vinculado',
+          'Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seu painel.'
+        );
+        return;
+      }
+
+      setIdentity(identity);
+      setActiveRole(identity.role);
+
+      const dashboardRoute =
+        identity.role === 'diretoria' ? 'DirectorDashboard' : identity.role === 'rh' ? 'RHDashboard' : 'Dashboard';
+
+      if (isBiometricLoginEnabled) {
+        navigation.replace('DeviceAuth');
+        return;
+      }
+
+      if (isTwoFactorEnabled) {
+        navigation.replace('TwoFactorVerification');
+        return;
+      }
+
+      navigation.replace(dashboardRoute);
+    } catch (err) {
+      Alert.alert('Erro ao entrar', err instanceof Error ? err.message : 'Não foi possível entrar.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    if (isTwoFactorEnabled) {
-      navigation.replace('TwoFactorVerification');
-      return;
-    }
-
-    navigation.replace(dashboardRoute);
   };
 
   return (
@@ -3096,9 +3110,13 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
               </Pressable>
             </View>
 
-            <Pressable style={styles.primaryButton} onPress={handleLogin}>
-              <Text style={styles.primaryButtonText}>Entrar</Text>
-              <Feather name="arrow-right" size={18} color="#FFFFFF" />
+            <Pressable
+              style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+              onPress={handleLogin}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.primaryButtonText}>{isSubmitting ? 'Entrando...' : 'Entrar'}</Text>
+              {isSubmitting ? null : <Feather name="arrow-right" size={18} color="#FFFFFF" />}
             </Pressable>
           </View>
 
@@ -3375,6 +3393,81 @@ function TwoFactorVerificationScreen({ navigation }: ScreenProps<'TwoFactorVerif
 }
 
 function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const [homeData, setHomeData] = useState<ColaboradorHomeData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!colaboradorId) {
+      // Sem identidade real (ainda não logou) ou perfil sem colaborador
+      // vinculado no RH — não dá pra buscar nem fabricar dado, então mostramos
+      // estado vazio honesto abaixo em vez de chamar a API com um id inválido.
+      setHomeData(null);
+      setErrorMessage(null);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchColaboradorHome(colaboradorId)
+      .then((data) => {
+        if (isActive) setHomeData(data);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar seu painel.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [colaboradorId]);
+
+  const homeCards: DashboardCardProps[] = [
+    {
+      icon: 'megaphone-outline',
+      iconColor: '#F03A51',
+      tintColor: '#FCE8EC',
+      label: 'Comunicados',
+      value: homeData ? String(homeData.comunicadosNaoLidos) : '—',
+    },
+    {
+      icon: 'calendar-outline',
+      iconColor: '#5F6DB3',
+      tintColor: '#EDF1FF',
+      label: 'Próximos eventos',
+      // O backend sempre retorna eventosProximos = null porque ainda não existe
+      // tabela de eventos no Supabase do Lovable. Mostramos "Em breve" em vez de
+      // fabricar um número — resolver isso de verdade fica para uma tarefa futura
+      // (criar a tabela de eventos e o cálculo correspondente na af360-api).
+      value: 'Em breve',
+    },
+    {
+      icon: 'briefcase-outline',
+      iconColor: '#B18316',
+      tintColor: '#FCF4DE',
+      label: 'Chamados em aberto',
+      value: homeData ? String(homeData.chamadosAbertos) : '—',
+    },
+    {
+      icon: 'school-outline',
+      iconColor: '#2D9E6A',
+      tintColor: '#E4F5EE',
+      label: 'Treinamentos',
+      value: homeData ? String(homeData.treinamentosPendentes) : '—',
+    },
+  ];
+
+  const comunicadosRecentes = homeData?.comunicadosRecentes ?? [];
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -3399,8 +3492,17 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
           </Text>
         </LinearGradient>
 
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar os dados do seu
+            painel.
+          </Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : null}
+
         <View style={styles.grid}>
-          {dashboardCards.map((card) => (
+          {homeCards.map((card) => (
             <View key={card.label} style={styles.gridItem}>
               <DashboardCard {...card} />
             </View>
@@ -3420,8 +3522,16 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
             </Pressable>
           </View>
 
-          <Text style={styles.infoCardMeta}>Maio · 2026 · líquido</Text>
-          <Text style={styles.infoCardValue}>R$ 3.842,17</Text>
+          {homeData?.ultimoContracheque ? (
+            <>
+              <Text style={styles.infoCardMeta}>{homeData.ultimoContracheque.competenciaLabel} · líquido</Text>
+              <Text style={styles.infoCardValue}>{homeData.ultimoContracheque.valorLiquido}</Text>
+            </>
+          ) : (
+            <Text style={styles.infoCardMeta}>
+              {isLoading ? 'Carregando...' : 'Nenhum contracheque lançado ainda.'}
+            </Text>
+          )}
         </View>
 
         <View style={styles.listCard}>
@@ -3437,20 +3547,27 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
             </Pressable>
           </View>
 
-          {communications.slice(0, 3).map((item, index) => (
-            <View
-              key={item.id}
-              style={[styles.recentItem, index < 2 ? styles.recentItemBorder : null]}
-            >
-              <View style={[styles.recentDot, { backgroundColor: index < 2 ? '#E0002A' : '#C9CFDE' }]} />
-              <View style={styles.recentTextBlock}>
-                <Text style={styles.recentTitle}>{item.title}</Text>
-                <Text style={styles.recentMeta}>
-                  {item.area} · {item.time}
-                </Text>
+          {isLoading ? (
+            <Text style={styles.recentMeta}>Carregando comunicados...</Text>
+          ) : comunicadosRecentes.length === 0 ? (
+            <Text style={styles.recentMeta}>Nenhum comunicado recente.</Text>
+          ) : (
+            comunicadosRecentes.map((item, index) => (
+              <View
+                key={item.id}
+                style={[
+                  styles.recentItem,
+                  index < comunicadosRecentes.length - 1 ? styles.recentItemBorder : null,
+                ]}
+              >
+                <View style={[styles.recentDot, { backgroundColor: '#E0002A' }]} />
+                <View style={styles.recentTextBlock}>
+                  <Text style={styles.recentTitle}>{item.titulo}</Text>
+                  <Text style={styles.recentMeta}>{item.tempoLabel}</Text>
+                </View>
               </View>
-            </View>
-          ))}
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -9819,6 +9936,9 @@ export const styles = StyleSheet.create({
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 10 },
     elevation: 6,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.6,
   },
   primaryButtonText: {
     color: '#FFFFFF',

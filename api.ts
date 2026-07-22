@@ -393,3 +393,37 @@ export async function fetchRhFolhaDetalhe(): Promise<RhFolhaDetalhe> {
   const json = await api.get('/api/rh/dashboard/folha');
   return json.data as RhFolhaDetalhe;
 }
+
+// --- Autenticação (login real via Supabase Auth, por trás da af360-api) ---
+
+export type AuthIdentity = {
+  profileId: string;
+  email: string;
+  fullName: string | null;
+  role: 'colaborador' | 'rh' | 'diretoria';
+  colaboradorId: string | null;
+  empresaId: string | null;
+};
+
+export async function login(email: string, password: string): Promise<AuthIdentity> {
+  const json = await api.post('/api/auth/login', { email, password });
+  return json.data as AuthIdentity;
+}
+
+// --- Meu Painel (colaborador): agregado de comunicados/chamados/treinamentos/contracheque ---
+
+export type ColaboradorHomeComunicado = { id: string; titulo: string; tempoLabel: string };
+
+export type ColaboradorHomeData = {
+  comunicadosNaoLidos: number;
+  comunicadosRecentes: ColaboradorHomeComunicado[];
+  chamadosAbertos: number;
+  treinamentosPendentes: number;
+  eventosProximos: null;
+  ultimoContracheque: { competenciaLabel: string; valorLiquido: string } | null;
+};
+
+export async function fetchColaboradorHome(colaboradorId: string): Promise<ColaboradorHomeData> {
+  const json = await api.get(`/api/rh/dashboard/colaborador-home?colaboradorId=${encodeURIComponent(colaboradorId)}`);
+  return json.data as ColaboradorHomeData;
+}
