@@ -58,6 +58,7 @@ import {
   updateConversa,
   login,
   fetchColaboradorHome,
+  ApiError,
   type ConversaResumo,
   type ConversaMensagem,
   type ConversaChatStatus,
@@ -3085,7 +3086,31 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
 
       navigation.replace(dashboardRoute);
     } catch (err) {
-      Alert.alert('Erro ao entrar', err instanceof Error ? err.message : 'Não foi possível entrar.');
+      // Mensagem amigável fixa por tipo de erro — nunca mostra o texto cru
+      // que vem do backend/Supabase (tipo "Invalid login credentials"), que
+      // confunde o usuário. 'invalid_credentials' é sempre "senha errada" pro
+      // usuário, mesmo que a causa real seja e-mail inexistente — não damos
+      // essa pista por segurança (evita confirmar quais e-mails existem).
+      let title = 'Não foi possível entrar';
+      let message = 'Tente novamente em instantes.';
+
+      if (err instanceof ApiError) {
+        if (err.code === 'invalid_credentials') {
+          title = 'E-mail ou senha incorretos';
+          message = 'Confira os dados e tente novamente.';
+        } else if (err.code === 'missing_credentials') {
+          title = 'Preencha os campos';
+          message = 'Informe e-mail e senha para entrar.';
+        } else if (err.code === 'network_error') {
+          title = 'Sem conexão';
+          message = 'Não foi possível conectar. Verifique sua internet.';
+        } else if (err.code === 'auth_not_configured') {
+          title = 'Login indisponível no momento';
+          message = 'Fale com o suporte — o serviço de login ainda está sendo configurado.';
+        }
+      }
+
+      Alert.alert(title, message);
     } finally {
       setIsSubmitting(false);
     }

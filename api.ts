@@ -4,21 +4,43 @@
 const API_BASE_URL = 'https://af-360.vercel.app';
 const API_KEY = 'af360-3x9k2mQpL7vZtR8wYbN4cJ';
 
+// Erro de API com o código cru do backend preservado (ex: 'invalid_credentials',
+// 'auth_not_configured') além da mensagem — quem chama pode decidir mostrar uma
+// mensagem amigável própria em vez do texto técnico que vem do servidor/Supabase.
+export class ApiError extends Error {
+  code: string | null;
+  status: number;
+
+  constructor(message: string, code: string | null, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
 async function request(path: string, options: { method?: string; body?: unknown } = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method ?? 'GET',
-    headers: {
-      'x-api-key': API_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: options.method ?? 'GET',
+      headers: {
+        'x-api-key': API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch {
+    // fetch em si falhou (sem internet, DNS, timeout, etc.) — nem chegou a ter
+    // resposta do servidor, então não tem "código de erro" de negócio nenhum.
+    throw new ApiError('Não foi possível conectar ao servidor. Verifique sua internet.', 'network_error', 0);
+  }
 
   const json = await response.json().catch(() => null);
 
   if (!response.ok || !json || json.ok === false) {
     const message = json?.message || json?.error || `Erro ${response.status}`;
-    throw new Error(message);
+    throw new ApiError(message, json?.error ?? null, response.status);
   }
 
   return json;
