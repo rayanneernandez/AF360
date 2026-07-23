@@ -11,18 +11,23 @@ const router = express.Router();
 // Se algum dia for generalizar isso pra mais usuários de RH/Diretoria, o
 // certo é consultar `roles` de verdade via `profile.role_id` — é aqui que
 // entra essa consulta.
-const KNOWN_DIRETORIA_EMAILS = ['bruno.lyra@americanfuel.com.br'];
-const KNOWN_RH_EMAILS = ['marina.costa@americanfuel.com.br'];
+const KNOWN_DIRETORIA_EMAILS = ['bruno.lyra@americanfuel.com.br', 'diretoria@americanfuel.com.br'];
+const KNOWN_RH_EMAILS = ['marina.costa@americanfuel.com.br', 'rh@americanfuel.com.br'];
 
 function resolveRole({ profile, rhColaborador, email }) {
-  // a) Sinal mais confiável: existe linha em rh_colaboradores vinculada
-  // (profile_id) — é colaborador, ponto final.
-  if (rhColaborador) return 'colaborador';
-
-  // b) Ponte temporária por e-mail conhecido (ver comentário acima).
+  // a) Ponte temporária por e-mail conhecido (ver comentário acima) — checa
+  // ANTES do vínculo em rh_colaboradores, porque um usuário de RH pode
+  // também ter uma linha de colaborador própria ("RH + Colaborador"), e
+  // nesse caso o papel de navegação tem que continuar sendo 'rh' (pra cair
+  // no painel de RH), não 'colaborador'. `colaboradorId` continua sendo
+  // preenchido normalmente (ver rota abaixo), só o papel de navegação muda.
   const normalizedEmail = String(profile?.email || email || '').trim().toLowerCase();
   if (KNOWN_DIRETORIA_EMAILS.includes(normalizedEmail)) return 'diretoria';
   if (KNOWN_RH_EMAILS.includes(normalizedEmail)) return 'rh';
+
+  // b) Sinal mais confiável pros demais: existe linha em rh_colaboradores
+  // vinculada (profile_id) — é colaborador comum.
+  if (rhColaborador) return 'colaborador';
 
   // c) Default seguro: nunca eleva privilégio sem sinal claro.
   return 'colaborador';
