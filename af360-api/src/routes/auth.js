@@ -4,32 +4,43 @@ const { fetchTable } = require('../lovable');
 
 const router = express.Router();
 
-// Ponte TEMPORÁRIA pra decidir o papel de RH/Diretoria enquanto não
-// confirmamos em produção o schema real de `roles`/`profiles.role_id`
-// (LOVABLE_API.md documenta `roles.slug`/`roles.group_type`, mas ainda não
-// tivemos acesso de rede pra inspecionar os valores reais gravados hoje).
-// Se algum dia for generalizar isso pra mais usuários de RH/Diretoria, o
-// certo é consultar `roles` de verdade via `profile.role_id` — é aqui que
-// entra essa consulta.
+// A rede real tem 910 usuários (todo colaborador tem login pelo painel
+// Usuários do Lovable, com e-mail @rede.americanfuel.com.br gerado
+// automaticamente) — então uma lista de e-mail por pessoa NUNCA foi uma
+// solução de verdade, era só uma ponte pros 2-3 usuários de teste enquanto
+// não dava pra confirmar o schema real de permissões. Agora usamos
+// `profiles.is_master` (coluna real, já documentada em LOVABLE_API.md e
+// visível como o badge "Master" no painel Usuários) como sinal confiável
+// de acesso total — mapeado aqui pra 'diretoria' (usado no app como
+// "acesso total").
+//
+// O que AINDA falta pra resolver 'rh' vs 'colaborador' comum de forma real
+// pros outros ~908 usuários: o painel tem "Perfil de Acesso"/"Grupos"/
+// "Módulos" (roles.default_modules / user_modules, já documentado na seção
+// 6.7 do LOVABLE_API.md), mas não sabemos ainda qual é o slug de módulo que
+// representa "RH" nessa lista real — por isso a lista de e-mail abaixo
+// continua como fallback só pra esses 2 usuários de teste até isso ser
+// confirmado. Perguntar pro Lovable: "qual o slug do módulo/perfil de
+// acesso que dá acesso ao RH?" pra substituir isso por uma consulta real
+// em roles/user_modules.
 const KNOWN_DIRETORIA_EMAILS = ['bruno.lyra@americanfuel.com.br', 'diretoria@americanfuel.com.br'];
 const KNOWN_RH_EMAILS = ['marina.costa@americanfuel.com.br', 'rh@americanfuel.com.br'];
 
 function resolveRole({ profile, rhColaborador, email }) {
-  // a) Ponte temporária por e-mail conhecido (ver comentário acima) — checa
-  // ANTES do vínculo em rh_colaboradores, porque um usuário de RH pode
-  // também ter uma linha de colaborador própria ("RH + Colaborador"), e
-  // nesse caso o papel de navegação tem que continuar sendo 'rh' (pra cair
-  // no painel de RH), não 'colaborador'. `colaboradorId` continua sendo
-  // preenchido normalmente (ver rota abaixo), só o papel de navegação muda.
+  // a) Sinal real e confiável: profiles.is_master = acesso total.
+  if (profile?.is_master) return 'diretoria';
+
+  // b) Ponte temporária por e-mail conhecido, só pros usuários de teste que
+  // ainda não têm módulo "RH" configurado de verdade (ver comentário acima).
   const normalizedEmail = String(profile?.email || email || '').trim().toLowerCase();
   if (KNOWN_DIRETORIA_EMAILS.includes(normalizedEmail)) return 'diretoria';
   if (KNOWN_RH_EMAILS.includes(normalizedEmail)) return 'rh';
 
-  // b) Sinal mais confiável pros demais: existe linha em rh_colaboradores
-  // vinculada (profile_id) — é colaborador comum.
+  // c) Sinal real pros demais: existe linha em rh_colaboradores vinculada
+  // (profile_id) — é colaborador comum.
   if (rhColaborador) return 'colaborador';
 
-  // c) Default seguro: nunca eleva privilégio sem sinal claro.
+  // d) Default seguro: nunca eleva privilégio sem sinal claro.
   return 'colaborador';
 }
 
