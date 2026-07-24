@@ -3077,8 +3077,8 @@ function proceedAfterRoleChosen(
 
 function LoginScreen({ navigation }: ScreenProps<'Login'>) {
   const [keepConnected, setKeepConnected] = useState(true);
-  const [email, setEmail] = useState('bruno.lima@americanfuel.com.br');
-  const [password, setPassword] = useState('12345678');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { isTwoFactorEnabled, isBiometricLoginEnabled } = useContext(SecurityPreferencesContext);
   const { setActiveRole } = useContext(UserRoleContext);
@@ -9870,8 +9870,6 @@ export const styles = StyleSheet.create({
   },
   loginHeroBanner: {
     height: 212,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
     overflow: 'hidden',
     backgroundColor: '#2B2464',
   },
