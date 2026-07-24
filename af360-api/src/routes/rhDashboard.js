@@ -511,7 +511,7 @@ router.get('/resumo', async (req, res) => {
     const year = Number(req.query.year) || new Date().getUTCFullYear();
     const month = Math.min(12, Math.max(1, Number(req.query.month) || new Date().getUTCMonth() + 1));
 
-    const { colaboradores, regiaoById } = await loadColaboradoresEEmpresas();
+    const { colaboradores, regiaoById, empresaNomeById } = await loadColaboradoresEEmpresas();
     const nowMs = Date.now();
 
     const [start, end] = granularity === 'ano' ? yearRangeUTC(year) : monthRangeUTC(year, month);
@@ -571,7 +571,14 @@ router.get('/resumo', async (req, res) => {
     });
 
     const topSetores = topN(ativosAgora, (c) => c.setor, 5);
-    const topUnidades = topN(ativosAgora, (c) => c.posto_trabalho, 5).map((item) => ({ name: item.label, value: item.value }));
+    // "Unidade" no painel web é o posto/empresa (empresas.nome_fantasia via
+    // empresa_id), não a coluna posto_trabalho (texto livre, quase sempre
+    // vazio na base real — dava "Não informado" pra quase todo mundo antes
+    // dessa correção).
+    const topUnidades = topN(ativosAgora, (c) => empresaNomeById.get(c.empresa_id), 5).map((item) => ({
+      name: item.label,
+      value: item.value,
+    }));
 
     const generoMap = new Map();
     ativosAgora.forEach((c) => {
