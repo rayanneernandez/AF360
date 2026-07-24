@@ -9,7 +9,11 @@ import {
   createNavigationContainerRef,
   useIsFocused,
 } from '@react-navigation/native';
-import { NativeStackScreenProps, createNativeStackNavigator } from '@react-navigation/native-stack';
+import {
+  NativeStackNavigationProp,
+  NativeStackScreenProps,
+  createNativeStackNavigator,
+} from '@react-navigation/native-stack';
 import {
   Feather,
   Ionicons,
@@ -3045,7 +3049,13 @@ function SplashScreen({ navigation }: ScreenProps<'Splash'>) {
 // (activeRole) pode vir de uma escolha explícita em vez de sempre automático.
 function proceedAfterRoleChosen(
   role: UserRole,
-  navigation: ScreenProps<'Login'>['navigation'],
+  // Tipado solto (route name "any") de propósito: esta função é chamada a
+  // partir de mais de uma tela (Login, SelectPanel), cada uma com seu
+  // próprio `navigation` tipado pro nome de rota específico dela — o tipo
+  // exato de NativeStackNavigationProp não é substituível entre rotas
+  // diferentes (invariante no parâmetro de rota), então travar num nome só
+  // (ex: 'Login') quebra as outras chamadas.
+  navigation: NativeStackNavigationProp<RootStackParamList, any>,
   setActiveRole: (role: UserRole) => void,
   isBiometricLoginEnabled: boolean,
   isTwoFactorEnabled: boolean
