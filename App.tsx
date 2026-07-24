@@ -57,6 +57,21 @@ import {
   RHConfiguracoesScreen,
 } from './RH';
 import {
+  AdminDashboardScreen,
+  AdminProfileScreen,
+  AdminUsuariosScreen,
+  AdminPerfilAcessoScreen,
+  AdminGruposScreen,
+  AdminUnidadesScreen,
+  AdminModulosScreen,
+  AdminIntegracoesScreen,
+  AdminConvencoesScreen,
+  AdminConfiguracoesScreen,
+  AdminVersoesScreen,
+  AdminNotificationsScreen,
+  AdminLogsScreen,
+} from './Administrador';
+import {
   fetchConversas,
   fetchMensagens,
   updateConversa,
@@ -124,6 +139,19 @@ export type RootStackParamList = {
   RHWorkflow: undefined;
   RHRelatorios: undefined;
   RHConfiguracoes: undefined;
+  AdminDashboard: undefined;
+  AdminProfile: undefined;
+  AdminUsuarios: undefined;
+  AdminPerfilAcesso: undefined;
+  AdminGrupos: undefined;
+  AdminUnidades: undefined;
+  AdminModulos: undefined;
+  AdminIntegracoes: undefined;
+  AdminConvencoes: undefined;
+  AdminConfiguracoes: undefined;
+  AdminVersoes: undefined;
+  AdminNotifications: undefined;
+  AdminLogs: undefined;
 };
 
 export type ScreenProps<RouteName extends keyof RootStackParamList> = NativeStackScreenProps<
@@ -353,7 +381,7 @@ type SideMenuRoute =
   | 'Requests'
   | 'Profile';
 
-export type UserRole = 'colaborador' | 'diretoria' | 'rh';
+export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador';
 
 type DirectorSideMenuRoute =
   | 'DirectorDashboard'
@@ -384,6 +412,26 @@ export type RHSideMenuRoute =
   | 'RHRelatorios'
   | 'RHConfiguracoes'
   | 'RHProfile';
+
+// "Administrador" é o painel de gestão da plataforma (Usuários, Perfil de
+// Acesso, Grupos, Módulos, Integrações, etc.) — diferente da Diretoria, que é
+// o painel de negócio (vendas/margem/estoque). Alguém pode ser só uma coisa,
+// só a outra, ou as duas (o app já suporta múltiplos painéis por login desde
+// o seletor "Entrar como...").
+export type AdminSideMenuRoute =
+  | 'AdminDashboard'
+  | 'AdminUsuarios'
+  | 'AdminPerfilAcesso'
+  | 'AdminGrupos'
+  | 'AdminUnidades'
+  | 'AdminModulos'
+  | 'AdminIntegracoes'
+  | 'AdminConvencoes'
+  | 'AdminConfiguracoes'
+  | 'AdminVersoes'
+  | 'AdminNotifications'
+  | 'AdminLogs'
+  | 'AdminProfile';
 
 type SummaryCardItem = {
   id: string;
@@ -1491,6 +1539,23 @@ export const rhUser = {
   accessLabel: 'Gestão de pessoas',
 };
 
+// Placeholder até o painel Admin ser conectado ao login real (identity do
+// AuthIdentityContext) — front primeiro, back depois, combinado com a
+// Rayanne. Trocar por identity.fullName/email quando vier o backend.
+export const adminUser = {
+  fullName: 'Administrador',
+  role: 'Administrador',
+  roleAndUnit: 'Administrador · American Fuel',
+  area: 'Painel de Gestão',
+  email: 'admin@americanfuel.com.br',
+  phone: '(11) 99120-0000',
+  accessLabel: 'Acesso total',
+};
+
+// "AD" fixo (não via getInitials) pra bater com o mock — "Administrador" é
+// uma palavra só e getInitials() daria só "A".
+export const adminUserInitials = 'AD';
+
 export const rhUserInitials = getInitials(rhUser.fullName);
 export const rhUserFirstName = getFirstName(rhUser.fullName);
 
@@ -1530,6 +1595,42 @@ export const rhSideMenuSections: Array<{
       { id: 'rh-workflow', label: 'Workflow', icon: 'git-pull-request', route: 'RHWorkflow' },
       { id: 'rh-relatorios', label: 'Relatórios', icon: 'bar-chart-2', route: 'RHRelatorios' },
       { id: 'rh-configuracoes', label: 'Configurações', icon: 'settings', route: 'RHConfiguracoes' },
+    ],
+  },
+];
+
+export const adminSideMenuSections: Array<{
+  title: string;
+  items: Array<{
+    id: string;
+    label: string;
+    icon: keyof typeof Feather.glyphMap;
+    route?: AdminSideMenuRoute;
+  }>;
+}> = [
+  {
+    title: 'VISÃO GERAL',
+    items: [{ id: 'admin-dashboard', label: 'Dashboard', icon: 'grid', route: 'AdminDashboard' }],
+  },
+  {
+    title: 'ACESSO',
+    items: [
+      { id: 'admin-usuarios', label: 'Usuários', icon: 'users', route: 'AdminUsuarios' },
+      { id: 'admin-perfil-acesso', label: 'Perfil de Acesso', icon: 'shield', route: 'AdminPerfilAcesso' },
+      { id: 'admin-grupos', label: 'Grupos', icon: 'user', route: 'AdminGrupos' },
+      { id: 'admin-unidades', label: 'Unidades', icon: 'home', route: 'AdminUnidades' },
+      { id: 'admin-modulos', label: 'Módulos', icon: 'grid', route: 'AdminModulos' },
+    ],
+  },
+  {
+    title: 'PLATAFORMA',
+    items: [
+      { id: 'admin-integracoes', label: 'Integrações', icon: 'link-2', route: 'AdminIntegracoes' },
+      { id: 'admin-convencoes', label: 'Convenções', icon: 'book-open', route: 'AdminConvencoes' },
+      { id: 'admin-configuracoes', label: 'Configurações', icon: 'settings', route: 'AdminConfiguracoes' },
+      { id: 'admin-versoes', label: 'Versões', icon: 'refresh-cw', route: 'AdminVersoes' },
+      { id: 'admin-notifications', label: 'Notificações', icon: 'bell', route: 'AdminNotifications' },
+      { id: 'admin-logs', label: 'Logs', icon: 'file-text', route: 'AdminLogs' },
     ],
   },
 ];
@@ -2975,6 +3076,19 @@ export default function App() {
                     <Stack.Screen name="RHWorkflow" component={RHWorkflowScreen} />
                     <Stack.Screen name="RHRelatorios" component={RHRelatoriosScreen} />
                     <Stack.Screen name="RHConfiguracoes" component={RHConfiguracoesScreen} />
+                    <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
+                    <Stack.Screen name="AdminProfile" component={AdminProfileScreen} />
+                    <Stack.Screen name="AdminUsuarios" component={AdminUsuariosScreen} />
+                    <Stack.Screen name="AdminPerfilAcesso" component={AdminPerfilAcessoScreen} />
+                    <Stack.Screen name="AdminGrupos" component={AdminGruposScreen} />
+                    <Stack.Screen name="AdminUnidades" component={AdminUnidadesScreen} />
+                    <Stack.Screen name="AdminModulos" component={AdminModulosScreen} />
+                    <Stack.Screen name="AdminIntegracoes" component={AdminIntegracoesScreen} />
+                    <Stack.Screen name="AdminConvencoes" component={AdminConvencoesScreen} />
+                    <Stack.Screen name="AdminConfiguracoes" component={AdminConfiguracoesScreen} />
+                    <Stack.Screen name="AdminVersoes" component={AdminVersoesScreen} />
+                    <Stack.Screen name="AdminNotifications" component={AdminNotificationsScreen} />
+                    <Stack.Screen name="AdminLogs" component={AdminLogsScreen} />
                   </Stack.Navigator>
 
                   {isMenuOpen ? (
@@ -2984,6 +3098,8 @@ export default function App() {
                           ? directorUserInitials
                           : activeRole === 'rh'
                           ? rhUserInitials
+                          : activeRole === 'administrador'
+                          ? adminUserInitials
                           : currentUserInitials
                       }
                       currentRoute={currentRoute}
@@ -3072,7 +3188,15 @@ function proceedAfterRoleChosen(
     return;
   }
 
-  navigation.replace(role === 'diretoria' ? 'DirectorDashboard' : role === 'rh' ? 'RHDashboard' : 'Dashboard');
+  navigation.replace(
+    role === 'diretoria'
+      ? 'DirectorDashboard'
+      : role === 'rh'
+      ? 'RHDashboard'
+      : role === 'administrador'
+      ? 'AdminDashboard'
+      : 'Dashboard'
+  );
 }
 
 function LoginScreen({ navigation }: ScreenProps<'Login'>) {
@@ -3213,9 +3337,10 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
 }
 
 const PANEL_OPTION_META: Record<UserRole, { label: string; subtitle: string; icon: keyof typeof Feather.glyphMap }> = {
-  diretoria: { label: 'Diretoria', subtitle: 'Acesso total', icon: 'shield' },
+  diretoria: { label: 'Diretoria', subtitle: 'Painéis de negócio (vendas, margem, estoque)', icon: 'trending-up' },
   rh: { label: 'RH', subtitle: 'Painel de recursos humanos', icon: 'users' },
   colaborador: { label: 'Meu Painel', subtitle: 'Seus dados pessoais', icon: 'user' },
+  administrador: { label: 'Administrador', subtitle: 'Gestão da plataforma (usuários, acessos, sistema)', icon: 'shield' },
 };
 
 // Aparece só quando o login tem mais de 1 painel disponível (ex.: alguém com
@@ -3365,7 +3490,13 @@ function DeviceAuthScreen({ navigation }: ScreenProps<'DeviceAuth'>) {
     }
 
     navigation.replace(
-      activeRole === 'diretoria' ? 'DirectorDashboard' : activeRole === 'rh' ? 'RHDashboard' : 'Dashboard'
+      activeRole === 'diretoria'
+        ? 'DirectorDashboard'
+        : activeRole === 'rh'
+        ? 'RHDashboard'
+        : activeRole === 'administrador'
+        ? 'AdminDashboard'
+        : 'Dashboard'
     );
   };
 
@@ -3411,9 +3542,21 @@ function DeviceAuthScreen({ navigation }: ScreenProps<'DeviceAuth'>) {
 function TwoFactorVerificationScreen({ navigation }: ScreenProps<'TwoFactorVerification'>) {
   const { activeRole } = useContext(UserRoleContext);
   const dashboardRoute =
-    activeRole === 'diretoria' ? 'DirectorDashboard' : activeRole === 'rh' ? 'RHDashboard' : 'Dashboard';
+    activeRole === 'diretoria'
+      ? 'DirectorDashboard'
+      : activeRole === 'rh'
+      ? 'RHDashboard'
+      : activeRole === 'administrador'
+      ? 'AdminDashboard'
+      : 'Dashboard';
   const verificationEmail =
-    activeRole === 'diretoria' ? directorUser.email : activeRole === 'rh' ? rhUser.email : currentUser.email;
+    activeRole === 'diretoria'
+      ? directorUser.email
+      : activeRole === 'rh'
+      ? rhUser.email
+      : activeRole === 'administrador'
+      ? adminUser.email
+      : currentUser.email;
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const [autoFilled, setAutoFilled] = useState(false);
   const codeInputRefs = useRef<Array<TextInput | null>>([]);
@@ -9306,17 +9449,38 @@ export function SideMenuOverlay({
 }) {
   const isDirector = variant === 'diretoria';
   const isRH = variant === 'rh';
-  const sections = isDirector ? directorSideMenuSections : isRH ? rhSideMenuSections : sideMenuSections;
-  const headerName = isDirector ? directorUser.fullName : isRH ? rhUser.fullName : currentUser.fullName;
-  const headerRole = isDirector ? directorUser.role : isRH ? rhUser.role : currentUser.role;
+  const isAdmin = variant === 'administrador';
+  const sections = isDirector
+    ? directorSideMenuSections
+    : isRH
+    ? rhSideMenuSections
+    : isAdmin
+    ? adminSideMenuSections
+    : sideMenuSections;
+  const headerName = isDirector
+    ? directorUser.fullName
+    : isRH
+    ? rhUser.fullName
+    : isAdmin
+    ? adminUser.fullName
+    : currentUser.fullName;
+  const headerRole = isDirector
+    ? directorUser.role
+    : isRH
+    ? rhUser.role
+    : isAdmin
+    ? adminUser.role
+    : currentUser.role;
   const headerGradientColors: [string, string] = isDirector
     ? ['#7A1230', '#B21B3E']
     : isRH
     ? ['#1B6E3A', '#2A9D51']
+    : isAdmin
+    ? ['#1B2340', '#2F3A5C']
     : ['#2F4EA8', '#4C439E'];
   const insets = useSafeAreaInsets();
 
-  const handleItemPress = (route?: SideMenuRoute | DirectorSideMenuRoute | RHSideMenuRoute) => {
+  const handleItemPress = (route?: SideMenuRoute | DirectorSideMenuRoute | RHSideMenuRoute | AdminSideMenuRoute) => {
     onClose();
 
     if (route && navigationRef.isReady()) {
@@ -9419,6 +9583,7 @@ export function TopBar({
   const { readNotificationIds } = useContext(NotificationsReadContext);
   const isDirector = variant === 'diretoria';
   const isRH = variant === 'rh';
+  const isAdmin = variant === 'administrador';
   const hasUnreadNotifications = notifications.some(
     (item) => item.unread && !readNotificationIds[item.id]
   );
@@ -9439,12 +9604,14 @@ export function TopBar({
         <DirectorBrandLogo light={onColor} />
       ) : isRH ? (
         <RHBrandLogo />
+      ) : isAdmin ? (
+        <AdminBrandLogo />
       ) : (
         <BrandLogo compact theme={onColor ? 'light' : 'dark'} />
       )}
 
       <View style={styles.topBarRight}>
-        {isDirector || isRH ? null : (
+        {isDirector || isRH || isAdmin ? null : (
           <Pressable style={styles.notificationBellButton} onPress={openNotifications}>
             <Feather name="bell" size={17} color="#313951" />
             {hasUnreadNotifications ? <View style={styles.notificationBellDot} /> : null}
@@ -9452,7 +9619,7 @@ export function TopBar({
         )}
 
         <Pressable
-          style={[styles.avatar, isRH ? styles.avatarRH : null]}
+          style={[styles.avatar, isRH ? styles.avatarRH : null, isAdmin ? styles.avatarAdmin : null]}
           onPress={onAvatarPress}
           disabled={!onAvatarPress}
         >
@@ -9488,6 +9655,20 @@ function RHBrandLogo() {
       <View>
         <Text style={styles.rhBrandTitle}>RH</Text>
         <Text style={styles.rhBrandSubtitle}>RECURSOS HUMANOS</Text>
+      </View>
+    </View>
+  );
+}
+
+function AdminBrandLogo() {
+  return (
+    <View style={styles.directorBrandRow}>
+      <View style={styles.adminBrandIconShell}>
+        <Feather name="shield" size={16} color="#FFFFFF" />
+      </View>
+      <View>
+        <Text style={styles.adminBrandTitle}>Administrador</Text>
+        <Text style={styles.adminBrandSubtitle}>PAINEL DE GESTÃO</Text>
       </View>
     </View>
   );
@@ -10407,6 +10588,9 @@ export const styles = StyleSheet.create({
   avatarRH: {
     backgroundColor: '#1B6E3A',
   },
+  avatarAdmin: {
+    backgroundColor: '#1B2340',
+  },
   rhBrandIconShell: {
     width: 32,
     height: 32,
@@ -10421,6 +10605,25 @@ export const styles = StyleSheet.create({
     fontWeight: '800',
   },
   rhBrandSubtitle: {
+    color: '#7C8397',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  adminBrandIconShell: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#1B2340',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminBrandTitle: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  adminBrandSubtitle: {
     color: '#7C8397',
     fontSize: 9,
     fontWeight: '700',
