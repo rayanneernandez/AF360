@@ -3266,7 +3266,7 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
 }
 
 function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword'>) {
-  const [recoveryEmail, setRecoveryEmail] = useState(currentUser.email);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
   const [isLinkSent, setIsLinkSent] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -3314,6 +3314,7 @@ function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword'>) {
           onChangeText={setRecoveryEmail}
           autoCapitalize="none"
           keyboardType="email-address"
+          placeholder="email@americanfuel.com.br"
         />
 
         <View style={styles.forgotPasswordInfoBox}>
