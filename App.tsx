@@ -3168,6 +3168,7 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
               onChangeText={setEmail}
               autoCapitalize="none"
               keyboardType="email-address"
+              placeholder="email@rede.americanfuel.com.br"
             />
 
             <FieldLabel label="Senha" style={styles.spacingTop} />
@@ -3176,6 +3177,7 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
               value={password}
               onChangeText={setPassword}
               secureTextEntry
+              placeholder="****"
             />
 
             <View style={styles.loginOptions}>
@@ -9550,6 +9552,7 @@ function InputRow({
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   keyboardType?: 'default' | 'email-address';
   secureTextEntry?: boolean;
+  placeholder?: string;
 }) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const isPasswordField = Boolean(secureTextEntry);
@@ -9988,7 +9991,7 @@ export const styles = StyleSheet.create({
     flex: 1,
     marginTop: -2,
     paddingHorizontal: 28,
-    paddingTop: 22,
+    paddingTop: 40,
   },
   fieldLabel: {
     color: '#222B45',
