@@ -56,31 +56,40 @@ async function fetchEffectiveModules({ fetchTable, role, userId }) {
   return modules;
 }
 
-function resolveRole({ profile, effectiveModules, rhColaborador, email }) {
+// Retorna TODOS os painéis que esse login pode abrir (não só um) — o app
+// mobile decide sozinho se entra direto (1 painel) ou mostra uma tela de
+// escolha (2+ painéis), igual a regra "Mestre -> /admin; 1 módulo -> direto;
+// 2+ -> escolher" que já existe no painel web (confirmado com a Rayanne).
+// Ordem de inserção = prioridade (usada só como sugestão de "principal" pro
+// campo legado `role`, o array em si não depende de ordem pro app).
+function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email }) {
+  const roles = new Set();
+
   // a) Sinal real e confiável: profiles.is_master = acesso total (é o badge
   // "Master" da tela Usuários, sempre acima de qualquer módulo).
-  if (profile?.is_master) return 'diretoria';
+  if (profile?.is_master) roles.add('diretoria');
 
   // b) Sinal real pro resto: módulos efetivos (Cargo ∪ user_modules).
-  if (effectiveModules?.has('diretoria')) return 'diretoria';
-  if (effectiveModules?.has('administrador')) return 'diretoria';
-  if (effectiveModules?.has('rh')) return 'rh';
+  if (effectiveModules?.has('diretoria')) roles.add('diretoria');
+  if (effectiveModules?.has('administrador')) roles.add('diretoria');
+  if (effectiveModules?.has('rh')) roles.add('rh');
 
   // c) Ponte temporária por e-mail conhecido — só pra cobrir usuários de
   // teste cujo acesso ainda não tem os módulos certos configurados.
   const normalizedEmail = String(profile?.email || email || '').trim().toLowerCase();
-  if (KNOWN_DIRETORIA_EMAILS.includes(normalizedEmail)) return 'diretoria';
-  if (KNOWN_RH_EMAILS.includes(normalizedEmail)) return 'rh';
+  if (KNOWN_DIRETORIA_EMAILS.includes(normalizedEmail)) roles.add('diretoria');
+  if (KNOWN_RH_EMAILS.includes(normalizedEmail)) roles.add('rh');
 
-  // d) Sinal real pros demais: existe linha em rh_colaboradores vinculada
-  // (profile_id) — é colaborador comum.
-  if (rhColaborador) return 'colaborador';
-
-  // e) Default seguro: nunca eleva privilégio sem sinal claro. Marketing,
+  // d) 'Colaborador' só entra na lista se existir MESMO uma ficha em
+  // rh_colaboradores vinculada (profile_id) — não adianta oferecer um
+  // painel pessoal vazio só porque o módulo "colaborador" está marcado
+  // (isso é só permissão, não dado de RH de verdade por trás). Marketing,
   // Financeiro, Gestão, R&S e Administrativo sozinhos (sem RH/Diretoria/
-  // Administrador) caem aqui de propósito — o app mobile só tem 3 perfis
-  // por enquanto (confirmado com a Rayanne em 23/07).
-  return 'colaborador';
+  // Administrador e sem ficha vinculada) não entram em nenhum painel de
+  // propósito — o app mobile só tem 3 perfis por enquanto.
+  if (rhColaborador) roles.add('colaborador');
+
+  return Array.from(roles);
 }
 
 // POST /api/auth/login  { email, password }
@@ -124,7 +133,10 @@ router.post('/login', async (req, res) => {
 
     const effectiveModules = await fetchEffectiveModules({ fetchTable, role: roleRow, userId });
 
-    const role = resolveRole({ profile, effectiveModules, rhColaborador, email });
+    const availableRoles = resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email });
+    // 'role' fica como o principal/sugerido, só por compatibilidade com quem
+    // ainda ler esse campo isolado — o app decide tudo pelo array agora.
+    const role = availableRoles[0] ?? 'colaborador';
 
     const fullName = rhColaborador?.nome_completo || profile?.full_name || null;
 
@@ -135,6 +147,7 @@ router.post('/login', async (req, res) => {
         email: profile?.email || email,
         fullName,
         role,
+        availableRoles,
         colaboradorId: rhColaborador?.id || null,
         empresaId: rhColaborador?.empresa_id || profile?.empresa_id || null,
       },

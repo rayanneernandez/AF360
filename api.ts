@@ -423,6 +423,12 @@ export type AuthIdentity = {
   email: string;
   fullName: string | null;
   role: 'colaborador' | 'rh' | 'diretoria';
+  // Lista de painéis que esse login pode abrir de verdade (pode ter mais de
+  // 1 — ex: alguém com módulo RH que também tem ficha de colaborador
+  // vinculada vê ['rh', 'colaborador']). 'role' acima é só o primeiro/
+  // principal, mantido por compatibilidade; o app decide se mostra a tela
+  // de seleção de painel com base neste array.
+  availableRoles: Array<'colaborador' | 'rh' | 'diretoria'>;
   colaboradorId: string | null;
   empresaId: string | null;
 };

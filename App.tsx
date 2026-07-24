@@ -71,6 +71,7 @@ export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
   ForgotPassword: undefined;
+  SelectPanel: undefined;
   DeviceAuth: undefined;
   TwoFactorVerification: undefined;
   Dashboard: undefined;
@@ -2921,6 +2922,7 @@ export default function App() {
                     <Stack.Screen name="Splash" component={SplashScreen} />
                     <Stack.Screen name="Login" component={LoginScreen} />
                     <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+                    <Stack.Screen name="SelectPanel" component={SelectPanelScreen} />
                     <Stack.Screen name="DeviceAuth" component={DeviceAuthScreen} />
                     <Stack.Screen name="TwoFactorVerification" component={TwoFactorVerificationScreen} />
                     <Stack.Screen name="Dashboard" component={DashboardScreen} />
@@ -3037,6 +3039,32 @@ function SplashScreen({ navigation }: ScreenProps<'Splash'>) {
   );
 }
 
+// Compartilhado entre LoginScreen (quando só existe 1 painel disponível) e
+// SelectPanelScreen (depois que a pessoa escolhe qual painel abrir) — mantém
+// o mesmo fluxo de biometria/2FA que já existia, só que agora o "papel"
+// (activeRole) pode vir de uma escolha explícita em vez de sempre automático.
+function proceedAfterRoleChosen(
+  role: UserRole,
+  navigation: ScreenProps<'Login'>['navigation'],
+  setActiveRole: (role: UserRole) => void,
+  isBiometricLoginEnabled: boolean,
+  isTwoFactorEnabled: boolean
+) {
+  setActiveRole(role);
+
+  if (isBiometricLoginEnabled) {
+    navigation.replace('DeviceAuth');
+    return;
+  }
+
+  if (isTwoFactorEnabled) {
+    navigation.replace('TwoFactorVerification');
+    return;
+  }
+
+  navigation.replace(role === 'diretoria' ? 'DirectorDashboard' : role === 'rh' ? 'RHDashboard' : 'Dashboard');
+}
+
 function LoginScreen({ navigation }: ScreenProps<'Login'>) {
   const [keepConnected, setKeepConnected] = useState(true);
   const [email, setEmail] = useState('bruno.lima@americanfuel.com.br');
@@ -3054,37 +3082,32 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
 
     try {
       const identity = await login(email.trim(), password);
+      // availableRoles é a lista real de painéis que essa conta pode abrir
+      // (pode ter mais de 1 — ex: RH + Colaborador, quando a pessoa também
+      // tem ficha de colaborador vinculada). Fallback pro campo antigo
+      // 'role' só por segurança, caso o backend não mande o array por algum
+      // motivo (não deveria acontecer, mas evita quebrar o login à toa).
+      const availableRoles = identity.availableRoles ?? [identity.role];
 
-      // Perfil de colaborador sem colaboradorId vinculado ainda (ex.: usuário
-      // criado no Auth mas sem linha correspondente em rh_colaboradores):
-      // não dá pra fabricar um colaboradorId falso, então bloqueamos a entrada
-      // no painel pessoal e avisamos o usuário em vez de deixar o Dashboard
-      // quebrado/silenciosamente vazio.
-      if (identity.role === 'colaborador' && !identity.colaboradorId) {
+      // Nenhum painel disponível (ex.: login criado mas sem módulo nenhum
+      // liberado e sem ficha de colaborador vinculada) — não dá pra fabricar
+      // acesso, então avisamos em vez de deixar uma tela quebrada/vazia.
+      if (availableRoles.length === 0) {
         Alert.alert(
-          'Cadastro sem colaborador vinculado',
-          'Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seu painel.'
+          'Sem acesso liberado',
+          'Seu acesso ainda não foi liberado para nenhum painel. Procure o RH.'
         );
         return;
       }
 
       setIdentity(identity);
-      setActiveRole(identity.role);
 
-      const dashboardRoute =
-        identity.role === 'diretoria' ? 'DirectorDashboard' : identity.role === 'rh' ? 'RHDashboard' : 'Dashboard';
-
-      if (isBiometricLoginEnabled) {
-        navigation.replace('DeviceAuth');
+      if (availableRoles.length > 1) {
+        navigation.replace('SelectPanel');
         return;
       }
 
-      if (isTwoFactorEnabled) {
-        navigation.replace('TwoFactorVerification');
-        return;
-      }
-
-      navigation.replace(dashboardRoute);
+      proceedAfterRoleChosen(availableRoles[0], navigation, setActiveRole, isBiometricLoginEnabled, isTwoFactorEnabled);
     } catch (err) {
       // Mensagem amigável fixa por tipo de erro — nunca mostra o texto cru
       // que vem do backend/Supabase (tipo "Invalid login credentials"), que
@@ -3173,6 +3196,59 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
           </View>
         </View>
       </TouchableWithoutFeedback>
+    </SafeAreaView>
+  );
+}
+
+const PANEL_OPTION_META: Record<UserRole, { label: string; subtitle: string; icon: keyof typeof Feather.glyphMap }> = {
+  diretoria: { label: 'Diretoria', subtitle: 'Acesso total', icon: 'shield' },
+  rh: { label: 'RH', subtitle: 'Painel de recursos humanos', icon: 'users' },
+  colaborador: { label: 'Meu Painel', subtitle: 'Seus dados pessoais', icon: 'user' },
+};
+
+// Aparece só quando o login tem mais de 1 painel disponível (ex.: alguém com
+// módulo RH que também tem ficha de colaborador vinculada) — mesma ideia da
+// tela "Mestre -> /admin; 1 módulo -> direto; 2+ -> escolher" que já existe
+// no painel web, só que pro app mobile.
+function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const { setActiveRole } = useContext(UserRoleContext);
+  const { isBiometricLoginEnabled, isTwoFactorEnabled } = useContext(SecurityPreferencesContext);
+  const roles = identity?.availableRoles ?? [];
+
+  const handleSelect = (role: UserRole) => {
+    proceedAfterRoleChosen(role, navigation, setActiveRole, isBiometricLoginEnabled, isTwoFactorEnabled);
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.pageHeader}>
+        <Text style={styles.pageTitle}>Entrar como...</Text>
+        <Text style={styles.pageSubtitle}>Sua conta tem acesso a mais de um painel. Escolha qual quer abrir.</Text>
+      </View>
+
+      <View style={styles.scrollContent}>
+        {roles.map((role) => {
+          const meta = PANEL_OPTION_META[role];
+          return (
+            <Pressable
+              key={role}
+              style={styles.trainingCourseCard}
+              onPress={() => handleSelect(role)}
+            >
+              <View style={[styles.trainingCourseBadge, { backgroundColor: '#EDF1FF' }]}>
+                <Feather name={meta.icon} size={20} color="#29448D" />
+              </View>
+              <View style={styles.trainingCourseBody}>
+                <Text style={styles.trainingCourseTitle}>{meta.label}</Text>
+                <Text style={styles.trainingCourseSummary}>{meta.subtitle}</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color="#9AA1B5" />
+            </Pressable>
+          );
+        })}
+      </View>
     </SafeAreaView>
   );
 }
