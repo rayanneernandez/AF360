@@ -3168,7 +3168,7 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
               onChangeText={setEmail}
               autoCapitalize="none"
               keyboardType="email-address"
-              placeholder="email@rede.americanfuel.com.br"
+              placeholder="email@americanfuel.com.br"
             />
 
             <FieldLabel label="Senha" style={styles.spacingTop} />
