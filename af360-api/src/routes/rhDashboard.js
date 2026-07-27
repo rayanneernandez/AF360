@@ -67,14 +67,29 @@ function isActiveAt(colaborador, atMs) {
   return true;
 }
 
+function isVendaEstabelecimento(motivoRaw) {
+  return (motivoRaw ?? '').trim().toLowerCase() === 'venda_estabelecimento';
+}
+
 function computeTurnoverForRange(colaboradores, regiaoById, startMs, endMs) {
-  // Pra período em andamento (mês atual), "hc" é o quadro de agora, não uma
-  // projeção pro fim do mês que ainda não chegou — por isso usamos o menor
-  // entre o fim do período e "agora" como referência do quadro ativo.
-  const hcReferenceMs = Math.min(endMs, Date.now());
-  const activeAtEnd = colaboradores.filter((c) => isActiveAt(c, hcReferenceMs));
+  // Confirmado com o time do Lovable (função `rh_turnover_detalhe` no banco,
+  // que alimenta a tela web): o HC do período é uma FOTO DO PRIMEIRO DIA do
+  // período (startMs / v_inicio), não "agora" nem o fim do período. Antes
+  // usávamos Math.min(endMs, Date.now()) — pra um mês em andamento isso dava
+  // o quadro "ao vivo" (incluindo quem foi admitido depois do dia 1), e pra
+  // um mês fechado dava o quadro do ÚLTIMO dia do mês (endMs) — os dois
+  // diferentes do que o web calcula, causando a divergência de HC por região
+  // reportada pela Rayanne (ex.: Zona Norte 596 no app vs 588 no web).
+  const activeAtEnd = colaboradores.filter((c) => isActiveAt(c, startMs));
   const desligados = colaboradores.filter(
-    (c) => c.demissaoMs !== null && c.demissaoMs >= startMs && c.demissaoMs < endMs
+    (c) =>
+      c.demissaoMs !== null &&
+      c.demissaoMs >= startMs &&
+      c.demissaoMs < endMs &&
+      // Confirmado com o Lovable: quem saiu por "venda_estabelecimento" NÃO
+      // entra na conta de saídas (mas continua contando no HC normalmente,
+      // já que isActiveAt acima não olha o motivo).
+      !isVendaEstabelecimento(c.motivo_desligamento)
   );
 
   const hc = activeAtEnd.length;
@@ -83,15 +98,26 @@ function computeTurnoverForRange(colaboradores, regiaoById, startMs, endMs) {
   const involuntario = geral - voluntario;
 
   const regiaoMap = new Map();
-  const regiaoOf = (c) => (c.empresa_id && regiaoById.has(c.empresa_id) ? regiaoById.get(c.empresa_id) : null) || 'Não informado';
+  // Confirmado com o Lovable: a região é sempre rh_colaboradores.empresa_id
+  // -> empresas.regiao, com INNER JOIN — colaborador sem empresa_id (ou com
+  // um empresa_id que não bate com nenhuma linha de empresas) NÃO aparece em
+  // nenhuma linha da tabela de região (nem num bucket "sem região"). Só
+  // quando o JOIN dá certo e empresas.regiao é NULL que cai em "Sem região".
+  // (retorna null pra sinalizar "não entra na tabela")
+  const regiaoOf = (c) => {
+    if (!c.empresa_id || !regiaoById.has(c.empresa_id)) return null;
+    return regiaoById.get(c.empresa_id) || 'Sem região';
+  };
 
   activeAtEnd.forEach((c) => {
     const nome = regiaoOf(c);
+    if (nome === null) return;
     if (!regiaoMap.has(nome)) regiaoMap.set(nome, { nome, hc: 0, saidas: 0 });
     regiaoMap.get(nome).hc += 1;
   });
   desligados.forEach((c) => {
     const nome = regiaoOf(c);
+    if (nome === null) return;
     if (!regiaoMap.has(nome)) regiaoMap.set(nome, { nome, hc: 0, saidas: 0 });
     regiaoMap.get(nome).saidas += 1;
   });
