@@ -133,6 +133,15 @@ export type RhColaboradorRaw = {
   celular: string | null;
   whatsapp: string | null;
   salario_base: number | null;
+  endereco_cep: string | null;
+  endereco_logradouro: string | null;
+  endereco_numero: string | null;
+  endereco_complemento: string | null;
+  endereco_bairro: string | null;
+  endereco_cidade: string | null;
+  endereco_estado: string | null;
+  contato_emergencia_nome: string | null;
+  contato_emergencia_telefone: string | null;
   [key: string]: unknown;
 };
 

@@ -85,6 +85,20 @@ export type Employee = {
   celular: string;
   salario: number;
   pendentesCount: number;
+  // Opcionais: só vêm preenchidos quando o colaborador vem da API real
+  // (mapRhColaboradorToEmployee) — os registros mock (rhEmployees, usados só
+  // como fallback antes do fetch real chegar) não têm esses campos.
+  emailPessoal?: string;
+  emailCorporativo?: string;
+  enderecoCep?: string;
+  enderecoLogradouro?: string;
+  enderecoNumero?: string;
+  enderecoComplemento?: string;
+  enderecoBairro?: string;
+  enderecoCidade?: string;
+  enderecoEstado?: string;
+  contatoEmergenciaNome?: string;
+  contatoEmergenciaTelefone?: string;
 };
 
 type TransferStatus = 'pendente' | 'aprovada' | 'efetivada';
@@ -340,6 +354,17 @@ function mapRhColaboradorToEmployee(row: RhColaboradorRaw, empresaNomeById: Map<
     celular: row.celular ?? row.whatsapp ?? '',
     salario,
     pendentesCount: 0,
+    emailPessoal: row.email_pessoal ?? '',
+    emailCorporativo: row.email_corporativo ?? '',
+    enderecoCep: row.endereco_cep ?? '',
+    enderecoLogradouro: row.endereco_logradouro ?? '',
+    enderecoNumero: row.endereco_numero ?? '',
+    enderecoComplemento: row.endereco_complemento ?? '',
+    enderecoBairro: row.endereco_bairro ?? '',
+    enderecoCidade: row.endereco_cidade ?? '',
+    enderecoEstado: row.endereco_estado ?? '',
+    contatoEmergenciaNome: row.contato_emergencia_nome ?? '',
+    contatoEmergenciaTelefone: row.contato_emergencia_telefone ?? '',
   };
 }
 
@@ -3239,6 +3264,17 @@ function DadosPessoaisModal({
     nomePai: '',
     telefoneFixo: '',
     celular: employee.celular,
+    emailPessoal: employee.emailPessoal ?? '',
+    emailCorporativo: employee.emailCorporativo ?? '',
+    cep: employee.enderecoCep ?? '',
+    logradouro: employee.enderecoLogradouro ?? '',
+    numero: employee.enderecoNumero ?? '',
+    complemento: employee.enderecoComplemento ?? '',
+    bairro: employee.enderecoBairro ?? '',
+    cidade: employee.enderecoCidade ?? '',
+    uf: employee.enderecoEstado ?? '',
+    contatoEmergenciaNome: employee.contatoEmergenciaNome ?? '',
+    contatoEmergenciaTelefone: employee.contatoEmergenciaTelefone ?? '',
   });
   const [contractForm, setContractForm] = useState({
     contractType: 'CLT',
@@ -3340,7 +3376,22 @@ function DadosPessoaisModal({
   useEffect(() => {
     if (visible) {
       setActiveTab('pessoais');
-      setForm((current) => ({ ...current, cpf: formatCpfInput(employee.cpf), celular: employee.celular }));
+      setForm((current) => ({
+        ...current,
+        cpf: formatCpfInput(employee.cpf),
+        celular: employee.celular,
+        emailPessoal: employee.emailPessoal ?? '',
+        emailCorporativo: employee.emailCorporativo ?? '',
+        cep: employee.enderecoCep ?? '',
+        logradouro: employee.enderecoLogradouro ?? '',
+        numero: employee.enderecoNumero ?? '',
+        complemento: employee.enderecoComplemento ?? '',
+        bairro: employee.enderecoBairro ?? '',
+        cidade: employee.enderecoCidade ?? '',
+        uf: employee.enderecoEstado ?? '',
+        contatoEmergenciaNome: employee.contatoEmergenciaNome ?? '',
+        contatoEmergenciaTelefone: employee.contatoEmergenciaTelefone ?? '',
+      }));
       setContractForm((current) => ({
         ...current,
         admissionDate: employee.admissionLabel,
@@ -3541,7 +3592,7 @@ function DadosPessoaisModal({
               />
             </View>
             <View style={rhStyles.formRowItem}>
-              <Text style={styles.requestFieldLabel}>Naturalidade</Text>
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Naturalidade</Text>
               <TextInput
                 style={styles.processTextInput}
                 value={form.naturalidade}
@@ -3589,6 +3640,133 @@ function DadosPessoaisModal({
                 style={styles.processTextInput}
                 value={form.celular}
                 onChangeText={updateField('celular')}
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+          </View>
+          <View style={rhStyles.formRow}>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>E-mail pessoal</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.emailPessoal}
+                onChangeText={updateField('emailPessoal')}
+                placeholderTextColor="#A7AEC2"
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            </View>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>E-mail corporativo</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.emailCorporativo}
+                onChangeText={updateField('emailCorporativo')}
+                placeholderTextColor="#A7AEC2"
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            </View>
+          </View>
+
+          <Text style={[rhStyles.detailSectionHeading, styles.spacingTop]}>Residência</Text>
+          <View style={rhStyles.formRow}>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>CEP</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.cep}
+                onChangeText={updateField('cep')}
+                placeholder="00000-000"
+                placeholderTextColor="#A7AEC2"
+                keyboardType="number-pad"
+              />
+            </View>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Logradouro</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.logradouro}
+                onChangeText={updateField('logradouro')}
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+          </View>
+          <View style={rhStyles.formRow}>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Número</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.numero}
+                onChangeText={updateField('numero')}
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Complemento</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.complemento}
+                onChangeText={updateField('complemento')}
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+          </View>
+          <View style={rhStyles.formRow}>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Bairro</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.bairro}
+                onChangeText={updateField('bairro')}
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Cidade</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.cidade}
+                onChangeText={updateField('cidade')}
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+          </View>
+          <View style={rhStyles.formRow}>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>UF</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.uf}
+                onChangeText={updateField('uf')}
+                placeholder="RJ"
+                placeholderTextColor="#A7AEC2"
+                autoCapitalize="characters"
+                maxLength={2}
+              />
+            </View>
+            <View style={rhStyles.formRowItem} />
+          </View>
+
+          <Text style={[rhStyles.detailSectionHeading, styles.spacingTop]}>Contato de emergência</Text>
+          <View style={rhStyles.formRow}>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Nome do contato</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.contatoEmergenciaNome}
+                onChangeText={updateField('contatoEmergenciaNome')}
+                placeholder="Nome completo"
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Telefone do contato</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.contatoEmergenciaTelefone}
+                onChangeText={updateField('contatoEmergenciaTelefone')}
+                placeholder="(00) 00000-0000"
                 placeholderTextColor="#A7AEC2"
               />
             </View>
