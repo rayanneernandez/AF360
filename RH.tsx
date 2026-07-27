@@ -780,11 +780,26 @@ function RHMultiLineChart({
   const isInteractive = Boolean(labels && onSelectIndex);
   const seriesPoints = series.map((line) => buildLinePoints(line.values, width, height));
 
+  // Ordem de desenho: a linha com o valor médio MAIOR é desenhada por último
+  // (fica por cima). Antes a ordem era sempre a mesma em que a série chegava
+  // no array (ex.: Geral sempre atrás de Voluntário), o que dava a entender
+  // visualmente que a linha de trás (mais fina/coberta) era a menor, mesmo
+  // quando na verdade ela tinha o valor maior — ex.: Geral é sempre ≥
+  // Voluntário (voluntário é só uma parte do geral), mas ficava escondida
+  // atrás da linha de Voluntário.
+  const drawOrder = series
+    .map((line, index) => ({
+      index,
+      avg: line.values.length > 0 ? line.values.reduce((sum, v) => sum + v, 0) / line.values.length : 0,
+    }))
+    .sort((a, b) => a.avg - b.avg);
+
   return (
     <View>
       <View style={rhStyles.chartTouchWrap}>
         <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-          {series.map((line, index) => {
+          {drawOrder.map(({ index }) => {
+            const line = series[index];
             const points = seriesPoints[index];
             const linePath = points.map((point, i) => `${i === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
             return (

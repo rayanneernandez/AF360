@@ -136,10 +136,13 @@ function compareFullName(a, b) {
 // localmente (client-side) sobre a lista inteira, já que são ~515 linhas.
 router.get('/usuarios', async (req, res) => {
   try {
+    // rh_colaboradores tem 1900+ linhas (2+ páginas de 1000) — precisa de
+    // "order" estável pra paginação por offset não repetir/pular linhas
+    // (mesmo bug corrigido em routes/rhDashboard.js/loadColaboradoresEEmpresas).
     const [profilesJson, rolesJson, rhColaboradoresJson, empresaNomeById] = await Promise.all([
-      fetchAllRows('profiles', { select: 'id,full_name,email,is_active,role_id,empresa_id' }),
+      fetchAllRows('profiles', { select: 'id,full_name,email,is_active,role_id,empresa_id', order: 'id:asc' }),
       fetchAllRows('roles', { select: 'id,name' }),
-      fetchAllRows('rh_colaboradores', { select: 'id,profile_id,empresa_id,cargo' }),
+      fetchAllRows('rh_colaboradores', { select: 'id,profile_id,empresa_id,cargo', order: 'id:asc' }),
       loadEmpresaNomeById(),
     ]);
 

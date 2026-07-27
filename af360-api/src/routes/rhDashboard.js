@@ -160,11 +160,24 @@ function computeTurnoverForRange(colaboradores, regiaoById, startMs, endMs) {
 
 async function loadColaboradoresEEmpresas() {
   const [colaboradoresJson, empresasJson] = await Promise.all([
+    // IMPORTANTE: fetchAllRows pagina em blocos de 1000 (rh_colaboradores tem
+    // 1900+ linhas, então são pelo menos 2 páginas). Sem um "order" explícito
+    // e ESTÁVEL, a ordem devolvida pelo Supabase/PostgREST entre uma página e
+    // outra não é garantida — numa tabela viva (sendo editada o tempo todo
+    // pelo RH), isso pode fazer a paginação por offset repetir algumas linhas
+    // (contadas em dobro) e pular outras (nunca contadas), exatamente o tipo
+    // de divergência pequena e "espalhada" entre regiões que a Rayanne
+    // reportou (headcount total e por região batendo quase certo, mas não
+    // exatamente, mesmo consultando web e app no mesmíssimo momento).
+    // Corrigido: ordena por "id" (chave estável) pra garantir paginação
+    // determinística — cada página sempre traz exatamente o próximo bloco,
+    // sem repetir nem pular linhas.
     fetchAllRows('rh_colaboradores', {
       select:
         'id,nome_completo,empresa_id,cargo,status,setor,posto_trabalho,sexo,salario_base,data_admissao,data_demissao,motivo_desligamento,valor_rescisao_liquida,vencimento_experiencia,portal_status,portal_ativado_em',
+      order: 'id:asc',
     }),
-    fetchAllRows('empresas', { select: 'id,regiao,nome_fantasia,razao_social' }),
+    fetchAllRows('empresas', { select: 'id,regiao,nome_fantasia,razao_social', order: 'id:asc' }),
   ]);
 
   const regiaoById = new Map();
