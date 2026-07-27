@@ -574,38 +574,24 @@ router.get('/resumo', async (req, res) => {
       (c) => c.admissaoMs !== null && nowMs - c.admissaoMs <= 90 * MS_PER_DAY
     ).length;
 
-    // "Folha (Ativos)" — preferimos o total REAL já calculado pela folha de
-    // pagamento (rh_folha_competencias.total_bruto da competência mais
-    // recente) em vez de somar salario_base dos ativos, que é só uma
-    // estimativa (ignora horas extra, descontos, dias trabalhados, etc.) e
-    // foi identificado como divergente do painel web. Cai no cálculo
-    // estimado só se ainda não existir nenhuma competência de folha lançada.
-    let folhaAtivosValor = null;
-    try {
-      const folhaCompetenciasJson = await fetchTable('rh_folha_competencias', {
-        select: 'ano,mes,total_bruto,total_colaboradores,status',
-        order: 'ano:desc,mes:desc',
-        limit: 1,
-      });
-      const ultimaCompetencia = (folhaCompetenciasJson.data || [])[0] || null;
-      // Só confiamos no total_bruto da competência se ela realmente cobrir
-      // (perto de) todo o quadro ativo — encontramos em produção uma
-      // competência "aberta"/rascunho com total_colaboradores=1 (claramente
-      // um teste, não a folha real), que gerava um "Folha (Ativos)" de
-      // R$ 1.621 em vez dos ~R$ 1,6-1,7 milhão reais. Se a competência mais
-      // recente cobrir menos da metade do quadro ativo atual, tratamos como
-      // não confiável e caímos na estimativa (soma de salario_base).
-      const cobreQuadroAtivo =
-        ultimaCompetencia &&
-        Number(ultimaCompetencia.total_colaboradores) >= ativosAgora.length * 0.5;
-      if (cobreQuadroAtivo && ultimaCompetencia.total_bruto !== null && ultimaCompetencia.total_bruto !== undefined) {
-        folhaAtivosValor = Number(ultimaCompetencia.total_bruto) || 0;
-      }
-    } catch (err) {
-      console.error('[rh/dashboard/resumo] falha ao ler rh_folha_competencias (usando estimativa):', err.message);
-    }
-    const folhaAtivosEstimado = ativosAgora.reduce((sum, c) => sum + (Number(c.salario_base) || 0), 0);
-    const folhaAtivos = folhaAtivosValor !== null ? folhaAtivosValor : folhaAtivosEstimado;
+    // "Folha (Ativos)" — confirmado com o time do Lovable exatamente como a
+    // função pública rh_dashboard_kpis(_mes, _ano, _modo) calcula esse KPI no
+    // web, direto de rh_colaboradores (NÃO usa rh_folha/rh_folha_competencias
+    // — aquela única linha "aberta" que existe lá é um rascunho de teste e
+    // não influencia esse número):
+    //   SELECT COALESCE(SUM(salario_base), 0) FROM rh_colaboradores
+    //   WHERE data_admissao IS NOT NULL AND data_admissao < _fim_date
+    //     AND (data_demissao IS NULL OR data_demissao >= _ini_date)
+    // Ou seja: soma o salario_base CHEIO (não proporcional a dias
+    // trabalhados) de qualquer colaborador ativo em QUALQUER momento dentro
+    // da janela do período selecionado (start/end já calculados acima pra
+    // essa mesma seleção de mês/ano), ignorando completamente o campo
+    // status (afastado/férias sem data_demissao ainda entram na soma).
+    const folhaAtivos = colaboradores.reduce((sum, c) => {
+      if (c.admissaoMs === null || c.admissaoMs >= end) return sum;
+      if (c.demissaoMs !== null && c.demissaoMs < start) return sum;
+      return sum + (Number(c.salario_base) || 0);
+    }, 0);
 
     // Cobertura do portal: OR com portal_ativado_em (timestamp, sinal
     // inequívoco) cobre o caso de o valor exato do enum de portal_status
