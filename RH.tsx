@@ -2365,7 +2365,14 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
     Promise.all([fetchRhColaboradores(), fetchRhStats()])
       .then(([rows, statsResult]) => {
         if (!isMounted) return;
-        setEmployees(rows.map(mapRhColaboradorToEmployee));
+        // Alfabética (já vem assim do backend, order: nome_completo:asc), mas
+        // desligados sempre por último — sort é estável, então dentro de
+        // cada grupo (ativos+demais / desligados) a ordem alfabética original
+        // é preservada.
+        const employeesSorted = rows
+          .map(mapRhColaboradorToEmployee)
+          .sort((a, b) => (a.status === 'desligado' ? 1 : 0) - (b.status === 'desligado' ? 1 : 0));
+        setEmployees(employeesSorted);
         setStats(statsResult);
       })
       .catch((err) => {

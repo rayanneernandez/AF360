@@ -526,14 +526,46 @@ router.get('/resumo', async (req, res) => {
     const ativosAgora = colaboradores.filter((c) => (c.status ?? '').trim().toLowerCase() === 'ativo');
     const feriasAgora = colaboradores.filter((c) => (c.status ?? '').trim().toLowerCase() === 'ferias' || (c.status ?? '').trim().toLowerCase() === 'férias');
     const afastadosAgora = colaboradores.filter((c) => (c.status ?? '').trim().toLowerCase() === 'afastado');
-    const novos90d = colaboradores.filter(
-      (c) => c.admissaoMs !== null && nowMs - c.admissaoMs <= 90 * MS_PER_DAY && c.admissaoMs <= nowMs
+    // Corrigido: "Novos 90d" é uma métrica do "quadro atual" (mesma seção de
+    // ativos/férias/afastados), então precisa ser sobre quem está ATIVO agora
+    // e foi admitido nos últimos 90 dias — antes contava qualquer admissão no
+    // período mesmo que a pessoa já tivesse sido desligada depois, inflando o
+    // número em relação ao painel web.
+    const novos90d = ativosAgora.filter(
+      (c) => c.admissaoMs !== null && nowMs - c.admissaoMs <= 90 * MS_PER_DAY
     ).length;
 
-    const folhaAtivos = ativosAgora.reduce((sum, c) => sum + (Number(c.salario_base) || 0), 0);
+    // "Folha (Ativos)" — preferimos o total REAL já calculado pela folha de
+    // pagamento (rh_folha_competencias.total_bruto da competência mais
+    // recente) em vez de somar salario_base dos ativos, que é só uma
+    // estimativa (ignora horas extra, descontos, dias trabalhados, etc.) e
+    // foi identificado como divergente do painel web. Cai no cálculo
+    // estimado só se ainda não existir nenhuma competência de folha lançada.
+    let folhaAtivosValor = null;
+    try {
+      const folhaCompetenciasJson = await fetchTable('rh_folha_competencias', {
+        select: 'ano,mes,total_bruto,total_colaboradores,status',
+        order: 'ano:desc,mes:desc',
+        limit: 1,
+      });
+      const ultimaCompetencia = (folhaCompetenciasJson.data || [])[0] || null;
+      if (ultimaCompetencia && ultimaCompetencia.total_bruto !== null && ultimaCompetencia.total_bruto !== undefined) {
+        folhaAtivosValor = Number(ultimaCompetencia.total_bruto) || 0;
+      }
+    } catch (err) {
+      console.error('[rh/dashboard/resumo] falha ao ler rh_folha_competencias (usando estimativa):', err.message);
+    }
+    const folhaAtivosEstimado = ativosAgora.reduce((sum, c) => sum + (Number(c.salario_base) || 0), 0);
+    const folhaAtivos = folhaAtivosValor !== null ? folhaAtivosValor : folhaAtivosEstimado;
 
+    // Cobertura do portal: OR com portal_ativado_em (timestamp, sinal
+    // inequívoco) cobre o caso de o valor exato do enum de portal_status
+    // divergir do texto esperado — aceitamos algumas variações plausíveis
+    // ('ativado'/'ativo'/'concluido'/'completo') sem risco de contar errado,
+    // já que qualquer uma delas só é positiva se realmente indicar ativação.
+    const PORTAL_STATUS_ATIVO = ['ativado', 'ativo', 'concluido', 'completo'];
     const comPortal = ativosAgora.filter(
-      (c) => (c.portal_status ?? '').trim().toLowerCase() === 'ativado' || c.portal_ativado_em
+      (c) => PORTAL_STATUS_ATIVO.includes((c.portal_status ?? '').trim().toLowerCase()) || c.portal_ativado_em
     ).length;
     const cobertura = ativosAgora.length > 0 ? Math.round((comPortal / ativosAgora.length) * 100) : 0;
 
