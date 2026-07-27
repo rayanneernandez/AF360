@@ -3358,7 +3358,7 @@ const PANEL_OPTION_META: Record<
     tint: '#E7F5EC',
   },
   colaborador: {
-    label: 'Meu Painel',
+    label: 'Colaborador',
     subtitle: 'Seus dados pessoais',
     icon: 'user',
     color: '#A11054',
@@ -3806,7 +3806,7 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
           />
           <Text style={styles.panelGreeting}>Bom dia, {currentUserFirstName}</Text>
           <Text style={styles.panelTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.92}>
-            Meu Painel
+            Colaborador
           </Text>
           <Text style={styles.panelDescription} numberOfLines={2}>
             Aqui você acompanha tudo da empresa relacionado a você.
