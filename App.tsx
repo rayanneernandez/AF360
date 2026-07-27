@@ -25,6 +25,7 @@ import {
   Image,
   ImageBackground,
   Keyboard,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -77,6 +78,13 @@ import {
   updateConversa,
   login,
   fetchColaboradorHome,
+  fetchColaboradorComunicados,
+  fetchColaboradorSolicitacoes,
+  fetchColaboradorMetas,
+  fetchColaboradorTreinamentos,
+  fetchColaboradorBeneficios,
+  fetchColaboradorNotificacoes,
+  fetchColaboradorContracheques,
   ApiError,
   type ConversaResumo,
   type ConversaMensagem,
@@ -84,6 +92,13 @@ import {
   type ConversaMetadata,
   type AuthIdentity,
   type ColaboradorHomeData,
+  type ColaboradorComunicadoItem,
+  type ColaboradorSolicitacaoItem,
+  type ColaboradorMetaItem,
+  type ColaboradorTreinamentoItem,
+  type ColaboradorBeneficioItem,
+  type ColaboradorNotificacaoItem,
+  type ColaboradorContrachequeItem,
 } from './api';
 
 export type RootStackParamList = {
@@ -167,34 +182,6 @@ type DashboardCardProps = {
   value: string;
 };
 
-type CommunicationItem = {
-  id: string;
-  area: string;
-  time: string;
-  title: string;
-  description: string;
-  icon: keyof typeof Feather.glyphMap;
-  accent: string;
-  tint: string;
-};
-
-type PayslipItem = {
-  id: string;
-  title: string;
-  subtitle: string;
-  status: string;
-  statusColor: string;
-  statusTint: string;
-};
-
-type PayslipPreviewLine = {
-  code: string;
-  description: string;
-  reference: string;
-  earnings?: string;
-  deductions?: string;
-};
-
 type CalendarEvent = {
   id: string;
   day: number;
@@ -221,14 +208,6 @@ type BrazilHolidayApiItem = {
   date: string;
   name: string;
   type?: string;
-};
-
-type GoalItem = {
-  id: string;
-  title: string;
-  subtitle: string;
-  value: number;
-  color: string;
 };
 
 type ReimbursementItem = {
@@ -259,17 +238,6 @@ type RequestCategoryOption = {
   emoji?: string;
 };
 
-type BenefitItem = {
-  id: string;
-  title: string;
-  subtitle: string;
-  value: string;
-  valueColor: string;
-  icon: keyof typeof Feather.glyphMap;
-  iconColor: string;
-  tintColor: string;
-};
-
 type UniformItem = {
   id: string;
   title: string;
@@ -284,24 +252,6 @@ type ApprovalItem = {
   tagLabel: string;
   tagColor: string;
   tagTint: string;
-};
-
-type NotificationTarget =
-  | { screen: 'Payslips' }
-  | { screen: 'Approvals' }
-  | { screen: 'Communications' }
-  | { screen: 'Reimbursement' }
-  | { screen: 'TrainingDetail'; courseId: string };
-
-type NotificationItem = {
-  id: string;
-  icon: keyof typeof Feather.glyphMap;
-  iconColor: string;
-  iconTint: string;
-  title: string;
-  time: string;
-  unread: boolean;
-  target: NotificationTarget;
 };
 
 type TrainingLesson = {
@@ -624,79 +574,6 @@ const MenuContext = createContext<{
   closeMenu: () => {},
 });
 
-const payslips: PayslipItem[] = [
-  {
-    id: '1',
-    title: 'Maio · 2026',
-    subtitle: 'Líquido · R$ 3.842,17',
-    status: 'Atual',
-    statusColor: '#6F76BE',
-    statusTint: '#E8EAFA',
-  },
-  {
-    id: '2',
-    title: 'Abril · 2026',
-    subtitle: 'Líquido · R$ 3.790,55',
-    status: 'Pago',
-    statusColor: '#2B9862',
-    statusTint: '#E2F4EA',
-  },
-  {
-    id: '3',
-    title: 'Março · 2026',
-    subtitle: 'Líquido · R$ 3.815,20',
-    status: 'Pago',
-    statusColor: '#2B9862',
-    statusTint: '#E2F4EA',
-  },
-  {
-    id: '4',
-    title: '13º · 1ª parcela',
-    subtitle: 'Líquido · R$ 1.905,00',
-    status: 'Pago',
-    statusColor: '#2B9862',
-    statusTint: '#E2F4EA',
-  },
-  {
-    id: '5',
-    title: 'Fevereiro · 2026',
-    subtitle: 'Líquido · R$ 3.788,40',
-    status: 'Pago',
-    statusColor: '#2B9862',
-    statusTint: '#E2F4EA',
-  },
-  {
-    id: '6',
-    title: 'Janeiro · 2026',
-    subtitle: 'Líquido · R$ 3.760,10',
-    status: 'Pago',
-    statusColor: '#2B9862',
-    statusTint: '#E2F4EA',
-  },
-];
-
-const payslipPreviewLines: PayslipPreviewLine[] = [
-  { code: '001', description: 'Salario base', reference: '200:00', earnings: '1.858,68' },
-  { code: '999', description: 'Arredondamento', reference: '-', earnings: '0,10' },
-  { code: '600', description: 'Desc vale alimentacao', reference: '-', deductions: '6,30' },
-  { code: '645', description: 'Vale transporte', reference: '-', deductions: '111,52' },
-  { code: '903', description: 'INSS folha', reference: '-', deductions: '142,96' },
-];
-
-function buildPayslipPreviewTitle(title: string) {
-  return title.replace('·', 'de').replace('ª', 'a');
-}
-
-function buildPayslipIssueDate(payslipId: string) {
-  const issueDay = String(Number(payslipId) + 1).padStart(2, '0');
-  return `${issueDay}/07/2026 às 11:41`;
-}
-
-const PAYSLIP_PAPER_WIDTH = 480;
-const PAYSLIP_ZOOM_MIN = 0.6;
-const PAYSLIP_ZOOM_MAX = 1.6;
-const PAYSLIP_ZOOM_STEP = 0.1;
-
 const calendarYear = new Date().getFullYear();
 const calendarMonthNames = [
   'Janeiro',
@@ -816,36 +693,6 @@ const holidayEventTheme = {
   dateTint: '#FCE8EC',
   dateColor: '#E0002A',
 };
-const goals: GoalItem[] = [
-  {
-    id: 'goal-1',
-    title: 'Satisfação do cliente (NPS)',
-    subtitle: '82 de 85 pontos',
-    value: 96,
-    color: '#18955A',
-  },
-  {
-    id: 'goal-2',
-    title: 'Vendas de aditivados',
-    subtitle: 'R$ 18.400 de R$ 25.000',
-    value: 74,
-    color: '#E0002A',
-  },
-  {
-    id: 'goal-3',
-    title: 'Treinamentos obrigatórios',
-    subtitle: '2 de 3 concluídos',
-    value: 67,
-    color: '#E0002A',
-  },
-  {
-    id: 'goal-4',
-    title: 'Redução de quebra de estoque',
-    subtitle: 'Meta trimestral',
-    value: 91,
-    color: '#18955A',
-  },
-];
 const reimbursements: ReimbursementItem[] = [
   {
     id: 'rb-1',
@@ -884,48 +731,6 @@ const reimbursements: ReimbursementItem[] = [
     statusTint: '#FCE8EC',
   },
 ];
-const requestTickets: RequestTicketItem[] = [
-  {
-    id: 'ticket-1042',
-    ticketNumber: '#1042',
-    title: 'Segunda via do crachá',
-    openedDate: '30/05/2026',
-    department: 'RH',
-    status: 'Em andamento',
-    statusColor: '#B5841A',
-    statusTint: '#FCF3DA',
-  },
-  {
-    id: 'ticket-1038',
-    ticketNumber: '#1038',
-    title: 'Ajuste de ponto · 28/05',
-    openedDate: '29/05/2026',
-    department: 'Gestão',
-    status: 'Resolvido',
-    statusColor: '#2B9862',
-    statusTint: '#E2F4EA',
-  },
-  {
-    id: 'ticket-1031',
-    ticketNumber: '#1031',
-    title: 'Reposição de botina',
-    openedDate: '21/05/2026',
-    department: 'Suprimentos',
-    status: 'Aberto',
-    statusColor: '#5E6DB4',
-    statusTint: '#E9EEFF',
-  },
-  {
-    id: 'ticket-1024',
-    ticketNumber: '#1024',
-    title: 'Dúvida sobre Vale Refeição',
-    openedDate: '15/05/2026',
-    department: 'Financeiro',
-    status: 'Resolvido',
-    statusColor: '#2B9862',
-    statusTint: '#E2F4EA',
-  },
-];
 const requestCategoryOptions: RequestCategoryOption[] = [
   { id: 'medical-certificate', label: 'Atestado médico', color: '#F2994A' },
   { id: 'benefits', label: 'Benefícios', color: '#E6449A' },
@@ -933,68 +738,6 @@ const requestCategoryOptions: RequestCategoryOption[] = [
   { id: 'payslip-questions', label: 'Dúvidas no contra-cheque', color: '#2D9E6A' },
   { id: 'vacation', label: 'Férias', color: '#5E6DB4', emoji: '☀️' },
   { id: 'others', label: 'Outros', color: '#8992A8' },
-];
-const benefits: BenefitItem[] = [
-  {
-    id: 'benefit-1',
-    title: 'Vale Refeição',
-    subtitle: 'Saldo disponível',
-    value: 'R$ 612,40',
-    valueColor: '#18955A',
-    icon: 'gift',
-    iconColor: '#2D9E6A',
-    tintColor: '#E4F5EE',
-  },
-  {
-    id: 'benefit-2',
-    title: 'Vale Alimentação',
-    subtitle: 'Saldo disponível',
-    value: 'R$ 480,00',
-    valueColor: '#29448D',
-    icon: 'gift',
-    iconColor: '#5E6DB4',
-    tintColor: '#E9EEFF',
-  },
-  {
-    id: 'benefit-3',
-    title: 'Plano de Saúde',
-    subtitle: 'Bradesco · Apartamento',
-    value: 'Ativo',
-    valueColor: '#18955A',
-    icon: 'heart',
-    iconColor: '#E6213D',
-    tintColor: '#FCE8EC',
-  },
-  {
-    id: 'benefit-4',
-    title: 'Plano Odontológico',
-    subtitle: 'Cobertura completa',
-    value: 'Ativo',
-    valueColor: '#A97700',
-    icon: 'heart',
-    iconColor: '#B5841A',
-    tintColor: '#FCF3DA',
-  },
-  {
-    id: 'benefit-5',
-    title: 'Vale Transporte',
-    subtitle: 'Crédito mensal',
-    value: 'R$ 220,00',
-    valueColor: '#29448D',
-    icon: 'home',
-    iconColor: '#5E6DB4',
-    tintColor: '#E9EEFF',
-  },
-  {
-    id: 'benefit-6',
-    title: 'Gympass',
-    subtitle: 'Plano Silver',
-    value: 'Ativo',
-    valueColor: '#18955A',
-    icon: 'target',
-    iconColor: '#2D9E6A',
-    tintColor: '#E4F5EE',
-  },
 ];
 const uniforms: UniformItem[] = [
   { id: 'uniform-1', title: 'Camisa polo American Fuel', subtitle: 'Tam. M · 2 unidades' },
@@ -1038,58 +781,6 @@ const approvals: ApprovalItem[] = [
     tagLabel: 'Folga',
     tagColor: '#6F7890',
     tagTint: '#EEF0F5',
-  },
-];
-const notifications: NotificationItem[] = [
-  {
-    id: 'notification-1',
-    icon: 'home',
-    iconColor: '#E6213D',
-    iconTint: '#FCE8EC',
-    title: 'Seu contracheque de Maio já está disponível',
-    time: 'Há 1 hora',
-    unread: true,
-    target: { screen: 'Payslips' },
-  },
-  {
-    id: 'notification-2',
-    icon: 'award',
-    iconColor: '#B5841A',
-    iconTint: '#FCF3DA',
-    title: 'Treinamento NR-20 vence em 5 dias',
-    time: 'Hoje · 08:12',
-    unread: true,
-    target: { screen: 'TrainingDetail', courseId: 'nr20' },
-  },
-  {
-    id: 'notification-3',
-    icon: 'check-square',
-    iconColor: '#4C5470',
-    iconTint: '#E9EBF3',
-    title: 'Ana Souza solicitou aprovação de férias',
-    time: 'Ontem · 17:40',
-    unread: false,
-    target: { screen: 'Approvals' },
-  },
-  {
-    id: 'notification-4',
-    icon: 'send',
-    iconColor: '#5E6DB4',
-    iconTint: '#E9EEFF',
-    title: 'Novo comunicado: política de uniformes',
-    time: 'Há 2 dias',
-    unread: false,
-    target: { screen: 'Communications' },
-  },
-  {
-    id: 'notification-5',
-    icon: 'file-text',
-    iconColor: '#2D9E6A',
-    iconTint: '#E4F5EE',
-    title: 'Reembolso de combustível aprovado',
-    time: 'Há 4 dias',
-    unread: false,
-    target: { screen: 'Reimbursement' },
   },
 ];
 const trainingCourses: TrainingCourse[] = [
@@ -1223,6 +914,17 @@ const NotificationsReadContext = createContext<{
   markNotificationAsRead: () => {},
 });
 
+// Fonte real (notif_inbox, via GET /notificacoes) usada só pra alimentar o
+// indicador de "tem notificação não lida" no sininho do TopBar em todas as
+// telas do colaborador — cada tela que precisa da lista completa (ex.:
+// NotificationsScreen) faz sua própria busca; aqui é só o sinal leve pro
+// badge global.
+const ColaboradorNotificationsContext = createContext<{
+  items: ColaboradorNotificacaoItem[];
+}>({
+  items: [],
+});
+
 const SecurityPreferencesContext = createContext<{
   isTwoFactorEnabled: boolean;
   isBiometricLoginEnabled: boolean;
@@ -1267,59 +969,6 @@ export const AuthIdentityContext = createContext<{
   identity: null,
   setIdentity: () => {},
 });
-
-const communications: CommunicationItem[] = [
-  {
-    id: '1',
-    area: 'RH',
-    time: 'há 2 dias',
-    title: 'Nova política de uniformes para 2026',
-    description: 'Confira os novos itens, prazos de reposição e como solicitar pelo app.',
-    icon: 'send',
-    accent: '#E6213D',
-    tint: '#E9EEFF',
-  },
-  {
-    id: '2',
-    area: 'Operações',
-    time: 'há 3 dias',
-    title: 'Manutenção programada nas bombas Unidade Paulista',
-    description: 'Bombas 3 e 4 ficarão indisponíveis na quarta, das 22h às 04h.',
-    icon: 'shield',
-    accent: '#B5841A',
-    tint: '#FCF3DA',
-  },
-  {
-    id: '3',
-    area: 'Diretoria',
-    time: 'há 5 dias',
-    title: 'Resultados do trimestre: batemos a meta!',
-    description: 'Crescemos 12% em volume. Obrigado a cada um da equipe.',
-    icon: 'bar-chart-2',
-    accent: '#F03A51',
-    tint: '#FBE7EB',
-  },
-  {
-    id: '4',
-    area: 'RH',
-    time: 'há 1 semana',
-    title: 'Campanha de vacinação da gripe',
-    description: 'Vacinação gratuita na unidade dias 24 e 25/06. Agende pelo RH.',
-    icon: 'heart',
-    accent: '#4157A5',
-    tint: '#ECF0FE',
-  },
-  {
-    id: '5',
-    area: 'TI',
-    time: 'há 2 semanas',
-    title: 'Novo app do colaborador disponível',
-    description: 'Atualize o aplicativo para acessar contracheques e benefícios.',
-    icon: 'home',
-    accent: '#7B8299',
-    tint: '#F0F1F6',
-  },
-];
 
 const currentUser = {
   fullName: 'Bruno Lima',
@@ -2969,9 +2618,36 @@ export default function App() {
   const [activeRole, setActiveRole] = useState<UserRole>('colaborador');
   const [identity, setIdentity] = useState<AuthIdentity | null>(null);
 
+  const [colaboradorNotifications, setColaboradorNotifications] = useState<ColaboradorNotificacaoItem[]>([]);
+
+  // Busca leve, só pra alimentar o badge de "não lida" no sininho do TopBar
+  // (mesma fonte real usada pela tela de Notificações, que faz sua própria
+  // busca completa quando aberta).
+  useEffect(() => {
+    const colaboradorId = identity?.colaboradorId ?? null;
+    if (!colaboradorId) {
+      setColaboradorNotifications([]);
+      return;
+    }
+
+    let isActive = true;
+    fetchColaboradorNotificacoes(colaboradorId)
+      .then((data) => {
+        if (isActive) setColaboradorNotifications(data.items);
+      })
+      .catch(() => {
+        if (isActive) setColaboradorNotifications([]);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [identity?.colaboradorId]);
+
   return (
     <SafeAreaProvider>
       <AuthIdentityContext.Provider value={{ identity, setIdentity }}>
+      <ColaboradorNotificationsContext.Provider value={{ items: colaboradorNotifications }}>
       <UserRoleContext.Provider value={{ activeRole, setActiveRole }}>
       <UniformReceiptContext.Provider
         value={{
@@ -3116,6 +2792,7 @@ export default function App() {
         </PayslipAcknowledgementContext.Provider>
       </UniformReceiptContext.Provider>
       </UserRoleContext.Provider>
+      </ColaboradorNotificationsContext.Provider>
       </AuthIdentityContext.Provider>
     </SafeAreaProvider>
   );
@@ -3895,8 +3572,56 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
   );
 }
 
+const TRAINING_STATUS_LABELS: Record<ColaboradorTreinamentoItem['status'], string> = {
+  concluido: 'Concluído',
+  em_andamento: 'Em andamento',
+  nao_iniciado: 'Não iniciado',
+};
+
+// A lista abaixo (cards) reflete status/progresso reais de
+// rh_treinamento_inscricoes + rh_treinamentos (via GET /treinamentos). O
+// conteúdo do curso em si (aulas, vídeo, prova) continua sendo apresentação
+// local (trainingCourses / TrainingDetailScreen mais abaixo) porque não
+// existe tabela de aulas/questões de prova no schema documentado hoje. Se o
+// id de um treinamento real não corresponder a nenhum item de
+// `trainingCourses`, a tela de detalhe (que assume esse vínculo) não vai
+// encontrar conteúdo — resolver isso de verdade exige uma tabela de conteúdo
+// no backend, fora do escopo desta tarefa.
 function TrainingsScreen({ navigation }: ScreenProps<'Trainings'>) {
-  const { courseProgress } = useContext(TrainingProgressContext);
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const [items, setItems] = useState<ColaboradorTreinamentoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!colaboradorId) {
+      setItems([]);
+      setErrorMessage(null);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchColaboradorTreinamentos(colaboradorId)
+      .then((data) => {
+        if (isActive) setItems(data.items);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar seus treinamentos.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [colaboradorId]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -3911,55 +3636,66 @@ function TrainingsScreen({ navigation }: ScreenProps<'Trainings'>) {
           <Text style={styles.pageSubtitle}>Cursos obrigatórios e desenvolvimento</Text>
         </View>
 
-        {trainingCourses.map((course) => {
-          const progress = getTrainingCourseProgressSummary(course, courseProgress[course.id]);
-
-          return (
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seus treinamentos.
+          </Text>
+        ) : isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando treinamentos...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : items.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhum treinamento atribuído a você ainda.</Text>
+        ) : (
+          items.map((course) => (
             <Pressable
               key={course.id}
               style={styles.trainingCourseCard}
               onPress={() => navigation.navigate('TrainingDetail', { courseId: course.id })}
             >
-              <View style={[styles.trainingCourseBadge, { backgroundColor: course.coverTint }]}>
-                <Feather name="award" size={20} color={course.coverColor} />
+              <View style={[styles.trainingCourseBadge, { backgroundColor: '#FCE8EC' }]}>
+                <Feather name="award" size={20} color="#E0002A" />
               </View>
 
               <View style={styles.trainingCourseBody}>
                 <View style={styles.trainingCourseHeader}>
                   <View style={styles.trainingCourseHeaderText}>
-                    <Text style={styles.trainingCourseTitle}>{course.title}</Text>
-                    <Text style={styles.trainingCourseSubtitle}>{course.subtitle}</Text>
+                    <Text style={styles.trainingCourseTitle}>{course.titulo}</Text>
+                    <Text style={styles.trainingCourseSubtitle}>
+                      {course.obrigatorio ? 'Treinamento obrigatório' : 'Treinamento opcional'}
+                    </Text>
                   </View>
-                  <View style={[styles.trainingTag, { backgroundColor: course.coverTint }]}>
-                    <Text style={[styles.trainingTagText, { color: course.coverColor }]}>{course.category}</Text>
-                  </View>
+                  {course.categoria ? (
+                    <View style={[styles.trainingTag, { backgroundColor: '#FCE8EC' }]}>
+                      <Text style={[styles.trainingTagText, { color: '#E0002A' }]}>{course.categoria}</Text>
+                    </View>
+                  ) : null}
                 </View>
 
-                <Text style={styles.trainingCourseMeta}>{course.durationLabel}</Text>
-                <Text style={styles.trainingCourseSummary}>{course.summary}</Text>
+                <Text style={styles.trainingCourseMeta}>{course.duracaoLabel}</Text>
 
                 <View style={styles.trainingProgressRow}>
                   <View style={styles.trainingProgressTrack}>
                     <View
                       style={[
                         styles.trainingProgressFill,
-                        { width: `${progress.percent}%`, backgroundColor: course.coverColor },
+                        { width: `${course.progressoPct ?? 0}%`, backgroundColor: '#E0002A' },
                       ]}
                     />
                   </View>
-                  <Text style={styles.trainingProgressValue}>{progress.percent}%</Text>
+                  <Text style={styles.trainingProgressValue}>
+                    {course.progressoPct !== null ? `${course.progressoPct}%` : '—'}
+                  </Text>
                 </View>
 
                 <View style={styles.trainingCourseFooter}>
-                  <Text style={styles.trainingCourseFooterText}>
-                    {progress.completedLessons}/{course.lessons.length} aulas concluídas
-                  </Text>
+                  <Text style={styles.trainingCourseFooterText}>{TRAINING_STATUS_LABELS[course.status]}</Text>
                   <Text style={styles.trainingCourseAction}>Abrir</Text>
                 </View>
               </View>
             </Pressable>
-          );
-        })}
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -4892,6 +4628,41 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
 }
 
 function GoalsScreen({ navigation }: ScreenProps<'Goals'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const [items, setItems] = useState<ColaboradorMetaItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!colaboradorId) {
+      setItems([]);
+      setErrorMessage(null);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchColaboradorMetas(colaboradorId)
+      .then((data) => {
+        if (isActive) setItems(data.items);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar suas metas.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [colaboradorId]);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -4902,29 +4673,92 @@ function GoalsScreen({ navigation }: ScreenProps<'Goals'>) {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.pageHeader}>
           <Text style={styles.pageTitle}>Metas</Text>
-          <Text style={styles.pageSubtitle}>Ciclo 2º semestre · 2026</Text>
+          <Text style={styles.pageSubtitle}>Metas atribuídas a você</Text>
         </View>
 
-        {goals.map((goal) => (
-          <View key={goal.id} style={styles.goalCard}>
-            <View style={styles.goalHeader}>
-              <Text style={styles.goalTitle}>{goal.title}</Text>
-              <Text style={[styles.goalPercent, { color: goal.color }]}>{goal.value}%</Text>
-            </View>
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar suas metas.
+          </Text>
+        ) : isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando metas...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : items.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhuma meta cadastrada para você ainda.</Text>
+        ) : (
+          items.map((goal) => (
+            <View key={goal.id} style={styles.goalCard}>
+              <View style={styles.goalHeader}>
+                <Text style={styles.goalTitle}>{goal.titulo}</Text>
+                <Text style={[styles.goalPercent, { color: goal.color }]}>
+                  {goal.progressoPct !== null ? `${goal.progressoPct}%` : '—'}
+                </Text>
+              </View>
 
-            <Text style={styles.goalSubtitle}>{goal.subtitle}</Text>
+              <Text style={styles.goalSubtitle}>{goal.subtitulo}</Text>
 
-            <View style={styles.goalTrack}>
-              <View style={[styles.goalFill, { width: `${goal.value}%`, backgroundColor: goal.color }]} />
+              <View style={styles.goalTrack}>
+                <View
+                  style={[styles.goalFill, { width: `${goal.progressoPct ?? 0}%`, backgroundColor: goal.color }]}
+                />
+              </View>
             </View>
-          </View>
-        ))}
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// Ícones/cores fixos por slug (estilo, não dado) — os slugs vêm do backend
+// (GET /beneficios) e correspondem 1:1 às colunas *_ativo de
+// rh_beneficios_colaborador.
+const BENEFIT_VISUAL: Record<string, { icon: keyof typeof Feather.glyphMap; iconColor: string; tintColor: string }> = {
+  vr: { icon: 'gift', iconColor: '#2D9E6A', tintColor: '#E4F5EE' },
+  va: { icon: 'gift', iconColor: '#5E6DB4', tintColor: '#E9EEFF' },
+  seguro_vida: { icon: 'shield', iconColor: '#8B5CF6', tintColor: '#EFE9FE' },
+  plano_saude: { icon: 'heart', iconColor: '#E6213D', tintColor: '#FCE8EC' },
+  plano_odonto: { icon: 'heart', iconColor: '#B5841A', tintColor: '#FCF3DA' },
+};
+const BENEFIT_VISUAL_FALLBACK = { icon: 'gift' as const, iconColor: '#5E667D', tintColor: '#EEF0F5' };
+
 function BenefitsScreen({ navigation }: ScreenProps<'Benefits'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const [items, setItems] = useState<ColaboradorBeneficioItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!colaboradorId) {
+      setItems([]);
+      setErrorMessage(null);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchColaboradorBeneficios(colaboradorId)
+      .then((data) => {
+        if (isActive) setItems(data.items);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar seus benefícios.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [colaboradorId]);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -4938,19 +4772,37 @@ function BenefitsScreen({ navigation }: ScreenProps<'Benefits'>) {
           <Text style={styles.pageSubtitle}>Pacote ativo</Text>
         </View>
 
-        <View style={styles.benefitGrid}>
-          {benefits.map((item) => (
-            <View key={item.id} style={styles.benefitGridItem}>
-              <View style={styles.benefitCard}>
-                <View style={[styles.iconShell, { backgroundColor: item.tintColor }]}>
-                  <Feather name={item.icon} size={18} color={item.iconColor} />
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seus benefícios.
+          </Text>
+        ) : isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando benefícios...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : items.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhum benefício ativo cadastrado para você.</Text>
+        ) : (
+          <View style={styles.benefitGrid}>
+            {items.map((item) => {
+              const visual = BENEFIT_VISUAL[item.id] ?? BENEFIT_VISUAL_FALLBACK;
+
+              return (
+                <View key={item.id} style={styles.benefitGridItem}>
+                  <View style={styles.benefitCard}>
+                    <View style={[styles.iconShell, { backgroundColor: visual.tintColor }]}>
+                      <Feather name={visual.icon} size={18} color={visual.iconColor} />
+                    </View>
+                    <Text style={styles.benefitTitle}>{item.titulo}</Text>
+                    <Text style={styles.benefitSubtitle}>
+                      {item.valor ? `${item.subtitulo} · ${item.valor}` : item.subtitulo}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={styles.benefitTitle}>{item.title}</Text>
-                <Text style={styles.benefitSubtitle}>{item.subtitle}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -5045,26 +4897,61 @@ function ReimbursementScreen({ navigation }: ScreenProps<'Reimbursement'>) {
   );
 }
 
+// Não existe tabela de rubricas/linhas ligada a rh_contracheques (isso existe
+// só para rh_folha/rh_folha_lancamentos, tabela diferente e ainda não
+// confirmada como fonte usada aqui) — por isso o preview do holerite abaixo
+// não mostra composição linha a linha (nada de "Salário base", "INSS", etc.
+// inventados). Mostramos só os 3 valores agregados que temos de verdade
+// (bruto/descontos/líquido) e um botão "Ver PDF" quando o RH anexou o
+// arquivo original.
 function PayslipsScreen({ navigation }: ScreenProps<'Payslips'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
   const { acknowledgedPayslipIds, acknowledgePayslip } = useContext(PayslipAcknowledgementContext);
-  const [selectedPayslip, setSelectedPayslip] = useState<PayslipItem | null>(null);
-  const [payslipZoom, setPayslipZoom] = useState(1);
-  const [payslipPaperHeight, setPayslipPaperHeight] = useState(0);
 
-  const openPayslipPreview = (item: PayslipItem) => {
-    setPayslipZoom(1);
-    setPayslipPaperHeight(0);
-    setSelectedPayslip(item);
-  };
+  const [items, setItems] = useState<ColaboradorContrachequeItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedPayslip, setSelectedPayslip] = useState<ColaboradorContrachequeItem | null>(null);
 
+  useEffect(() => {
+    if (!colaboradorId) {
+      setItems([]);
+      setErrorMessage(null);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchColaboradorContracheques(colaboradorId)
+      .then((data) => {
+        if (isActive) setItems(data.items);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar seus contracheques.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [colaboradorId]);
+
+  const openPayslipPreview = (item: ColaboradorContrachequeItem) => setSelectedPayslip(item);
   const closePayslipPreview = () => setSelectedPayslip(null);
 
-  const zoomOutPreview = () => {
-    setPayslipZoom((current) => Math.max(PAYSLIP_ZOOM_MIN, Number((current - PAYSLIP_ZOOM_STEP).toFixed(2))));
-  };
-
-  const zoomInPreview = () => {
-    setPayslipZoom((current) => Math.min(PAYSLIP_ZOOM_MAX, Number((current + PAYSLIP_ZOOM_STEP).toFixed(2))));
+  const openPayslipFile = (arquivoUrl: string | null) => {
+    if (arquivoUrl) {
+      Linking.openURL(arquivoUrl);
+    } else {
+      Alert.alert('PDF indisponível', 'O RH ainda não anexou o arquivo deste contracheque.');
+    }
   };
 
   return (
@@ -5081,63 +4968,83 @@ function PayslipsScreen({ navigation }: ScreenProps<'Payslips'>) {
           <Text style={styles.pageSubtitle}>Histórico de holerites</Text>
         </View>
 
-        {payslips.map((item, index) => {
-          const isAcknowledged = Boolean(acknowledgedPayslipIds[item.id]);
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seus contracheques.
+          </Text>
+        ) : isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando contracheques...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : items.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhum contracheque lançado ainda.</Text>
+        ) : (
+          items.map((item, index) => {
+            const isAcknowledged = Boolean(acknowledgedPayslipIds[item.id]);
+            const hasFile = Boolean(item.arquivoUrl);
 
-          return (
-            <View key={item.id} style={[styles.payrollCard, index === 0 ? styles.payrollCardFirst : null]}>
-              <View style={styles.payrollTopRow}>
-                <View style={[styles.iconShell, index === 0 ? styles.iconAccentRed : styles.iconAccentGray]}>
-                  <Ionicons
-                    name="document-text-outline"
-                    size={18}
-                    color={index === 0 ? '#E6213D' : '#66708C'}
-                  />
-                </View>
-                <View style={styles.payrollTextBlock}>
-                  <Text style={styles.payrollTitle}>{item.title}</Text>
-                </View>
-                <View style={[styles.statusPill, { backgroundColor: item.statusTint }]}>
-                  <Text style={[styles.statusPillText, { color: item.statusColor }]}>{item.status}</Text>
-                </View>
-              </View>
-
-              <View style={styles.payrollActionsColumn}>
-                <View style={styles.payrollIconButtonsRow}>
-                  <Pressable style={styles.payrollIconButton} onPress={() => openPayslipPreview(item)}>
-                    <Feather name="eye" size={16} color="#4F5873" />
-                    <Text style={styles.payrollIconButtonText}>Visualizar</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.payrollIconButton}>
-                    <Feather name="download" size={16} color="#4F5873" />
-                    <Text style={styles.payrollIconButtonText}>Baixar</Text>
-                  </Pressable>
-                </View>
-
-                <Pressable
-                  style={[
-                    styles.payrollAwareButton,
-                    styles.payrollAwareButtonFullWidth,
-                    isAcknowledged ? styles.payrollAwareButtonChecked : styles.payrollAwareButtonPending,
-                  ]}
-                  onPress={() => acknowledgePayslip(item.id)}
-                  disabled={isAcknowledged}
-                >
-                  <Feather name="check-circle" size={16} color={isAcknowledged ? '#1D9B5A' : '#FFFFFF'} />
-                  <Text
+            return (
+              <View key={item.id} style={[styles.payrollCard, index === 0 ? styles.payrollCardFirst : null]}>
+                <View style={styles.payrollTopRow}>
+                  <View style={[styles.iconShell, index === 0 ? styles.iconAccentRed : styles.iconAccentGray]}>
+                    <Ionicons
+                      name="document-text-outline"
+                      size={18}
+                      color={index === 0 ? '#E6213D' : '#66708C'}
+                    />
+                  </View>
+                  <View style={styles.payrollTextBlock}>
+                    <Text style={styles.payrollTitle}>{item.competenciaLabel}</Text>
+                  </View>
+                  <View
                     style={[
-                      styles.payrollAwareButtonText,
-                      isAcknowledged ? styles.payrollAwareButtonTextChecked : styles.payrollAwareButtonTextPending,
+                      styles.statusPill,
+                      { backgroundColor: hasFile ? '#E2F4EA' : '#EEF0F5' },
                     ]}
                   >
-                    Ciente
-                  </Text>
-                </Pressable>
+                    <Text style={[styles.statusPillText, { color: hasFile ? '#2B9862' : '#5E667D' }]}>
+                      {hasFile ? 'PDF disponível' : 'Sem PDF'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.payrollActionsColumn}>
+                  <View style={styles.payrollIconButtonsRow}>
+                    <Pressable style={styles.payrollIconButton} onPress={() => openPayslipPreview(item)}>
+                      <Feather name="eye" size={16} color="#4F5873" />
+                      <Text style={styles.payrollIconButtonText}>Visualizar</Text>
+                    </Pressable>
+
+                    <Pressable style={styles.payrollIconButton} onPress={() => openPayslipFile(item.arquivoUrl)}>
+                      <Feather name="download" size={16} color="#4F5873" />
+                      <Text style={styles.payrollIconButtonText}>Baixar</Text>
+                    </Pressable>
+                  </View>
+
+                  <Pressable
+                    style={[
+                      styles.payrollAwareButton,
+                      styles.payrollAwareButtonFullWidth,
+                      isAcknowledged ? styles.payrollAwareButtonChecked : styles.payrollAwareButtonPending,
+                    ]}
+                    onPress={() => acknowledgePayslip(item.id)}
+                    disabled={isAcknowledged}
+                  >
+                    <Feather name="check-circle" size={16} color={isAcknowledged ? '#1D9B5A' : '#FFFFFF'} />
+                    <Text
+                      style={[
+                        styles.payrollAwareButtonText,
+                        isAcknowledged ? styles.payrollAwareButtonTextChecked : styles.payrollAwareButtonTextPending,
+                      ]}
+                    >
+                      Ciente
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
-            </View>
-          );
-        })}
+            );
+          })
+        )}
       </ScrollView>
 
       <Modal
@@ -5151,11 +5058,9 @@ function PayslipsScreen({ navigation }: ScreenProps<'Payslips'>) {
             <View style={styles.payslipModalHeader}>
               <View style={styles.payslipModalHeaderTextBlock}>
                 <Text style={styles.payslipModalTitle}>
-                  {selectedPayslip ? `Contracheque - ${buildPayslipPreviewTitle(selectedPayslip.title)}` : ''}
+                  {selectedPayslip ? `Contracheque - ${selectedPayslip.competenciaLabel}` : ''}
                 </Text>
-                <Text style={styles.payslipModalSubtitle}>
-                  {selectedPayslip ? `Enviado pelo RH em ${buildPayslipIssueDate(selectedPayslip.id)}` : ''}
-                </Text>
+                <Text style={styles.payslipModalSubtitle}>Valores agregados lançados pelo RH</Text>
               </View>
 
               <Pressable style={styles.payslipModalCloseButton} onPress={closePayslipPreview}>
@@ -5164,92 +5069,42 @@ function PayslipsScreen({ navigation }: ScreenProps<'Payslips'>) {
             </View>
 
             <View style={styles.payslipPreviewShell}>
-              <View style={styles.payslipPreviewToolbar}>
-                <View style={styles.payslipPreviewToolbarLeft}>
-                  <Feather name="menu" size={16} color="#FFFFFF" />
-                  <Text style={styles.payslipPreviewToolbarText} numberOfLines={1}>
-                    Preview PDF
-                  </Text>
-                </View>
-
-                <View style={styles.payslipPreviewToolbarRight}>
-                  <Pressable
-                    style={styles.payslipZoomButton}
-                    onPress={zoomOutPreview}
-                    disabled={payslipZoom <= PAYSLIP_ZOOM_MIN}
-                    hitSlop={8}
-                  >
-                    <Feather name="minus" size={16} color={payslipZoom <= PAYSLIP_ZOOM_MIN ? '#7A8296' : '#FFFFFF'} />
-                  </Pressable>
-                  <Text style={styles.payslipPreviewToolbarText}>{Math.round(payslipZoom * 100)}%</Text>
-                  <Pressable
-                    style={styles.payslipZoomButton}
-                    onPress={zoomInPreview}
-                    disabled={payslipZoom >= PAYSLIP_ZOOM_MAX}
-                    hitSlop={8}
-                  >
-                    <Feather name="plus" size={16} color={payslipZoom >= PAYSLIP_ZOOM_MAX ? '#7A8296' : '#FFFFFF'} />
-                  </Pressable>
-                </View>
-              </View>
-
               <ScrollView
                 style={styles.payslipPreviewBody}
                 contentContainerStyle={styles.payslipPreviewBodyContent}
                 showsVerticalScrollIndicator={false}
               >
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View
-                    style={{
-                      width: PAYSLIP_PAPER_WIDTH * payslipZoom,
-                      height: payslipPaperHeight ? payslipPaperHeight * payslipZoom : undefined,
-                    }}
-                  >
-                    <View
-                      onLayout={(event) => {
-                        const { height } = event.nativeEvent.layout;
-                        setPayslipPaperHeight((current) => (current === height ? current : height));
-                      }}
-                      style={[
-                        styles.payslipPreviewPaper,
-                        {
-                          width: PAYSLIP_PAPER_WIDTH,
-                          transform: [{ scale: payslipZoom }],
-                          transformOrigin: 'top left',
-                        },
-                      ]}
-                    >
-                      <Text style={styles.payslipPaperCompany}>00309 GTH TECNOLOGIA E SERVICOS LTDA</Text>
-                      <Text style={styles.payslipPaperPeriod}>
-                        {selectedPayslip ? `Demonstrativo de pagamento - ${buildPayslipPreviewTitle(selectedPayslip.title)}` : ''}
-                      </Text>
-                      <Text style={styles.payslipPaperEmployee}>BRUNA LIMA • ASSISTENTE ADMINISTRATIVO</Text>
-
-                      <View style={styles.payslipTableHeader}>
-                        <Text style={[styles.payslipTableHeaderText, styles.payslipCodeColumn]}>Cod.</Text>
-                        <Text style={[styles.payslipTableHeaderText, styles.payslipDescriptionColumn]}>Descricao</Text>
-                        <Text style={[styles.payslipTableHeaderText, styles.payslipReferenceColumn]}>Referencia</Text>
-                        <Text style={[styles.payslipTableHeaderText, styles.payslipValueColumn]}>Vencimentos</Text>
-                        <Text style={[styles.payslipTableHeaderText, styles.payslipValueColumn]}>Descontos</Text>
-                      </View>
-
-                      {payslipPreviewLines.map((line) => (
-                        <View key={`${selectedPayslip?.id}-${line.code}`} style={styles.payslipTableRow}>
-                          <Text style={[styles.payslipTableCell, styles.payslipCodeColumn]}>{line.code}</Text>
-                          <Text style={[styles.payslipTableCell, styles.payslipDescriptionColumn]}>{line.description}</Text>
-                          <Text style={[styles.payslipTableCell, styles.payslipReferenceColumn]}>{line.reference}</Text>
-                          <Text style={[styles.payslipTableCell, styles.payslipValueColumn]}>{line.earnings ?? '-'}</Text>
-                          <Text style={[styles.payslipTableCell, styles.payslipValueColumn]}>{line.deductions ?? '-'}</Text>
-                        </View>
-                      ))}
-
-                      <View style={styles.payslipSummaryRow}>
-                        <Text style={styles.payslipSummaryLabel}>Liquido a receber</Text>
-                        <Text style={styles.payslipSummaryValue}>{selectedPayslip?.subtitle.replace('Líquido · ', '')}</Text>
-                      </View>
+                {selectedPayslip ? (
+                  <View style={styles.payslipPreviewPaper}>
+                    <View style={styles.payslipSummaryRow}>
+                      <Text style={styles.payslipSummaryLabel}>Bruto</Text>
+                      <Text style={styles.payslipSummaryValue}>{selectedPayslip.valorBruto}</Text>
                     </View>
+                    <View style={styles.payslipSummaryRow}>
+                      <Text style={styles.payslipSummaryLabel}>Descontos</Text>
+                      <Text style={styles.payslipSummaryValue}>{selectedPayslip.valorDescontos}</Text>
+                    </View>
+                    <View style={styles.payslipSummaryRow}>
+                      <Text style={styles.payslipSummaryLabel}>Líquido a receber</Text>
+                      <Text style={styles.payslipSummaryValue}>{selectedPayslip.valorLiquido}</Text>
+                    </View>
+
+                    <Text style={styles.payslipModalSubtitle}>
+                      Detalhamento linha a linha não disponível — apenas os valores agregados acima.
+                    </Text>
+
+                    {selectedPayslip.arquivoUrl ? (
+                      <Pressable
+                        style={styles.primaryButton}
+                        onPress={() => openPayslipFile(selectedPayslip.arquivoUrl)}
+                      >
+                        <Text style={styles.primaryButtonText}>Ver PDF</Text>
+                      </Pressable>
+                    ) : (
+                      <Text style={styles.payslipModalSubtitle}>O RH ainda não anexou o PDF deste contracheque.</Text>
+                    )}
                   </View>
-                </ScrollView>
+                ) : null}
               </ScrollView>
             </View>
           </View>
@@ -5350,17 +5205,52 @@ function ApprovalsScreen({ navigation }: ScreenProps<'Approvals'>) {
 }
 
 function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
   const { readNotificationIds, markNotificationAsRead } = useContext(NotificationsReadContext);
 
-  const handleNotificationPress = (item: NotificationItem) => {
-    markNotificationAsRead(item.id);
+  const [items, setItems] = useState<ColaboradorNotificacaoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-    if (item.target.screen === 'TrainingDetail') {
-      navigation.navigate('TrainingDetail', { courseId: item.target.courseId });
+  useEffect(() => {
+    if (!colaboradorId) {
+      setItems([]);
+      setErrorMessage(null);
       return;
     }
 
-    navigation.navigate(item.target.screen);
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchColaboradorNotificacoes(colaboradorId)
+      .then((data) => {
+        if (isActive) setItems(data.items);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar suas notificações.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [colaboradorId]);
+
+  // A versão mockada usava um campo `target` pra navegar direto pra
+  // Payslips/TrainingDetail/etc. ao tocar na notificação. notif_inbox só
+  // guarda `modulo` (texto livre) — não dá pra reconstruir com certeza qual
+  // tela/entidade a notificação se refere a partir disso sozinho, então aqui
+  // o toque só mostra o conteúdo completo (título + mensagem) num Alert, sem
+  // tentar adivinhar a rota certa.
+  const handleNotificationPress = (item: ColaboradorNotificacaoItem) => {
+    markNotificationAsRead(item.id);
+    Alert.alert(item.titulo, item.mensagem);
   };
 
   return (
@@ -5376,40 +5266,63 @@ function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>) {
           <Text style={styles.pageSubtitle}>Atualizações recentes</Text>
         </View>
 
-        <View style={styles.notificationsCard}>
-          {notifications.map((item, index) => {
-            const showUnreadDot = item.unread && !readNotificationIds[item.id];
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar suas notificações.
+          </Text>
+        ) : isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando notificações...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : items.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhuma notificação por aqui.</Text>
+        ) : (
+          <View style={styles.notificationsCard}>
+            {items.map((item, index) => {
+              const showUnreadDot = item.unread && !readNotificationIds[item.id];
 
-            return (
-              <Pressable
-                key={item.id}
-                style={[
-                  styles.notificationRow,
-                  index < notifications.length - 1 ? styles.notificationRowBorder : null,
-                ]}
-                onPress={() => handleNotificationPress(item)}
-              >
-                <View style={[styles.iconShell, { backgroundColor: item.iconTint }]}>
-                  <Feather name={item.icon} size={18} color={item.iconColor} />
-                </View>
+              return (
+                <Pressable
+                  key={item.id}
+                  style={[
+                    styles.notificationRow,
+                    index < items.length - 1 ? styles.notificationRowBorder : null,
+                  ]}
+                  onPress={() => handleNotificationPress(item)}
+                >
+                  <View style={[styles.iconShell, { backgroundColor: '#E9EEFF' }]}>
+                    <Feather name="bell" size={18} color="#5E6DB4" />
+                  </View>
 
-                <View style={styles.notificationTextBlock}>
-                  <Text style={styles.notificationTitle}>{item.title}</Text>
-                  <Text style={styles.notificationTime}>{item.time}</Text>
-                </View>
+                  <View style={styles.notificationTextBlock}>
+                    <Text style={styles.notificationTitle}>{item.titulo}</Text>
+                    <Text style={styles.notificationTime}>
+                      {item.modulo ? item.modulo.charAt(0).toUpperCase() + item.modulo.slice(1) : 'Notificação'}
+                    </Text>
+                  </View>
 
-                {showUnreadDot ? <View style={styles.notificationUnreadDot} /> : null}
-              </Pressable>
-            );
-          })}
-        </View>
+                  {showUnreadDot ? <View style={styles.notificationUnreadDot} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// Lista real de solicitações (GET /solicitacoes). O formulário de "Abrir nova
+// solicitação" abaixo não tem endpoint de criação real ainda (fora do escopo
+// desta tarefa) — o ticket criado por ele só existe localmente nesta sessão
+// do app (prepended na lista em memória) e não é persistido no banco.
 function RequestsScreen({ navigation }: ScreenProps<'Requests'>) {
-  const [tickets, setTickets] = useState(requestTickets);
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+
+  const [tickets, setTickets] = useState<RequestTicketItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [nextTicketNumber, setNextTicketNumber] = useState(1043);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState(
@@ -5422,6 +5335,48 @@ function RequestsScreen({ navigation }: ScreenProps<'Requests'>) {
   const selectedCategory =
     requestCategoryOptions.find((option) => option.id === selectedCategoryId) ??
     requestCategoryOptions[requestCategoryOptions.length - 1];
+
+  useEffect(() => {
+    if (!colaboradorId) {
+      setTickets([]);
+      setErrorMessage(null);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchColaboradorSolicitacoes(colaboradorId)
+      .then((data) => {
+        if (isActive) {
+          setTickets(
+            data.items.map((item) => ({
+              id: item.id,
+              ticketNumber: item.protocolo ? `#${item.protocolo}` : `#${item.id}`,
+              title: item.titulo,
+              openedDate: item.openedDateLabel,
+              department: item.department,
+              status: item.status.label,
+              statusColor: item.status.color,
+              statusTint: item.status.tint,
+            }))
+          );
+        }
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar suas solicitações.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [colaboradorId]);
 
   const openModal = () => {
     setSelectedCategoryId(requestCategoryOptions[requestCategoryOptions.length - 1].id);
@@ -5499,21 +5454,33 @@ function RequestsScreen({ navigation }: ScreenProps<'Requests'>) {
           </Pressable>
         </View>
 
-        {tickets.map((ticket) => (
-          <View key={ticket.id} style={styles.requestCard}>
-            <View style={styles.requestTopRow}>
-              <Text style={styles.requestTicketNumber}>{ticket.ticketNumber}</Text>
-              <View style={[styles.statusPill, { backgroundColor: ticket.statusTint }]}>
-                <Text style={[styles.statusPillText, { color: ticket.statusColor }]}>{ticket.status}</Text>
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar suas solicitações.
+          </Text>
+        ) : isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando solicitações...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : tickets.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhuma solicitação encontrada.</Text>
+        ) : (
+          tickets.map((ticket) => (
+            <View key={ticket.id} style={styles.requestCard}>
+              <View style={styles.requestTopRow}>
+                <Text style={styles.requestTicketNumber}>{ticket.ticketNumber}</Text>
+                <View style={[styles.statusPill, { backgroundColor: ticket.statusTint }]}>
+                  <Text style={[styles.statusPillText, { color: ticket.statusColor }]}>{ticket.status}</Text>
+                </View>
               </View>
-            </View>
 
-            <Text style={styles.requestTitle}>{ticket.title}</Text>
-            <Text style={styles.requestMeta}>
-              Aberto em {ticket.openedDate} · {ticket.department}
-            </Text>
-          </View>
-        ))}
+              <Text style={styles.requestTitle}>{ticket.title}</Text>
+              <Text style={styles.requestMeta}>
+                Aberto em {ticket.openedDate} · {ticket.department}
+              </Text>
+            </View>
+          ))
+        )}
       </ScrollView>
 
       <Modal visible={isModalOpen} animationType="fade" transparent onRequestClose={closeModal}>
@@ -5634,7 +5601,54 @@ function RequestsScreen({ navigation }: ScreenProps<'Requests'>) {
   );
 }
 
+// Não existe um campo real de "área/departamento" em rh_comunicados (só o
+// enum `publico` — todos/empresa/grupo/colaborador) — a tag mostrada abaixo
+// reflete esse público-alvo real em vez de uma categoria fabricada.
+function comunicadoPublicoLabel(publico: string | null): string {
+  const key = (publico ?? '').trim().toLowerCase();
+  if (key === 'todos') return 'Todos';
+  if (key === 'empresa') return 'Empresa';
+  if (key === 'colaborador') return 'Você';
+  if (key === 'grupo') return 'Grupo';
+  return 'Comunicado';
+}
+
 function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const [items, setItems] = useState<ColaboradorComunicadoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!colaboradorId) {
+      setItems([]);
+      setErrorMessage(null);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchColaboradorComunicados(colaboradorId)
+      .then((data) => {
+        if (isActive) setItems(data.items);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os comunicados.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [colaboradorId]);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -5649,25 +5663,46 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
           <Text style={styles.pageSubtitle}>Avisos e novidades da empresa</Text>
         </View>
 
-        {communications.map((item) => (
-          <View key={item.id} style={styles.communicationCard}>
-            <View style={styles.communicationTop}>
-              <View style={[styles.iconShell, { backgroundColor: item.tint }]}>
-                <Feather name={item.icon} size={18} color={item.accent} />
-              </View>
-              <View style={styles.communicationMetaRow}>
-                <View style={[styles.tag, { backgroundColor: item.tint }]}>
-                  <Text style={[styles.tagText, { color: item.accent }]}>{item.area}</Text>
-                </View>
-                <Text style={styles.communicationTime}>{item.time}</Text>
-                <View style={styles.alertDot} />
-              </View>
-            </View>
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seus comunicados.
+          </Text>
+        ) : isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando comunicados...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : items.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhum comunicado disponível no momento.</Text>
+        ) : (
+          items.map((item) => {
+            // Ícone/cores fixos (estilo) — variam só pelo status lido/não
+            // lido, que é o único sinal real disponível pra diferenciar
+            // itens aqui (não existe categoria/ícone por comunicado no
+            // schema).
+            const accent = item.lido ? '#7B8299' : '#E6213D';
+            const tint = item.lido ? '#F0F1F6' : '#FCE8EC';
 
-            <Text style={styles.communicationTitle}>{item.title}</Text>
-            <Text style={styles.communicationDescription}>{item.description}</Text>
-          </View>
-        ))}
+            return (
+              <View key={item.id} style={styles.communicationCard}>
+                <View style={styles.communicationTop}>
+                  <View style={[styles.iconShell, { backgroundColor: tint }]}>
+                    <Feather name="send" size={18} color={accent} />
+                  </View>
+                  <View style={styles.communicationMetaRow}>
+                    <View style={[styles.tag, { backgroundColor: tint }]}>
+                      <Text style={[styles.tagText, { color: accent }]}>{comunicadoPublicoLabel(item.publico)}</Text>
+                    </View>
+                    <Text style={styles.communicationTime}>{item.tempoLabel}</Text>
+                    {!item.lido ? <View style={styles.alertDot} /> : null}
+                  </View>
+                </View>
+
+                <Text style={styles.communicationTitle}>{item.titulo}</Text>
+                <Text style={styles.communicationDescription}>{item.conteudo}</Text>
+              </View>
+            );
+          })
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -9659,10 +9694,11 @@ export function TopBar({
 }) {
   const { openMenu } = useContext(MenuContext);
   const { readNotificationIds } = useContext(NotificationsReadContext);
+  const { items: colaboradorNotificationItems } = useContext(ColaboradorNotificationsContext);
   const isDirector = variant === 'diretoria';
   const isRH = variant === 'rh';
   const isAdmin = variant === 'administrador';
-  const hasUnreadNotifications = notifications.some(
+  const hasUnreadNotifications = colaboradorNotificationItems.some(
     (item) => item.unread && !readNotificationIds[item.id]
   );
 

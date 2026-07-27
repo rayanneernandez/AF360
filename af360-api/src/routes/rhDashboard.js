@@ -1077,4 +1077,417 @@ router.get('/colaborador-home', async (req, res) => {
   }
 });
 
+// ---------- Colaborador (self-service): Comunicados (lista completa) ----------
+// Mesma lógica de "público relevante" usada em /colaborador-home, mas devolve
+// TODOS os itens (não só os 3 recentes) e marca lido:boolean via
+// rh_comunicado_leituras. Duplica a filtragem em vez de extrair um helper
+// compartilhado pra não arriscar mexer no comportamento já em produção do
+// /colaborador-home — ambos seguem exatamente a mesma regra.
+
+// GET /api/rh/dashboard/comunicados?colaboradorId=...
+router.get('/comunicados', async (req, res) => {
+  try {
+    const colaboradorId = req.query.colaboradorId;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaboradorId' });
+    }
+
+    const colaboradorJson = await fetchTable('rh_colaboradores', {
+      select: 'id,empresa_id',
+      filters: { id: colaboradorId },
+      limit: 1,
+    });
+    const colaborador = (colaboradorJson.data || [])[0] || null;
+    const empresaId = colaborador?.empresa_id || null;
+
+    const [comunicadosJson, leiturasJson] = await Promise.all([
+      fetchAllRows('rh_comunicados', {
+        select: 'id,titulo,conteudo,publico,empresa_id,colaborador_id,publicar_em,expira_em',
+      }),
+      fetchAllRows('rh_comunicado_leituras', {
+        select: 'comunicado_id,colaborador_id,lido_em',
+        filters: { colaborador_id: colaboradorId },
+      }),
+    ]);
+
+    const nowMs = Date.now();
+
+    // Mesmo filtro de público-alvo do /colaborador-home: 'todos' sempre entra,
+    // 'empresa' só se bater empresa_id, 'colaborador' só se for o próprio.
+    // 'grupo' fica de fora (sem como resolver colaborador↔grupo_id hoje).
+    const comunicadosRelevantes = (comunicadosJson.data || []).filter((c) => {
+      const publicarMs = c.publicar_em ? Date.parse(c.publicar_em) : null;
+      const expiraMs = c.expira_em ? Date.parse(c.expira_em) : null;
+      if (publicarMs !== null && !Number.isNaN(publicarMs) && publicarMs > nowMs) return false;
+      if (expiraMs !== null && !Number.isNaN(expiraMs) && expiraMs < nowMs) return false;
+
+      const publico = (c.publico ?? '').trim().toLowerCase();
+      if (publico === 'todos') return true;
+      if (publico === 'empresa') return Boolean(empresaId) && c.empresa_id === empresaId;
+      if (publico === 'colaborador') return c.colaborador_id === colaboradorId;
+      return false;
+    });
+
+    const lidosSet = new Set(
+      (leiturasJson.data || []).filter((l) => l.lido_em).map((l) => l.comunicado_id)
+    );
+
+    const items = comunicadosRelevantes
+      .sort((a, b) => (Date.parse(b.publicar_em || 0) || 0) - (Date.parse(a.publicar_em || 0) || 0))
+      .map((c) => ({
+        id: c.id,
+        titulo: c.titulo,
+        conteudo: c.conteudo || '',
+        publico: c.publico || null,
+        tempoLabel: tempoRelativoLabel(c.publicar_em, nowMs) || capitalizeLabel(c.publico),
+        lido: lidosSet.has(c.id),
+      }));
+
+    res.json({ ok: true, data: { items, total: items.length } });
+  } catch (err) {
+    console.error('[rh/dashboard/comunicados] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// ---------- Colaborador (self-service): Minhas Solicitações ----------
+const SOLICITACAO_STATUS_META = {
+  aberta: { label: 'Aberta', color: '#3457D5', tint: '#E9EEFF' },
+  em_analise: { label: 'Em análise', color: '#B5841A', tint: '#FCF3DA' },
+  respondida: { label: 'Respondida', color: '#18955A', tint: '#E3F5EA' },
+  encerrada: { label: 'Encerrada', color: '#5E667D', tint: '#EEF0F5' },
+  cancelada: { label: 'Cancelada', color: '#E6213D', tint: '#FCE8EC' },
+};
+
+function solicitacaoStatusMeta(raw) {
+  const key = (raw ?? '').trim().toLowerCase();
+  return SOLICITACAO_STATUS_META[key] || { label: raw || 'Não informado', color: '#9AA1B5', tint: '#EEF0F5' };
+}
+
+const SOLICITACAO_SETOR_LABELS = {
+  rh: 'RH',
+  dp: 'Departamento Pessoal',
+  documentos: 'Documentos',
+  outros: 'Outros',
+};
+
+function solicitacaoSetorLabel(raw) {
+  const key = (raw ?? '').trim().toLowerCase();
+  return SOLICITACAO_SETOR_LABELS[key] || capitalizeLabel(raw);
+}
+
+// GET /api/rh/dashboard/solicitacoes?colaboradorId=...
+router.get('/solicitacoes', async (req, res) => {
+  try {
+    const colaboradorId = req.query.colaboradorId;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaboradorId' });
+    }
+
+    const solicitacoesJson = await fetchAllRows('rh_solicitacoes', {
+      select:
+        'id,protocolo,colaborador_id,setor,assunto,titulo,mensagem,status,atribuido_a,respondido_em,encerrado_em,created_at',
+      filters: { colaborador_id: colaboradorId },
+    });
+
+    const items = (solicitacoesJson.data || [])
+      .map((s) => {
+        const meta = solicitacaoStatusMeta(s.status);
+        // created_at chega com hora — usamos parseDateOnly (que extrai só a
+        // parte YYYY-MM-DD do timestamp) pra exibir e ordenar, mesmo padrão
+        // já usado em /transferencias pro campo criado_em.
+        const createdMs = parseDateOnly(s.created_at) ?? (s.created_at ? Date.parse(s.created_at) : null);
+        return {
+          id: s.id,
+          protocolo: s.protocolo || null,
+          titulo: s.titulo || s.assunto || 'Solicitação',
+          openedDateLabel: createdMs !== null && !Number.isNaN(createdMs) ? formatDataBR(createdMs) : '—',
+          department: solicitacaoSetorLabel(s.setor),
+          status: { label: meta.label, color: meta.color, tint: meta.tint },
+          _createdMs: createdMs ?? 0,
+        };
+      })
+      .sort((a, b) => b._createdMs - a._createdMs)
+      .map(({ _createdMs, ...item }) => item);
+
+    res.json({ ok: true, data: { items, total: items.length } });
+  } catch (err) {
+    console.error('[rh/dashboard/solicitacoes] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// ---------- Colaborador (self-service): Metas ----------
+const META_STATUS_META = {
+  aberta: { label: 'Aberta', color: '#3457D5' },
+  atingida: { label: 'Atingida', color: '#18955A' },
+  nao_atingida: { label: 'Não atingida', color: '#E6213D' },
+  cancelada: { label: 'Cancelada', color: '#5E667D' },
+};
+
+function metaStatusMeta(raw) {
+  const key = (raw ?? '').trim().toLowerCase();
+  return META_STATUS_META[key] || { label: raw || 'Não informado', color: '#9AA1B5' };
+}
+
+// GET /api/rh/dashboard/metas?colaboradorId=...
+router.get('/metas', async (req, res) => {
+  try {
+    const colaboradorId = req.query.colaboradorId;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaboradorId' });
+    }
+
+    const metasJson = await fetchAllRows('rh_metas', {
+      select: 'id,colaborador_id,titulo,descricao,periodo_inicio,periodo_fim,meta_alvo,resultado,status,avaliacao',
+      filters: { colaborador_id: colaboradorId },
+    });
+
+    const items = (metasJson.data || []).map((m) => {
+      const alvo = Number(m.meta_alvo);
+      const resultado = Number(m.resultado);
+      // meta_alvo 0/null/não numérico não dá pra usar como denominador —
+      // devolvemos progressoPct null (o app mostra "—") em vez de dividir por
+      // zero ou inventar um número.
+      const progressoPct =
+        Number.isFinite(alvo) && alvo !== 0 && Number.isFinite(resultado)
+          ? Math.max(0, Math.min(100, Math.round((resultado / alvo) * 100)))
+          : null;
+
+      const inicioMs = parseDateOnly(m.periodo_inicio);
+      const fimMs = parseDateOnly(m.periodo_fim);
+      const periodoLabel =
+        inicioMs !== null && fimMs !== null ? `${formatDiaMes(inicioMs)} - ${formatDiaMes(fimMs)}` : null;
+
+      const meta = metaStatusMeta(m.status);
+
+      return {
+        id: m.id,
+        titulo: m.titulo,
+        subtitulo: m.descricao || periodoLabel || '—',
+        progressoPct,
+        status: meta.label,
+        color: meta.color,
+      };
+    });
+
+    res.json({ ok: true, data: { items, total: items.length } });
+  } catch (err) {
+    console.error('[rh/dashboard/metas] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// ---------- Colaborador (self-service): Treinamentos (lista/status) ----------
+// Cobre só a lista/status dos treinamentos (cards do TrainingsScreen) — o
+// conteúdo detalhado de aulas/prova não existe no schema documentado hoje
+// (sem tabela de aulas/questões), então fica de fora por definição.
+
+// GET /api/rh/dashboard/treinamentos?colaboradorId=...
+router.get('/treinamentos', async (req, res) => {
+  try {
+    const colaboradorId = req.query.colaboradorId;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaboradorId' });
+    }
+
+    const [inscricoesJson, treinamentosJson] = await Promise.all([
+      fetchAllRows('rh_treinamento_inscricoes', {
+        select:
+          'id,treinamento_id,colaborador_id,status,iniciado_em,concluido_em,nota,certificado_url,tempo_gasto_min,tentativas',
+        filters: { colaborador_id: colaboradorId },
+      }),
+      fetchAllRows('rh_treinamentos', {
+        select: 'id,titulo,descricao,carga_horaria_min,obrigatorio,conteudo_url,tipo,video_url',
+      }),
+    ]);
+
+    const treinamentoById = new Map((treinamentosJson.data || []).map((t) => [t.id, t]));
+
+    const items = (inscricoesJson.data || []).map((insc) => {
+      const treinamento = treinamentoById.get(insc.treinamento_id) || null;
+
+      // concluido_em/iniciado_em são as colunas confirmadas em
+      // LOVABLE_API.md — usamos elas como sinal de status em vez de confiar
+      // cegamente no enum livre de `status`, mesmo raciocínio já aplicado em
+      // /colaborador-home pros treinamentosPendentes.
+      const status = insc.concluido_em ? 'concluido' : insc.iniciado_em ? 'em_andamento' : 'nao_iniciado';
+
+      // Não existe coluna de "% concluído" dentro do curso — só sinais
+      // binários (iniciou/concluiu). Preenchemos progressoPct só nos
+      // extremos (0/100) e deixamos null pra "em andamento" em vez de
+      // inventar um número intermediário.
+      const progressoPct = status === 'concluido' ? 100 : status === 'nao_iniciado' ? 0 : null;
+
+      const cargaMin = Number(treinamento?.carga_horaria_min);
+      const duracaoLabel = Number.isFinite(cargaMin) && cargaMin > 0 ? `${cargaMin} min` : '—';
+
+      return {
+        id: insc.treinamento_id,
+        titulo: treinamento?.titulo || 'Treinamento',
+        categoria: treinamento?.tipo || null,
+        duracaoLabel,
+        obrigatorio: Boolean(treinamento?.obrigatorio),
+        status,
+        progressoPct,
+      };
+    });
+
+    res.json({ ok: true, data: { items, total: items.length } });
+  } catch (err) {
+    console.error('[rh/dashboard/treinamentos] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// ---------- Colaborador (self-service): Meus Benefícios ----------
+// Uma linha só por colaborador em rh_beneficios_colaborador — cada benefício
+// vira um item da lista somente se o respectivo *_ativo vier true.
+
+// GET /api/rh/dashboard/beneficios?colaboradorId=...
+router.get('/beneficios', async (req, res) => {
+  try {
+    const colaboradorId = req.query.colaboradorId;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaboradorId' });
+    }
+
+    const beneficiosJson = await fetchTable('rh_beneficios_colaborador', {
+      filters: { colaborador_id: colaboradorId },
+      limit: 1,
+    });
+    const b = (beneficiosJson.data || [])[0] || null;
+
+    const items = [];
+    if (b) {
+      if (b.vr_ativo) {
+        items.push({
+          id: 'vr',
+          titulo: 'Vale Refeição',
+          subtitulo: 'Crédito diário',
+          valor: b.vr_valor_dia != null ? `${formatBRLCentavos(Number(b.vr_valor_dia))}/dia` : null,
+        });
+      }
+      if (b.va_ativo) {
+        items.push({
+          id: 'va',
+          titulo: 'Vale Alimentação',
+          subtitulo: 'Crédito diário',
+          valor: b.va_valor_dia != null ? `${formatBRLCentavos(Number(b.va_valor_dia))}/dia` : null,
+        });
+      }
+      if (b.seguro_vida_ativo) {
+        items.push({
+          id: 'seguro_vida',
+          titulo: 'Seguro de Vida',
+          subtitulo: [b.seguro_vida_seguradora, b.seguro_vida_cobertura].filter(Boolean).join(' · ') || 'Ativo',
+          valor:
+            b.seguro_vida_desconto_mensal != null ? formatBRLCentavos(Number(b.seguro_vida_desconto_mensal)) : null,
+        });
+      }
+      if (b.plano_saude_ativo) {
+        items.push({
+          id: 'plano_saude',
+          titulo: 'Plano de Saúde',
+          subtitulo: [b.plano_saude_operadora, b.plano_saude_plano].filter(Boolean).join(' · ') || 'Ativo',
+          valor:
+            b.plano_saude_desconto_titular != null ? formatBRLCentavos(Number(b.plano_saude_desconto_titular)) : null,
+        });
+      }
+      if (b.plano_odonto_ativo) {
+        items.push({
+          id: 'plano_odonto',
+          titulo: 'Plano Odontológico',
+          subtitulo: [b.plano_odonto_operadora, b.plano_odonto_plano].filter(Boolean).join(' · ') || 'Ativo',
+          valor:
+            b.plano_odonto_desconto_titular != null ? formatBRLCentavos(Number(b.plano_odonto_desconto_titular)) : null,
+        });
+      }
+    }
+
+    res.json({ ok: true, data: { items, total: items.length, semCadastro: !b } });
+  } catch (err) {
+    console.error('[rh/dashboard/beneficios] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// ---------- Colaborador (self-service): Notificações ----------
+
+// GET /api/rh/dashboard/notificacoes?colaboradorId=...
+router.get('/notificacoes', async (req, res) => {
+  try {
+    const colaboradorId = req.query.colaboradorId;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaboradorId' });
+    }
+
+    const notifJson = await fetchAllRows('notif_inbox', {
+      select: 'id,colaborador_id,modulo,notificacao_id,titulo,mensagem,lido_em',
+      filters: { colaborador_id: colaboradorId },
+    });
+
+    // notif_inbox não tem coluna de data/hora documentada (só lido_em, que é
+    // sobre leitura, não sobre criação) — não dá pra ordenar por "mais
+    // recente" de verdade. Colocamos as não lidas primeiro (sinal real que
+    // temos) em vez de inventar uma ordem cronológica.
+    const items = (notifJson.data || [])
+      .map((n) => ({
+        id: n.id,
+        titulo: n.titulo,
+        mensagem: n.mensagem,
+        modulo: n.modulo || null,
+        unread: !n.lido_em,
+      }))
+      .sort((a, b) => Number(b.unread) - Number(a.unread));
+
+    res.json({ ok: true, data: { items, total: items.length } });
+  } catch (err) {
+    console.error('[rh/dashboard/notificacoes] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// ---------- Colaborador (self-service): Contra-cheques (histórico completo) ----------
+
+// GET /api/rh/dashboard/contracheques?colaboradorId=...
+router.get('/contracheques', async (req, res) => {
+  try {
+    const colaboradorId = req.query.colaboradorId;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaboradorId' });
+    }
+
+    const contrachequesJson = await fetchAllRows('rh_contracheques', {
+      select: 'id,colaborador_id,competencia,valor_bruto,valor_liquido,valor_descontos,arquivo_url,observacoes',
+      filters: { colaborador_id: colaboradorId },
+    });
+
+    const items = (contrachequesJson.data || [])
+      .map((c) => {
+        const competenciaMs = parseDateOnly(c.competencia);
+        const competenciaLabel =
+          competenciaMs !== null
+            ? `${MONTH_NAMES_LONG[new Date(competenciaMs).getUTCMonth()]} · ${new Date(competenciaMs).getUTCFullYear()}`
+            : '—';
+        return {
+          id: c.id,
+          competenciaLabel,
+          valorLiquido: formatBRLCentavos(Number(c.valor_liquido) || 0),
+          valorBruto: formatBRLCentavos(Number(c.valor_bruto) || 0),
+          valorDescontos: formatBRLCentavos(Number(c.valor_descontos) || 0),
+          arquivoUrl: c.arquivo_url || null,
+          _competenciaMs: competenciaMs ?? 0,
+        };
+      })
+      .sort((a, b) => b._competenciaMs - a._competenciaMs)
+      .map(({ _competenciaMs, ...item }) => item);
+
+    res.json({ ok: true, data: { items, total: items.length } });
+  } catch (err) {
+    console.error('[rh/dashboard/contracheques] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
 module.exports = router;

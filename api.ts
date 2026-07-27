@@ -456,6 +456,131 @@ export async function fetchColaboradorHome(colaboradorId: string): Promise<Colab
   return json.data as ColaboradorHomeData;
 }
 
+// --- Colaborador (self-service): Comunicados (lista completa) ---
+
+export type ColaboradorComunicadoItem = {
+  id: string;
+  titulo: string;
+  conteudo: string;
+  publico: string | null;
+  tempoLabel: string;
+  lido: boolean;
+};
+
+export type ColaboradorComunicadosDetalhe = { items: ColaboradorComunicadoItem[]; total: number };
+
+export async function fetchColaboradorComunicados(colaboradorId: string): Promise<ColaboradorComunicadosDetalhe> {
+  const json = await api.get(`/api/rh/dashboard/comunicados?colaboradorId=${encodeURIComponent(colaboradorId)}`);
+  return json.data as ColaboradorComunicadosDetalhe;
+}
+
+// --- Colaborador (self-service): Minhas Solicitações ---
+
+export type ColaboradorSolicitacaoItem = {
+  id: string;
+  protocolo: string | null;
+  titulo: string;
+  openedDateLabel: string;
+  department: string;
+  status: { label: string; color: string; tint: string };
+};
+
+export type ColaboradorSolicitacoesDetalhe = { items: ColaboradorSolicitacaoItem[]; total: number };
+
+export async function fetchColaboradorSolicitacoes(colaboradorId: string): Promise<ColaboradorSolicitacoesDetalhe> {
+  const json = await api.get(`/api/rh/dashboard/solicitacoes?colaboradorId=${encodeURIComponent(colaboradorId)}`);
+  return json.data as ColaboradorSolicitacoesDetalhe;
+}
+
+// --- Colaborador (self-service): Metas ---
+
+export type ColaboradorMetaItem = {
+  id: string;
+  titulo: string;
+  subtitulo: string;
+  progressoPct: number | null;
+  status: string;
+  color: string;
+};
+
+export type ColaboradorMetasDetalhe = { items: ColaboradorMetaItem[]; total: number };
+
+export async function fetchColaboradorMetas(colaboradorId: string): Promise<ColaboradorMetasDetalhe> {
+  const json = await api.get(`/api/rh/dashboard/metas?colaboradorId=${encodeURIComponent(colaboradorId)}`);
+  return json.data as ColaboradorMetasDetalhe;
+}
+
+// --- Colaborador (self-service): Treinamentos (lista/status — conteúdo de aulas/prova
+// continua sendo apresentação local no app, sem tabela de aulas/questões no schema) ---
+
+export type ColaboradorTreinamentoItem = {
+  id: string;
+  titulo: string;
+  categoria: string | null;
+  duracaoLabel: string;
+  obrigatorio: boolean;
+  status: 'concluido' | 'em_andamento' | 'nao_iniciado';
+  progressoPct: number | null;
+};
+
+export type ColaboradorTreinamentosDetalhe = { items: ColaboradorTreinamentoItem[]; total: number };
+
+export async function fetchColaboradorTreinamentos(colaboradorId: string): Promise<ColaboradorTreinamentosDetalhe> {
+  const json = await api.get(`/api/rh/dashboard/treinamentos?colaboradorId=${encodeURIComponent(colaboradorId)}`);
+  return json.data as ColaboradorTreinamentosDetalhe;
+}
+
+// --- Colaborador (self-service): Meus Benefícios ---
+
+export type ColaboradorBeneficioItem = {
+  id: string;
+  titulo: string;
+  subtitulo: string;
+  valor: string | null;
+};
+
+export type ColaboradorBeneficiosDetalhe = { items: ColaboradorBeneficioItem[]; total: number; semCadastro: boolean };
+
+export async function fetchColaboradorBeneficios(colaboradorId: string): Promise<ColaboradorBeneficiosDetalhe> {
+  const json = await api.get(`/api/rh/dashboard/beneficios?colaboradorId=${encodeURIComponent(colaboradorId)}`);
+  return json.data as ColaboradorBeneficiosDetalhe;
+}
+
+// --- Colaborador (self-service): Notificações ---
+
+export type ColaboradorNotificacaoItem = {
+  id: string;
+  titulo: string;
+  mensagem: string;
+  modulo: string | null;
+  unread: boolean;
+};
+
+export type ColaboradorNotificacoesDetalhe = { items: ColaboradorNotificacaoItem[]; total: number };
+
+export async function fetchColaboradorNotificacoes(colaboradorId: string): Promise<ColaboradorNotificacoesDetalhe> {
+  const json = await api.get(`/api/rh/dashboard/notificacoes?colaboradorId=${encodeURIComponent(colaboradorId)}`);
+  return json.data as ColaboradorNotificacoesDetalhe;
+}
+
+// --- Colaborador (self-service): Contra-cheques (histórico completo) ---
+
+export type ColaboradorContrachequeItem = {
+  id: string;
+  competenciaLabel: string;
+  valorLiquido: string;
+  valorBruto: string;
+  valorDescontos: string;
+  arquivoUrl: string | null;
+};
+
+export type ColaboradorContrachequesDetalhe = { items: ColaboradorContrachequeItem[]; total: number };
+
+export async function fetchColaboradorContracheques(colaboradorId: string): Promise<ColaboradorContrachequesDetalhe> {
+  const json = await api.get(`/api/rh/dashboard/contracheques?colaboradorId=${encodeURIComponent(colaboradorId)}`);
+  return json.data as ColaboradorContrachequesDetalhe;
+}
+
 // --- Admin: Cargos (roles) ---
 
 export type AdminCargoItem = {
