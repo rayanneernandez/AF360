@@ -575,7 +575,7 @@ const MenuContext = createContext<{
 });
 
 const calendarYear = new Date().getFullYear();
-const calendarMonthNames = [
+export const calendarMonthNames = [
   'Janeiro',
   'Fevereiro',
   'Marco',
@@ -9949,7 +9949,7 @@ export function formatDateBR(date: Date) {
   return `${day}/${month}/${year}`;
 }
 
-function getCalendarWeeks(year: number, monthIndex: number) {
+export function getCalendarWeeks(year: number, monthIndex: number) {
   const firstDay = new Date(year, monthIndex, 1);
   const startDayOfWeek = firstDay.getDay();
   const startDate = new Date(year, monthIndex, 1 - startDayOfWeek);

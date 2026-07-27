@@ -5,6 +5,7 @@ const { requireApiKey } = require('./auth');
 const healthRoutes = require('./routes/health');
 const empresasRoutes = require('./routes/empresas');
 const cargosRoutes = require('./routes/cargos');
+const unidadesRoutes = require('./routes/unidades');
 const setoresRoutes = require('./routes/setores');
 const colaboradoresRoutes = require('./routes/colaboradores');
 const rhDashboardRoutes = require('./routes/rhDashboard');
@@ -27,6 +28,7 @@ app.use('/api', requireApiKey);
 
 app.use('/api/empresas', empresasRoutes);
 app.use('/api/rh/cargos', cargosRoutes);
+app.use('/api/rh/unidades', unidadesRoutes);
 app.use('/api/rh/setores', setoresRoutes);
 app.use('/api/rh/colaboradores', colaboradoresRoutes);
 app.use('/api/rh/dashboard', rhDashboardRoutes);

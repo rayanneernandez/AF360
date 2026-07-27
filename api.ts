@@ -157,6 +157,21 @@ export async function fetchRhStats(): Promise<RhStats> {
   return json.data as RhStats;
 }
 
+// --- RH: unidades reais (tabela empresas no Supabase do Lovable) ---
+// NÃO confundir com o endpoint /api/empresas (esse lê "postos" de um
+// Postgres self-hosted diferente, usado por Vendas/Margem/Estoque).
+export type RhUnidadeItem = { id: string; nome: string };
+
+export async function fetchRhUnidades(): Promise<RhUnidadeItem[]> {
+  const json = await api.get('/api/rh/unidades');
+  return json.data as RhUnidadeItem[];
+}
+
+export async function fetchRhCargos(): Promise<{ id: string; nome: string }[]> {
+  const json = await api.get('/api/rh/cargos');
+  return json.data as { id: string; nome: string }[];
+}
+
 // --- RH: Dashboard (métricas calculadas em cima de rh_colaboradores/empresas) ---
 
 export type RhRegiaoTurnover = { nome: string; hc: number; saidas: number; taxa: string };

@@ -23,6 +23,8 @@ import {
   TopBar,
   ToggleSwitch,
   formatDateBR,
+  getCalendarWeeks,
+  calendarMonthNames,
   rhUser,
   rhUserInitials,
   AuthIdentityContext,
@@ -49,8 +51,11 @@ import {
   fetchRhFolhaDetalhe,
   fetchRhFeriasDetalhe,
   fetchRhExperienciaDetalhe,
+  fetchRhUnidades,
+  fetchRhCargos,
   type RhColaboradorRaw,
   type RhStats,
+  type RhUnidadeItem,
   type RhTurnoverData,
   type RhDashboardResumo,
   type RhAdmissoesDetalhe,
@@ -300,15 +305,16 @@ function formatDateOnlyBR(raw: string | null | undefined): string {
   return `${day}/${month}/${year}`;
 }
 
-function mapRhColaboradorToEmployee(row: RhColaboradorRaw): Employee {
+function mapRhColaboradorToEmployee(row: RhColaboradorRaw, empresaNomeById: Map<string, string>): Employee {
   const salarioRaw = row.salario_base;
   const salario = typeof salarioRaw === 'number' ? salarioRaw : Number(salarioRaw ?? 0) || 0;
+  const empresaId = row.empresa_id as string | undefined;
 
   return {
     id: row.id,
     fullName: row.nome_completo ?? '(sem nome)',
     role: row.cargo ?? '—',
-    unit: row.posto_trabalho ?? '—',
+    unit: (empresaId && empresaNomeById.get(empresaId)) || row.posto_trabalho || '—',
     setor: row.setor ?? '—',
     registration: row.matricula ?? '',
     codigoInterno: row.codigo_interno ?? '',
@@ -2136,18 +2142,152 @@ function RHSimplePickerModal({
   );
 }
 
+// Parseia "dd/mm/aaaa" -> Date. Retorna null se vazio/inválido.
+function parseDateBR(label: string): Date | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(label?.trim() ?? '');
+  if (!match) return null;
+  const [, day, month, year] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+// Calendário 100% JS/RN puro (sem lib nativa nova — o app roda via Expo Go).
+// Reaproveita a lógica/estilos já usados pelo MiniCalendarModal em App.tsx
+// (getCalendarWeeks/calendarMonthNames/styles.datePickerCard e afins).
+function RHDatePickerModal({
+  visible,
+  title,
+  value,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  value: string;
+  onSelect: (dateLabel: string) => void;
+  onClose: () => void;
+}) {
+  const today = new Date();
+  const selectedDate = parseDateBR(value);
+  const [viewYear, setViewYear] = useState((selectedDate ?? today).getFullYear());
+  const [viewMonthIndex, setViewMonthIndex] = useState((selectedDate ?? today).getMonth());
+
+  useEffect(() => {
+    if (visible) {
+      const base = parseDateBR(value) ?? new Date();
+      setViewYear(base.getFullYear());
+      setViewMonthIndex(base.getMonth());
+    }
+  }, [visible, value]);
+
+  const weeks = getCalendarWeeks(viewYear, viewMonthIndex);
+  const monthLabel = `${calendarMonthNames[viewMonthIndex]} ${viewYear}`;
+
+  const goToPreviousMonth = () => {
+    if (viewMonthIndex === 0) {
+      setViewMonthIndex(11);
+      setViewYear((year) => year - 1);
+    } else {
+      setViewMonthIndex((month) => month - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (viewMonthIndex === 11) {
+      setViewMonthIndex(0);
+      setViewYear((year) => year + 1);
+    } else {
+      setViewMonthIndex((month) => month + 1);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.datePickerCard} onPress={() => {}}>
+          <Text style={styles.simpleListTitle}>{title}</Text>
+          <View style={styles.datePickerHeaderRow}>
+            <Pressable onPress={goToPreviousMonth} hitSlop={8}>
+              <Feather name="chevron-left" size={20} color="#5C6580" />
+            </Pressable>
+            <Text style={styles.datePickerMonthLabel}>{monthLabel}</Text>
+            <Pressable onPress={goToNextMonth} hitSlop={8}>
+              <Feather name="chevron-right" size={20} color="#5C6580" />
+            </Pressable>
+          </View>
+
+          <View style={styles.calendarWeekDaysRow}>
+            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((dayLabel, index) => (
+              <Text key={`${dayLabel}-${index}`} style={styles.calendarWeekDayLabel}>
+                {dayLabel}
+              </Text>
+            ))}
+          </View>
+
+          {weeks.map((week, weekIndex) => (
+            <View key={`week-${weekIndex}`} style={styles.calendarWeekRow}>
+              {week.map((day) => {
+                const isSelected =
+                  day.isCurrentMonth &&
+                  !!selectedDate &&
+                  viewYear === selectedDate.getFullYear() &&
+                  viewMonthIndex === selectedDate.getMonth() &&
+                  day.dayNumber === selectedDate.getDate();
+
+                return (
+                  <Pressable
+                    key={day.key}
+                    style={styles.calendarDayCell}
+                    disabled={!day.isCurrentMonth}
+                    onPress={() => {
+                      onSelect(formatDateBR(new Date(viewYear, viewMonthIndex, day.dayNumber)));
+                      onClose();
+                    }}
+                  >
+                    <View style={styles.calendarDayContent}>
+                      <View
+                        style={[
+                          styles.calendarDayCircle,
+                          isSelected ? styles.calendarDayCircleSelected : null,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.calendarDayText,
+                            !day.isCurrentMonth ? styles.calendarDayTextMuted : null,
+                            isSelected ? styles.calendarDayTextSelected : null,
+                          ]}
+                        >
+                          {day.dayNumber}
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function RHSelectField({
   label,
   value,
   placeholder = 'Selecione...',
   onPress,
   required,
+  icon = 'chevron-down',
 }: {
   label: string;
   value: string;
   placeholder?: string;
   onPress: () => void;
   required?: boolean;
+  icon?: keyof typeof Feather.glyphMap;
 }) {
   return (
     <>
@@ -2161,7 +2301,7 @@ function RHSelectField({
             {value || placeholder}
           </Text>
         </View>
-        <Feather name="chevron-down" size={18} color="#7A8299" />
+        <Feather name={icon} size={18} color="#7A8299" />
       </Pressable>
     </>
   );
@@ -2208,14 +2348,19 @@ function NovoColaboradorModal({
   visible,
   onClose,
   onSave,
+  cargoOptions,
+  unidadeOptions,
 }: {
   visible: boolean;
   onClose: () => void;
   onSave: (employee: Employee) => void;
+  cargoOptions: string[];
+  unidadeOptions: string[];
 }) {
   const [form, setForm] = useState<NovoColaboradorForm>(emptyNovoColaboradorForm);
   const [isCargoPickerOpen, setIsCargoPickerOpen] = useState(false);
   const [isUnidadePickerOpen, setIsUnidadePickerOpen] = useState(false);
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -2305,13 +2450,12 @@ function NovoColaboradorModal({
                 required
               />
 
-              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Data de admissão</Text>
-              <TextInput
-                style={styles.processTextInput}
+              <RHSelectField
+                label="Data de admissão"
                 value={form.admissionLabel}
-                onChangeText={(text) => setForm((current) => ({ ...current, admissionLabel: text }))}
-                placeholder="dd/mm/aaaa"
-                placeholderTextColor="#A7AEC2"
+                placeholder="Selecione a data"
+                onPress={() => setIsDatePickerOpen(true)}
+                icon="calendar"
               />
 
               <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={handleSubmit}>
@@ -2325,7 +2469,7 @@ function NovoColaboradorModal({
       <RHSimplePickerModal
         visible={isCargoPickerOpen}
         title="Cargo"
-        options={rhCargosList}
+        options={cargoOptions}
         selectedValue={form.role}
         onSelect={(value) => setForm((current) => ({ ...current, role: value }))}
         onClose={() => setIsCargoPickerOpen(false)}
@@ -2333,10 +2477,17 @@ function NovoColaboradorModal({
       <RHSimplePickerModal
         visible={isUnidadePickerOpen}
         title="Unidade"
-        options={rhUnidadesList}
+        options={unidadeOptions}
         selectedValue={form.unit}
         onSelect={(value) => setForm((current) => ({ ...current, unit: value }))}
         onClose={() => setIsUnidadePickerOpen(false)}
+      />
+      <RHDatePickerModal
+        visible={isDatePickerOpen}
+        title="Data de admissão"
+        value={form.admissionLabel}
+        onSelect={(dateLabel) => setForm((current) => ({ ...current, admissionLabel: dateLabel }))}
+        onClose={() => setIsDatePickerOpen(false)}
       />
     </>
   );
@@ -2355,6 +2506,8 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
   const [isNovoModalOpen, setIsNovoModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [selectedImportFile, setSelectedImportFile] = useState<ImportedCsvFile | null>(null);
+  const [unidadesReais, setUnidadesReais] = useState<RhUnidadeItem[]>([]);
+  const [cargosReais, setCargosReais] = useState<{ id: string; nome: string }[]>([]);
   const [page, setPage] = useState(1);
   const pageSize = 7;
 
@@ -2362,18 +2515,24 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
     let isMounted = true;
     setIsLoading(true);
     setErrorMessage(null);
-    Promise.all([fetchRhColaboradores(), fetchRhStats()])
-      .then(([rows, statsResult]) => {
+    Promise.all([fetchRhColaboradores(), fetchRhStats(), fetchRhUnidades(), fetchRhCargos()])
+      .then(([rows, statsResult, unidadesResult, cargosResult]) => {
         if (!isMounted) return;
+        const empresaNomeById = new Map<string, string>();
+        unidadesResult.forEach((unidade) => {
+          if (unidade.id && unidade.nome) empresaNomeById.set(unidade.id, unidade.nome);
+        });
         // Alfabética (já vem assim do backend, order: nome_completo:asc), mas
         // desligados sempre por último — sort é estável, então dentro de
         // cada grupo (ativos+demais / desligados) a ordem alfabética original
         // é preservada.
         const employeesSorted = rows
-          .map(mapRhColaboradorToEmployee)
+          .map((row) => mapRhColaboradorToEmployee(row, empresaNomeById))
           .sort((a, b) => (a.status === 'desligado' ? 1 : 0) - (b.status === 'desligado' ? 1 : 0));
         setEmployees(employeesSorted);
         setStats(statsResult);
+        setUnidadesReais(unidadesResult);
+        setCargosReais(cargosResult);
       })
       .catch((err) => {
         if (isMounted) {
@@ -2392,12 +2551,19 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
 
   const statusFilterOptions = ['Todos os status', 'Ativo', 'Em férias', 'Afastado', 'Desligado'];
   const unidadeFilterOptions = useMemo(() => {
-    const unique = new Set<string>();
-    employees.forEach((employee) => {
-      if (employee.unit && employee.unit !== '—') unique.add(employee.unit);
-    });
-    return ['Todas as unidades', ...Array.from(unique).sort((a, b) => a.localeCompare(b, 'pt-BR'))];
-  }, [employees]);
+    return [
+      'Todas as unidades',
+      ...unidadesReais.map((unidade) => unidade.nome).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    ];
+  }, [unidadesReais]);
+  const unidadeOptions = useMemo(
+    () => unidadesReais.map((unidade) => unidade.nome).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [unidadesReais]
+  );
+  const cargoOptions = useMemo(
+    () => cargosReais.map((cargo) => cargo.nome).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [cargosReais]
+  );
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -2506,15 +2672,11 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
   };
 
   const handleImportEmployees = () => {
-    if (!selectedImportFile) {
-      return;
-    }
-
+    if (!selectedImportFile) return;
     Alert.alert(
-      'Importação iniciada',
-      `${selectedImportFile.name} foi enviado para importação em lote de colaboradores.`
+      'Importação ainda não disponível',
+      'A importação em lote depende de um endpoint de escrita no Lovable que ainda não está liberado. Assim que estiver disponível, colaboradores com CPF já cadastrado serão atualizados e os novos serão inseridos — nada será substituído.'
     );
-    setIsImportModalOpen(false);
   };
 
   return (
@@ -2667,6 +2829,8 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
         visible={isNovoModalOpen}
         onClose={() => setIsNovoModalOpen(false)}
         onSave={handleSaveNewEmployee}
+        cargoOptions={cargoOptions}
+        unidadeOptions={unidadeOptions}
       />
       <RHImportEmployeesModal
         visible={isImportModalOpen}
@@ -2817,51 +2981,53 @@ function RHImportEmployeesModal({
             </Pressable>
           </View>
 
-          <View style={rhStyles.importEmployeesActionsRow}>
-            <Pressable style={rhStyles.importEmployeesActionButton} onPress={onDownloadTemplate}>
-              <Feather name="download" size={16} color="#15203E" />
-              <Text style={rhStyles.importEmployeesActionButtonText}>Baixar template CSV</Text>
-            </Pressable>
+          <ScrollView style={rhStyles.importEmployeesScroll} showsVerticalScrollIndicator={false}>
+            <View style={rhStyles.importEmployeesActionsRow}>
+              <Pressable style={rhStyles.importEmployeesActionButton} onPress={onDownloadTemplate}>
+                <Feather name="download" size={16} color="#15203E" />
+                <Text style={rhStyles.importEmployeesActionButtonText}>Baixar template CSV</Text>
+              </Pressable>
 
-            <Pressable style={rhStyles.importEmployeesActionButton} onPress={onPickFile}>
-              <Feather name="upload" size={16} color="#15203E" />
-              <Text style={rhStyles.importEmployeesActionButtonText}>Selecionar arquivo</Text>
-            </Pressable>
-          </View>
-
-          {selectedFile ? (
-            <View style={rhStyles.importEmployeesSelectedFileCard}>
-              <View style={rhStyles.importEmployeesSelectedFileLeft}>
-                <View style={rhStyles.importEmployeesSelectedFileIcon}>
-                  <Feather name="file-text" size={16} color="#E6213D" />
-                </View>
-                <View style={rhStyles.importEmployeesSelectedFileTextBlock}>
-                  <Text style={rhStyles.importEmployeesSelectedFileName} numberOfLines={1}>
-                    {selectedFile.name}
-                  </Text>
-                  <Text style={rhStyles.importEmployeesSelectedFileMeta}>{selectedFile.sizeLabel}</Text>
-                </View>
-              </View>
-
-              <Pressable style={rhStyles.importEmployeesChangeFileButton} onPress={onPickFile}>
-                <Text style={rhStyles.importEmployeesChangeFileButtonText}>Trocar</Text>
+              <Pressable style={rhStyles.importEmployeesActionButton} onPress={onPickFile}>
+                <Feather name="upload" size={16} color="#15203E" />
+                <Text style={rhStyles.importEmployeesActionButtonText}>Selecionar arquivo</Text>
               </Pressable>
             </View>
-          ) : null}
 
-          <View style={rhStyles.importEmployeesRulesCard}>
-            <View style={rhStyles.importEmployeesRulesHeader}>
-              <Feather name="info" size={16} color="#4C5470" />
-              <Text style={rhStyles.importEmployeesRulesTitle}>Regras</Text>
-            </View>
+            {selectedFile ? (
+              <View style={rhStyles.importEmployeesSelectedFileCard}>
+                <View style={rhStyles.importEmployeesSelectedFileLeft}>
+                  <View style={rhStyles.importEmployeesSelectedFileIcon}>
+                    <Feather name="file-text" size={16} color="#E6213D" />
+                  </View>
+                  <View style={rhStyles.importEmployeesSelectedFileTextBlock}>
+                    <Text style={rhStyles.importEmployeesSelectedFileName} numberOfLines={1}>
+                      {selectedFile.name}
+                    </Text>
+                    <Text style={rhStyles.importEmployeesSelectedFileMeta}>{selectedFile.sizeLabel}</Text>
+                  </View>
+                </View>
 
-            {colaboradoresCsvRules.map((rule) => (
-              <View key={rule} style={rhStyles.importEmployeesRuleRow}>
-                <Text style={rhStyles.importEmployeesRuleBullet}>•</Text>
-                <Text style={rhStyles.importEmployeesRuleText}>{rule}</Text>
+                <Pressable style={rhStyles.importEmployeesChangeFileButton} onPress={onPickFile}>
+                  <Text style={rhStyles.importEmployeesChangeFileButtonText}>Trocar</Text>
+                </Pressable>
               </View>
-            ))}
-          </View>
+            ) : null}
+
+            <View style={rhStyles.importEmployeesRulesCard}>
+              <View style={rhStyles.importEmployeesRulesHeader}>
+                <Feather name="info" size={16} color="#4C5470" />
+                <Text style={rhStyles.importEmployeesRulesTitle}>Regras</Text>
+              </View>
+
+              {colaboradoresCsvRules.map((rule) => (
+                <View key={rule} style={rhStyles.importEmployeesRuleRow}>
+                  <Text style={rhStyles.importEmployeesRuleBullet}>•</Text>
+                  <Text style={rhStyles.importEmployeesRuleText}>{rule}</Text>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
 
           <View style={rhStyles.importEmployeesFooter}>
             <Pressable style={rhStyles.importEmployeesCloseButton} onPress={onClose}>
@@ -7476,10 +7642,15 @@ const rhStyles = StyleSheet.create({
   importEmployeesModalCard: {
     width: '100%',
     maxWidth: 760,
+    maxHeight: '88%',
     alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 18,
+    overflow: 'hidden',
+  },
+  importEmployeesScroll: {
+    flex: 1,
   },
   importEmployeesHeader: {
     flexDirection: 'row',
