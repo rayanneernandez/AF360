@@ -2501,7 +2501,7 @@ function NovoColaboradorModal({
               </Pressable>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={styles.requestFieldLabel}>Nome completo *</Text>
               <TextInput
                 style={styles.processTextInput}
@@ -3013,7 +3013,7 @@ function RHSmallModal({
               <Feather name="x" size={20} color="#677089" />
             </Pressable>
           </View>
-          <ScrollView showsVerticalScrollIndicator={false}>{children}</ScrollView>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">{children}</ScrollView>
         </View>
       </View>
     </Modal>
@@ -3399,7 +3399,7 @@ function DadosPessoaisModal({
               >
                 <Feather
                   name={tab.icon}
-                  size={14}
+                  size={12}
                   color={isActive ? '#1B6E3A' : '#6F768A'}
                 />
                 <Text
@@ -4103,7 +4103,7 @@ function DadosPessoaisModal({
               </Pressable>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={styles.requestFieldLabel}>Nome completo *</Text>
               <TextInput
                 style={styles.processTextInput}
@@ -4604,7 +4604,7 @@ function RegistrarPromocaoFormModal({
               </Pressable>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <RHSelectField label="Motivo" value={motivo} onPress={() => setIsMotivoPickerOpen(true)} required />
 
               <Text style={[styles.requestFieldLabel, styles.spacingTop]}>
@@ -4825,7 +4825,7 @@ function RegistrarPremiacaoFormModal({
               </Pressable>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <RHSelectField
                 label="Tipo de premiação"
                 value={tipo}
@@ -5052,7 +5052,7 @@ function NovaTransferenciaFormModal({
               </Pressable>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <View style={rhStyles.infoBox}>
                 <Text style={rhStyles.infoBoxLine}>
                   Unidade atual: <Text style={rhStyles.inlineBold}>{employee.unit}</Text>
@@ -5348,7 +5348,7 @@ function EditarCadastroModal({
               </Pressable>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={styles.requestFieldLabel}>Nome completo</Text>
               <TextInput
                 style={styles.processTextInput}
@@ -5575,7 +5575,7 @@ function DesligamentoModal({
               </Pressable>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={styles.requestFieldLabel}>Nome completo</Text>
               <TextInput
                 style={styles.processTextInput}
@@ -6114,7 +6114,7 @@ function AnnouncementFormModal({
             </Pressable>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.requestFieldLabel}>Categoria</Text>
             <View style={rhStyles.categoryRow}>
               {categories.map((category) => {
@@ -8723,28 +8723,29 @@ const rhStyles = StyleSheet.create({
   mobileDetailTabsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
   mobileDetailTab: {
-    minHeight: 42,
-    borderRadius: 14,
+    minHeight: 32,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E6F0',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
+    backgroundColor: '#F7F8FB',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     flexShrink: 1,
   },
   mobileDetailTabActive: {
     backgroundColor: '#E8F7EE',
-    borderColor: '#B4E3C8',
+    borderColor: '#1B6E3A',
   },
   mobileDetailTabText: {
-    color: '#4C5470',
-    fontSize: 12,
-    fontWeight: '700',
+    color: '#6F768A',
+    fontSize: 11,
+    fontWeight: '600',
   },
   mobileDetailTabTextActive: {
     color: '#1B6E3A',

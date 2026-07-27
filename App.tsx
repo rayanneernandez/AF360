@@ -5486,7 +5486,7 @@ function RequestsScreen({ navigation }: ScreenProps<'Requests'>) {
       <Modal visible={isModalOpen} animationType="fade" transparent onRequestClose={closeModal}>
         <View style={styles.requestModalBackdrop}>
           <View style={styles.requestModalCard}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <View style={styles.requestModalHeader}>
                 <Text style={styles.requestModalTitle}>Nova Solicitação ao RH</Text>
                 <Pressable onPress={closeModal} hitSlop={8}>
@@ -7527,7 +7527,7 @@ function ProcessFormModal({
               })}
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {activeTab === 'geral' ? (
                 <View>
                   <Text style={styles.requestFieldLabel}>Nome *</Text>
@@ -8234,7 +8234,7 @@ export function NotificationRoutineFormModal({
               </Pressable>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={styles.requestFieldLabel}>Nome da rotina *</Text>
               <TextInput
                 style={styles.processTextInput}
@@ -8514,7 +8514,7 @@ export function TemplateFormModal({
             </Pressable>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.requestFieldLabel}>Código *</Text>
             <TextInput
               style={styles.processTextInput}
