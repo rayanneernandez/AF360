@@ -197,6 +197,11 @@ export async function fetchRhCargos(): Promise<{ id: string; nome: string }[]> {
   return json.data as { id: string; nome: string }[];
 }
 
+export async function fetchRhSetores(): Promise<{ id: string; nome: string }[]> {
+  const json = await api.get('/api/rh/setores');
+  return json.data as { id: string; nome: string }[];
+}
+
 // --- RH: Dashboard (métricas calculadas em cima de rh_colaboradores/empresas) ---
 
 export type RhRegiaoTurnover = { nome: string; hc: number; saidas: number; taxa: string };

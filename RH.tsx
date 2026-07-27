@@ -53,6 +53,7 @@ import {
   fetchRhExperienciaDetalhe,
   fetchRhUnidades,
   fetchRhCargos,
+  fetchRhSetores,
   type RhColaboradorRaw,
   type RhStats,
   type RhUnidadeItem,
@@ -3345,14 +3346,40 @@ const createEmptyDependentForm = (): Omit<RHDependentItem, 'id'> => ({
   notes: '',
 });
 
+const rhTipoContratoOptions: string[] = ['CLT', 'PJ', 'Estagiário', 'Jovem Aprendiz', 'Temporário', 'Terceirizado'];
+
+const rhJornadaTipoOptions: string[] = [
+  '— Não definido —',
+  '44h semanais',
+  '40h semanais',
+  '36h semanais',
+  '30h semanais',
+  'Escala 12×36',
+  'Escala personalizada',
+];
+
+const rhInsalubridadeOptions: string[] = ['Nenhum', 'Mínimo (10% SM)', 'Médio (20% SM)', 'Máximo (40% SM)'];
+
+// Lista de horários de 30 em 30 minutos (00:00 a 23:30) pros seletores de
+// Entrada/Saída/Almoço — pura JS/RN, sem lib de time-picker nativa nova.
+const rhTimeOptions: string[] = Array.from({ length: 48 }, (_, i) => {
+  const hour = Math.floor(i / 2);
+  const minute = i % 2 === 0 ? '00' : '30';
+  return `${String(hour).padStart(2, '0')}:${minute}`;
+});
+
 function DadosPessoaisModal({
   visible,
   employee,
   onClose,
+  cargoOptions,
+  setorOptions,
 }: {
   visible: boolean;
   employee: Employee;
   onClose: () => void;
+  cargoOptions: string[];
+  setorOptions: string[];
 }) {
   const [activeTab, setActiveTab] = useState<DadosPessoaisTab>('pessoais');
   const [dependents, setDependents] = useState<RHDependentItem[]>([]);
@@ -3366,6 +3393,15 @@ function DadosPessoaisModal({
   const [isNacionalidadePickerOpen, setIsNacionalidadePickerOpen] = useState(false);
   const [isDependentBirthDatePickerOpen, setIsDependentBirthDatePickerOpen] = useState(false);
   const [isKinshipPickerOpen, setIsKinshipPickerOpen] = useState(false);
+  const [isContractTypePickerOpen, setIsContractTypePickerOpen] = useState(false);
+  const [isContractCargoPickerOpen, setIsContractCargoPickerOpen] = useState(false);
+  const [isContractSetorPickerOpen, setIsContractSetorPickerOpen] = useState(false);
+  const [isJornadaTipoPickerOpen, setIsJornadaTipoPickerOpen] = useState(false);
+  const [isInsalubridadePickerOpen, setIsInsalubridadePickerOpen] = useState(false);
+  const [isEntradaPickerOpen, setIsEntradaPickerOpen] = useState(false);
+  const [isSaidaPickerOpen, setIsSaidaPickerOpen] = useState(false);
+  const [isAlmocoInicioPickerOpen, setIsAlmocoInicioPickerOpen] = useState(false);
+  const [isAlmocoFimPickerOpen, setIsAlmocoFimPickerOpen] = useState(false);
   const [form, setForm] = useState({
     cpf: formatCpfInput(employee.cpf),
     rg: employee.rg ?? '',
@@ -3404,7 +3440,10 @@ function DadosPessoaisModal({
     role: employee.role.toUpperCase(),
     setor: employee.setor.toUpperCase(),
     scheduleType: '44h semanais',
-    scheduleHours: '14:00 às 22:00',
+    scheduleEntrada: '06:00',
+    scheduleSaida: '18:00',
+    scheduleAlmocoInicio: '12:00',
+    scheduleAlmocoFim: '13:00',
     scheduleModel: 'Sem modelo vinculado',
     baseSalary: employee.salario.toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
@@ -3631,6 +3670,87 @@ function DadosPessoaisModal({
               selectedValue={form.nacionalidade}
               onSelect={(value) => setForm((current) => ({ ...current, nacionalidade: value }))}
               onClose={() => setIsNacionalidadePickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isContractTypePickerOpen}
+              title="Tipo de contrato"
+              options={rhTipoContratoOptions}
+              selectedValue={contractForm.contractType}
+              onSelect={(value) => setContractForm((current) => ({ ...current, contractType: value }))}
+              onClose={() => setIsContractTypePickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isContractCargoPickerOpen}
+              title="Cargo"
+              options={cargoOptions}
+              selectedValue={contractForm.role}
+              onSelect={(value) => setContractForm((current) => ({ ...current, role: value }))}
+              onClose={() => setIsContractCargoPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isContractSetorPickerOpen}
+              title="Setor"
+              options={setorOptions}
+              selectedValue={contractForm.setor}
+              onSelect={(value) => setContractForm((current) => ({ ...current, setor: value }))}
+              onClose={() => setIsContractSetorPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isJornadaTipoPickerOpen}
+              title="Jornada (tipo)"
+              options={rhJornadaTipoOptions}
+              selectedValue={contractForm.scheduleType}
+              onSelect={(value) => setContractForm((current) => ({ ...current, scheduleType: value }))}
+              onClose={() => setIsJornadaTipoPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isInsalubridadePickerOpen}
+              title="Grau de insalubridade"
+              options={rhInsalubridadeOptions}
+              selectedValue={contractForm.insalubrityLevel}
+              onSelect={(value) => setContractForm((current) => ({ ...current, insalubrityLevel: value }))}
+              onClose={() => setIsInsalubridadePickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isEntradaPickerOpen}
+              title="Entrada"
+              options={rhTimeOptions}
+              selectedValue={contractForm.scheduleEntrada}
+              onSelect={(value) => setContractForm((current) => ({ ...current, scheduleEntrada: value }))}
+              onClose={() => setIsEntradaPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isSaidaPickerOpen}
+              title="Saída"
+              options={rhTimeOptions}
+              selectedValue={contractForm.scheduleSaida}
+              onSelect={(value) => setContractForm((current) => ({ ...current, scheduleSaida: value }))}
+              onClose={() => setIsSaidaPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isAlmocoInicioPickerOpen}
+              title="Almoço — início"
+              options={rhTimeOptions}
+              selectedValue={contractForm.scheduleAlmocoInicio}
+              onSelect={(value) => setContractForm((current) => ({ ...current, scheduleAlmocoInicio: value }))}
+              onClose={() => setIsAlmocoInicioPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isAlmocoFimPickerOpen}
+              title="Almoço — fim"
+              options={rhTimeOptions}
+              selectedValue={contractForm.scheduleAlmocoFim}
+              onSelect={(value) => setContractForm((current) => ({ ...current, scheduleAlmocoFim: value }))}
+              onClose={() => setIsAlmocoFimPickerOpen(false)}
             />
           </>
         }
@@ -4052,12 +4172,10 @@ function DadosPessoaisModal({
 
             <View style={rhStyles.formRow}>
               <View style={rhStyles.formRowItem}>
-                <Text style={styles.requestFieldLabel}>Tipo de contrato</Text>
-                <TextInput
-                  style={styles.processTextInput}
+                <RHSelectField
+                  label="Tipo de contrato"
                   value={contractForm.contractType}
-                  onChangeText={updateContractField('contractType')}
-                  placeholderTextColor="#A7AEC2"
+                  onPress={() => setIsContractTypePickerOpen(true)}
                 />
               </View>
               <View style={rhStyles.formRowItem}>
@@ -4082,44 +4200,72 @@ function DadosPessoaisModal({
                 />
               </View>
               <View style={rhStyles.formRowItem}>
-                <Text style={styles.requestFieldLabel}>Cargo</Text>
-                <TextInput
-                  style={styles.processTextInput}
+                <RHSelectField
+                  label="Cargo"
                   value={contractForm.role}
-                  onChangeText={updateContractField('role')}
-                  placeholderTextColor="#A7AEC2"
+                  onPress={() => setIsContractCargoPickerOpen(true)}
                 />
               </View>
             </View>
 
             <View style={rhStyles.formRow}>
               <View style={rhStyles.formRowItem}>
-                <Text style={styles.requestFieldLabel}>Setor</Text>
-                <TextInput
-                  style={styles.processTextInput}
+                <RHSelectField
+                  label="Setor"
                   value={contractForm.setor}
-                  onChangeText={updateContractField('setor')}
-                  placeholderTextColor="#A7AEC2"
+                  onPress={() => setIsContractSetorPickerOpen(true)}
                 />
               </View>
               <View style={rhStyles.formRowItem}>
-                <Text style={styles.requestFieldLabel}>Jornada</Text>
-                <TextInput
-                  style={styles.processTextInput}
+                <RHSelectField
+                  label="Jornada (tipo)"
                   value={contractForm.scheduleType}
-                  onChangeText={updateContractField('scheduleType')}
-                  placeholderTextColor="#A7AEC2"
+                  onPress={() => setIsJornadaTipoPickerOpen(true)}
                 />
               </View>
             </View>
 
-            <Text style={styles.requestFieldLabel}>Horário</Text>
-            <TextInput
-              style={styles.processTextInput}
-              value={contractForm.scheduleHours}
-              onChangeText={updateContractField('scheduleHours')}
-              placeholderTextColor="#A7AEC2"
-            />
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Horário</Text>
+            <View style={rhStyles.formRow}>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Entrada"
+                  icon="clock"
+                  value={contractForm.scheduleEntrada}
+                  onPress={() => setIsEntradaPickerOpen(true)}
+                />
+              </View>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Saída"
+                  icon="clock"
+                  value={contractForm.scheduleSaida}
+                  onPress={() => setIsSaidaPickerOpen(true)}
+                />
+              </View>
+            </View>
+            <View style={rhStyles.formRow}>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Almoço — início"
+                  icon="clock"
+                  value={contractForm.scheduleAlmocoInicio}
+                  onPress={() => setIsAlmocoInicioPickerOpen(true)}
+                />
+              </View>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Almoço — fim"
+                  icon="clock"
+                  value={contractForm.scheduleAlmocoFim}
+                  onPress={() => setIsAlmocoFimPickerOpen(true)}
+                />
+              </View>
+            </View>
+            <Text style={rhStyles.scheduleResultText}>
+              Resultado: {contractForm.scheduleEntrada} às {contractForm.scheduleAlmocoInicio} ·{' '}
+              {contractForm.scheduleAlmocoFim} às {contractForm.scheduleSaida}
+            </Text>
 
             <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Modelo de jornada</Text>
             <TextInput
@@ -4167,12 +4313,10 @@ function DadosPessoaisModal({
                 />
               </View>
               <View style={rhStyles.formRowItem}>
-                <Text style={styles.requestFieldLabel}>Grau de insalubridade</Text>
-                <TextInput
-                  style={styles.processTextInput}
+                <RHSelectField
+                  label="Grau de insalubridade"
                   value={contractForm.insalubrityLevel}
-                  onChangeText={updateContractField('insalubrityLevel')}
-                  placeholderTextColor="#A7AEC2"
+                  onPress={() => setIsInsalubridadePickerOpen(true)}
                 />
               </View>
             </View>
@@ -6065,24 +6209,30 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [unidadesReais, setUnidadesReais] = useState<RhUnidadeItem[]>([]);
   const [cargosReais, setCargosReais] = useState<{ id: string; nome: string }[]>([]);
+  const [setoresReais, setSetoresReais] = useState<{ id: string; nome: string }[]>([]);
 
   useEffect(() => {
     let isMounted = true;
-    Promise.all([fetchRhUnidades(), fetchRhCargos()])
-      .then(([unidadesResult, cargosResult]) => {
+    Promise.all([fetchRhUnidades(), fetchRhCargos(), fetchRhSetores()])
+      .then(([unidadesResult, cargosResult, setoresResult]) => {
         if (!isMounted) return;
         setUnidadesReais(unidadesResult);
         setCargosReais(cargosResult);
+        setSetoresReais(setoresResult);
       })
       .catch(() => {
-        // Silencioso: os pickers de Cargo/Unidade caem para lista vazia,
-        // sem travar o restante da tela de detalhe do colaborador.
+        // Silencioso: os pickers de Cargo/Unidade/Setor caem para lista
+        // vazia, sem travar o restante da tela de detalhe do colaborador.
       });
     return () => {
       isMounted = false;
     };
   }, []);
 
+  const setorOptions = useMemo(
+    () => setoresReais.map((setor) => setor.nome).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [setoresReais]
+  );
   const unidadeOptions = useMemo(
     () => unidadesReais.map((unidade) => unidade.nome).sort((a, b) => a.localeCompare(b, 'pt-BR')),
     [unidadesReais]
@@ -6222,6 +6372,8 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
         visible={activeQuickAction === 'dadosPessoais'}
         employee={employee}
         onClose={() => setActiveQuickAction(null)}
+        cargoOptions={cargoOptions}
+        setorOptions={setorOptions}
       />
       <DocumentosModal
         visible={activeQuickAction === 'documentos'}
@@ -9061,6 +9213,12 @@ const rhStyles = StyleSheet.create({
   },
   categoryChipTextActive: {
     color: '#FFFFFF',
+  },
+  scheduleResultText: {
+    marginTop: 6,
+    color: '#5E667D',
+    fontSize: 12,
+    fontWeight: '600',
   },
   inlinePickerLayer: {
     position: 'absolute',
