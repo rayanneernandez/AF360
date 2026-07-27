@@ -3312,6 +3312,24 @@ type RHDependentItem = {
   notes: string;
 };
 
+const rhGrauParentescoOptions: string[] = [
+  'Filho',
+  'Enteado',
+  'Enteada',
+  'Cônjuge',
+  'Companheiro(a)',
+  'Pai',
+  'Mãe',
+  'Avô',
+  'Avó',
+  'Menor sob guarda',
+  'Irmão',
+  'Irmã',
+  'Neto',
+  'Neta',
+  'Outro',
+];
+
 const createEmptyDependentForm = (): Omit<RHDependentItem, 'id'> => ({
   fullName: '',
   cpf: '',
@@ -3342,6 +3360,8 @@ function DadosPessoaisModal({
   const [isEstadoCivilPickerOpen, setIsEstadoCivilPickerOpen] = useState(false);
   const [isGrauInstrucaoPickerOpen, setIsGrauInstrucaoPickerOpen] = useState(false);
   const [isNacionalidadePickerOpen, setIsNacionalidadePickerOpen] = useState(false);
+  const [isDependentBirthDatePickerOpen, setIsDependentBirthDatePickerOpen] = useState(false);
+  const [isKinshipPickerOpen, setIsKinshipPickerOpen] = useState(false);
   const [form, setForm] = useState({
     cpf: formatCpfInput(employee.cpf),
     rg: employee.rg ?? '',
@@ -4474,23 +4494,22 @@ function DadosPessoaisModal({
                   />
                 </View>
                 <View style={rhStyles.formRowItem}>
-                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Data de nascimento *</Text>
-                  <TextInput
-                    style={styles.processTextInput}
+                  <RHSelectField
+                    label="Data de nascimento"
+                    required
                     value={dependentForm.birthDate}
-                    onChangeText={(text) => setDependentForm((current) => ({ ...current, birthDate: text }))}
-                    placeholder="dd/mm/aaaa"
-                    placeholderTextColor="#A7AEC2"
+                    placeholder="Selecione a data"
+                    icon="calendar"
+                    onPress={() => setIsDependentBirthDatePickerOpen(true)}
                   />
                 </View>
               </View>
 
-              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Grau de parentesco *</Text>
-              <TextInput
-                style={styles.processTextInput}
+              <RHSelectField
+                label="Grau de parentesco"
+                required
                 value={dependentForm.kinship}
-                onChangeText={(text) => setDependentForm((current) => ({ ...current, kinship: text }))}
-                placeholderTextColor="#A7AEC2"
+                onPress={() => setIsKinshipPickerOpen(true)}
               />
 
               <View style={[rhStyles.toggleFormCard, styles.spacingTop]}>
@@ -4547,6 +4566,24 @@ function DadosPessoaisModal({
                 <Text style={rhStyles.detailSaveButtonText}>Salvar</Text>
               </Pressable>
             </ScrollView>
+
+            <RHDatePickerModal
+              inline
+              visible={isDependentBirthDatePickerOpen}
+              title="Data de nascimento"
+              value={dependentForm.birthDate}
+              onSelect={(dateLabel) => setDependentForm((current) => ({ ...current, birthDate: dateLabel }))}
+              onClose={() => setIsDependentBirthDatePickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isKinshipPickerOpen}
+              title="Grau de parentesco"
+              options={rhGrauParentescoOptions}
+              selectedValue={dependentForm.kinship}
+              onSelect={(value) => setDependentForm((current) => ({ ...current, kinship: value }))}
+              onClose={() => setIsKinshipPickerOpen(false)}
+            />
           </View>
         </View>
       </Modal>
