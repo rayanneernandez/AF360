@@ -613,9 +613,22 @@ function RHPageHeader({ icon, title, subtitle }: { icon: keyof typeof Feather.gl
   );
 }
 
-function buildLinePoints(values: number[], width: number, height: number, padding = 6) {
-  const max = Math.max(...values);
-  const min = Math.min(...values);
+function buildLinePoints(
+  values: number[],
+  width: number,
+  height: number,
+  padding = 6,
+  sharedMin?: number,
+  sharedMax?: number
+) {
+  // sharedMin/sharedMax permitem normalizar MÚLTIPLAS séries na MESMA escala
+  // (mesmo range de valor -> mesmo range de altura). Sem isso, cada série era
+  // normalizada pelo próprio min/max (ver RHMultiLineChart abaixo) e uma série
+  // sempre menor (ex.: Voluntário, que é só uma parte de Geral) podia aparecer
+  // visualmente MAIOR que a outra, já que cada uma preenchia o gráfico inteiro
+  // com sua própria variação — dando a entender o contrário do valor real.
+  const max = sharedMax !== undefined ? sharedMax : Math.max(...values);
+  const min = sharedMin !== undefined ? sharedMin : Math.min(...values);
   const range = max - min || 1;
   const stepX = (width - padding * 2) / (values.length - 1 || 1);
 
@@ -827,7 +840,14 @@ function RHMultiLineChart({
   const width = 300;
   const height = 90;
   const isInteractive = Boolean(labels && onSelectIndex);
-  const seriesPoints = series.map((line) => buildLinePoints(line.values, width, height));
+  // Escala COMPARTILHADA entre todas as séries (ex.: Geral x Voluntário) —
+  // sem isso cada linha era normalizada pelo próprio min/max e a comparação
+  // visual de altura não refletia a comparação real de valor (ver comentário
+  // em buildLinePoints).
+  const allValues = series.flatMap((line) => line.values);
+  const sharedMin = allValues.length > 0 ? Math.min(...allValues) : 0;
+  const sharedMax = allValues.length > 0 ? Math.max(...allValues) : 1;
+  const seriesPoints = series.map((line) => buildLinePoints(line.values, width, height, 6, sharedMin, sharedMax));
 
   // Ordem de desenho: a linha com o valor médio MAIOR é desenhada por último
   // (fica por cima). Antes a ordem era sempre a mesma em que a série chegava
