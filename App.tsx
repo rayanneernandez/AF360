@@ -3336,11 +3336,41 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
   );
 }
 
-const PANEL_OPTION_META: Record<UserRole, { label: string; subtitle: string; icon: keyof typeof Feather.glyphMap }> = {
-  diretoria: { label: 'Diretoria', subtitle: 'Painéis de negócio (vendas, margem, estoque)', icon: 'trending-up' },
-  rh: { label: 'RH', subtitle: 'Painel de recursos humanos', icon: 'users' },
-  colaborador: { label: 'Meu Painel', subtitle: 'Seus dados pessoais', icon: 'user' },
-  administrador: { label: 'Administrador', subtitle: 'Gestão da plataforma (usuários, acessos, sistema)', icon: 'shield' },
+const PANEL_OPTION_META: Record<
+  UserRole,
+  { label: string; subtitle: string; icon: keyof typeof Feather.glyphMap; color: string; tint: string }
+> = {
+  // Cores batem com o gradiente/tema já usado dentro de cada painel (hero da
+  // tela de Perfil de cada um), só pra dar consistência visual na hora de
+  // escolher qual abrir.
+  diretoria: {
+    label: 'Diretoria',
+    subtitle: 'Painéis de negócio (vendas, margem, estoque)',
+    icon: 'trending-up',
+    color: '#2F4EA8',
+    tint: '#EAEFFB',
+  },
+  rh: {
+    label: 'RH',
+    subtitle: 'Painel de recursos humanos',
+    icon: 'users',
+    color: '#1B6E3A',
+    tint: '#E7F5EC',
+  },
+  colaborador: {
+    label: 'Meu Painel',
+    subtitle: 'Seus dados pessoais',
+    icon: 'user',
+    color: '#A11054',
+    tint: '#FBEAF1',
+  },
+  administrador: {
+    label: 'Administrador',
+    subtitle: 'Gestão da plataforma (usuários, acessos, sistema)',
+    icon: 'shield',
+    color: '#1B2340',
+    tint: '#E7E9F2',
+  },
 };
 
 // Aparece só quando o login tem mais de 1 painel disponível (ex.: alguém com
@@ -3351,6 +3381,7 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
   const { identity } = useContext(AuthIdentityContext);
   const { setActiveRole } = useContext(UserRoleContext);
   const { isBiometricLoginEnabled, isTwoFactorEnabled } = useContext(SecurityPreferencesContext);
+  const insets = useSafeAreaInsets();
   const roles = identity?.availableRoles ?? [];
 
   const handleSelect = (role: UserRole) => {
@@ -3358,34 +3389,44 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
   };
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <View style={styles.pageHeader}>
-        <Text style={styles.pageTitle}>Entrar como...</Text>
-        <Text style={styles.pageSubtitle}>Sua conta tem acesso a mais de um painel. Escolha qual quer abrir.</Text>
-      </View>
+    <SafeAreaView style={styles.screen} edges={[]}>
+      <StatusBar style="light" />
+      <LinearGradient
+        colors={['#253F91', '#4C3A95']}
+        style={[styles.selectPanelHero, { paddingTop: 24 + insets.top }]}
+      >
+        <View style={styles.selectPanelHeroIconShell}>
+          <Feather name="grid" size={22} color="#FFFFFF" />
+        </View>
+        <Text style={styles.selectPanelHeroTitle}>Entrar como...</Text>
+        <Text style={styles.selectPanelHeroSubtitle}>
+          Sua conta tem acesso a mais de um painel. Escolha qual quer abrir.
+        </Text>
+      </LinearGradient>
 
-      <View style={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.selectPanelList}>
         {roles.map((role) => {
           const meta = PANEL_OPTION_META[role];
           return (
             <Pressable
               key={role}
-              style={styles.trainingCourseCard}
+              style={({ pressed }) => [styles.selectPanelCard, pressed && styles.selectPanelCardPressed]}
               onPress={() => handleSelect(role)}
             >
-              <View style={[styles.trainingCourseBadge, { backgroundColor: '#EDF1FF' }]}>
-                <Feather name={meta.icon} size={20} color="#29448D" />
+              <View style={[styles.selectPanelIconShell, { backgroundColor: meta.tint }]}>
+                <Feather name={meta.icon} size={22} color={meta.color} />
               </View>
-              <View style={styles.trainingCourseBody}>
-                <Text style={styles.trainingCourseTitle}>{meta.label}</Text>
-                <Text style={styles.trainingCourseSummary}>{meta.subtitle}</Text>
+              <View style={styles.selectPanelBody}>
+                <Text style={styles.selectPanelTitle}>{meta.label}</Text>
+                <Text style={styles.selectPanelSubtitle}>{meta.subtitle}</Text>
               </View>
-              <Feather name="chevron-right" size={18} color="#9AA1B5" />
+              <View style={[styles.selectPanelChevronShell, { backgroundColor: meta.tint }]}>
+                <Feather name="chevron-right" size={16} color={meta.color} />
+              </View>
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -5633,6 +5674,9 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
 }
 
 function ProfileScreen({ navigation }: ScreenProps<'Profile'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -5698,6 +5742,13 @@ function ProfileScreen({ navigation }: ScreenProps<'Profile'>) {
             </Pressable>
           ))}
         </View>
+
+        {hasMultiplePanels ? (
+          <Pressable style={styles.switchPanelButton} onPress={() => navigation.replace('SelectPanel')}>
+            <Feather name="repeat" size={16} color="#29448D" />
+            <Text style={styles.switchPanelButtonText}>Voltar para o Início</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable style={styles.profileLogoutButton} onPress={() => navigation.replace('Login')}>
           <Text style={styles.profileLogoutButtonText}>Sair da conta</Text>
@@ -6367,6 +6418,9 @@ function DirectorDashboardScreen({ navigation }: ScreenProps<'DirectorDashboard'
 }
 
 function DirectorProfileScreen({ navigation }: ScreenProps<'DirectorProfile'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
+
   const directorProfileFields: ProfileField[] = [
     { label: 'Cargo', value: directorUser.role },
     { label: 'Área', value: directorUser.area },
@@ -6407,6 +6461,13 @@ function DirectorProfileScreen({ navigation }: ScreenProps<'DirectorProfile'>) {
             </View>
           ))}
         </View>
+
+        {hasMultiplePanels ? (
+          <Pressable style={styles.switchPanelButton} onPress={() => navigation.replace('SelectPanel')}>
+            <Feather name="repeat" size={16} color="#29448D" />
+            <Text style={styles.switchPanelButtonText}>Voltar para o Início</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable style={styles.directorLogoutButton} onPress={() => navigation.replace('Login')}>
           <Text style={styles.directorLogoutButtonText}>Sair da conta</Text>
@@ -13224,6 +13285,97 @@ export const styles = StyleSheet.create({
     color: '#E6213D',
     fontSize: 15,
     fontWeight: '800',
+  },
+  switchPanelButton: {
+    marginTop: 20,
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#EEF1FB',
+    borderWidth: 1,
+    borderColor: '#D6DCF2',
+    borderRadius: 999,
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switchPanelButtonText: {
+    color: '#29448D',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  selectPanelHero: {
+    paddingBottom: 32,
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+  },
+  selectPanelHeroIconShell: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  selectPanelHeroTitle: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  selectPanelHeroSubtitle: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  selectPanelList: {
+    padding: 20,
+    gap: 14,
+  },
+  selectPanelCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: '#1B2340',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  selectPanelCardPressed: {
+    opacity: 0.85,
+  },
+  selectPanelIconShell: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectPanelBody: {
+    flex: 1,
+  },
+  selectPanelTitle: {
+    color: '#202944',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  selectPanelSubtitle: {
+    color: '#767E96',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  selectPanelChevronShell: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   directorPageTitleRow: {
     flexDirection: 'row',

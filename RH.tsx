@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,6 +25,7 @@ import {
   formatDateBR,
   rhUser,
   rhUserInitials,
+  AuthIdentityContext,
   NotificationRoutineFormModal,
   TemplateFormModal,
   notificationAudienceOptions,
@@ -2024,6 +2025,9 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
 // ---------- Profile ----------
 
 export function RHProfileScreen({ navigation }: ScreenProps<'RHProfile'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
+
   const rhProfileFields = [
     { label: 'Cargo', value: rhUser.role },
     { label: 'Área', value: rhUser.area },
@@ -2064,6 +2068,13 @@ export function RHProfileScreen({ navigation }: ScreenProps<'RHProfile'>) {
             </View>
           ))}
         </View>
+
+        {hasMultiplePanels ? (
+          <Pressable style={styles.switchPanelButton} onPress={() => navigation.replace('SelectPanel')}>
+            <Feather name="repeat" size={16} color="#29448D" />
+            <Text style={styles.switchPanelButtonText}>Voltar para o Início</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable style={styles.directorLogoutButton} onPress={() => navigation.replace('Login')}>
           <Text style={styles.directorLogoutButtonText}>Sair da conta</Text>

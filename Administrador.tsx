@@ -15,7 +15,7 @@
 // fetchRh*), e remova os comentários "MOCK" espalhados pelo arquivo.
 // ============================================================================
 
-import { useMemo, useState } from 'react';
+import { useContext, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -27,6 +27,7 @@ import {
   ToggleSwitch,
   adminUser,
   adminUserInitials,
+  AuthIdentityContext,
   NotificationRoutineFormModal,
   TemplateFormModal,
 } from './App';
@@ -389,6 +390,9 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
 // ============================================================================
 
 export function AdminProfileScreen({ navigation }: ScreenProps<'AdminProfile'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
+
   // MOCK: base numérica ("56 postos · 1.930 colaboradores") tirada do mockup.
   const adminProfileFields = [
     { label: 'Perfil', value: 'Administrador' },
@@ -430,6 +434,13 @@ export function AdminProfileScreen({ navigation }: ScreenProps<'AdminProfile'>) 
             </View>
           ))}
         </View>
+
+        {hasMultiplePanels ? (
+          <Pressable style={styles.switchPanelButton} onPress={() => navigation.replace('SelectPanel')}>
+            <Feather name="repeat" size={16} color="#29448D" />
+            <Text style={styles.switchPanelButtonText}>Voltar para o Início</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable style={styles.directorLogoutButton} onPress={() => navigation.replace('Login')}>
           <Text style={styles.directorLogoutButtonText}>Sair da conta</Text>

@@ -66,12 +66,21 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   const roles = new Set();
 
   // a) Sinal real e confiável: profiles.is_master = acesso total (é o badge
-  // "Master" da tela Usuários, sempre acima de qualquer módulo).
-  if (profile?.is_master) roles.add('diretoria');
+  // "Master" da tela Usuários, sempre acima de qualquer módulo) -> abre
+  // todos os painéis de gestão (não inclui 'colaborador', que depende de
+  // ficha de RH vinculada de verdade).
+  if (profile?.is_master) {
+    roles.add('administrador');
+    roles.add('diretoria');
+    roles.add('rh');
+  }
 
   // b) Sinal real pro resto: módulos efetivos (Cargo ∪ user_modules).
+  // Corrigido: módulo "administrador" abre o painel Administrador, não o
+  // Diretoria (antes os dois caíam juntos e o painel Administrador nunca
+  // aparecia pra ninguém, mesmo pro Cargo "Diretor" que tem os dois módulos).
+  if (effectiveModules?.has('administrador')) roles.add('administrador');
   if (effectiveModules?.has('diretoria')) roles.add('diretoria');
-  if (effectiveModules?.has('administrador')) roles.add('diretoria');
   if (effectiveModules?.has('rh')) roles.add('rh');
 
   // c) Ponte temporária por e-mail conhecido — só pra cobrir usuários de
@@ -86,7 +95,8 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   // (isso é só permissão, não dado de RH de verdade por trás). Marketing,
   // Financeiro, Gestão, R&S e Administrativo sozinhos (sem RH/Diretoria/
   // Administrador e sem ficha vinculada) não entram em nenhum painel de
-  // propósito — o app mobile só tem 3 perfis por enquanto.
+  // propósito — o app mobile só tem 4 perfis por enquanto (colaborador,
+  // rh, diretoria, administrador).
   if (rhColaborador) roles.add('colaborador');
 
   return Array.from(roles);
