@@ -1,6 +1,7 @@
 const express = require('express');
 const { signInWithPassword } = require('../supabaseAuth');
 const { fetchTable } = require('../lovable');
+const { normalizeModuleName, fetchEffectiveModules } = require('../permissions');
 
 const router = express.Router();
 
@@ -19,42 +20,9 @@ const router = express.Router();
 const KNOWN_DIRETORIA_EMAILS = ['bruno.lyra@americanfuel.com.br', 'diretoria@americanfuel.com.br'];
 const KNOWN_RH_EMAILS = ['marina.costa@americanfuel.com.br', 'rh@americanfuel.com.br'];
 
-function normalizeModuleName(raw) {
-  return String(raw ?? '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '') // remove acento (Gestão -> Gestao)
-    .trim()
-    .toLowerCase();
-}
-
-// Resolve os módulos efetivos de um usuário: roles.default_modules (via
-// Cargo) UNIÃO user_modules (módulos avulsos por pessoa). `user_modules`
-// aponta pra `modules.id` — ainda não confirmamos com o Lovable se o nome/
-// slug fica em `modules.slug` ou `modules.name`, então tentamos os dois
-// (fetchTable já devolve '*' por padrão) em vez de travar nisso.
-async function fetchEffectiveModules({ fetchTable, role, userId }) {
-  const modules = new Set((Array.isArray(role?.default_modules) ? role.default_modules : []).map(normalizeModuleName));
-
-  try {
-    const userModulesJson = await fetchTable('user_modules', { filters: { user_id: userId } });
-    const moduleIds = (userModulesJson?.data || []).map((row) => row.module_id).filter(Boolean);
-
-    if (moduleIds.length > 0) {
-      const modulesJson = await fetchTable('modules', { filters: { id__in: moduleIds.join(',') } });
-      (modulesJson?.data || []).forEach((mod) => {
-        const label = mod.slug ?? mod.name ?? mod.nome ?? null;
-        if (label) modules.add(normalizeModuleName(label));
-      });
-    }
-  } catch (err) {
-    // Não deixa o login inteiro cair por causa de user_modules/modules --
-    // pior caso, o usuário fica só com o que o Cargo já dava (ou
-    // 'colaborador' default), em vez de erro 500.
-    console.error('[auth/login] falha ao ler user_modules/modules (seguindo sem eles):', err.message);
-  }
-
-  return modules;
-}
+// normalizeModuleName/fetchEffectiveModules moram em ../permissions.js
+// (extraídas daqui em 27/07/2026 pra serem reaproveitadas por routes/admin.js
+// sem duplicar a lógica de resolução de módulos efetivos).
 
 // Retorna TODOS os painéis que esse login pode abrir (não só um) — o app
 // mobile decide sozinho se entra direto (1 painel) ou mostra uma tela de

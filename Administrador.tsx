@@ -15,7 +15,7 @@
 // fetchRh*), e remova os comentários "MOCK" espalhados pelo arquivo.
 // ============================================================================
 
-import { useContext, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -36,6 +36,16 @@ import type {
   NotificationRoutineItem,
   NotificationTemplateItem,
 } from './App';
+import {
+  fetchAdminUsuarios,
+  fetchAdminCargos,
+  fetchAdminGrupos,
+  fetchAdminAcessoPorUsuario,
+  type AdminUsuarioItem,
+  type AdminCargoItem,
+  type AdminGrupoItem,
+  type AdminAcessoUsuarioItem,
+} from './api';
 
 // ---------- Cores compartilhadas ----------
 
@@ -453,45 +463,53 @@ export function AdminProfileScreen({ navigation }: ScreenProps<'AdminProfile'>) 
 // ============================================================================
 // 3. Usuários
 // ============================================================================
-// MOCK: lista de exemplo (7 usuários) tirada do mockup real.
-
-type AdminUserRow = {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  unit: string;
-  active: boolean;
-};
-
-const adminUsersMock: AdminUserRow[] = [
-  { id: 'u1', name: 'Adilson Nascimento', email: 'adilson.nascimento@rede.americanfuel.com.br', role: 'Frentista', unit: 'Auto Posto ML de Ana Neri', active: true },
-  { id: 'u2', name: 'Adriano Filho', email: 'adriano.filho@rede.americanfuel.com.br', role: 'Frentista', unit: 'Posto Marambaia', active: true },
-  { id: 'u3', name: 'Adriano Izidoro', email: 'adriano.izidoro@rede.americanfuel.com.br', role: 'Subgerente', unit: 'Frosinone Posto de GNV', active: true },
-  { id: 'u4', name: 'Ailson Andrade', email: 'ailson.andrade@rede.americanfuel.com.br', role: 'Gerente', unit: 'Posto Santa Clara', active: true },
-  { id: 'u5', name: 'Ailson Martins', email: 'ailson.martins@rede.americanfuel.com.br', role: 'Subgerente', unit: 'Posto Girassol V. Alegre', active: true },
-  { id: 'u6', name: 'Ailton Ferreira', email: 'ailton.ferreira@rede.americanfuel.com.br', role: 'Frentista', unit: 'Posto Geriba', active: true },
-  { id: 'u7', name: 'Ailton Vieira', email: 'ailton.vieira@rede.americanfuel.com.br', role: 'Frentista', unit: 'Auto Posto S. Joaquim', active: true },
-];
+// Dados reais via GET /api/admin/usuarios (profiles + roles + rh_colaboradores
+// -> empresas). Ver af360-api/src/routes/admin.js. Sem dado mockado: enquanto
+// carrega mostramos "Carregando...", se a API falhar mostramos a mensagem de
+// erro, e lista vazia (ou busca sem resultado) mostra estado vazio honesto.
 
 export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>) {
   const [search, setSearch] = useState('');
-  const [users, setUsers] = useState(adminUsersMock);
+  const [usuarios, setUsuarios] = useState<AdminUsuarioItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchAdminUsuarios()
+      .then((data) => {
+        if (isActive) setUsuarios(data.usuarios);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os usuários.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return users;
-    return users.filter(
+    if (!query) return usuarios;
+    return usuarios.filter(
       (user) =>
-        user.name.toLowerCase().includes(query) ||
+        (user.fullName ?? '').toLowerCase().includes(query) ||
         user.email.toLowerCase().includes(query) ||
-        user.unit.toLowerCase().includes(query)
+        (user.cargo ?? '').toLowerCase().includes(query) ||
+        (user.unidade ?? '').toLowerCase().includes(query)
     );
-  }, [users, search]);
+  }, [usuarios, search]);
 
-  const toggleUser = (id: string) => {
-    setUsers((current) => current.map((user) => (user.id === id ? { ...user, active: !user.active } : user)));
-  };
+  const ativosCount = usuarios.filter((u) => u.isActive).length;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -505,7 +523,11 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <AdminPageHeader icon="users" title="Usuários" subtitle="482 ativos" />
+        <AdminPageHeader
+          icon="users"
+          title="Usuários"
+          subtitle={isLoading ? 'Carregando...' : `${ativosCount} ativos`}
+        />
 
         <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar por nome, e-mail ou unidade..." />
 
@@ -526,26 +548,33 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
           </Pressable>
         </View>
 
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <AdminEmptyState message="Carregando usuários..." />
+        ) : errorMessage ? (
+          <AdminEmptyState message={errorMessage} />
+        ) : filtered.length === 0 ? (
           <AdminEmptyState message="Nenhum usuário encontrado." />
         ) : (
           filtered.map((user) => (
             <View key={user.id} style={adminStyles.listCard}>
               <View style={adminStyles.listAvatar}>
-                <Text style={adminStyles.listAvatarText}>{getInitialsFromName(user.name)}</Text>
+                <Text style={adminStyles.listAvatarText}>{getInitialsFromName(user.fullName ?? user.email)}</Text>
               </View>
               <View style={adminStyles.listInfo}>
                 <Text style={adminStyles.listName} numberOfLines={1}>
-                  {user.name}
+                  {user.fullName || '(sem nome)'}
                 </Text>
                 <Text style={adminStyles.listEmail} numberOfLines={1}>
                   {user.email}
                 </Text>
                 <Text style={adminStyles.listMeta} numberOfLines={1}>
-                  {user.role} · {user.unit}
+                  {user.cargo || 'Sem cargo'} · {user.unidade || '—'}
                 </Text>
               </View>
-              <ToggleSwitch value={user.active} onValueChange={() => toggleUser(user.id)} />
+              <ToggleSwitch
+                value={user.isActive}
+                onValueChange={() => Alert.alert('Em breve', 'Edição de status ainda não está disponível nesta tela.')}
+              />
             </View>
           ))
         )}
@@ -557,27 +586,13 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
 // ============================================================================
 // 4. Perfil de Acesso (Cargos / Acesso por Usuário)
 // ============================================================================
-// MOCK: cargos e vínculos de acesso tirados do mockup real.
+// Dados reais via GET /api/admin/cargos (aba "Cargos") e
+// GET /api/admin/acesso-por-usuario (aba "Acesso por Usuário"), ambos em cima
+// de roles/profiles/user_modules — ver af360-api/src/routes/admin.js.
 
-type AdminCargo = { id: string; name: string; group: string; modules: string[] };
-
-const adminCargosMock: AdminCargo[] = [
-  { id: 'c1', name: 'Analista', group: 'Corporativo', modules: ['Colaborador', 'RH'] },
-  { id: 'c2', name: 'Auxiliar', group: 'Corporativo', modules: ['Colaborador'] },
-  { id: 'c3', name: 'Caixa', group: 'Operacional', modules: ['Colaborador'] },
-  {
-    id: 'c4',
-    name: 'Diretor',
-    group: 'Corporativo',
-    modules: ['Administrador', 'RH', 'R&S', 'Colaborador', 'Financeiro', 'Gestão', 'Administrativo', 'Diretoria'],
-  },
-  { id: 'c5', name: 'Frentista', group: 'Operacional', modules: ['Colaborador'] },
-  { id: 'c6', name: 'Gerente', group: 'Corporativo', modules: ['Colaborador', 'Gestão', 'RH'] },
-  { id: 'c7', name: 'Gerente de Posto', group: 'Operacional', modules: ['Colaborador', 'Gestão'] },
-  { id: 'c8', name: 'Subgerente', group: 'Operacional', modules: ['Colaborador', 'Gestão'] },
-  { id: 'c9', name: 'Supervisor', group: 'Corporativo', modules: ['Colaborador', 'Gestão'] },
-];
-
+// group_type cru (capitalizado) que já vimos aparecer no schema/mockup — se o
+// Lovable devolver um group_type que não bate com nenhuma chave aqui, o
+// AdminColorPill cai no fallback cinza (GRAY_BG/GRAY) em vez de quebrar.
 const adminGroupColorMap: Record<string, { bg: string; color: string }> = {
   Administrativo: { bg: PURPLE_BG, color: PURPLE },
   Corporativo: { bg: NAVY_BG, color: NAVY },
@@ -586,29 +601,74 @@ const adminGroupColorMap: Record<string, { bg: string; color: string }> = {
   Operacional: { bg: GREEN_BG, color: GREEN },
 };
 
-type AdminUserAccessRow = { id: string; name: string; role: string; moduleCount: number };
-
-const adminUserAccessMock: AdminUserAccessRow[] = [
-  { id: 'ua1', name: 'Adilson Nascimento', role: 'Frentista', moduleCount: 1 },
-  { id: 'ua2', name: 'Adriano Filho', role: 'Frentista', moduleCount: 1 },
-  { id: 'ua3', name: 'Adriano Izidoro', role: 'Subgerente', moduleCount: 1 },
-  { id: 'ua4', name: 'Ailson Andrade', role: 'Gerente', moduleCount: 1 },
-  { id: 'ua5', name: 'Ailson Martins', role: 'Subgerente', moduleCount: 1 },
-  { id: 'ua6', name: 'Ailton Ferreira', role: 'Frentista', moduleCount: 1 },
-  { id: 'ua7', name: 'Ailton Vieira', role: 'Frentista', moduleCount: 1 },
-];
-
 export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfilAcesso'>) {
   const [activeTab, setActiveTab] = useState<'cargos' | 'usuarios'>('cargos');
   const [search, setSearch] = useState('');
 
+  const [cargos, setCargos] = useState<AdminCargoItem[]>([]);
+  const [isLoadingCargos, setIsLoadingCargos] = useState(true);
+  const [cargosErrorMessage, setCargosErrorMessage] = useState<string | null>(null);
+
+  const [usuariosAcesso, setUsuariosAcesso] = useState<AdminAcessoUsuarioItem[]>([]);
+  const [isLoadingUsuarios, setIsLoadingUsuarios] = useState(true);
+  const [usuariosErrorMessage, setUsuariosErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    setIsLoadingCargos(true);
+    setCargosErrorMessage(null);
+
+    fetchAdminCargos()
+      .then((data) => {
+        if (isActive) setCargos(data.cargos);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setCargosErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os cargos.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoadingCargos(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+    setIsLoadingUsuarios(true);
+    setUsuariosErrorMessage(null);
+
+    fetchAdminAcessoPorUsuario()
+      .then((data) => {
+        if (isActive) setUsuariosAcesso(data.usuarios);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setUsuariosErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar o acesso por usuário.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoadingUsuarios(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
   const filteredUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return adminUserAccessMock;
-    return adminUserAccessMock.filter(
-      (item) => item.name.toLowerCase().includes(query) || item.role.toLowerCase().includes(query)
+    if (!query) return usuariosAcesso;
+    return usuariosAcesso.filter(
+      (item) =>
+        (item.fullName ?? '').toLowerCase().includes(query) ||
+        item.email.toLowerCase().includes(query) ||
+        (item.cargo ?? '').toLowerCase().includes(query)
     );
-  }, [search]);
+  }, [usuariosAcesso, search]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -653,7 +713,9 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
         {activeTab === 'cargos' ? (
           <>
             <View style={styles.directorNotifHeaderRow}>
-              <Text style={styles.directorNotifCountLabel}>{adminCargosMock.length} cargos</Text>
+              <Text style={styles.directorNotifCountLabel}>
+                {isLoadingCargos ? 'Carregando...' : `${cargos.length} cargos`}
+              </Text>
               <Pressable
                 style={styles.directorNotifNewButton}
                 onPress={() => Alert.alert('Novo cargo', 'Cadastro de cargo em breve.')}
@@ -663,41 +725,55 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
               </Pressable>
             </View>
 
-            {adminCargosMock.map((cargo) => {
-              const groupColors = adminGroupColorMap[cargo.group] ?? { bg: GRAY_BG, color: GRAY };
-              return (
-                <View key={cargo.id} style={adminStyles.roleCard}>
-                  <View style={adminStyles.roleCardTopRow}>
-                    <Text style={adminStyles.roleName}>{cargo.name}</Text>
-                    <AdminColorPill label={cargo.group} bg={groupColors.bg} color={groupColors.color} />
+            {isLoadingCargos ? (
+              <AdminEmptyState message="Carregando cargos..." />
+            ) : cargosErrorMessage ? (
+              <AdminEmptyState message={cargosErrorMessage} />
+            ) : cargos.length === 0 ? (
+              <AdminEmptyState message="Nenhum cargo encontrado." />
+            ) : (
+              cargos.map((cargo) => {
+                const groupColors = (cargo.group && adminGroupColorMap[cargo.group]) || { bg: GRAY_BG, color: GRAY };
+                return (
+                  <View key={cargo.id} style={adminStyles.roleCard}>
+                    <View style={adminStyles.roleCardTopRow}>
+                      <Text style={adminStyles.roleName}>{cargo.name}</Text>
+                      <AdminColorPill label={cargo.group || 'Não informado'} bg={groupColors.bg} color={groupColors.color} />
+                    </View>
+                    <View style={adminStyles.roleModulesRow}>
+                      {cargo.moduleLabels.length === 0 ? (
+                        <Text style={adminStyles.listMeta}>Sem módulos vinculados.</Text>
+                      ) : (
+                        cargo.moduleLabels.map((module) => <AdminTagPill key={module} label={module} />)
+                      )}
+                    </View>
                   </View>
-                  <View style={adminStyles.roleModulesRow}>
-                    {cargo.modules.map((module) => (
-                      <AdminTagPill key={module} label={module} />
-                    ))}
-                  </View>
-                </View>
-              );
-            })}
+                );
+              })
+            )}
           </>
         ) : (
           <>
             <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar por nome, e-mail ou cargo..." />
 
-            {filteredUsers.length === 0 ? (
+            {isLoadingUsuarios ? (
+              <AdminEmptyState message="Carregando usuários..." />
+            ) : usuariosErrorMessage ? (
+              <AdminEmptyState message={usuariosErrorMessage} />
+            ) : filteredUsers.length === 0 ? (
               <AdminEmptyState message="Nenhum usuário encontrado." />
             ) : (
               filteredUsers.map((item) => (
                 <View key={item.id} style={adminStyles.listCard}>
                   <View style={adminStyles.listAvatar}>
-                    <Text style={adminStyles.listAvatarText}>{getInitialsFromName(item.name)}</Text>
+                    <Text style={adminStyles.listAvatarText}>{getInitialsFromName(item.fullName ?? item.email)}</Text>
                   </View>
                   <View style={adminStyles.listInfo}>
                     <Text style={adminStyles.listName} numberOfLines={1}>
-                      {item.name}
+                      {item.fullName || '(sem nome)'}
                     </Text>
                     <Text style={adminStyles.listMeta} numberOfLines={1}>
-                      {item.role}
+                      {item.cargo || 'Sem cargo'}
                     </Text>
                   </View>
                   <Text style={adminStyles.moduleCountText}>{item.moduleCount} módulos</Text>
@@ -715,24 +791,44 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
 // 5. Grupos
 // ============================================================================
 
-type AdminGrupo = { id: string; name: string; cargoCount: number };
-
-const adminGruposMock: AdminGrupo[] = [
-  { id: 'g1', name: 'Administrativo', cargoCount: 0 },
-  { id: 'g2', name: 'Corporativo', cargoCount: 5 },
-  { id: 'g3', name: 'Diretoria', cargoCount: 0 },
-  { id: 'g4', name: 'Gestão', cargoCount: 0 },
-  { id: 'g5', name: 'Operacional', cargoCount: 4 },
-];
+// Dados reais via GET /api/admin/grupos — agregação derivada de
+// roles.group_type (quantos cargos caem em cada grupo), não uma tabela
+// própria de "grupos" (ver comentário em af360-api/src/routes/admin.js).
 
 export function AdminGruposScreen({ navigation }: ScreenProps<'AdminGrupos'>) {
   const [search, setSearch] = useState('');
+  const [grupos, setGrupos] = useState<AdminGrupoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchAdminGrupos()
+      .then((data) => {
+        if (isActive) setGrupos(data.grupos);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os grupos.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return adminGruposMock;
-    return adminGruposMock.filter((item) => item.name.toLowerCase().includes(query));
-  }, [search]);
+    if (!query) return grupos;
+    return grupos.filter((item) => item.name.toLowerCase().includes(query));
+  }, [grupos, search]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -746,7 +842,7 @@ export function AdminGruposScreen({ navigation }: ScreenProps<'AdminGrupos'>) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <AdminPageHeader icon="user" title="Grupos" subtitle="5 grupos" />
+        <AdminPageHeader icon="user" title="Grupos" subtitle={isLoading ? 'Carregando...' : `${grupos.length} grupos`} />
 
         <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar por nome ou descrição..." />
 
@@ -760,18 +856,22 @@ export function AdminGruposScreen({ navigation }: ScreenProps<'AdminGrupos'>) {
           </Pressable>
         </View>
 
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <AdminEmptyState message="Carregando grupos..." />
+        ) : errorMessage ? (
+          <AdminEmptyState message={errorMessage} />
+        ) : filtered.length === 0 ? (
           <AdminEmptyState message="Nenhum grupo encontrado." />
         ) : (
           filtered.map((group) => {
             const colors = adminGroupColorMap[group.name] ?? { bg: GRAY_BG, color: GRAY };
             return (
-              <View key={group.id} style={adminStyles.groupRow}>
+              <View key={group.name} style={adminStyles.groupRow}>
                 <View style={adminStyles.groupLeft}>
                   <AdminColorPill label={group.name} bg={colors.bg} color={colors.color} />
                   <Text style={adminStyles.groupDescription}>—</Text>
                 </View>
-                <Text style={adminStyles.groupCount}>{group.cargoCount} cargos</Text>
+                <Text style={adminStyles.groupCount}>{group.count} cargos</Text>
               </View>
             );
           })

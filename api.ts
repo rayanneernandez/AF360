@@ -455,3 +455,67 @@ export async function fetchColaboradorHome(colaboradorId: string): Promise<Colab
   const json = await api.get(`/api/rh/dashboard/colaborador-home?colaboradorId=${encodeURIComponent(colaboradorId)}`);
   return json.data as ColaboradorHomeData;
 }
+
+// --- Admin: Cargos (roles) ---
+
+export type AdminCargoItem = {
+  id: string;
+  name: string;
+  slug: string;
+  group: string | null;
+  moduleLabels: string[];
+  isActive: boolean;
+};
+
+export type AdminCargosDetalhe = { count: number; cargos: AdminCargoItem[] };
+
+export async function fetchAdminCargos(): Promise<AdminCargosDetalhe> {
+  const json = await api.get('/api/admin/cargos');
+  return json.data as AdminCargosDetalhe;
+}
+
+// --- Admin: Grupos (agregação derivada de roles.group_type) ---
+
+export type AdminGrupoItem = { name: string; count: number };
+
+export type AdminGruposDetalhe = { count: number; grupos: AdminGrupoItem[] };
+
+export async function fetchAdminGrupos(): Promise<AdminGruposDetalhe> {
+  const json = await api.get('/api/admin/grupos');
+  return json.data as AdminGruposDetalhe;
+}
+
+// --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
+
+export type AdminUsuarioItem = {
+  id: string;
+  fullName: string | null;
+  email: string;
+  cargo: string | null;
+  unidade: string | null;
+  isActive: boolean;
+};
+
+export type AdminUsuariosDetalhe = { count: number; usuarios: AdminUsuarioItem[] };
+
+export async function fetchAdminUsuarios(): Promise<AdminUsuariosDetalhe> {
+  const json = await api.get('/api/admin/usuarios');
+  return json.data as AdminUsuariosDetalhe;
+}
+
+// --- Admin: Acesso por Usuário (profiles + roles + user_modules/modules) ---
+
+export type AdminAcessoUsuarioItem = {
+  id: string;
+  fullName: string | null;
+  email: string;
+  cargo: string | null;
+  moduleCount: number;
+};
+
+export type AdminAcessoPorUsuarioDetalhe = { count: number; usuarios: AdminAcessoUsuarioItem[] };
+
+export async function fetchAdminAcessoPorUsuario(): Promise<AdminAcessoPorUsuarioDetalhe> {
+  const json = await api.get('/api/admin/acesso-por-usuario');
+  return json.data as AdminAcessoPorUsuarioDetalhe;
+}
