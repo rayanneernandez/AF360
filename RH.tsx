@@ -3360,6 +3360,37 @@ const rhJornadaTipoOptions: string[] = [
 
 const rhInsalubridadeOptions: string[] = ['Nenhum', 'Mínimo (10% SM)', 'Médio (20% SM)', 'Máximo (40% SM)'];
 
+const rhModeloJornadaOptions: string[] = [
+  '— Sem modelo vinculado —',
+  'Comercial 08h às 16h20',
+  'Comercial 08h às 17h',
+  'Comercial 08h às 17h45',
+  'Escala 12×36 - 05h às 17h',
+  'Escala 12×36 - 06h às 18h',
+  'Escala 12×36 - 08h às 20h',
+  'Escala 12×36 - 09h às 21h',
+  'Escala 12×36 - 10h às 22h',
+  'Escala 12×36 - 11h às 23h',
+  'Escala 12×36 - 12h às 00h',
+  'Escala 12×36 - 18h às 06h',
+  'Horário por Escala',
+  'Jovem Aprendiz - 13h às 17h',
+  'Jovem Aprendiz - 4h',
+  'Turno 06h às 14h',
+];
+
+// Máscara progressiva de moeda BRL (ex.: "1621" -> "1.621,00" enquanto digita
+// os centavos da direita pra esquerda, igual a maioria dos apps bancários).
+function formatCurrencyInput(text: string): string {
+  const digits = text.replace(/\D/g, '');
+  if (!digits) return '';
+  const cents = digits.padStart(3, '0');
+  const intPart = cents.slice(0, -2).replace(/^0+(?=\d)/, '');
+  const decimalPart = cents.slice(-2);
+  const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${withThousands},${decimalPart}`;
+}
+
 // Lista de horários de 30 em 30 minutos (00:00 a 23:30) pros seletores de
 // Entrada/Saída/Almoço — pura JS/RN, sem lib de time-picker nativa nova.
 const rhTimeOptions: string[] = Array.from({ length: 48 }, (_, i) => {
@@ -3402,6 +3433,7 @@ function DadosPessoaisModal({
   const [isSaidaPickerOpen, setIsSaidaPickerOpen] = useState(false);
   const [isAlmocoInicioPickerOpen, setIsAlmocoInicioPickerOpen] = useState(false);
   const [isAlmocoFimPickerOpen, setIsAlmocoFimPickerOpen] = useState(false);
+  const [isScheduleModelPickerOpen, setIsScheduleModelPickerOpen] = useState(false);
   const [form, setForm] = useState({
     cpf: formatCpfInput(employee.cpf),
     rg: employee.rg ?? '',
@@ -3444,7 +3476,7 @@ function DadosPessoaisModal({
     scheduleSaida: '18:00',
     scheduleAlmocoInicio: '12:00',
     scheduleAlmocoFim: '13:00',
-    scheduleModel: 'Sem modelo vinculado',
+    scheduleModel: 'Escala 12×36 - 06h às 18h',
     baseSalary: employee.salario.toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -3751,6 +3783,15 @@ function DadosPessoaisModal({
               selectedValue={contractForm.scheduleAlmocoFim}
               onSelect={(value) => setContractForm((current) => ({ ...current, scheduleAlmocoFim: value }))}
               onClose={() => setIsAlmocoFimPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isScheduleModelPickerOpen}
+              title="Modelo de jornada"
+              options={rhModeloJornadaOptions}
+              selectedValue={contractForm.scheduleModel}
+              onSelect={(value) => setContractForm((current) => ({ ...current, scheduleModel: value }))}
+              onClose={() => setIsScheduleModelPickerOpen(false)}
             />
           </>
         }
@@ -4267,12 +4308,10 @@ function DadosPessoaisModal({
               {contractForm.scheduleAlmocoFim} às {contractForm.scheduleSaida}
             </Text>
 
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Modelo de jornada</Text>
-            <TextInput
-              style={styles.processTextInput}
+            <RHSelectField
+              label="Modelo de jornada cadastrado (opcional)"
               value={contractForm.scheduleModel}
-              onChangeText={updateContractField('scheduleModel')}
-              placeholderTextColor="#A7AEC2"
+              onPress={() => setIsScheduleModelPickerOpen(true)}
             />
 
             <Pressable
@@ -4293,9 +4332,15 @@ function DadosPessoaisModal({
             <Text style={styles.requestFieldLabel}>Salário base atual</Text>
             <TextInput
               style={styles.processTextInput}
-              value={contractForm.baseSalary}
-              onChangeText={updateContractField('baseSalary')}
+              value={`R$ ${contractForm.baseSalary}`}
+              onChangeText={(text) =>
+                setContractForm((current) => ({
+                  ...current,
+                  baseSalary: formatCurrencyInput(text.replace(/^R\$\s?/, '')),
+                }))
+              }
               placeholderTextColor="#A7AEC2"
+              keyboardType="number-pad"
             />
           </View>
 
@@ -4304,7 +4349,7 @@ function DadosPessoaisModal({
 
             <View style={rhStyles.formRow}>
               <View style={rhStyles.formRowItem}>
-                <Text style={styles.requestFieldLabel}>Dependentes IRRF</Text>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Dependentes IRRF</Text>
                 <TextInput
                   style={styles.processTextInput}
                   value={contractForm.irrfDependents}
