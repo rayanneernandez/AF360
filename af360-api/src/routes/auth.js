@@ -89,15 +89,19 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   if (KNOWN_DIRETORIA_EMAILS.includes(normalizedEmail)) roles.add('diretoria');
   if (KNOWN_RH_EMAILS.includes(normalizedEmail)) roles.add('rh');
 
-  // d) 'Colaborador' só entra na lista se existir MESMO uma ficha em
-  // rh_colaboradores vinculada (profile_id) — não adianta oferecer um
-  // painel pessoal vazio só porque o módulo "colaborador" está marcado
-  // (isso é só permissão, não dado de RH de verdade por trás). Marketing,
-  // Financeiro, Gestão, R&S e Administrativo sozinhos (sem RH/Diretoria/
-  // Administrador e sem ficha vinculada) não entram em nenhum painel de
+  // d) 'Colaborador' entra na lista quando existe ficha real em
+  // rh_colaboradores vinculada (profile_id) OU quando o Cargo/user_modules
+  // já libera o módulo "colaborador" (ex.: Cargo "Diretor" no Lovable tem
+  // TODOS os módulos, incluindo Colaborador — confirmado no print da tela
+  // Perfil de Acesso > Cargos). Isso é só PERMISSÃO pra abrir o painel; se
+  // não houver ficha de RH vinculada, o app mostra estado vazio honesto
+  // ("Seu acesso ainda não está vinculado a um colaborador no RH...") em vez
+  // de fabricar dado — nunca finge um painel pessoal com números inventados.
+  // Marketing, Financeiro, Gestão, R&S e Administrativo sozinhos (sem RH/
+  // Diretoria/Administrador/Colaborador) não entram em nenhum painel de
   // propósito — o app mobile só tem 4 perfis por enquanto (colaborador,
   // rh, diretoria, administrador).
-  if (rhColaborador) roles.add('colaborador');
+  if (rhColaborador || effectiveModules?.has('colaborador')) roles.add('colaborador');
 
   return Array.from(roles);
 }

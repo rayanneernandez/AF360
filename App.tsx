@@ -9511,6 +9511,8 @@ export function SideMenuOverlay({
   const isDirector = variant === 'diretoria';
   const isRH = variant === 'rh';
   const isAdmin = variant === 'administrador';
+  const { identity } = useContext(AuthIdentityContext);
+  const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
   const sections = isDirector
     ? directorSideMenuSections
     : isRH
@@ -9607,6 +9609,21 @@ export function SideMenuOverlay({
           ))}
 
           <View style={styles.sideMenuFooter}>
+            {hasMultiplePanels ? (
+              <Pressable
+                style={styles.sideMenuItem}
+                onPress={() => {
+                  onClose();
+                  if (navigationRef.isReady()) {
+                    navigationRef.navigate('SelectPanel' as never);
+                  }
+                }}
+              >
+                <Feather name="repeat" size={18} color="#2B3147" />
+                <Text style={styles.sideMenuItemText}>Voltar para o Início</Text>
+              </Pressable>
+            ) : null}
+
             <Pressable
               style={styles.sideMenuItem}
               onPress={() => {
