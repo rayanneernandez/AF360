@@ -305,6 +305,21 @@ function formatDateOnlyBR(raw: string | null | undefined): string {
   return `${day}/${month}/${year}`;
 }
 
+// Máscara progressiva de CPF (000.000.000-00) aplicada enquanto o usuário
+// digita. Compartilhada entre EditarCadastroModal e DadosPessoaisModal.
+function formatCpfInput(text: string): string {
+  const digits = text.replace(/\D/g, '').slice(0, 11);
+  let result = digits;
+  if (digits.length > 9) {
+    result = `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  } else if (digits.length > 6) {
+    result = `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  } else if (digits.length > 3) {
+    result = `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  }
+  return result;
+}
+
 function mapRhColaboradorToEmployee(row: RhColaboradorRaw, empresaNomeById: Map<string, string>): Employee {
   const salarioRaw = row.salario_base;
   const salario = typeof salarioRaw === 'number' ? salarioRaw : Number(salarioRaw ?? 0) || 0;
@@ -362,6 +377,40 @@ const rhCargosList: string[] = [
 ];
 
 const rhSetoresList: string[] = ['Geral', 'Funcionário', 'Funcionários', 'Departamento Geral', 'Único', 'Sem setor'];
+
+const rhSexoOptions: string[] = ['Masculino', 'Feminino', 'Outro', 'Prefiro não informar'];
+
+const rhTipoSanguineoOptions: string[] = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+const rhGrauInstrucaoOptions: string[] = [
+  'Fundamental incompleto',
+  'Fundamental completo',
+  'Médio incompleto',
+  'Médio completo',
+  'Técnico',
+  'Superior incompleto',
+  'Superior completo',
+  'Pós-graduação',
+  'Mestrado',
+  'Doutorado',
+];
+
+// Não confirmado por print do web — lista padrão razoável de estado civil.
+const rhEstadoCivilOptions: string[] = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União estável'];
+
+const rhNacionalidadeOptions: string[] = ['Brasileira', 'Estrangeira'];
+
+const rhDocumentTypeOptions: string[] = [
+  'RG',
+  'CPF',
+  'CNH',
+  'Título de eleitor',
+  'Certidão de reservista',
+  'Comprovante de residência',
+  'ASO',
+  'Contrato',
+  'Outro',
+];
 
 const rhDesligamentoMotivos: string[] = [
   'Sem justa causa',
@@ -3145,6 +3194,12 @@ function DadosPessoaisModal({
   const [dependents, setDependents] = useState<RHDependentItem[]>([]);
   const [isDependentFormOpen, setIsDependentFormOpen] = useState(false);
   const [dependentForm, setDependentForm] = useState(createEmptyDependentForm());
+  const [isDataNascimentoPickerOpen, setIsDataNascimentoPickerOpen] = useState(false);
+  const [isSexoPickerOpen, setIsSexoPickerOpen] = useState(false);
+  const [isTipoSanguineoPickerOpen, setIsTipoSanguineoPickerOpen] = useState(false);
+  const [isEstadoCivilPickerOpen, setIsEstadoCivilPickerOpen] = useState(false);
+  const [isGrauInstrucaoPickerOpen, setIsGrauInstrucaoPickerOpen] = useState(false);
+  const [isNacionalidadePickerOpen, setIsNacionalidadePickerOpen] = useState(false);
   const [form, setForm] = useState({
     cpf: employee.cpf,
     rg: '',
@@ -3310,11 +3365,13 @@ function DadosPessoaisModal({
   const activeIrffDependents = dependents.filter((item) => item.active).length;
 
   return (
-    <RHSmallModal visible={visible} title={`Dados Pessoais — ${employee.fullName}`} onClose={onClose}>
+    <>
+      <RHSmallModal visible={visible} title={`Dados Pessoais — ${employee.fullName}`} onClose={onClose}>
       <View style={rhStyles.mobileDetailTabsShell}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={rhStyles.mobileDetailTabsScroll}
           contentContainerStyle={rhStyles.mobileDetailTabsRow}
         >
           {rhDadosPessoaisTabs.map((tab) => {
@@ -3348,8 +3405,11 @@ function DadosPessoaisModal({
               <TextInput
                 style={styles.processTextInput}
                 value={form.cpf}
-                onChangeText={updateField('cpf')}
+                onChangeText={(text) => setForm((current) => ({ ...current, cpf: formatCpfInput(text) }))}
+                placeholder="000.000.000-00"
                 placeholderTextColor="#A7AEC2"
+                keyboardType="number-pad"
+                maxLength={14}
               />
             </View>
             <View style={rhStyles.formRowItem}>
@@ -3417,68 +3477,49 @@ function DadosPessoaisModal({
               />
             </View>
             <View style={rhStyles.formRowItem}>
-              <Text style={styles.requestFieldLabel}>Data nascimento</Text>
-              <TextInput
-                style={styles.processTextInput}
+              <RHSelectField
+                label="Data nascimento"
                 value={form.dataNascimento}
-                onChangeText={updateField('dataNascimento')}
-                placeholder="dd/mm/aaaa"
-                placeholderTextColor="#A7AEC2"
+                placeholder="Selecione a data"
+                icon="calendar"
+                onPress={() => setIsDataNascimentoPickerOpen(true)}
               />
             </View>
           </View>
           <View style={rhStyles.formRow}>
             <View style={rhStyles.formRowItem}>
-              <Text style={styles.requestFieldLabel}>Sexo</Text>
-              <TextInput
-                style={styles.processTextInput}
-                value={form.sexo}
-                onChangeText={updateField('sexo')}
-                placeholder="Masculino"
-                placeholderTextColor="#A7AEC2"
-              />
+              <RHSelectField label="Sexo" value={form.sexo} onPress={() => setIsSexoPickerOpen(true)} />
             </View>
             <View style={rhStyles.formRowItem}>
-              <Text style={styles.requestFieldLabel}>Tipo sanguíneo</Text>
-              <TextInput
-                style={styles.processTextInput}
+              <RHSelectField
+                label="Tipo sanguíneo"
                 value={form.tipoSanguineo}
-                onChangeText={updateField('tipoSanguineo')}
-                placeholder="Selecione"
-                placeholderTextColor="#A7AEC2"
+                onPress={() => setIsTipoSanguineoPickerOpen(true)}
               />
             </View>
           </View>
           <View style={rhStyles.formRow}>
             <View style={rhStyles.formRowItem}>
-              <Text style={styles.requestFieldLabel}>Estado civil</Text>
-              <TextInput
-                style={styles.processTextInput}
+              <RHSelectField
+                label="Estado civil"
                 value={form.estadoCivil}
-                onChangeText={updateField('estadoCivil')}
-                placeholder="Solteiro(a)"
-                placeholderTextColor="#A7AEC2"
+                onPress={() => setIsEstadoCivilPickerOpen(true)}
               />
             </View>
             <View style={rhStyles.formRowItem}>
-              <Text style={styles.requestFieldLabel}>Grau de instrução</Text>
-              <TextInput
-                style={styles.processTextInput}
+              <RHSelectField
+                label="Grau de instrução"
                 value={form.grauInstrucao}
-                onChangeText={updateField('grauInstrucao')}
-                placeholderTextColor="#A7AEC2"
+                onPress={() => setIsGrauInstrucaoPickerOpen(true)}
               />
             </View>
           </View>
           <View style={rhStyles.formRow}>
             <View style={rhStyles.formRowItem}>
-              <Text style={styles.requestFieldLabel}>Nacionalidade</Text>
-              <TextInput
-                style={styles.processTextInput}
+              <RHSelectField
+                label="Nacionalidade"
                 value={form.nacionalidade}
-                onChangeText={updateField('nacionalidade')}
-                placeholder="Selecione"
-                placeholderTextColor="#A7AEC2"
+                onPress={() => setIsNacionalidadePickerOpen(true)}
               />
             </View>
             <View style={rhStyles.formRowItem}>
@@ -4141,6 +4182,55 @@ function DadosPessoaisModal({
         </View>
       </Modal>
     </RHSmallModal>
+
+      <RHDatePickerModal
+        visible={isDataNascimentoPickerOpen}
+        title="Data de nascimento"
+        value={form.dataNascimento}
+        onSelect={(dateLabel) => setForm((current) => ({ ...current, dataNascimento: dateLabel }))}
+        onClose={() => setIsDataNascimentoPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isSexoPickerOpen}
+        title="Sexo"
+        options={rhSexoOptions}
+        selectedValue={form.sexo}
+        onSelect={(value) => setForm((current) => ({ ...current, sexo: value }))}
+        onClose={() => setIsSexoPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isTipoSanguineoPickerOpen}
+        title="Tipo sanguíneo"
+        options={rhTipoSanguineoOptions}
+        selectedValue={form.tipoSanguineo}
+        onSelect={(value) => setForm((current) => ({ ...current, tipoSanguineo: value }))}
+        onClose={() => setIsTipoSanguineoPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isEstadoCivilPickerOpen}
+        title="Estado civil"
+        options={rhEstadoCivilOptions}
+        selectedValue={form.estadoCivil}
+        onSelect={(value) => setForm((current) => ({ ...current, estadoCivil: value }))}
+        onClose={() => setIsEstadoCivilPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isGrauInstrucaoPickerOpen}
+        title="Grau de instrução"
+        options={rhGrauInstrucaoOptions}
+        selectedValue={form.grauInstrucao}
+        onSelect={(value) => setForm((current) => ({ ...current, grauInstrucao: value }))}
+        onClose={() => setIsGrauInstrucaoPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isNacionalidadePickerOpen}
+        title="Nacionalidade"
+        options={rhNacionalidadeOptions}
+        selectedValue={form.nacionalidade}
+        onSelect={(value) => setForm((current) => ({ ...current, nacionalidade: value }))}
+        onClose={() => setIsNacionalidadePickerOpen(false)}
+      />
+    </>
   );
 }
 
@@ -4169,42 +4259,192 @@ function DocumentosModal({
   onClose: () => void;
 }) {
   const totalPendentes = rhDocumentCategories.reduce((sum, category) => sum + category.pendentes, 0);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [isUploadFormOpen, setIsUploadFormOpen] = useState(false);
+  const [tipoDocumento, setTipoDocumento] = useState('');
+  const [dataValidade, setDataValidade] = useState('');
+  const [dataEmissao, setDataEmissao] = useState('');
+  const [observacaoDocumento, setObservacaoDocumento] = useState('');
+  const [isTipoDocumentoPickerOpen, setIsTipoDocumentoPickerOpen] = useState(false);
+  const [isDataValidadePickerOpen, setIsDataValidadePickerOpen] = useState(false);
+  const [isDataEmissaoPickerOpen, setIsDataEmissaoPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setSelectedCategory(null);
+      setIsUploadFormOpen(false);
+      setTipoDocumento('');
+      setDataValidade('');
+      setDataEmissao('');
+      setObservacaoDocumento('');
+    }
+  }, [visible]);
+
+  const showUploadNotAvailable = () => {
+    Alert.alert(
+      'Envio de documentos ainda não disponível',
+      'O upload e armazenamento de documentos depende de um endpoint de arquivos no Lovable que ainda não está liberado.'
+    );
+  };
+
+  const activeCategory = rhDocumentCategories.find((category) => category.key === selectedCategory) ?? null;
 
   return (
-    <RHSmallModal visible={visible} title={`Documentos — ${employee.fullName}`} onClose={onClose}>
-      <View style={rhStyles.docStatsRow}>
-        <Text style={rhStyles.docStatsText}>0 total · {totalPendentes} pendentes · 0 vencidos</Text>
-        <Pressable
-          style={rhStyles.primaryButtonGreenSmall}
-          onPress={() => Alert.alert('Enviar documento', 'Upload de documentos em breve.')}
-        >
-          <Feather name="plus" size={13} color="#FFFFFF" />
-          <Text style={rhStyles.primaryButtonSmallText}>Enviar</Text>
-        </Pressable>
-      </View>
-
-      <View style={rhStyles.docGrid}>
-        {rhDocumentCategories.map((category) => (
-          <View key={category.key} style={rhStyles.docCard}>
-            <View style={rhStyles.docCardTopRow}>
-              <View style={[styles.iconShell, styles.iconAccentGreen]}>
-                <Feather name={category.icon} size={15} color="#1B6E3A" />
-              </View>
-              {category.pendentes > 0 ? (
-                <View style={rhStyles.docPendingBadge}>
-                  <Text style={rhStyles.docPendingBadgeText}>{category.pendentes} pend.</Text>
-                </View>
-              ) : null}
+    <>
+      <RHSmallModal visible={visible} title={`Documentos — ${employee.fullName}`} onClose={onClose}>
+        {!selectedCategory ? (
+          <>
+            <View style={rhStyles.docStatsRow}>
+              <Text style={rhStyles.docStatsText}>0 total · {totalPendentes} pendentes · 0 vencidos</Text>
+              <Pressable style={rhStyles.primaryButtonGreenSmall} onPress={showUploadNotAvailable}>
+                <Feather name="plus" size={13} color="#FFFFFF" />
+                <Text style={rhStyles.primaryButtonSmallText}>Enviar</Text>
+              </Pressable>
             </View>
-            <Text style={rhStyles.docCardTitle}>{category.label}</Text>
-            <Text style={rhStyles.docCardDescription} numberOfLines={2}>
-              {category.description}
+
+            <View style={rhStyles.docGrid}>
+              {rhDocumentCategories.map((category) => (
+                <Pressable
+                  key={category.key}
+                  style={rhStyles.docCard}
+                  onPress={() => setSelectedCategory(category.key)}
+                >
+                  <View style={rhStyles.docCardTopRow}>
+                    <View style={[styles.iconShell, styles.iconAccentGreen]}>
+                      <Feather name={category.icon} size={15} color="#1B6E3A" />
+                    </View>
+                    {category.pendentes > 0 ? (
+                      <View style={rhStyles.docPendingBadge}>
+                        <Text style={rhStyles.docPendingBadgeText}>{category.pendentes} pend.</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={rhStyles.docCardTitle}>{category.label}</Text>
+                  <Text style={rhStyles.docCardDescription} numberOfLines={2}>
+                    {category.description}
+                  </Text>
+                  <Text style={rhStyles.docCardCount}>0 documentos</Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        ) : isUploadFormOpen ? (
+          <>
+            <View style={rhStyles.docFolderHeaderTopRow}>
+              <Pressable onPress={() => setIsUploadFormOpen(false)} hitSlop={8}>
+                <Feather name="chevron-left" size={20} color="#5E667D" />
+              </Pressable>
+              <Text style={rhStyles.docFolderHeaderTitle}>Enviar documento</Text>
+            </View>
+            <Text style={rhStyles.docFolderHeaderSubtitle}>
+              {activeCategory?.label} • {employee.fullName}
             </Text>
-            <Text style={rhStyles.docCardCount}>0 documentos</Text>
-          </View>
-        ))}
-      </View>
-    </RHSmallModal>
+
+            <View style={styles.spacingTop}>
+              <RHSelectField
+                label="Tipo de documento"
+                value={tipoDocumento}
+                onPress={() => setIsTipoDocumentoPickerOpen(true)}
+                required
+              />
+            </View>
+
+            <View style={rhStyles.formRow}>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Data de validade"
+                  value={dataValidade}
+                  placeholder="Selecione a data"
+                  icon="calendar"
+                  onPress={() => setIsDataValidadePickerOpen(true)}
+                />
+              </View>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Data de emissão"
+                  value={dataEmissao}
+                  placeholder="Selecione a data"
+                  icon="calendar"
+                  onPress={() => setIsDataEmissaoPickerOpen(true)}
+                />
+              </View>
+            </View>
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Observação</Text>
+            <TextInput
+              style={[styles.processTextInput, styles.processDocumentationArea]}
+              value={observacaoDocumento}
+              onChangeText={setObservacaoDocumento}
+              placeholder="Observações..."
+              placeholderTextColor="#A7AEC2"
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+
+            <Pressable style={[rhStyles.uploadDropZone, styles.spacingTop]} onPress={showUploadNotAvailable}>
+              <Feather name="upload-cloud" size={22} color="#7A8299" />
+              <Text style={rhStyles.uploadDropZoneText}>Toque para selecionar um arquivo</Text>
+            </Pressable>
+
+            <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={showUploadNotAvailable}>
+              <Feather name="upload" size={15} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>Enviar documento</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <View style={rhStyles.docFolderHeaderTopRow}>
+              <Pressable onPress={() => setSelectedCategory(null)} hitSlop={8}>
+                <Feather name="chevron-left" size={20} color="#5E667D" />
+              </Pressable>
+              <View style={[styles.iconShell, styles.iconAccentGreen]}>
+                <Feather name={activeCategory?.icon ?? 'folder'} size={15} color="#1B6E3A" />
+              </View>
+              <Text style={rhStyles.docFolderHeaderTitle}>{activeCategory?.label}</Text>
+            </View>
+            <Text style={rhStyles.docFolderHeaderSubtitle}>
+              0 arquivos • {employee.fullName}
+            </Text>
+
+            <Pressable
+              style={[rhStyles.primaryButtonGreenSmall, styles.spacingTop]}
+              onPress={() => setIsUploadFormOpen(true)}
+            >
+              <Feather name="upload" size={13} color="#FFFFFF" />
+              <Text style={rhStyles.primaryButtonSmallText}>Enviar documento</Text>
+            </Pressable>
+
+            <View style={styles.spacingTop}>
+              <RHEmptyTabState message="Nenhum documento nesta pasta." />
+            </View>
+          </>
+        )}
+      </RHSmallModal>
+
+      <RHSimplePickerModal
+        visible={isTipoDocumentoPickerOpen}
+        title="Tipo de documento"
+        options={rhDocumentTypeOptions}
+        selectedValue={tipoDocumento}
+        onSelect={setTipoDocumento}
+        onClose={() => setIsTipoDocumentoPickerOpen(false)}
+      />
+      <RHDatePickerModal
+        visible={isDataValidadePickerOpen}
+        title="Data de validade"
+        value={dataValidade}
+        onSelect={setDataValidade}
+        onClose={() => setIsDataValidadePickerOpen(false)}
+      />
+      <RHDatePickerModal
+        visible={isDataEmissaoPickerOpen}
+        title="Data de emissão"
+        value={dataEmissao}
+        onSelect={setDataEmissao}
+        onClose={() => setIsDataEmissaoPickerOpen(false)}
+      />
+    </>
   );
 }
 
@@ -4284,11 +4524,13 @@ function RegistrarPromocaoFormModal({
   salarioAtual,
   onClose,
   onSave,
+  cargoOptions,
 }: {
   visible: boolean;
   salarioAtual: number;
   onClose: () => void;
   onSave: (record: PromotionRecord) => void;
+  cargoOptions: string[];
 }) {
   const [motivo, setMotivo] = useState(rhPromocaoMotivos[0]);
   const [novoSalario, setNovoSalario] = useState('');
@@ -4426,7 +4668,7 @@ function RegistrarPromocaoFormModal({
       <RHSimplePickerModal
         visible={isCargoPickerOpen}
         title="Novo cargo"
-        options={[manterCargoLabel, ...rhCargosList]}
+        options={[manterCargoLabel, ...cargoOptions]}
         selectedValue={novoCargo || manterCargoLabel}
         onSelect={(value) => setNovoCargo(value === manterCargoLabel ? '' : value)}
         onClose={() => setIsCargoPickerOpen(false)}
@@ -4439,10 +4681,12 @@ function PromocoesModal({
   visible,
   employee,
   onClose,
+  cargoOptions,
 }: {
   visible: boolean;
   employee: Employee;
   onClose: () => void;
+  cargoOptions: string[];
 }) {
   const [promotions, setPromotions] = useState<PromotionRecord[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -4502,6 +4746,7 @@ function PromocoesModal({
         salarioAtual={currentSalario}
         onClose={() => setIsFormOpen(false)}
         onSave={handleSave}
+        cargoOptions={cargoOptions}
       />
     </>
   );
@@ -4715,11 +4960,15 @@ function NovaTransferenciaFormModal({
   employee,
   onClose,
   onSave,
+  cargoOptions,
+  unidadeOptions,
 }: {
   visible: boolean;
   employee: Employee;
   onClose: () => void;
   onSave: (record: EmployeeTransferRecord) => void;
+  cargoOptions: string[];
+  unidadeOptions: string[];
 }) {
   const [unidadeDestino, setUnidadeDestino] = useState('');
   const [vigenciaLabel, setVigenciaLabel] = useState(formatDateBR(new Date()));
@@ -4873,7 +5122,7 @@ function NovaTransferenciaFormModal({
       <RHSimplePickerModal
         visible={isUnidadePickerOpen}
         title="Unidade de destino"
-        options={rhUnidadesList.filter((unit) => unit !== employee.unit)}
+        options={unidadeOptions.filter((unit) => unit !== employee.unit)}
         selectedValue={unidadeDestino}
         onSelect={setUnidadeDestino}
         onClose={() => setIsUnidadePickerOpen(false)}
@@ -4881,7 +5130,7 @@ function NovaTransferenciaFormModal({
       <RHSimplePickerModal
         visible={isCargoPickerOpen}
         title="Novo cargo"
-        options={rhCargosList}
+        options={cargoOptions}
         selectedValue={novoCargo}
         onSelect={setNovoCargo}
         onClose={() => setIsCargoPickerOpen(false)}
@@ -4918,10 +5167,14 @@ function TransferenciasEmployeeModal({
   visible,
   employee,
   onClose,
+  cargoOptions,
+  unidadeOptions,
 }: {
   visible: boolean;
   employee: Employee;
   onClose: () => void;
+  cargoOptions: string[];
+  unidadeOptions: string[];
 }) {
   const [records, setRecords] = useState<EmployeeTransferRecord[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -4992,6 +5245,8 @@ function TransferenciasEmployeeModal({
         employee={employee}
         onClose={() => setIsFormOpen(false)}
         onSave={handleSave}
+        cargoOptions={cargoOptions}
+        unidadeOptions={unidadeOptions}
       />
     </>
   );
@@ -5032,11 +5287,15 @@ function EditarCadastroModal({
   employee,
   onClose,
   onSave,
+  cargoOptions,
+  unidadeOptions,
 }: {
   visible: boolean;
   employee: Employee;
   onClose: () => void;
   onSave: (updated: Employee) => void;
+  cargoOptions: string[];
+  unidadeOptions: string[];
 }) {
   const [form, setForm] = useState<EmployeeEditForm>(buildEditFormFromEmployee(employee));
   const [isCargoPickerOpen, setIsCargoPickerOpen] = useState(false);
@@ -5105,8 +5364,11 @@ function EditarCadastroModal({
               <TextInput
                 style={styles.processTextInput}
                 value={form.cpf}
-                onChangeText={(text) => setForm((current) => ({ ...current, cpf: text }))}
+                onChangeText={(text) => setForm((current) => ({ ...current, cpf: formatCpfInput(text) }))}
+                placeholder="000.000.000-00"
                 placeholderTextColor="#A7AEC2"
+                keyboardType="number-pad"
+                maxLength={14}
               />
 
               <View style={rhStyles.formRow}>
@@ -5148,6 +5410,46 @@ function EditarCadastroModal({
                 </View>
               </View>
 
+              <View style={[rhStyles.portalAccessCard, styles.spacingTop]}>
+                <Text style={rhStyles.portalAccessTitle}>{form.email || 'E-mail corporativo não informado'}</Text>
+                <Text style={rhStyles.portalAccessSubtitle}>
+                  {employee.status === 'ativo'
+                    ? 'Acesso ao portal ativo'
+                    : 'Status do portal não disponível'}
+                </Text>
+                <Pressable
+                  style={rhStyles.portalAccessButton}
+                  onPress={() =>
+                    Alert.alert(
+                      'Reenviar boas-vindas ainda não disponível',
+                      'Esta ação depende de um endpoint de e-mail/portal no Lovable que ainda não está liberado.'
+                    )
+                  }
+                >
+                  <Feather name="send" size={14} color="#29448D" />
+                  <Text style={rhStyles.portalAccessButtonText}>Reenviar boas-vindas</Text>
+                </Pressable>
+              </View>
+
+              <View style={[rhStyles.dangerCard, styles.spacingTop]}>
+                <Text style={rhStyles.dangerCardTitle}>Inativar colaborador</Text>
+                <Text style={rhStyles.dangerCardText}>
+                  Bloqueia o e-mail corporativo e revoga o acesso ao portal imediatamente.
+                </Text>
+                <Pressable
+                  style={rhStyles.dangerButton}
+                  onPress={() =>
+                    Alert.alert(
+                      'Inativação ainda não disponível',
+                      'Esta ação depende de um endpoint de e-mail/portal no Lovable que ainda não está liberado.'
+                    )
+                  }
+                >
+                  <Feather name="slash" size={14} color="#FFFFFF" />
+                  <Text style={rhStyles.dangerButtonText}>Inativar colaborador</Text>
+                </Pressable>
+              </View>
+
               <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={handleSubmit}>
                 <Feather name="save" size={15} color="#FFFFFF" />
                 <Text style={styles.primaryButtonText}>Salvar</Text>
@@ -5160,7 +5462,7 @@ function EditarCadastroModal({
       <RHSimplePickerModal
         visible={isCargoPickerOpen}
         title="Cargo"
-        options={rhCargosList}
+        options={cargoOptions}
         selectedValue={form.role}
         onSelect={(value) => setForm((current) => ({ ...current, role: value }))}
         onClose={() => setIsCargoPickerOpen(false)}
@@ -5176,7 +5478,7 @@ function EditarCadastroModal({
       <RHSimplePickerModal
         visible={isUnidadePickerOpen}
         title="Unidade"
-        options={rhUnidadesList}
+        options={unidadeOptions}
         selectedValue={form.unit}
         onSelect={(value) => setForm((current) => ({ ...current, unit: value }))}
         onClose={() => setIsUnidadePickerOpen(false)}
@@ -5393,6 +5695,34 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
   const employee = employees.find((item) => item.id === employeeId) ?? employees[0];
   const [activeQuickAction, setActiveQuickAction] = useState<QuickActionKey | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [unidadesReais, setUnidadesReais] = useState<RhUnidadeItem[]>([]);
+  const [cargosReais, setCargosReais] = useState<{ id: string; nome: string }[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([fetchRhUnidades(), fetchRhCargos()])
+      .then(([unidadesResult, cargosResult]) => {
+        if (!isMounted) return;
+        setUnidadesReais(unidadesResult);
+        setCargosReais(cargosResult);
+      })
+      .catch(() => {
+        // Silencioso: os pickers de Cargo/Unidade caem para lista vazia,
+        // sem travar o restante da tela de detalhe do colaborador.
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const unidadeOptions = useMemo(
+    () => unidadesReais.map((unidade) => unidade.nome).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [unidadesReais]
+  );
+  const cargoOptions = useMemo(
+    () => cargosReais.map((cargo) => cargo.nome).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [cargosReais]
+  );
 
   const statusMeta = rhEmployeeStatusMeta[employee.status];
   const initials = employee.fullName
@@ -5516,6 +5846,8 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
         employee={employee}
         onClose={() => setIsEditModalOpen(false)}
         onSave={handleUpdateEmployee}
+        cargoOptions={cargoOptions}
+        unidadeOptions={unidadeOptions}
       />
 
       <DadosPessoaisModal
@@ -5555,6 +5887,7 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
         visible={activeQuickAction === 'promocoes'}
         employee={employee}
         onClose={() => setActiveQuickAction(null)}
+        cargoOptions={cargoOptions}
       />
       <PremiacoesModal
         visible={activeQuickAction === 'premiacoes'}
@@ -5582,6 +5915,8 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
         visible={activeQuickAction === 'transferencias'}
         employee={employee}
         onClose={() => setActiveQuickAction(null)}
+        cargoOptions={cargoOptions}
+        unidadeOptions={unidadeOptions}
       />
       <DesligamentoModal
         visible={activeQuickAction === 'desligamento'}
@@ -8363,6 +8698,10 @@ const rhStyles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 6,
     marginHorizontal: -4,
+    overflow: 'hidden',
+  },
+  mobileDetailTabsScroll: {
+    width: '100%',
   },
   mobileDetailTabsRow: {
     paddingHorizontal: 4,
@@ -9411,5 +9750,105 @@ const rhStyles = StyleSheet.create({
   rankBarFill: {
     height: '100%',
     borderRadius: 999,
+  },
+  portalAccessCard: {
+    backgroundColor: '#F5F7FB',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 14,
+    padding: 14,
+    gap: 4,
+  },
+  portalAccessTitle: {
+    color: '#15203E',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  portalAccessSubtitle: {
+    color: '#5E667D',
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  portalAccessButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D7DCE8',
+    backgroundColor: '#FFFFFF',
+    minHeight: 42,
+  },
+  portalAccessButtonText: {
+    color: '#29448D',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  dangerCard: {
+    backgroundColor: '#FCE8EC',
+    borderWidth: 1,
+    borderColor: '#F3B7C4',
+    borderRadius: 14,
+    padding: 14,
+    gap: 4,
+  },
+  dangerCardTitle: {
+    color: '#8A1226',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  dangerCardText: {
+    color: '#A3283E',
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  dangerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 999,
+    backgroundColor: '#E6213D',
+    minHeight: 42,
+  },
+  dangerButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  docFolderHeaderTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
+  },
+  docFolderHeaderTitle: {
+    flex: 1,
+    color: '#15203E',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  docFolderHeaderSubtitle: {
+    color: '#8B93A8',
+    fontSize: 12,
+    marginLeft: 30,
+    marginBottom: 10,
+  },
+  uploadDropZone: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#C7CDDC',
+    borderRadius: 14,
+    minHeight: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F8F9FC',
+  },
+  uploadDropZoneText: {
+    color: '#7A8299',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
