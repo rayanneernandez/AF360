@@ -668,7 +668,7 @@ router.get('/resumo', async (req, res) => {
         demissoes: current.raw.geral,
         demissoesChangePct: changePct(current.raw.geral, previous.raw.geral),
         demissoesRescisao: formatBRL(demissoesRescisao),
-        folhaAtivos: formatBRL(folhaAtivos),
+        folhaAtivos: formatBRLCentavos(folhaAtivos),
         quadro: {
           ativos: ativosAgora.length,
           ferias: feriasAgora.length,

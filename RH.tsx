@@ -3221,7 +3221,7 @@ function DadosPessoaisModal({
   const [isGrauInstrucaoPickerOpen, setIsGrauInstrucaoPickerOpen] = useState(false);
   const [isNacionalidadePickerOpen, setIsNacionalidadePickerOpen] = useState(false);
   const [form, setForm] = useState({
-    cpf: employee.cpf,
+    cpf: formatCpfInput(employee.cpf),
     rg: '',
     orgaoEmissor: '',
     ufRg: '',
@@ -3340,7 +3340,7 @@ function DadosPessoaisModal({
   useEffect(() => {
     if (visible) {
       setActiveTab('pessoais');
-      setForm((current) => ({ ...current, cpf: employee.cpf, celular: employee.celular }));
+      setForm((current) => ({ ...current, cpf: formatCpfInput(employee.cpf), celular: employee.celular }));
       setContractForm((current) => ({
         ...current,
         admissionDate: employee.admissionLabel,
@@ -3388,12 +3388,7 @@ function DadosPessoaisModal({
     <>
       <RHSmallModal visible={visible} title={`Dados Pessoais — ${employee.fullName}`} onClose={onClose}>
       <View style={rhStyles.mobileDetailTabsShell}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={rhStyles.mobileDetailTabsScroll}
-          contentContainerStyle={rhStyles.mobileDetailTabsRow}
-        >
+        <View style={rhStyles.mobileDetailTabsRow}>
           {rhDadosPessoaisTabs.map((tab) => {
             const isActive = activeTab === tab.key;
             return (
@@ -3407,13 +3402,16 @@ function DadosPessoaisModal({
                   size={14}
                   color={isActive ? '#1B6E3A' : '#6F768A'}
                 />
-                <Text style={[rhStyles.mobileDetailTabText, isActive ? rhStyles.mobileDetailTabTextActive : null]}>
+                <Text
+                  style={[rhStyles.mobileDetailTabText, isActive ? rhStyles.mobileDetailTabTextActive : null]}
+                  numberOfLines={1}
+                >
                   {tab.label}
                 </Text>
               </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
       </View>
 
       {activeTab === 'pessoais' ? (
@@ -5290,7 +5288,7 @@ function buildEditFormFromEmployee(employee: Employee): EmployeeEditForm {
     fullName: employee.fullName,
     codigoInterno: employee.codigoInterno,
     registration: employee.registration,
-    cpf: employee.cpf,
+    cpf: formatCpfInput(employee.cpf),
     role: employee.role,
     setor: employee.setor,
     email: employee.email,
@@ -8717,14 +8715,14 @@ const rhStyles = StyleSheet.create({
   mobileDetailTabsShell: {
     marginTop: 4,
     marginBottom: 6,
-    marginHorizontal: -4,
-    overflow: 'hidden',
+    width: '100%',
   },
   mobileDetailTabsScroll: {
     width: '100%',
   },
   mobileDetailTabsRow: {
-    paddingHorizontal: 4,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   mobileDetailTab: {
@@ -8733,10 +8731,11 @@ const rhStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E6F0',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flexShrink: 1,
   },
   mobileDetailTabActive: {
     backgroundColor: '#E8F7EE',
