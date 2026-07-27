@@ -123,9 +123,11 @@ router.get('/lovable', async (req, res) => {
   const hasSecret = Boolean(process.env.INTERNAL_API_SECRET);
   const table = req.query.table || 'dir_contatos';
   const limit = req.query.limit ? Number(req.query.limit) : 1;
+  const offset = req.query.offset ? Number(req.query.offset) : undefined;
+  const order = req.query.order || undefined;
   const select = req.query.select || undefined;
   try {
-    const json = await fetchTable(table, { limit, select, count: true });
+    const json = await fetchTable(table, { limit, offset, order, select, count: true });
     res.json({
       ok: true,
       base_url: baseUrl,
