@@ -3619,6 +3619,14 @@ function DadosPessoaisModal({
     (key: keyof typeof contractForm) =>
     (value: string | boolean) =>
       setContractForm((current) => ({ ...current, [key]: value }));
+  // Campos monetários (Valor por dia, Cobertura, Desconto mensal, Desc.
+  // titular/dependente) — aplica a mesma máscara de moeda do Salário base,
+  // o texto exibido tem prefixo "R$ " mas o state guarda só o número.
+  const updateCurrencyField = (key: keyof typeof contractForm) => (text: string) =>
+    setContractForm((current) => ({
+      ...current,
+      [key]: formatCurrencyInput(text.replace(/^R\$\s?/, '')),
+    }));
 
   const saveSimpleAlert = (title: string, message: string) => {
     Alert.alert(title, message);
@@ -4359,7 +4367,7 @@ function DadosPessoaisModal({
               </View>
               <View style={rhStyles.formRowItem}>
                 <RHSelectField
-                  label="Grau de insalubridade"
+                  label="Insalubridade"
                   value={contractForm.insalubrityLevel}
                   onPress={() => setIsInsalubridadePickerOpen(true)}
                 />
@@ -4410,9 +4418,10 @@ function DadosPessoaisModal({
               <Text style={styles.requestFieldLabel}>Valor por dia</Text>
               <TextInput
                 style={styles.processTextInput}
-                value={contractForm.vrDailyValue}
-                onChangeText={updateContractField('vrDailyValue')}
+                value={`R$ ${contractForm.vrDailyValue}`}
+                onChangeText={updateCurrencyField('vrDailyValue')}
                 placeholderTextColor="#A7AEC2"
+                keyboardType="number-pad"
               />
             </View>
 
@@ -4430,9 +4439,10 @@ function DadosPessoaisModal({
               <Text style={styles.requestFieldLabel}>Valor por dia</Text>
               <TextInput
                 style={styles.processTextInput}
-                value={contractForm.vaDailyValue}
-                onChangeText={updateContractField('vaDailyValue')}
+                value={`R$ ${contractForm.vaDailyValue}`}
+                onChangeText={updateCurrencyField('vaDailyValue')}
                 placeholderTextColor="#A7AEC2"
+                keyboardType="number-pad"
               />
             </View>
 
@@ -4460,18 +4470,20 @@ function DadosPessoaisModal({
                   <Text style={styles.requestFieldLabel}>Cobertura</Text>
                   <TextInput
                     style={styles.processTextInput}
-                    value={contractForm.lifeInsuranceCoverage}
-                    onChangeText={updateContractField('lifeInsuranceCoverage')}
+                    value={`R$ ${contractForm.lifeInsuranceCoverage}`}
+                    onChangeText={updateCurrencyField('lifeInsuranceCoverage')}
                     placeholderTextColor="#A7AEC2"
+                    keyboardType="number-pad"
                   />
                 </View>
               </View>
               <Text style={styles.requestFieldLabel}>Desconto mensal</Text>
               <TextInput
                 style={styles.processTextInput}
-                value={contractForm.lifeInsuranceDiscount}
-                onChangeText={updateContractField('lifeInsuranceDiscount')}
+                value={`R$ ${contractForm.lifeInsuranceDiscount}`}
+                onChangeText={updateCurrencyField('lifeInsuranceDiscount')}
                 placeholderTextColor="#A7AEC2"
+                keyboardType="number-pad"
               />
             </View>
 
@@ -4508,18 +4520,20 @@ function DadosPessoaisModal({
                   <Text style={styles.requestFieldLabel}>Desc. titular</Text>
                   <TextInput
                     style={styles.processTextInput}
-                    value={contractForm.healthPlanPrimaryDiscount}
-                    onChangeText={updateContractField('healthPlanPrimaryDiscount')}
+                    value={`R$ ${contractForm.healthPlanPrimaryDiscount}`}
+                    onChangeText={updateCurrencyField('healthPlanPrimaryDiscount')}
                     placeholderTextColor="#A7AEC2"
+                    keyboardType="number-pad"
                   />
                 </View>
                 <View style={rhStyles.formRowItem}>
                   <Text style={styles.requestFieldLabel}>Desc. por dependente</Text>
                   <TextInput
                     style={styles.processTextInput}
-                    value={contractForm.healthPlanDependentDiscount}
-                    onChangeText={updateContractField('healthPlanDependentDiscount')}
+                    value={`R$ ${contractForm.healthPlanDependentDiscount}`}
+                    onChangeText={updateCurrencyField('healthPlanDependentDiscount')}
                     placeholderTextColor="#A7AEC2"
+                    keyboardType="number-pad"
                   />
                 </View>
               </View>
@@ -4558,18 +4572,20 @@ function DadosPessoaisModal({
                   <Text style={styles.requestFieldLabel}>Desc. titular</Text>
                   <TextInput
                     style={styles.processTextInput}
-                    value={contractForm.dentalPlanPrimaryDiscount}
-                    onChangeText={updateContractField('dentalPlanPrimaryDiscount')}
+                    value={`R$ ${contractForm.dentalPlanPrimaryDiscount}`}
+                    onChangeText={updateCurrencyField('dentalPlanPrimaryDiscount')}
                     placeholderTextColor="#A7AEC2"
+                    keyboardType="number-pad"
                   />
                 </View>
                 <View style={rhStyles.formRowItem}>
                   <Text style={styles.requestFieldLabel}>Desc. por dependente</Text>
                   <TextInput
                     style={styles.processTextInput}
-                    value={contractForm.dentalPlanDependentDiscount}
-                    onChangeText={updateContractField('dentalPlanDependentDiscount')}
+                    value={`R$ ${contractForm.dentalPlanDependentDiscount}`}
+                    onChangeText={updateCurrencyField('dentalPlanDependentDiscount')}
                     placeholderTextColor="#A7AEC2"
+                    keyboardType="number-pad"
                   />
                 </View>
               </View>
