@@ -588,7 +588,17 @@ router.get('/resumo', async (req, res) => {
         limit: 1,
       });
       const ultimaCompetencia = (folhaCompetenciasJson.data || [])[0] || null;
-      if (ultimaCompetencia && ultimaCompetencia.total_bruto !== null && ultimaCompetencia.total_bruto !== undefined) {
+      // Só confiamos no total_bruto da competência se ela realmente cobrir
+      // (perto de) todo o quadro ativo — encontramos em produção uma
+      // competência "aberta"/rascunho com total_colaboradores=1 (claramente
+      // um teste, não a folha real), que gerava um "Folha (Ativos)" de
+      // R$ 1.621 em vez dos ~R$ 1,6-1,7 milhão reais. Se a competência mais
+      // recente cobrir menos da metade do quadro ativo atual, tratamos como
+      // não confiável e caímos na estimativa (soma de salario_base).
+      const cobreQuadroAtivo =
+        ultimaCompetencia &&
+        Number(ultimaCompetencia.total_colaboradores) >= ativosAgora.length * 0.5;
+      if (cobreQuadroAtivo && ultimaCompetencia.total_bruto !== null && ultimaCompetencia.total_bruto !== undefined) {
         folhaAtivosValor = Number(ultimaCompetencia.total_bruto) || 0;
       }
     } catch (err) {

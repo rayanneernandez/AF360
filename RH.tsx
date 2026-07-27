@@ -1982,7 +1982,7 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
           <Text style={rhStyles.sectionTitle}>Engajamento & cultura</Text>
           <View style={rhStyles.statGridRow}>
             <View style={rhStyles.statGridItem}>
-              <Text style={rhStyles.statGridValue}>{resumo.engajamento.aderencia ?? '—'}</Text>
+              <Text style={rhStyles.statGridValue}>{resumo.engajamento.aderencia ?? '0%'}</Text>
               <Text style={rhStyles.statGridLabel}>Aderência</Text>
             </View>
             <View style={rhStyles.statGridItem}>
