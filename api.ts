@@ -142,6 +142,22 @@ export type RhColaboradorRaw = {
   endereco_estado: string | null;
   contato_emergencia_nome: string | null;
   contato_emergencia_telefone: string | null;
+  rg: string | null;
+  orgao_rg: string | null;
+  uf_rg: string | null;
+  carteira_habilitacao: string | null;
+  carteira_trabalho: string | null;
+  pis_pasep: string | null;
+  data_nascimento: string | null;
+  sexo: string | null;
+  tipo_sanguineo: string | null;
+  estado_civil: string | null;
+  grau_instrucao: string | null;
+  nacionalidade: string | null;
+  cidade_nascimento: string | null;
+  nome_mae: string | null;
+  nome_pai: string | null;
+  telefone: string | null;
   [key: string]: unknown;
 };
 

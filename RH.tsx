@@ -99,6 +99,22 @@ export type Employee = {
   enderecoEstado?: string;
   contatoEmergenciaNome?: string;
   contatoEmergenciaTelefone?: string;
+  rg?: string;
+  orgaoEmissorRg?: string;
+  ufRg?: string;
+  cnh?: string;
+  ctps?: string;
+  pisPasep?: string;
+  dataNascimentoLabel?: string;
+  sexo?: string;
+  tipoSanguineo?: string;
+  estadoCivil?: string;
+  grauInstrucao?: string;
+  nacionalidade?: string;
+  naturalidade?: string;
+  nomeMae?: string;
+  nomePai?: string;
+  telefoneFixo?: string;
 };
 
 type TransferStatus = 'pendente' | 'aprovada' | 'efetivada';
@@ -307,6 +323,26 @@ function mapStatusFromApi(raw: string | null | undefined): EmployeeStatus {
   return 'desligado';
 }
 
+// Normaliza um valor cru do banco (ex.: "masculino") pra bater com o label
+// exibido no picker (ex.: "Masculino"), comparando sem acento/maiúscula. Se
+// não reconhecer nenhuma opção, devolve a string crua capitalizada em vez de
+// esconder o dado ou inventar um valor — mantém honesto mesmo pra enums que
+// a gente não confirmou 100% com o Lovable ainda.
+function normalizeToOption(raw: string | null | undefined, options: string[]): string {
+  const value = (raw ?? '').trim();
+  if (!value) return '';
+  const normalize = (s: string) =>
+    s
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  const target = normalize(value);
+  const found = options.find((option) => normalize(option) === target);
+  if (found) return found;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 // Colunas "date" do Supabase vêm como texto date-only (ex: "2021-11-05"),
 // sem timezone. Nunca usar `new Date(iso)` direto aqui — em horários da
 // noite no Brasil isso rola pro dia anterior por causa do UTC. Extraímos os
@@ -365,6 +401,22 @@ function mapRhColaboradorToEmployee(row: RhColaboradorRaw, empresaNomeById: Map<
     enderecoEstado: row.endereco_estado ?? '',
     contatoEmergenciaNome: row.contato_emergencia_nome ?? '',
     contatoEmergenciaTelefone: row.contato_emergencia_telefone ?? '',
+    rg: row.rg ?? '',
+    orgaoEmissorRg: row.orgao_rg ?? '',
+    ufRg: row.uf_rg ?? '',
+    cnh: row.carteira_habilitacao ?? '',
+    ctps: row.carteira_trabalho ?? '',
+    pisPasep: row.pis_pasep ?? '',
+    dataNascimentoLabel: row.data_nascimento ? formatDateOnlyBR(row.data_nascimento) : '',
+    sexo: normalizeToOption(row.sexo, rhSexoOptions),
+    tipoSanguineo: normalizeToOption(row.tipo_sanguineo, rhTipoSanguineoOptions),
+    estadoCivil: normalizeToOption(row.estado_civil, rhEstadoCivilOptions),
+    grauInstrucao: normalizeToOption(row.grau_instrucao, rhGrauInstrucaoOptions),
+    nacionalidade: normalizeToOption(row.nacionalidade, rhNacionalidadeOptions),
+    naturalidade: row.cidade_nascimento ?? '',
+    nomeMae: row.nome_mae ?? '',
+    nomePai: row.nome_pai ?? '',
+    telefoneFixo: row.telefone ?? '',
   };
 }
 
@@ -2216,6 +2268,7 @@ function RHSimplePickerModal({
   selectedValue,
   onSelect,
   onClose,
+  inline,
 }: {
   visible: boolean;
   title: string;
@@ -2223,38 +2276,58 @@ function RHSimplePickerModal({
   selectedValue: string;
   onSelect: (value: string) => void;
   onClose: () => void;
+  // inline=true: NÃO usa <Modal> nativo — renderiza como overlay absoluto por
+  // cima do conteúdo (via prop `overlay` de RHSmallModal). Necessário quando
+  // o picker é aberto de DENTRO de outro <Modal> já visível (ex.: Dados
+  // Pessoais): dois <Modal> nativos empilhados podem fazer o segundo não
+  // receber toque em alguns aparelhos (abre "atrás" do primeiro, então o
+  // usuário vê que nada acontece ao tocar). Fora desse caso, mantém o
+  // comportamento antigo (Modal nativo próprio).
+  inline?: boolean;
 }) {
+  if (inline && !visible) {
+    return null;
+  }
+
+  const content = (
+    <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+      <Pressable style={styles.simpleListCard} onPress={() => {}}>
+        <Text style={styles.simpleListTitle}>{title}</Text>
+        <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+          {options.map((option) => {
+            const isSelected = option === selectedValue;
+            return (
+              <Pressable
+                key={option}
+                style={[styles.templateOptionRow, isSelected ? styles.templateOptionRowActive : null]}
+                onPress={() => {
+                  onSelect(option);
+                  onClose();
+                }}
+              >
+                <View style={styles.templateOptionLeft}>
+                  <Text
+                    style={[styles.templateOptionText, isSelected ? styles.templateOptionTextActive : null]}
+                  >
+                    {option}
+                  </Text>
+                </View>
+                {isSelected ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </Pressable>
+    </Pressable>
+  );
+
+  if (inline) {
+    return <View style={rhStyles.inlinePickerLayer}>{content}</View>;
+  }
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
-        <Pressable style={styles.simpleListCard} onPress={() => {}}>
-          <Text style={styles.simpleListTitle}>{title}</Text>
-          <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
-            {options.map((option) => {
-              const isSelected = option === selectedValue;
-              return (
-                <Pressable
-                  key={option}
-                  style={[styles.templateOptionRow, isSelected ? styles.templateOptionRowActive : null]}
-                  onPress={() => {
-                    onSelect(option);
-                    onClose();
-                  }}
-                >
-                  <View style={styles.templateOptionLeft}>
-                    <Text
-                      style={[styles.templateOptionText, isSelected ? styles.templateOptionTextActive : null]}
-                    >
-                      {option}
-                    </Text>
-                  </View>
-                  {isSelected ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
+      {content}
     </Modal>
   );
 }
@@ -2278,13 +2351,20 @@ function RHDatePickerModal({
   value,
   onSelect,
   onClose,
+  inline,
 }: {
   visible: boolean;
   title: string;
   value: string;
   onSelect: (dateLabel: string) => void;
   onClose: () => void;
+  // Ver comentário em RHSimplePickerModal — mesmo motivo.
+  inline?: boolean;
 }) {
+  if (inline && !visible) {
+    return null;
+  }
+
   const today = new Date();
   const selectedDate = parseDateBR(value);
   const [viewYear, setViewYear] = useState((selectedDate ?? today).getFullYear());
@@ -2319,8 +2399,7 @@ function RHDatePickerModal({
     }
   };
 
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+  const content = (
       <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
         <Pressable style={styles.datePickerCard} onPress={() => {}}>
           <Text style={styles.simpleListTitle}>{title}</Text>
@@ -2387,6 +2466,15 @@ function RHDatePickerModal({
           ))}
         </Pressable>
       </Pressable>
+  );
+
+  if (inline) {
+    return <View style={rhStyles.inlinePickerLayer}>{content}</View>;
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      {content}
     </Modal>
   );
 }
@@ -3016,11 +3104,19 @@ function RHSmallModal({
   title,
   onClose,
   children,
+  overlay,
 }: {
   visible: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
+  // Conteúdo extra renderizado por CIMA do card (ex.: os pickers de
+  // Sexo/Tipo sanguíneo/etc. do Dados Pessoais) — precisa estar DENTRO do
+  // mesmo <Modal> nativo (não como outro <Modal> separado empilhado em
+  // cima), senão em alguns aparelhos o segundo modal nativo não recebe toque
+  // corretamente (abre "atrás" do primeiro). Ver RHSimplePickerModal/
+  // RHDatePickerModal com inline=true.
+  overlay?: ReactNode;
 }) {
   if (!visible) {
     return null;
@@ -3039,6 +3135,7 @@ function RHSmallModal({
             </Pressable>
           </View>
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+          {overlay}
         </View>
       </View>
     </Modal>
@@ -3247,22 +3344,22 @@ function DadosPessoaisModal({
   const [isNacionalidadePickerOpen, setIsNacionalidadePickerOpen] = useState(false);
   const [form, setForm] = useState({
     cpf: formatCpfInput(employee.cpf),
-    rg: '',
-    orgaoEmissor: '',
-    ufRg: '',
-    cnh: '',
-    ctps: '',
-    pisPasep: '',
-    dataNascimento: '',
-    sexo: '',
-    tipoSanguineo: '',
-    estadoCivil: '',
-    grauInstrucao: '',
-    nacionalidade: '',
-    naturalidade: '',
-    nomeMae: '',
-    nomePai: '',
-    telefoneFixo: '',
+    rg: employee.rg ?? '',
+    orgaoEmissor: employee.orgaoEmissorRg ?? '',
+    ufRg: employee.ufRg ?? '',
+    cnh: employee.cnh ?? '',
+    ctps: employee.ctps ?? '',
+    pisPasep: employee.pisPasep ?? '',
+    dataNascimento: employee.dataNascimentoLabel ?? '',
+    sexo: employee.sexo ?? '',
+    tipoSanguineo: employee.tipoSanguineo ?? '',
+    estadoCivil: employee.estadoCivil ?? '',
+    grauInstrucao: employee.grauInstrucao ?? '',
+    nacionalidade: employee.nacionalidade ?? '',
+    naturalidade: employee.naturalidade ?? '',
+    nomeMae: employee.nomeMae ?? '',
+    nomePai: employee.nomePai ?? '',
+    telefoneFixo: employee.telefoneFixo ?? '',
     celular: employee.celular,
     emailPessoal: employee.emailPessoal ?? '',
     emailCorporativo: employee.emailCorporativo ?? '',
@@ -3380,6 +3477,22 @@ function DadosPessoaisModal({
         ...current,
         cpf: formatCpfInput(employee.cpf),
         celular: employee.celular,
+        rg: employee.rg ?? '',
+        orgaoEmissor: employee.orgaoEmissorRg ?? '',
+        ufRg: employee.ufRg ?? '',
+        cnh: employee.cnh ?? '',
+        ctps: employee.ctps ?? '',
+        pisPasep: employee.pisPasep ?? '',
+        dataNascimento: employee.dataNascimentoLabel ?? '',
+        sexo: employee.sexo ?? '',
+        tipoSanguineo: employee.tipoSanguineo ?? '',
+        estadoCivil: employee.estadoCivil ?? '',
+        grauInstrucao: employee.grauInstrucao ?? '',
+        nacionalidade: employee.nacionalidade ?? '',
+        naturalidade: employee.naturalidade ?? '',
+        nomeMae: employee.nomeMae ?? '',
+        nomePai: employee.nomePai ?? '',
+        telefoneFixo: employee.telefoneFixo ?? '',
         emailPessoal: employee.emailPessoal ?? '',
         emailCorporativo: employee.emailCorporativo ?? '',
         cep: employee.enderecoCep ?? '',
@@ -3436,8 +3549,68 @@ function DadosPessoaisModal({
   const activeIrffDependents = dependents.filter((item) => item.active).length;
 
   return (
-    <>
-      <RHSmallModal visible={visible} title={`Dados Pessoais — ${employee.fullName}`} onClose={onClose}>
+      <RHSmallModal
+        visible={visible}
+        title={`Dados Pessoais — ${employee.fullName}`}
+        onClose={onClose}
+        overlay={
+          <>
+            <RHDatePickerModal
+              inline
+              visible={isDataNascimentoPickerOpen}
+              title="Data de nascimento"
+              value={form.dataNascimento}
+              onSelect={(dateLabel) => setForm((current) => ({ ...current, dataNascimento: dateLabel }))}
+              onClose={() => setIsDataNascimentoPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isSexoPickerOpen}
+              title="Sexo"
+              options={rhSexoOptions}
+              selectedValue={form.sexo}
+              onSelect={(value) => setForm((current) => ({ ...current, sexo: value }))}
+              onClose={() => setIsSexoPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isTipoSanguineoPickerOpen}
+              title="Tipo sanguíneo"
+              options={rhTipoSanguineoOptions}
+              selectedValue={form.tipoSanguineo}
+              onSelect={(value) => setForm((current) => ({ ...current, tipoSanguineo: value }))}
+              onClose={() => setIsTipoSanguineoPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isEstadoCivilPickerOpen}
+              title="Estado civil"
+              options={rhEstadoCivilOptions}
+              selectedValue={form.estadoCivil}
+              onSelect={(value) => setForm((current) => ({ ...current, estadoCivil: value }))}
+              onClose={() => setIsEstadoCivilPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isGrauInstrucaoPickerOpen}
+              title="Grau de instrução"
+              options={rhGrauInstrucaoOptions}
+              selectedValue={form.grauInstrucao}
+              onSelect={(value) => setForm((current) => ({ ...current, grauInstrucao: value }))}
+              onClose={() => setIsGrauInstrucaoPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isNacionalidadePickerOpen}
+              title="Nacionalidade"
+              options={rhNacionalidadeOptions}
+              selectedValue={form.nacionalidade}
+              onSelect={(value) => setForm((current) => ({ ...current, nacionalidade: value }))}
+              onClose={() => setIsNacionalidadePickerOpen(false)}
+            />
+          </>
+        }
+      >
       <View style={rhStyles.mobileDetailTabsShell}>
         <View style={rhStyles.mobileDetailTabsRow}>
           {rhDadosPessoaisTabs.map((tab) => {
@@ -4378,55 +4551,6 @@ function DadosPessoaisModal({
         </View>
       </Modal>
     </RHSmallModal>
-
-      <RHDatePickerModal
-        visible={isDataNascimentoPickerOpen}
-        title="Data de nascimento"
-        value={form.dataNascimento}
-        onSelect={(dateLabel) => setForm((current) => ({ ...current, dataNascimento: dateLabel }))}
-        onClose={() => setIsDataNascimentoPickerOpen(false)}
-      />
-      <RHSimplePickerModal
-        visible={isSexoPickerOpen}
-        title="Sexo"
-        options={rhSexoOptions}
-        selectedValue={form.sexo}
-        onSelect={(value) => setForm((current) => ({ ...current, sexo: value }))}
-        onClose={() => setIsSexoPickerOpen(false)}
-      />
-      <RHSimplePickerModal
-        visible={isTipoSanguineoPickerOpen}
-        title="Tipo sanguíneo"
-        options={rhTipoSanguineoOptions}
-        selectedValue={form.tipoSanguineo}
-        onSelect={(value) => setForm((current) => ({ ...current, tipoSanguineo: value }))}
-        onClose={() => setIsTipoSanguineoPickerOpen(false)}
-      />
-      <RHSimplePickerModal
-        visible={isEstadoCivilPickerOpen}
-        title="Estado civil"
-        options={rhEstadoCivilOptions}
-        selectedValue={form.estadoCivil}
-        onSelect={(value) => setForm((current) => ({ ...current, estadoCivil: value }))}
-        onClose={() => setIsEstadoCivilPickerOpen(false)}
-      />
-      <RHSimplePickerModal
-        visible={isGrauInstrucaoPickerOpen}
-        title="Grau de instrução"
-        options={rhGrauInstrucaoOptions}
-        selectedValue={form.grauInstrucao}
-        onSelect={(value) => setForm((current) => ({ ...current, grauInstrucao: value }))}
-        onClose={() => setIsGrauInstrucaoPickerOpen(false)}
-      />
-      <RHSimplePickerModal
-        visible={isNacionalidadePickerOpen}
-        title="Nacionalidade"
-        options={rhNacionalidadeOptions}
-        selectedValue={form.nacionalidade}
-        onSelect={(value) => setForm((current) => ({ ...current, nacionalidade: value }))}
-        onClose={() => setIsNacionalidadePickerOpen(false)}
-      />
-    </>
   );
 }
 
@@ -5651,47 +5775,54 @@ function EditarCadastroModal({
                 <Text style={styles.primaryButtonText}>Salvar</Text>
               </Pressable>
             </ScrollView>
+
+            {/* Pickers renderizados DENTRO do mesmo <Modal> (inline=true, sem
+                <Modal> próprio) — dois <Modal> nativos empilhados podiam
+                fazer o segundo não receber toque em alguns aparelhos. */}
+            <RHSimplePickerModal
+              inline
+              visible={isCargoPickerOpen}
+              title="Cargo"
+              options={cargoOptions}
+              selectedValue={form.role}
+              onSelect={(value) => setForm((current) => ({ ...current, role: value }))}
+              onClose={() => setIsCargoPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isSetorPickerOpen}
+              title="Setor"
+              options={rhSetoresList}
+              selectedValue={form.setor}
+              onSelect={(value) => setForm((current) => ({ ...current, setor: value }))}
+              onClose={() => setIsSetorPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isUnidadePickerOpen}
+              title="Unidade"
+              options={unidadeOptions}
+              selectedValue={form.unit}
+              onSelect={(value) => setForm((current) => ({ ...current, unit: value }))}
+              onClose={() => setIsUnidadePickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isStatusPickerOpen}
+              title="Status"
+              options={rhEmployeeStatusOrder.map((key) => rhEmployeeStatusMeta[key].label)}
+              selectedValue={rhEmployeeStatusMeta[form.status].label}
+              onSelect={(label) => {
+                const found = rhEmployeeStatusOrder.find((key) => rhEmployeeStatusMeta[key].label === label);
+                if (found) {
+                  setForm((current) => ({ ...current, status: found }));
+                }
+              }}
+              onClose={() => setIsStatusPickerOpen(false)}
+            />
           </View>
         </View>
       </Modal>
-
-      <RHSimplePickerModal
-        visible={isCargoPickerOpen}
-        title="Cargo"
-        options={cargoOptions}
-        selectedValue={form.role}
-        onSelect={(value) => setForm((current) => ({ ...current, role: value }))}
-        onClose={() => setIsCargoPickerOpen(false)}
-      />
-      <RHSimplePickerModal
-        visible={isSetorPickerOpen}
-        title="Setor"
-        options={rhSetoresList}
-        selectedValue={form.setor}
-        onSelect={(value) => setForm((current) => ({ ...current, setor: value }))}
-        onClose={() => setIsSetorPickerOpen(false)}
-      />
-      <RHSimplePickerModal
-        visible={isUnidadePickerOpen}
-        title="Unidade"
-        options={unidadeOptions}
-        selectedValue={form.unit}
-        onSelect={(value) => setForm((current) => ({ ...current, unit: value }))}
-        onClose={() => setIsUnidadePickerOpen(false)}
-      />
-      <RHSimplePickerModal
-        visible={isStatusPickerOpen}
-        title="Status"
-        options={rhEmployeeStatusOrder.map((key) => rhEmployeeStatusMeta[key].label)}
-        selectedValue={rhEmployeeStatusMeta[form.status].label}
-        onSelect={(label) => {
-          const found = rhEmployeeStatusOrder.find((key) => rhEmployeeStatusMeta[key].label === label);
-          if (found) {
-            setForm((current) => ({ ...current, status: found }));
-          }
-        }}
-        onClose={() => setIsStatusPickerOpen(false)}
-      />
     </>
   );
 }
@@ -8889,6 +9020,17 @@ const rhStyles = StyleSheet.create({
   },
   categoryChipTextActive: {
     color: '#FFFFFF',
+  },
+  inlinePickerLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    elevation: 100,
+    borderRadius: 24,
+    overflow: 'hidden',
   },
   mobileDetailTabsShell: {
     marginTop: 4,
