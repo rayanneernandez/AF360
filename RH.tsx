@@ -697,6 +697,14 @@ function RHHeadcountChart({
         </View>
       </View>
 
+      <View style={rhStyles.chartAxisLabelsRow}>
+        {labels.map((label, index) => (
+          <Text key={`${label}-${index}`} style={rhStyles.chartAxisLabelText} numberOfLines={1}>
+            {label}
+          </Text>
+        ))}
+      </View>
+
       {selectedIndex !== null ? (
         <RHChartTooltipCard
           title={labels[selectedIndex]}
