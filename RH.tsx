@@ -2361,10 +2361,6 @@ function RHDatePickerModal({
   // Ver comentário em RHSimplePickerModal — mesmo motivo.
   inline?: boolean;
 }) {
-  if (inline && !visible) {
-    return null;
-  }
-
   const today = new Date();
   const selectedDate = parseDateBR(value);
   const [viewYear, setViewYear] = useState((selectedDate ?? today).getFullYear());
@@ -2377,6 +2373,14 @@ function RHDatePickerModal({
       setViewMonthIndex(base.getMonth());
     }
   }, [visible, value]);
+
+  // Só depois de TODOS os hooks (useState/useEffect acima) — nunca antes,
+  // senão a ordem de hooks muda entre renders (inline+fechado pula os hooks,
+  // inline+aberto não pula) e o React quebra com "Expected static flag was
+  // missing" ao alternar visible.
+  if (inline && !visible) {
+    return null;
+  }
 
   const weeks = getCalendarWeeks(viewYear, viewMonthIndex);
   const monthLabel = `${calendarMonthNames[viewMonthIndex]} ${viewYear}`;
