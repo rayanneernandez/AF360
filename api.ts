@@ -158,6 +158,15 @@ export type RhColaboradorRaw = {
   nome_mae: string | null;
   nome_pai: string | null;
   telefone: string | null;
+  banco: string | null;
+  agencia: string | null;
+  conta: string | null;
+  tipo_conta: string | null;
+  pix_tipo: string | null;
+  pix: string | null;
+  tamanho_camisa: string | null;
+  tamanho_calca: string | null;
+  tamanho_calcado: string | null;
   [key: string]: unknown;
 };
 

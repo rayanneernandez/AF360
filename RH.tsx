@@ -116,6 +116,16 @@ export type Employee = {
   nomeMae?: string;
   nomePai?: string;
   telefoneFixo?: string;
+  postoTrabalho?: string;
+  banco?: string;
+  agencia?: string;
+  conta?: string;
+  tipoConta?: string;
+  pixTipo?: string;
+  pixChave?: string;
+  tamanhoCamisa?: string;
+  tamanhoCalca?: string;
+  tamanhoCalcado?: string;
 };
 
 type TransferStatus = 'pendente' | 'aprovada' | 'efetivada';
@@ -418,6 +428,16 @@ function mapRhColaboradorToEmployee(row: RhColaboradorRaw, empresaNomeById: Map<
     nomeMae: row.nome_mae ?? '',
     nomePai: row.nome_pai ?? '',
     telefoneFixo: row.telefone ?? '',
+    postoTrabalho: row.posto_trabalho ?? '',
+    banco: row.banco ?? '',
+    agencia: row.agencia ?? '',
+    conta: row.conta ?? '',
+    tipoConta: row.tipo_conta ?? '',
+    pixTipo: row.pix_tipo ?? '',
+    pixChave: row.pix ?? '',
+    tamanhoCamisa: row.tamanho_camisa ?? '',
+    tamanhoCalca: row.tamanho_calca ?? '',
+    tamanhoCalcado: row.tamanho_calcado ?? '',
   };
 }
 
@@ -3505,35 +3525,130 @@ function DadosPessoaisModal({
     dentalPlanDependentDiscount: '0,00',
   });
 
-  const pendingItems = useMemo(
-    () => [
+  // Checklist real de completude do cadastro (aba Pendências), calculado a
+  // partir dos dados de verdade (employee/form/contractForm) — nada mocado.
+  // "Crítico" marca os 9 campos considerados essenciais para folha/compliance
+  // (os 8 campos-base de Identificação + PIS/PASEP), espelhando a referência
+  // do web.
+  const checklistGroups = useMemo(() => {
+    const isFilled = (value?: string | number | null) => {
+      if (typeof value === 'number') return value > 0;
+      return Boolean(value && String(value).trim().length > 0);
+    };
+
+    const groups = [
       {
-        id: 'pending-1',
-        title: 'ASO periódico vencendo',
-        subtitle: 'Atualize o exame ocupacional até 15/10/2026 para manter o prontuário em dia.',
-        tag: 'Crítica',
-        tagColor: '#E6213D',
-        tagTint: '#FCE8EC',
+        id: 'identificacao',
+        title: 'Identificação',
+        items: [
+          { label: 'Nome completo', filled: isFilled(employee.fullName), critical: true },
+          { label: 'CPF', filled: isFilled(form.cpf), critical: true },
+          { label: 'RG', filled: isFilled(form.rg), critical: true },
+          { label: 'Órgão emissor (RG)', filled: isFilled(form.orgaoEmissor), critical: true },
+          { label: 'UF (RG)', filled: isFilled(form.ufRg), critical: true },
+          { label: 'Data de nascimento', filled: isFilled(form.dataNascimento), critical: true },
+          { label: 'Sexo', filled: isFilled(form.sexo), critical: true },
+          { label: 'Estado civil', filled: isFilled(form.estadoCivil), critical: true },
+          { label: 'Nome da mãe', filled: isFilled(form.nomeMae), critical: false },
+          { label: 'Naturalidade', filled: isFilled(form.naturalidade), critical: false },
+          { label: 'Nacionalidade', filled: isFilled(form.nacionalidade), critical: false },
+        ],
       },
       {
-        id: 'pending-2',
-        title: 'Comprovante de residência pendente',
-        subtitle: 'Documento ainda não anexado pelo colaborador no portal.',
-        tag: 'Documento',
-        tagColor: '#B07A1E',
-        tagTint: '#FCEFDA',
+        id: 'contato',
+        title: 'Contato',
+        items: [
+          { label: 'Celular', filled: isFilled(form.celular), critical: false },
+          { label: 'E-mail pessoal', filled: isFilled(form.emailPessoal), critical: false },
+          { label: 'E-mail corporativo', filled: isFilled(form.emailCorporativo), critical: false },
+          { label: 'Contato de emergência (nome)', filled: isFilled(form.contatoEmergenciaNome), critical: false },
+          {
+            label: 'Contato de emergência (telefone)',
+            filled: isFilled(form.contatoEmergenciaTelefone),
+            critical: false,
+          },
+        ],
       },
       {
-        id: 'pending-3',
-        title: 'Assinatura do termo de benefícios',
-        subtitle: 'Aguardando aceite do colaborador para concluir o cadastro de pacote.',
-        tag: 'Ação RH',
-        tagColor: '#3457D5',
-        tagTint: '#E9EEFF',
+        id: 'endereco',
+        title: 'Endereço',
+        items: [
+          { label: 'CEP', filled: isFilled(form.cep), critical: false },
+          { label: 'Logradouro', filled: isFilled(form.logradouro), critical: false },
+          { label: 'Número', filled: isFilled(form.numero), critical: false },
+          { label: 'Bairro', filled: isFilled(form.bairro), critical: false },
+          { label: 'Cidade', filled: isFilled(form.cidade), critical: false },
+          { label: 'Estado', filled: isFilled(form.uf), critical: false },
+        ],
       },
-    ],
-    []
-  );
+      {
+        id: 'documentos',
+        title: 'Documentos',
+        items: [
+          { label: 'PIS/PASEP', filled: isFilled(form.pisPasep), critical: true },
+          { label: 'Carteira de trabalho', filled: isFilled(form.ctps), critical: false },
+          { label: 'Carteira de habilitação', filled: isFilled(form.cnh), critical: false },
+        ],
+      },
+      {
+        id: 'contrato',
+        title: 'Contrato',
+        items: [
+          { label: 'Empresa', filled: isFilled(employee.unit), critical: false },
+          { label: 'Cargo', filled: isFilled(contractForm.role), critical: false },
+          { label: 'Setor', filled: isFilled(contractForm.setor), critical: false },
+          { label: 'Posto de trabalho', filled: isFilled(employee.postoTrabalho), critical: false },
+          { label: 'Data de admissão', filled: isFilled(contractForm.admissionDate), critical: false },
+          { label: 'Tipo de contrato', filled: isFilled(contractForm.contractType), critical: false },
+          { label: 'Regime de jornada', filled: isFilled(contractForm.scheduleType), critical: false },
+          {
+            label: 'Horário de trabalho',
+            filled: isFilled(contractForm.scheduleEntrada) && isFilled(contractForm.scheduleSaida),
+            critical: false,
+          },
+          { label: 'Salário base', filled: isFilled(contractForm.baseSalary), critical: false },
+        ],
+      },
+      {
+        id: 'bancario',
+        title: 'Bancário / PIX',
+        items: [
+          { label: 'Banco', filled: isFilled(employee.banco), critical: false },
+          { label: 'Agência', filled: isFilled(employee.agencia), critical: false },
+          { label: 'Conta', filled: isFilled(employee.conta), critical: false },
+          { label: 'Tipo de conta', filled: isFilled(employee.tipoConta), critical: false },
+          { label: 'PIX (tipo)', filled: isFilled(employee.pixTipo), critical: false },
+          { label: 'PIX (chave)', filled: isFilled(employee.pixChave), critical: false },
+        ],
+      },
+      {
+        id: 'uniforme',
+        title: 'Uniforme',
+        items: [
+          { label: 'Tamanho da camisa', filled: isFilled(employee.tamanhoCamisa), critical: false },
+          { label: 'Tamanho da calça', filled: isFilled(employee.tamanhoCalca), critical: false },
+          { label: 'Tamanho do calçado', filled: isFilled(employee.tamanhoCalcado), critical: false },
+        ],
+      },
+    ];
+
+    return groups.map((group) => ({
+      ...group,
+      filledCount: group.items.filter((item) => item.filled).length,
+      totalCount: group.items.length,
+    }));
+  }, [employee, form, contractForm]);
+
+  const checklistTotals = useMemo(() => {
+    const allItems = checklistGroups.flatMap((group) => group.items);
+    const totalFields = allItems.length;
+    const filledFields = allItems.filter((item) => item.filled).length;
+    const criticalItems = allItems.filter((item) => item.critical);
+    const criticalTotal = criticalItems.length;
+    const criticalFilled = criticalItems.filter((item) => item.filled).length;
+    const percent = totalFields > 0 ? Math.round((filledFields / totalFields) * 100) : 0;
+    return { totalFields, filledFields, criticalTotal, criticalFilled, percent };
+  }, [checklistGroups]);
 
   const historyItems = useMemo(
     () => [
@@ -3630,6 +3745,16 @@ function DadosPessoaisModal({
 
   const saveSimpleAlert = (title: string, message: string) => {
     Alert.alert(title, message);
+  };
+  // Honesto: ainda não existe endpoint de escrita pro Lovable gravar em
+  // rh_colaboradores (só leitura hoje — ver af360-api/src/lovable.js). Em vez
+  // de fingir sucesso salvando "no ar", avisa exatamente isso, seguindo o
+  // mesmo padrão já usado em Importar/Reenviar boas-vindas/Inativar.
+  const saveNotAvailableAlert = () => {
+    Alert.alert(
+      'Salvar ainda não disponível',
+      'Essa tela ainda só LÊ os dados de rh_colaboradores. Gravar alterações (e refletir no web) depende de um endpoint de escrita no Lovable que ainda não está liberado.'
+    );
   };
 
   const handleSaveDependent = () => {
@@ -4138,7 +4263,7 @@ function DadosPessoaisModal({
             </View>
           </View>
 
-          <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={onClose}>
+          <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={saveNotAvailableAlert}>
             <Feather name="save" size={15} color="#FFFFFF" />
             <Text style={styles.primaryButtonText}>Salvar dados</Text>
           </Pressable>
@@ -4228,7 +4353,7 @@ function DadosPessoaisModal({
                 />
               </View>
               <View style={rhStyles.formRowItem}>
-                <Text style={styles.requestFieldLabel}>Data de admissão</Text>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Data de admissão</Text>
                 <TextInput
                   style={styles.processTextInput}
                   value={contractForm.admissionDate}
@@ -4240,7 +4365,9 @@ function DadosPessoaisModal({
 
             <View style={rhStyles.formRow}>
               <View style={rhStyles.formRowItem}>
-                <Text style={styles.requestFieldLabel}>Vencimento da experiência</Text>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]} numberOfLines={1}>
+                  Fim da experiência
+                </Text>
                 <TextInput
                   style={styles.processTextInput}
                   value={contractForm.experienceEndDate}
@@ -4324,7 +4451,7 @@ function DadosPessoaisModal({
 
             <Pressable
               style={rhStyles.detailSaveButton}
-              onPress={() => saveSimpleAlert('Contrato salvo', 'Os dados contratuais foram atualizados.')}
+              onPress={saveNotAvailableAlert}
             >
               <Feather name="save" size={14} color="#FFFFFF" />
               <Text style={rhStyles.detailSaveButtonText}>Salvar contrato</Text>
@@ -4394,7 +4521,7 @@ function DadosPessoaisModal({
 
             <Pressable
               style={rhStyles.detailSaveButton}
-              onPress={() => saveSimpleAlert('Encargos salvos', 'Os encargos e adicionais foram atualizados.')}
+              onPress={saveNotAvailableAlert}
             >
               <Feather name="save" size={14} color="#FFFFFF" />
               <Text style={rhStyles.detailSaveButtonText}>Salvar encargos</Text>
@@ -4600,7 +4727,7 @@ function DadosPessoaisModal({
 
             <Pressable
               style={rhStyles.detailSaveButton}
-              onPress={() => saveSimpleAlert('Benefícios salvos', 'O pacote de benefícios foi atualizado.')}
+              onPress={saveNotAvailableAlert}
             >
               <Feather name="save" size={14} color="#FFFFFF" />
               <Text style={rhStyles.detailSaveButtonText}>Salvar benefícios</Text>
@@ -4611,40 +4738,75 @@ function DadosPessoaisModal({
 
       {activeTab === 'pendencias' ? (
         <>
-          <View style={[rhStyles.dependentsHeaderRow, styles.spacingTop]}>
-            <View style={[rhStyles.dependentEligiblePill, { backgroundColor: '#FFF3D8' }]}>
-              <Text style={[rhStyles.dependentEligiblePillText, { color: '#9A6A11' }]}>
-                {pendingItems.length} pendência(s) em aberto
-              </Text>
+          <View style={[rhStyles.checklistProgressCard, styles.spacingTop]}>
+            <View style={rhStyles.checklistProgressHeaderRow}>
+              <Text style={rhStyles.checklistProgressTitle}>Cadastro completo</Text>
+              <Text style={rhStyles.checklistProgressPercent}>{checklistTotals.percent}%</Text>
             </View>
-            <View style={[rhStyles.dependentEligiblePill, { backgroundColor: '#FCE8EC' }]}>
-              <Text style={[rhStyles.dependentEligiblePillText, { color: '#D52B47' }]}>1 crítica</Text>
-            </View>
-          </View>
-
-          <View style={[rhStyles.warningBox, styles.spacingTop]}>
-            <View style={rhStyles.warningBoxHeaderRow}>
-              <Feather name="alert-triangle" size={15} color="#8A5A12" />
-              <Text style={rhStyles.warningBoxTitle}>Itens que precisam de ação do RH</Text>
-            </View>
-            <Text style={rhStyles.warningBoxNote}>
-              Regularize as pendências abaixo para evitar bloqueios em benefícios, medicina ocupacional e
-              rotinas de folha.
+            <Text style={rhStyles.checklistProgressSubtitle}>
+              {checklistTotals.filledFields} de {checklistTotals.totalFields} campos preenchidos ·{' '}
+              {checklistTotals.criticalFilled}/{checklistTotals.criticalTotal} críticos
             </Text>
+            <View style={rhStyles.checklistProgressTrack}>
+              <View
+                style={[
+                  rhStyles.checklistProgressFill,
+                  {
+                    width: `${checklistTotals.percent}%`,
+                    backgroundColor:
+                      checklistTotals.criticalFilled < checklistTotals.criticalTotal ? '#E6213D' : '#18955A',
+                  },
+                ]}
+              />
+            </View>
           </View>
 
-          {pendingItems.map((item) => (
-            <View key={item.id} style={rhStyles.pendingItemCard}>
-              <View style={rhStyles.pendingItemTopRow}>
-                <View style={[rhStyles.pendingItemTag, { backgroundColor: item.tagTint }]}>
-                  <Text style={[rhStyles.pendingItemTagText, { color: item.tagColor }]}>{item.tag}</Text>
+          {checklistGroups.map((group) => {
+            const isComplete = group.filledCount === group.totalCount;
+            return (
+              <View key={group.id} style={[rhStyles.checklistGroupCard, styles.spacingTop]}>
+                <View style={rhStyles.checklistGroupHeaderRow}>
+                  <Text style={rhStyles.checklistGroupTitle}>{group.title}</Text>
+                  <View style={[rhStyles.checklistGroupBadge, isComplete && rhStyles.checklistGroupBadgeComplete]}>
+                    <Text
+                      style={[
+                        rhStyles.checklistGroupBadgeText,
+                        isComplete && rhStyles.checklistGroupBadgeCompleteText,
+                      ]}
+                    >
+                      {isComplete ? 'Completo' : `${group.filledCount}/${group.totalCount}`}
+                    </Text>
+                  </View>
                 </View>
-                <Feather name="chevron-right" size={16} color="#9AA1B5" />
+                {group.items.map((item) => {
+                  const isCriticalPending = item.critical && !item.filled;
+                  return (
+                    <View key={item.label} style={rhStyles.checklistRow}>
+                      <Feather
+                        name={item.filled ? 'check-circle' : isCriticalPending ? 'x-circle' : 'alert-circle'}
+                        size={15}
+                        color={item.filled ? '#18955A' : isCriticalPending ? '#D52B47' : '#B07A1E'}
+                      />
+                      <Text
+                        style={[
+                          rhStyles.checklistRowText,
+                          !item.filled && rhStyles.checklistRowTextPending,
+                          isCriticalPending && rhStyles.checklistRowTextCritical,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                      {isCriticalPending ? (
+                        <View style={rhStyles.checklistCriticalTag}>
+                          <Text style={rhStyles.checklistCriticalTagText}>crítico</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
-              <Text style={rhStyles.pendingItemTitle}>{item.title}</Text>
-              <Text style={rhStyles.pendingItemSubtitle}>{item.subtitle}</Text>
-            </View>
-          ))}
+            );
+          })}
         </>
       ) : null}
 
@@ -9589,6 +9751,111 @@ const rhStyles = StyleSheet.create({
     color: '#5E667D',
     fontSize: 12,
     lineHeight: 18,
+  },
+  checklistProgressCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 16,
+  },
+  checklistProgressHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  checklistProgressTitle: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  checklistProgressPercent: {
+    color: '#3457D5',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  checklistProgressSubtitle: {
+    marginTop: 4,
+    color: '#5E667D',
+    fontSize: 12,
+  },
+  checklistProgressTrack: {
+    marginTop: 10,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#EEF1F8',
+    overflow: 'hidden',
+  },
+  checklistProgressFill: {
+    height: 8,
+    borderRadius: 999,
+  },
+  checklistGroupCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 14,
+  },
+  checklistGroupHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  checklistGroupTitle: {
+    color: '#15203E',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  checklistGroupBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#EEF1F8',
+  },
+  checklistGroupBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#4C5470',
+  },
+  checklistGroupBadgeComplete: {
+    backgroundColor: '#E3F5EA',
+  },
+  checklistGroupBadgeCompleteText: {
+    color: '#18955A',
+  },
+  checklistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  checklistRowText: {
+    flex: 1,
+    color: '#8A90A4',
+    fontSize: 12.5,
+    textDecorationLine: 'line-through',
+  },
+  checklistRowTextPending: {
+    color: '#4C5470',
+    fontWeight: '600',
+    textDecorationLine: 'none',
+  },
+  checklistRowTextCritical: {
+    color: '#B3202F',
+    fontWeight: '700',
+  },
+  checklistCriticalTag: {
+    borderRadius: 999,
+    backgroundColor: '#FCE8EC',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  checklistCriticalTagText: {
+    color: '#D52B47',
+    fontSize: 9.5,
+    fontWeight: '800',
   },
   timelineRow: {
     flexDirection: 'row',
