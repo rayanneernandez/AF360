@@ -140,7 +140,10 @@ router.get('/usuarios', async (req, res) => {
     // "order" estável pra paginação por offset não repetir/pular linhas
     // (mesmo bug corrigido em routes/rhDashboard.js/loadColaboradoresEEmpresas).
     const [profilesJson, rolesJson, rhColaboradoresJson, empresaNomeById] = await Promise.all([
-      fetchAllRows('profiles', { select: 'id,full_name,email,is_active,role_id,empresa_id', order: 'id:asc' }),
+      fetchAllRows('profiles', {
+        select: 'id,full_name,email,is_active,role_id,empresa_id,is_master,created_at,chat_atendente',
+        order: 'id:asc',
+      }),
       fetchAllRows('roles', { select: 'id,name' }),
       fetchAllRows('rh_colaboradores', { select: 'id,profile_id,empresa_id,cargo', order: 'id:asc' }),
       loadEmpresaNomeById(),
@@ -168,6 +171,9 @@ router.get('/usuarios', async (req, res) => {
           cargo: (p.role_id && roleNameById.get(p.role_id)) || null,
           unidade: (empresaId && empresaNomeById.get(empresaId)) || null,
           isActive: Boolean(p.is_active),
+          isMaster: Boolean(p.is_master),
+          createdAt: p.created_at || null,
+          chatAtendente: Boolean(p.chat_atendente),
         };
       })
       .sort((a, b) => compareFullName(a.fullName, b.fullName));

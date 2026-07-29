@@ -673,6 +673,9 @@ export type AdminUsuarioItem = {
   cargo: string | null;
   unidade: string | null;
   isActive: boolean;
+  isMaster: boolean;
+  createdAt: string | null;
+  chatAtendente: boolean;
 };
 
 export type AdminUsuariosDetalhe = { count: number; usuarios: AdminUsuarioItem[] };

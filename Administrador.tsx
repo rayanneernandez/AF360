@@ -19,7 +19,7 @@ import { useContext, useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   styles,
@@ -41,10 +41,12 @@ import {
   fetchAdminCargos,
   fetchAdminGrupos,
   fetchAdminAcessoPorUsuario,
+  fetchRhUnidades,
   type AdminUsuarioItem,
   type AdminCargoItem,
   type AdminGrupoItem,
   type AdminAcessoUsuarioItem,
+  type RhUnidadeItem,
 } from './api';
 
 // ---------- Cores compartilhadas ----------
@@ -145,6 +147,440 @@ function AdminColorPill({ label, bg, color }: { label: string; bg: string; color
     <View style={[adminStyles.tagPill, { backgroundColor: bg }]}>
       <Text style={[adminStyles.tagPillText, { color }]}>{label}</Text>
     </View>
+  );
+}
+
+// Formata profiles.created_at (ISO) -> "DD/MM/AAAA". Sem dado real, mostra
+// "—" em vez de inventar uma data.
+function formatAdminDate(iso: string | null): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}/${date.getFullYear()}`;
+}
+
+// ---------- Select + picker reutilizáveis (Cargo/Unidade nos formulários de
+// usuário) — mesmo padrão de RH.tsx (RHSelectField/RHSimplePickerModal), mas
+// local a este arquivo pra não criar acoplamento entre os dois módulos.
+
+function AdminSelectField({
+  label,
+  value,
+  placeholder = 'Selecione...',
+  onPress,
+  required,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onPress: () => void;
+  required?: boolean;
+}) {
+  return (
+    <>
+      <Text style={[styles.requestFieldLabel, styles.spacingTop]}>
+        {label}
+        {required ? ' *' : ''}
+      </Text>
+      <Pressable style={styles.requestSelectBox} onPress={onPress}>
+        <View style={styles.requestSelectLeft}>
+          <Text style={[styles.requestSelectText, !value ? adminStyles.selectPlaceholder : null]}>
+            {value || placeholder}
+          </Text>
+        </View>
+        <Feather name="chevron-down" size={18} color="#7A8299" />
+      </Pressable>
+    </>
+  );
+}
+
+// inline=true: renderiza como overlay absoluto dentro do próprio <Modal> pai
+// em vez de abrir um <Modal> nativo próprio — evita o bug de modal-em-modal
+// (dois <Modal> nativos empilhados podem não repassar toque em alguns
+// aparelhos) já visto e corrigido em RH.tsx.
+function AdminSimplePickerModal({
+  visible,
+  title,
+  options,
+  selectedValue,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  options: string[];
+  selectedValue: string;
+  onSelect: (value: string) => void;
+  onClose: () => void;
+}) {
+  if (!visible) return null;
+
+  return (
+    <View style={adminStyles.inlinePickerLayer}>
+      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.simpleListCard} onPress={() => {}}>
+          <Text style={styles.simpleListTitle}>{title}</Text>
+          <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+            {options.map((option) => {
+              const isSelected = option === selectedValue;
+              return (
+                <Pressable
+                  key={option}
+                  style={[styles.templateOptionRow, isSelected ? styles.templateOptionRowActive : null]}
+                  onPress={() => {
+                    onSelect(option);
+                    onClose();
+                  }}
+                >
+                  <View style={styles.templateOptionLeft}>
+                    <Text style={[styles.templateOptionText, isSelected ? styles.templateOptionTextActive : null]}>
+                      {option}
+                    </Text>
+                  </View>
+                  {isSelected ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </View>
+  );
+}
+
+// ---------- Modal de detalhes do usuário (Usuários > tocar na linha) ----------
+
+function AdminUserDetailModal({
+  visible,
+  user,
+  onClose,
+  onEdit,
+}: {
+  visible: boolean;
+  user: AdminUsuarioItem | null;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  if (!user) return null;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle} numberOfLines={1}>
+                {(user.fullName || '(sem nome)').toUpperCase()}
+              </Text>
+              <Text style={adminStyles.detailSubEmail} numberOfLines={1}>
+                {user.email}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={adminStyles.detailGridRow}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>NOME COMPLETO</Text>
+                <Text style={adminStyles.detailFieldValue}>{user.fullName || '—'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>E-MAIL</Text>
+                <Text style={adminStyles.detailFieldValue} numberOfLines={1}>
+                  {user.email}
+                </Text>
+              </View>
+            </View>
+
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>CARGO</Text>
+                <Text style={adminStyles.detailFieldValue}>{user.cargo || 'Sem cargo'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>UNIDADE</Text>
+                <Text style={adminStyles.detailFieldValue}>{user.unidade || '—'}</Text>
+              </View>
+            </View>
+
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>MASTER</Text>
+                <View style={[adminStyles.detailBadgeBase, adminStyles.detailBadgeNeutral]}>
+                  <Feather name={user.isMaster ? 'check-circle' : 'slash'} size={11} color={GRAY} />
+                  <Text style={[adminStyles.detailBadgeText, { color: GRAY }]}>{user.isMaster ? 'Sim' : 'Não'}</Text>
+                </View>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>ATIVO</Text>
+                <View
+                  style={[
+                    adminStyles.detailBadgeBase,
+                    { backgroundColor: user.isActive ? GREEN_BG : RED_BG },
+                  ]}
+                >
+                  <Feather
+                    name={user.isActive ? 'check-circle' : 'x-circle'}
+                    size={11}
+                    color={user.isActive ? GREEN : RED}
+                  />
+                  <Text style={[adminStyles.detailBadgeText, { color: user.isActive ? GREEN : RED }]}>
+                    {user.isActive ? 'Sim' : 'Não'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>CRIADO EM</Text>
+            <Text style={adminStyles.detailFieldValue}>{formatAdminDate(user.createdAt)}</Text>
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={styles.secondaryButton} onPress={onClose}>
+              <Text style={styles.secondaryButtonText}>Fechar</Text>
+            </Pressable>
+            <Pressable style={adminStyles.primaryActionButton} onPress={onEdit}>
+              <Feather name="edit-2" size={14} color="#FFFFFF" />
+              <Text style={adminStyles.primaryActionButtonText}>Editar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ---------- Menu de ações por linha (Visualizar/Editar/Redefinir senha/
+// Inativar/Excluir) ----------
+
+function AdminActionsMenuModal({
+  visible,
+  user,
+  onClose,
+  onVisualizar,
+  onEditar,
+  onRedefinirSenha,
+  onToggleAtivo,
+  onExcluir,
+}: {
+  visible: boolean;
+  user: AdminUsuarioItem | null;
+  onClose: () => void;
+  onVisualizar: () => void;
+  onEditar: () => void;
+  onRedefinirSenha: () => void;
+  onToggleAtivo: () => void;
+  onExcluir: () => void;
+}) {
+  if (!user) return null;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={onClose}>
+        <Pressable style={adminStyles.actionsMenuCard} onPress={() => {}}>
+          <Text style={adminStyles.actionsMenuTitle} numberOfLines={1}>
+            {user.fullName || user.email}
+          </Text>
+          <Pressable style={adminStyles.actionsMenuRow} onPress={onVisualizar}>
+            <Feather name="eye" size={16} color="#4C5470" />
+            <Text style={adminStyles.actionsMenuRowText}>Visualizar</Text>
+          </Pressable>
+          <Pressable style={adminStyles.actionsMenuRow} onPress={onEditar}>
+            <Feather name="edit-2" size={16} color="#4C5470" />
+            <Text style={adminStyles.actionsMenuRowText}>Editar</Text>
+          </Pressable>
+          <Pressable style={adminStyles.actionsMenuRow} onPress={onRedefinirSenha}>
+            <Feather name="key" size={16} color="#4C5470" />
+            <Text style={adminStyles.actionsMenuRowText}>Redefinir senha</Text>
+          </Pressable>
+          <Pressable style={adminStyles.actionsMenuRow} onPress={onToggleAtivo}>
+            <Feather name={user.isActive ? 'slash' : 'check-circle'} size={16} color="#4C5470" />
+            <Text style={adminStyles.actionsMenuRowText}>
+              {user.isActive ? 'Inativar acesso' : 'Ativar acesso'}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[adminStyles.actionsMenuRow, adminStyles.actionsMenuRowLast]}
+            onPress={onExcluir}
+          >
+            <Feather name="trash-2" size={16} color={RED} />
+            <Text style={[adminStyles.actionsMenuRowText, { color: RED }]}>Excluir</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+type AdminUserFormValues = {
+  fullName: string;
+  email: string;
+  password: string;
+  cargo: string;
+  unidade: string;
+  chatAtendente: boolean;
+  isMaster: boolean;
+};
+
+function emptyAdminUserForm(): AdminUserFormValues {
+  return { fullName: '', email: '', password: '', cargo: '', unidade: '', chatAtendente: false, isMaster: false };
+}
+
+// ---------- Modal "Novo Usuário" / "Editar usuário" ----------
+// Cargo e Unidade puxam de verdade do banco (fetchAdminCargos / fetchRhUnidades
+// — os mesmos endpoints já usados em Perfil de Acesso e no módulo RH). Criar/
+// Salvar ainda cai no aviso honesto: não existe POST/PATCH de usuário no
+// af360-api hoje (só GET — ver routes/admin.js), então nada é gravado de
+// verdade ainda.
+function AdminUserFormModal({
+  visible,
+  mode,
+  initialValues,
+  cargoOptions,
+  unidadeOptions,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  mode: 'create' | 'edit';
+  initialValues: AdminUserFormValues;
+  cargoOptions: string[];
+  unidadeOptions: string[];
+  onClose: () => void;
+  onSubmit: (values: AdminUserFormValues) => void;
+}) {
+  const [form, setForm] = useState<AdminUserFormValues>(initialValues);
+  const [isCargoPickerOpen, setIsCargoPickerOpen] = useState(false);
+  const [isUnidadePickerOpen, setIsUnidadePickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setForm(initialValues);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, initialValues.fullName, initialValues.email]);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>{mode === 'create' ? 'Novo Usuário' : 'Editar usuário'}</Text>
+              {mode === 'create' ? (
+                <Text style={adminStyles.detailSubEmail}>O e-mail deve terminar com @americanfuel.com.br.</Text>
+              ) : null}
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.requestFieldLabel}>Nome completo</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.fullName}
+              onChangeText={(text) => setForm((current) => ({ ...current, fullName: text }))}
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>E-mail</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.email}
+              onChangeText={(text) => setForm((current) => ({ ...current, email: text }))}
+              placeholder="usuario@americanfuel.com.br"
+              placeholderTextColor="#A7AEC2"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              editable={mode === 'create'}
+            />
+
+            {mode === 'create' ? (
+              <>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Senha inicial</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.password}
+                  onChangeText={(text) => setForm((current) => ({ ...current, password: text }))}
+                  placeholderTextColor="#A7AEC2"
+                  secureTextEntry
+                />
+              </>
+            ) : null}
+
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <AdminSelectField
+                  label="Cargo"
+                  value={form.cargo}
+                  onPress={() => setIsCargoPickerOpen(true)}
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <AdminSelectField
+                  label="Unidade"
+                  value={form.unidade}
+                  onPress={() => setIsUnidadePickerOpen(true)}
+                />
+              </View>
+            </View>
+
+            <View style={[adminStyles.checkboxCard, styles.spacingTop]}>
+              <View style={{ flex: 1 }}>
+                <Text style={adminStyles.checkboxCardLabel}>Atendente do chat</Text>
+                <Text style={adminStyles.checkboxCardHint}>Quando marcado, aparece na lista de atendentes do WhatsApp.</Text>
+              </View>
+              <ToggleSwitch
+                value={form.chatAtendente}
+                onValueChange={() => setForm((current) => ({ ...current, chatAtendente: !current.chatAtendente }))}
+              />
+            </View>
+
+            <View style={adminStyles.checkboxCard}>
+              <Text style={adminStyles.checkboxCardLabel}>Conceder acesso master</Text>
+              <ToggleSwitch
+                value={form.isMaster}
+                onValueChange={() => setForm((current) => ({ ...current, isMaster: !current.isMaster }))}
+              />
+            </View>
+
+            <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+              <Pressable style={styles.secondaryButton} onPress={onClose}>
+                <Text style={styles.secondaryButtonText}>Cancelar</Text>
+              </Pressable>
+              <Pressable style={adminStyles.primaryActionButton} onPress={() => onSubmit(form)}>
+                <Feather name="save" size={14} color="#FFFFFF" />
+                <Text style={adminStyles.primaryActionButtonText}>{mode === 'create' ? 'Criar' : 'Salvar'}</Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+
+          <AdminSimplePickerModal
+            visible={isCargoPickerOpen}
+            title="Cargo"
+            options={cargoOptions}
+            selectedValue={form.cargo}
+            onSelect={(value) => setForm((current) => ({ ...current, cargo: value }))}
+            onClose={() => setIsCargoPickerOpen(false)}
+          />
+          <AdminSimplePickerModal
+            visible={isUnidadePickerOpen}
+            title="Unidade"
+            options={unidadeOptions}
+            selectedValue={form.unidade}
+            onSelect={(value) => setForm((current) => ({ ...current, unidade: value }))}
+            onClose={() => setIsUnidadePickerOpen(false)}
+          />
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -474,6 +910,16 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const [cargosReais, setCargosReais] = useState<AdminCargoItem[]>([]);
+  const [unidadesReais, setUnidadesReais] = useState<RhUnidadeItem[]>([]);
+
+  const [selectedUser, setSelectedUser] = useState<AdminUsuarioItem | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [actionsMenuUser, setActionsMenuUser] = useState<AdminUsuarioItem | null>(null);
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
+  const [formInitialValues, setFormInitialValues] = useState<AdminUserFormValues>(emptyAdminUserForm());
+
   useEffect(() => {
     let isActive = true;
     setIsLoading(true);
@@ -497,6 +943,32 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
     };
   }, []);
 
+  useEffect(() => {
+    let isActive = true;
+    Promise.all([fetchAdminCargos(), fetchRhUnidades()])
+      .then(([cargosData, unidadesData]) => {
+        if (!isActive) return;
+        setCargosReais(cargosData.cargos);
+        setUnidadesReais(unidadesData);
+      })
+      .catch(() => {
+        // Silencioso: os pickers de Cargo/Unidade caem pra lista vazia, sem
+        // travar o restante da tela.
+      });
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const cargoOptions = useMemo(
+    () => cargosReais.map((cargo) => cargo.name).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [cargosReais]
+  );
+  const unidadeOptions = useMemo(
+    () => unidadesReais.map((unidade) => unidade.nome).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [unidadesReais]
+  );
+
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return usuarios;
@@ -510,6 +982,56 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
   }, [usuarios, search]);
 
   const ativosCount = usuarios.filter((u) => u.isActive).length;
+
+  // Nenhuma dessas ações grava de verdade ainda — af360-api/src/routes/admin.js
+  // só tem GET hoje (usuários, cargos, grupos, acesso-por-usuário). Em vez de
+  // fingir sucesso, avisa exatamente o que falta.
+  const showWriteNotAvailable = (action: string) => {
+    Alert.alert(
+      'Ainda não disponível',
+      `"${action}" ainda não tem endpoint de escrita no backend (só leitura hoje). Assim que existir, essa ação passa a gravar de verdade e refletir no web.`
+    );
+  };
+
+  const openDetail = (user: AdminUsuarioItem) => {
+    setActionsMenuUser(null);
+    setSelectedUser(user);
+    setIsDetailModalOpen(true);
+  };
+
+  const openEdit = (user: AdminUsuarioItem) => {
+    setActionsMenuUser(null);
+    setIsDetailModalOpen(false);
+    setFormMode('edit');
+    setFormInitialValues({
+      fullName: user.fullName ?? '',
+      email: user.email,
+      password: '',
+      cargo: user.cargo ?? '',
+      unidade: user.unidade ?? '',
+      chatAtendente: user.chatAtendente,
+      isMaster: user.isMaster,
+    });
+    setIsFormModalOpen(true);
+  };
+
+  const openCreate = () => {
+    setFormMode('create');
+    setFormInitialValues(emptyAdminUserForm());
+    setIsFormModalOpen(true);
+  };
+
+  const handleExcluir = (user: AdminUsuarioItem) => {
+    setActionsMenuUser(null);
+    Alert.alert(
+      'Excluir usuário',
+      `Tem certeza que quer excluir ${user.fullName || user.email}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Excluir', style: 'destructive', onPress: () => showWriteNotAvailable('Excluir usuário') },
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -539,10 +1061,7 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
             <Text style={adminStyles.filterPillText}>Ativos</Text>
             <Feather name="chevron-down" size={14} color="#5E667D" />
           </Pressable>
-          <Pressable
-            style={styles.directorNotifNewButton}
-            onPress={() => Alert.alert('Novo usuário', 'Cadastro de usuário em breve.')}
-          >
+          <Pressable style={styles.directorNotifNewButton} onPress={openCreate}>
             <Feather name="plus" size={15} color="#FFFFFF" />
             <Text style={styles.directorNotifNewButtonText}>Novo</Text>
           </Pressable>
@@ -556,7 +1075,7 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
           <AdminEmptyState message="Nenhum usuário encontrado." />
         ) : (
           filtered.map((user) => (
-            <View key={user.id} style={adminStyles.listCard}>
+            <Pressable key={user.id} style={adminStyles.listCard} onPress={() => openDetail(user)}>
               <View style={adminStyles.listAvatar}>
                 <Text style={adminStyles.listAvatarText}>{getInitialsFromName(user.fullName ?? user.email)}</Text>
               </View>
@@ -571,14 +1090,59 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
                   {user.cargo || 'Sem cargo'} · {user.unidade || '—'}
                 </Text>
               </View>
-              <ToggleSwitch
-                value={user.isActive}
-                onValueChange={() => Alert.alert('Em breve', 'Edição de status ainda não está disponível nesta tela.')}
-              />
-            </View>
+              <View style={adminStyles.listTrailing}>
+                <View
+                  style={[
+                    adminStyles.statusDot,
+                    { backgroundColor: user.isActive ? GREEN : RED },
+                  ]}
+                />
+                <Pressable hitSlop={10} onPress={() => setActionsMenuUser(user)}>
+                  <Feather name="more-vertical" size={18} color="#9AA1B5" />
+                </Pressable>
+              </View>
+            </Pressable>
           ))
         )}
       </ScrollView>
+
+      <AdminUserDetailModal
+        visible={isDetailModalOpen}
+        user={selectedUser}
+        onClose={() => setIsDetailModalOpen(false)}
+        onEdit={() => selectedUser && openEdit(selectedUser)}
+      />
+
+      <AdminActionsMenuModal
+        visible={actionsMenuUser !== null}
+        user={actionsMenuUser}
+        onClose={() => setActionsMenuUser(null)}
+        onVisualizar={() => actionsMenuUser && openDetail(actionsMenuUser)}
+        onEditar={() => actionsMenuUser && openEdit(actionsMenuUser)}
+        onRedefinirSenha={() => {
+          setActionsMenuUser(null);
+          showWriteNotAvailable('Redefinir senha');
+        }}
+        onToggleAtivo={() => {
+          const user = actionsMenuUser;
+          setActionsMenuUser(null);
+          if (user) showWriteNotAvailable(user.isActive ? 'Inativar acesso' : 'Ativar acesso');
+        }}
+        onExcluir={() => actionsMenuUser && handleExcluir(actionsMenuUser)}
+      />
+
+      <AdminUserFormModal
+        visible={isFormModalOpen}
+        mode={formMode}
+        initialValues={formInitialValues}
+        cargoOptions={cargoOptions}
+        unidadeOptions={unidadeOptions}
+        onClose={() => setIsFormModalOpen(false)}
+        onSubmit={() => {
+          setIsFormModalOpen(false);
+          showWriteNotAvailable(formMode === 'create' ? 'Criar usuário' : 'Salvar usuário');
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -2331,5 +2895,148 @@ const adminStyles = StyleSheet.create({
     color: '#9AA1B5',
     fontSize: 11,
     fontWeight: '600',
+  },
+  selectPlaceholder: {
+    color: '#A7AEC2',
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  formRowItem: {
+    flex: 1,
+  },
+  inlinePickerLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    elevation: 100,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  listTrailing: {
+    alignItems: 'center',
+    gap: 10,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  detailSubEmail: {
+    marginTop: 2,
+    color: '#7C8397',
+    fontSize: 11.5,
+  },
+  detailGridRow: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  detailGridItem: {
+    flex: 1,
+  },
+  detailFieldLabel: {
+    color: '#9AA1B5',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  detailFieldValue: {
+    marginTop: 4,
+    color: '#15203E',
+    fontSize: 13.5,
+    fontWeight: '600',
+  },
+  detailBadgeBase: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  detailBadgeNeutral: {
+    backgroundColor: '#F1F2F7',
+  },
+  detailBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  detailFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  primaryActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#E6213D',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    minHeight: 40,
+  },
+  primaryActionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  actionsMenuCard: {
+    width: '84%',
+    maxWidth: 320,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  actionsMenuTitle: {
+    color: '#9AA1B5',
+    fontSize: 11.5,
+    fontWeight: '800',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  actionsMenuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F2F7',
+  },
+  actionsMenuRowText: {
+    color: '#15203E',
+    fontSize: 13.5,
+    fontWeight: '600',
+  },
+  actionsMenuRowLast: {
+    borderBottomWidth: 0,
+  },
+  checkboxCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    backgroundColor: '#F8F9FC',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
+  },
+  checkboxCardLabel: {
+    color: '#15203E',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  checkboxCardHint: {
+    marginTop: 2,
+    color: '#7C8397',
+    fontSize: 11,
   },
 });
