@@ -1928,7 +1928,7 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
               cargos.map((cargo) => {
                 const groupColors = (cargo.group && adminGroupColorMap[cargo.group]) || { bg: GRAY_BG, color: GRAY };
                 return (
-                  <View key={cargo.id} style={adminStyles.roleCard}>
+                  <Pressable key={cargo.id} style={adminStyles.roleCard} onPress={() => setCargoDetail(cargo)}>
                     <View style={adminStyles.roleCardTopRow}>
                       <Text style={adminStyles.roleName}>{cargo.name}</Text>
                       <View style={adminStyles.roleCardTopRowRight}>
@@ -1949,7 +1949,7 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
                         cargo.moduleLabels.map((module) => <AdminTagPill key={module} label={module} />)
                       )}
                     </View>
-                  </View>
+                  </Pressable>
                 );
               })
             )}

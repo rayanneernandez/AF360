@@ -194,32 +194,47 @@ router.get('/usuarios', async (req, res) => {
 // rápido e evita sobrecarregar o Lovable com centenas de chamadas.
 router.get('/acesso-por-usuario', async (req, res) => {
   try {
-    const [profilesJson, rolesJson, userModulesJson, modulesJson] = await Promise.all([
+    const [profilesJson, rolesJson] = await Promise.all([
       fetchAllRows('profiles', { select: 'id,full_name,email,role_id' }),
       fetchAllRows('roles', { select: 'id,name,default_modules' }),
-      fetchAllRows('user_modules', { select: 'user_id,module_id' }),
-      fetchAllRows('modules'),
     ]);
 
     const roleById = new Map();
     (rolesJson.data || []).forEach((r) => roleById.set(r.id, r));
 
-    // modules.slug ou modules.name ainda não 100% confirmado — tenta os dois,
-    // mesmo padrão defensivo de fetchEffectiveModules em permissions.js.
-    const moduleNameById = new Map();
-    (modulesJson.data || []).forEach((mod) => {
-      const label = mod.slug ?? mod.name ?? mod.nome ?? null;
-      if (label) moduleNameById.set(mod.id, normalizeModuleName(label));
-    });
-
+    // user_modules/modules (módulos avulsos por usuário, além do que o cargo
+    // já dá) — a tabela "modules" já voltou "table not allowed" da allowlist
+    // interna do Lovable pelo menos uma vez. Isolado num try/catch próprio pra
+    // não derrubar a tela inteira: se falhar, cada usuário mostra só os
+    // módulos do cargo (sem os avulsos), em vez de a aba inteira quebrar.
     const extraModulesByUserId = new Map();
-    (userModulesJson.data || []).forEach((row) => {
-      if (!row.user_id || !row.module_id) return;
-      const moduleName = moduleNameById.get(row.module_id);
-      if (!moduleName) return;
-      if (!extraModulesByUserId.has(row.user_id)) extraModulesByUserId.set(row.user_id, new Set());
-      extraModulesByUserId.get(row.user_id).add(moduleName);
-    });
+    try {
+      const [userModulesJson, modulesJson] = await Promise.all([
+        fetchAllRows('user_modules', { select: 'user_id,module_id' }),
+        fetchAllRows('modules'),
+      ]);
+
+      // modules.slug ou modules.name ainda não 100% confirmado — tenta os
+      // dois, mesmo padrão defensivo de fetchEffectiveModules em permissions.js.
+      const moduleNameById = new Map();
+      (modulesJson.data || []).forEach((mod) => {
+        const label = mod.slug ?? mod.name ?? mod.nome ?? null;
+        if (label) moduleNameById.set(mod.id, normalizeModuleName(label));
+      });
+
+      (userModulesJson.data || []).forEach((row) => {
+        if (!row.user_id || !row.module_id) return;
+        const moduleName = moduleNameById.get(row.module_id);
+        if (!moduleName) return;
+        if (!extraModulesByUserId.has(row.user_id)) extraModulesByUserId.set(row.user_id, new Set());
+        extraModulesByUserId.get(row.user_id).add(moduleName);
+      });
+    } catch (err) {
+      console.error(
+        '[admin/acesso-por-usuario] user_modules/modules indisponível, seguindo só com módulos do cargo:',
+        err.message
+      );
+    }
 
     const usuarios = (profilesJson.data || [])
       .map((p) => {
