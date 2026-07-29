@@ -30,6 +30,9 @@ import {
   AuthIdentityContext,
   NotificationRoutineFormModal,
   TemplateFormModal,
+  formatDateBR,
+  getCalendarWeeks,
+  calendarMonthNames,
 } from './App';
 import type {
   ScreenProps,
@@ -3151,6 +3154,136 @@ function adminUnidadeDisplayName(unidade: AdminUnidadeItem): string {
   return unidade.nomeFantasia || unidade.razaoSocial || '(sem nome)';
 }
 
+function adminParseDateBR(label: string): Date | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(label?.trim() ?? '');
+  if (!match) return null;
+  const [, day, month, year] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+// Calendário 100% JS/RN puro, mesmo padrão do RHDatePickerModal (RH.tsx) —
+// reaproveita a lógica/estilos do MiniCalendarModal em App.tsx
+// (getCalendarWeeks/calendarMonthNames/styles.datePickerCard e afins).
+// Sempre inline (overlay absoluto dentro do modal pai), nunca <Modal> próprio
+// — evita o bug de modal-em-modal já visto e corrigido em RH.tsx.
+function AdminDatePickerModal({
+  visible,
+  title,
+  value,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  value: string;
+  onSelect: (dateLabel: string) => void;
+  onClose: () => void;
+}) {
+  const today = new Date();
+  const selectedDate = adminParseDateBR(value);
+  const [viewYear, setViewYear] = useState((selectedDate ?? today).getFullYear());
+  const [viewMonthIndex, setViewMonthIndex] = useState((selectedDate ?? today).getMonth());
+
+  useEffect(() => {
+    if (visible) {
+      const base = adminParseDateBR(value) ?? new Date();
+      setViewYear(base.getFullYear());
+      setViewMonthIndex(base.getMonth());
+    }
+  }, [visible, value]);
+
+  if (!visible) return null;
+
+  const weeks = getCalendarWeeks(viewYear, viewMonthIndex);
+  const monthLabel = `${calendarMonthNames[viewMonthIndex]} ${viewYear}`;
+
+  const goToPreviousMonth = () => {
+    if (viewMonthIndex === 0) {
+      setViewMonthIndex(11);
+      setViewYear((year) => year - 1);
+    } else {
+      setViewMonthIndex((month) => month - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (viewMonthIndex === 11) {
+      setViewMonthIndex(0);
+      setViewYear((year) => year + 1);
+    } else {
+      setViewMonthIndex((month) => month + 1);
+    }
+  };
+
+  return (
+    <View style={adminStyles.inlinePickerLayer}>
+      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.datePickerCard} onPress={() => {}}>
+          <Text style={styles.simpleListTitle}>{title}</Text>
+          <View style={styles.datePickerHeaderRow}>
+            <Pressable onPress={goToPreviousMonth} hitSlop={8}>
+              <Feather name="chevron-left" size={20} color="#5C6580" />
+            </Pressable>
+            <Text style={styles.datePickerMonthLabel}>{monthLabel}</Text>
+            <Pressable onPress={goToNextMonth} hitSlop={8}>
+              <Feather name="chevron-right" size={20} color="#5C6580" />
+            </Pressable>
+          </View>
+
+          <View style={styles.calendarWeekDaysRow}>
+            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((dayLabel, index) => (
+              <Text key={`${dayLabel}-${index}`} style={styles.calendarWeekDayLabel}>
+                {dayLabel}
+              </Text>
+            ))}
+          </View>
+
+          {weeks.map((week, weekIndex) => (
+            <View key={`week-${weekIndex}`} style={styles.calendarWeekRow}>
+              {week.map((day) => {
+                const isSelected =
+                  day.isCurrentMonth &&
+                  !!selectedDate &&
+                  viewYear === selectedDate.getFullYear() &&
+                  viewMonthIndex === selectedDate.getMonth() &&
+                  day.dayNumber === selectedDate.getDate();
+
+                return (
+                  <Pressable
+                    key={day.key}
+                    style={styles.calendarDayCell}
+                    disabled={!day.isCurrentMonth}
+                    onPress={() => {
+                      onSelect(formatDateBR(new Date(viewYear, viewMonthIndex, day.dayNumber)));
+                      onClose();
+                    }}
+                  >
+                    <View style={styles.calendarDayContent}>
+                      <View style={[styles.calendarDayCircle, isSelected ? styles.calendarDayCircleSelected : null]}>
+                        <Text
+                          style={[
+                            styles.calendarDayText,
+                            !day.isCurrentMonth ? styles.calendarDayTextMuted : null,
+                            isSelected ? styles.calendarDayTextSelected : null,
+                          ]}
+                        >
+                          {day.dayNumber}
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+        </Pressable>
+      </Pressable>
+    </View>
+  );
+}
+
 // ---------- Modal "Visualizar unidade" ----------
 
 function AdminUnidadeDetailModal({
@@ -3504,6 +3637,7 @@ function AdminVenderUnidadeModal({
   const [destinoMap, setDestinoMap] = useState<Record<string, string>>({});
   const [destinoPickerFor, setDestinoPickerFor] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDataVendaPickerOpen, setIsDataVendaPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!visible || !unidade) return;
@@ -3593,13 +3727,12 @@ function AdminVenderUnidadeModal({
 
             <View style={adminStyles.formRow}>
               <View style={adminStyles.formRowItem}>
-                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Data da venda *</Text>
-                <TextInput
-                  style={styles.processTextInput}
+                <AdminSelectField
+                  label="Data da venda"
+                  required
                   value={dataVenda}
-                  onChangeText={setDataVenda}
                   placeholder="dd/mm/aaaa"
-                  placeholderTextColor="#A7AEC2"
+                  onPress={() => setIsDataVendaPickerOpen(true)}
                 />
               </View>
               <View style={adminStyles.formRowItem}>
@@ -3616,7 +3749,7 @@ function AdminVenderUnidadeModal({
 
             <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Observação</Text>
             <TextInput
-              style={[styles.processTextInput, styles.processDocumentationArea]}
+              style={[styles.processTextInput, { minHeight: 64 }]}
               value={observacao}
               onChangeText={setObservacao}
               placeholder="Opcional"
@@ -3684,6 +3817,14 @@ function AdminVenderUnidadeModal({
                 );
               })
             )}
+            <View style={adminStyles.venderWarningBox}>
+              <Feather name="alert-triangle" size={14} color={GOLD} />
+              <Text style={adminStyles.venderWarningText}>
+                Ao confirmar: a unidade é marcada como vendida e inativa; transferências são registradas como
+                efetivadas na data da venda; e os demais colaboradores ficam desligados por venda do estabelecimento
+                (sem rescisão), com data de demissão igual à data da venda.
+              </Text>
+            </View>
           </ScrollView>
 
           <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
@@ -3702,7 +3843,7 @@ function AdminVenderUnidadeModal({
             >
               <Feather name="dollar-sign" size={13} color={RED} />
               <Text style={[styles.secondaryButtonText, { color: RED }]}>
-                {isSubmitting ? 'Processando...' : 'Confirmar venda'}
+                {isSubmitting ? 'Processando...' : 'Vender unidade'}
               </Text>
             </Pressable>
           </View>
@@ -3721,6 +3862,13 @@ function AdminVenderUnidadeModal({
           }
         }}
         onClose={() => setDestinoPickerFor(null)}
+      />
+      <AdminDatePickerModal
+        visible={isDataVendaPickerOpen}
+        title="Data da venda"
+        value={dataVenda}
+        onSelect={setDataVenda}
+        onClose={() => setIsDataVendaPickerOpen(false)}
       />
     </Modal>
   );
@@ -5835,5 +5983,19 @@ const adminStyles = StyleSheet.create({
     fontStyle: 'italic',
     maxWidth: 120,
     textAlign: 'right',
+  },
+  venderWarningBox: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#FCEFDA',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 14,
+  },
+  venderWarningText: {
+    flex: 1,
+    color: '#7A5A17',
+    fontSize: 11.5,
+    lineHeight: 16,
   },
 });
