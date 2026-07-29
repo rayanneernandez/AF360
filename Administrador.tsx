@@ -1722,36 +1722,42 @@ function AdminAcessoUsuarioModal({
                   ) : null}
 
                   {isOn && features.length > 0 && isExpanded ? (
-                    <View style={adminStyles.funcListWrap}>
-                      {features.map((feature) => {
-                        const isFeatureOn =
-                          functionState[`${feature.id}:LER`] ||
-                          functionState[`${feature.id}:ESCR.`] ||
-                          functionState[`${feature.id}:EDIT.`] ||
-                          functionState[`${feature.id}:EXCL.`];
-                        return (
-                          <View key={feature.id} style={adminStyles.funcRow}>
-                            <Text style={adminStyles.funcRowText} numberOfLines={1}>
-                              {feature.name}
-                            </Text>
-                            <ToggleSwitch
-                              value={Boolean(isFeatureOn)}
-                              onValueChange={() =>
-                                setFunctionState((current) => {
-                                  const turningOn = !isFeatureOn;
-                                  return {
-                                    ...current,
-                                    [`${feature.id}:LER`]: turningOn,
-                                    [`${feature.id}:ESCR.`]: turningOn ? current[`${feature.id}:ESCR.`] : false,
-                                    [`${feature.id}:EDIT.`]: turningOn ? current[`${feature.id}:EDIT.`] : false,
-                                    [`${feature.id}:EXCL.`]: turningOn ? current[`${feature.id}:EXCL.`] : false,
-                                  };
-                                })
-                              }
-                            />
+                    <View style={adminStyles.cargoPermTableWrap}>
+                      <View style={adminStyles.cargoPermHeaderRow}>
+                        <View style={adminStyles.cargoPermFunctionCell}>
+                          <Text style={adminStyles.cargoPermHeaderLabel}>FUNÇÃO</Text>
+                        </View>
+                        {adminPermColumns.map((col) => (
+                          <View key={col} style={adminStyles.cargoPermCheckboxCell}>
+                            <Text style={adminStyles.cargoPermHeaderLabel}>{col}</Text>
                           </View>
-                        );
-                      })}
+                        ))}
+                      </View>
+                      {features.map((feature) => (
+                        <View key={feature.id} style={adminStyles.cargoPermRow}>
+                          <View style={adminStyles.cargoPermFunctionCell}>
+                            <Text style={adminStyles.cargoPermFunctionText}>{feature.name}</Text>
+                          </View>
+                          {adminPermColumns.map((col) => {
+                            const key = `${feature.id}:${col}`;
+                            return (
+                              <AdminPermCheckbox
+                                key={col}
+                                active={Boolean(functionState[key])}
+                                onPress={() =>
+                                  setFunctionState((current) => ({ ...current, [key]: !current[key] }))
+                                }
+                              />
+                            );
+                          })}
+                        </View>
+                      ))}
+                    </View>
+                  ) : isOn ? (
+                    <View style={adminStyles.cargoPermTableWrap}>
+                      <Text style={adminStyles.cargoPermNote}>
+                        Permissões granulares ainda não mapeadas para este módulo.
+                      </Text>
                     </View>
                   ) : null}
                 </View>
