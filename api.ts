@@ -919,6 +919,15 @@ export type AdminUnidadeWriteBody = {
   estado?: string | null;
   idq?: string | null;
   is_active?: boolean;
+  cd_rede?: string | null;
+  regiao?: string | null;
+  proprietario?: string | null;
+  rua?: string | null;
+  numero?: string | null;
+  bairro?: string | null;
+  cep?: string | null;
+  endereco_texto?: string | null;
+  ipiranga_habilitado?: boolean;
 };
 
 export async function createAdminUnidade(

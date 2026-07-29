@@ -3409,26 +3409,44 @@ function AdminUnidadeDetailModal({
 
 type AdminUnidadeFormValues = {
   nomeFantasia: string;
+  apelido: string;
   razaoSocial: string;
   cnpj: string;
   bandeira: AdminUnidadeBandeira | '';
   tipo: AdminUnidadeTipo;
+  proprietario: string;
+  idq: string;
+  cdRede: string;
+  rua: string;
+  numero: string;
+  bairro: string;
+  cep: string;
   cidade: string;
   estado: string;
-  idq: string;
+  enderecoTexto: string;
+  ipirangaHabilitado: boolean;
   isActive: boolean;
 };
 
 function emptyAdminUnidadeForm(): AdminUnidadeFormValues {
   return {
     nomeFantasia: '',
+    apelido: '',
     razaoSocial: '',
     cnpj: '',
     bandeira: '',
     tipo: 'Posto',
+    proprietario: '',
+    idq: '',
+    cdRede: '',
+    rua: '',
+    numero: '',
+    bairro: '',
+    cep: '',
     cidade: '',
     estado: '',
-    idq: '',
+    enderecoTexto: '',
+    ipirangaHabilitado: false,
     isActive: true,
   };
 }
@@ -3484,14 +3502,28 @@ function AdminUnidadeFormModal({
               placeholderTextColor="#A7AEC2"
             />
 
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Nome fantasia</Text>
-            <TextInput
-              style={styles.processTextInput}
-              value={form.nomeFantasia}
-              onChangeText={(text) => setForm((current) => ({ ...current, nomeFantasia: text }))}
-              placeholder="Opcional"
-              placeholderTextColor="#A7AEC2"
-            />
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Nome fantasia</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.nomeFantasia}
+                  onChangeText={(text) => setForm((current) => ({ ...current, nomeFantasia: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Apelido</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.apelido}
+                  onChangeText={(text) => setForm((current) => ({ ...current, apelido: text }))}
+                  placeholder="Curto, p/ identificar"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+            </View>
 
             <View style={adminStyles.formRow}>
               <View style={adminStyles.formRowItem}>
@@ -3505,6 +3537,33 @@ function AdminUnidadeFormModal({
                 />
               </View>
               <View style={adminStyles.formRowItem}>
+                <AdminSelectField label="Tipo" value={form.tipo} onPress={() => setIsTipoPickerOpen(true)} />
+              </View>
+            </View>
+
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <AdminSelectField
+                  label="Bandeira"
+                  value={form.bandeira}
+                  placeholder="Sem bandeira"
+                  onPress={() => setIsBandeiraPickerOpen(true)}
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Proprietário</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.proprietario}
+                  onChangeText={(text) => setForm((current) => ({ ...current, proprietario: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+            </View>
+
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
                 <Text style={[styles.requestFieldLabel, styles.spacingTop]}>IDQ</Text>
                 <TextInput
                   style={styles.processTextInput}
@@ -3514,19 +3573,61 @@ function AdminUnidadeFormModal({
                   placeholderTextColor="#A7AEC2"
                 />
               </View>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>CD Rede</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.cdRede}
+                  onChangeText={(text) => setForm((current) => ({ ...current, cdRede: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
             </View>
 
             <View style={adminStyles.formRow}>
               <View style={adminStyles.formRowItem}>
-                <AdminSelectField
-                  label="Bandeira"
-                  value={form.bandeira}
-                  placeholder="Selecione..."
-                  onPress={() => setIsBandeiraPickerOpen(true)}
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Rua</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.rua}
+                  onChangeText={(text) => setForm((current) => ({ ...current, rua: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
                 />
               </View>
               <View style={adminStyles.formRowItem}>
-                <AdminSelectField label="Tipo" value={form.tipo} onPress={() => setIsTipoPickerOpen(true)} />
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Número</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.numero}
+                  onChangeText={(text) => setForm((current) => ({ ...current, numero: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+            </View>
+
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Bairro</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.bairro}
+                  onChangeText={(text) => setForm((current) => ({ ...current, bairro: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>CEP</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.cep}
+                  onChangeText={(text) => setForm((current) => ({ ...current, cep: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
               </View>
             </View>
 
@@ -3555,13 +3656,35 @@ function AdminUnidadeFormModal({
               </View>
             </View>
 
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Endereço (texto livre)</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.enderecoTexto}
+              onChangeText={(text) => setForm((current) => ({ ...current, enderecoTexto: text }))}
+              placeholder="Opcional"
+              placeholderTextColor="#A7AEC2"
+            />
+
             <View style={[adminStyles.cargoModuleToggleRow, styles.spacingTop]}>
+              <Text style={adminStyles.cargoModuleToggleLabel}>Ipiranga habilitado</Text>
+              <ToggleSwitch
+                value={form.ipirangaHabilitado}
+                onValueChange={() => setForm((current) => ({ ...current, ipirangaHabilitado: !current.ipirangaHabilitado }))}
+              />
+            </View>
+
+            <View style={adminStyles.cargoModuleToggleRow}>
               <Text style={adminStyles.cargoModuleToggleLabel}>Unidade ativa</Text>
               <ToggleSwitch
                 value={form.isActive}
                 onValueChange={() => setForm((current) => ({ ...current, isActive: !current.isActive }))}
               />
             </View>
+
+            <Text style={adminStyles.groupDescription}>
+              E-mail, telefone, datas de cadastro/primeira venda, contabilidade vinculada e serviços do posto ainda
+              não têm o schema/endpoints confirmados com o Lovable — entram aqui assim que confirmado.
+            </Text>
           </ScrollView>
 
           <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
@@ -3956,13 +4079,22 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
   const handleUnidadeSubmit = (values: AdminUnidadeFormValues) => {
     const body = {
       nome_fantasia: values.nomeFantasia.trim() || null,
+      apelido: values.apelido.trim() || null,
       razao_social: values.razaoSocial.trim(),
       cnpj: values.cnpj.trim(),
       bandeira: values.bandeira || undefined,
       tipo: values.tipo,
+      proprietario: values.proprietario.trim() || null,
+      idq: values.idq.trim() || null,
+      cd_rede: values.cdRede.trim() || null,
+      rua: values.rua.trim() || null,
+      numero: values.numero.trim() || null,
+      bairro: values.bairro.trim() || null,
+      cep: values.cep.trim() || null,
       cidade: values.cidade.trim() || null,
       estado: values.estado.trim() || null,
-      idq: values.idq.trim() || null,
+      endereco_texto: values.enderecoTexto.trim() || null,
+      ipiranga_habilitado: values.ipirangaHabilitado,
       is_active: values.isActive,
     };
 
@@ -4013,13 +4145,22 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
     setUnitBeingEdited(unidade);
     setUnitFormInitial({
       nomeFantasia: unidade.nomeFantasia ?? '',
+      apelido: unidade.apelido ?? '',
       razaoSocial: unidade.razaoSocial ?? '',
       cnpj: unidade.cnpj ?? '',
       bandeira: unidade.bandeira ?? '',
       tipo: unidade.tipo ?? 'Posto',
+      proprietario: unidade.proprietario ?? '',
+      idq: unidade.idq ?? '',
+      cdRede: unidade.cdRede ?? '',
+      rua: unidade.rua ?? '',
+      numero: unidade.numero ?? '',
+      bairro: unidade.bairro ?? '',
+      cep: unidade.cep ?? '',
       cidade: unidade.cidade ?? '',
       estado: unidade.estado ?? '',
-      idq: unidade.idq ?? '',
+      enderecoTexto: unidade.enderecoTexto ?? '',
+      ipirangaHabilitado: unidade.ipirangaHabilitado,
       isActive: unidade.isActive,
     });
     setIsUnitFormOpen(true);
