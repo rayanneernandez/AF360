@@ -1602,6 +1602,11 @@ function AdminAcessoUsuarioModal({
     const turningOn = !moduleOnState[moduleLabel];
 
     setModuleOnState((current) => ({ ...current, [moduleLabel]: turningOn }));
+    // Já abre a grade de funcionalidades na hora (sem precisar clicar em
+    // FUNCIONALIDADES de novo) quando o módulo tem funcionalidades cadastradas.
+    if (turningOn && getFeaturesForModuleLabel(moduleLabel, modules, moduleFeatures).length > 0) {
+      setExpandedModule(moduleLabel);
+    }
 
     const request = turningOn
       ? addAdminUsuarioModulo(usuario.id, mod ? { moduleId: mod.id } : { moduleSlug: slug }, actorId)
