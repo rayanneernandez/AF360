@@ -18,6 +18,11 @@ const {
   postAdminGrupo,
   patchAdminGrupo,
   deleteAdminGrupo,
+  getAdminUnidades,
+  postAdminUnidade,
+  patchAdminUnidade,
+  deleteAdminUnidade,
+  postAdminVenderUnidade,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -522,6 +527,116 @@ router.put('/usuarios/:id/permissoes', async (req, res) => {
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[admin/usuarios/:id/permissoes PUT] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Unidades (tabela própria public.empresas — schema completo confirmado
+// pelo Lovable em 29/07/2026: cnpj, bandeira, tipo, cidade/estado, is_active,
+// idq, nome_fantasia/apelido/razao_social, endereço, vendida/data_venda/
+// comprador/venda_observacao, etc). "colaboradores_ativos" já vem pronto no
+// retorno da listagem deles.
+// ---------------------------------------------------------------------------
+
+function mapUnidadeRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    nomeFantasia: row.nome_fantasia ?? null,
+    apelido: row.apelido ?? null,
+    razaoSocial: row.razao_social ?? null,
+    cnpj: row.cnpj ?? null,
+    bandeira: row.bandeira ?? null,
+    tipo: row.tipo ?? null,
+    cidade: row.cidade ?? null,
+    estado: row.estado ?? null,
+    idq: row.idq ?? null,
+    isActive: row.is_active !== false,
+    cdRede: row.cd_rede ?? null,
+    regiao: row.regiao ?? null,
+    rua: row.rua ?? null,
+    numero: row.numero ?? null,
+    bairro: row.bairro ?? null,
+    cep: row.cep ?? null,
+    enderecoTexto: row.endereco_texto ?? null,
+    proprietario: row.proprietario ?? null,
+    ipirangaHabilitado: Boolean(row.ipiranga_habilitado),
+    vendida: Boolean(row.vendida),
+    dataVenda: row.data_venda ?? null,
+    comprador: row.comprador ?? null,
+    vendaObservacao: row.venda_observacao ?? null,
+    colaboradoresAtivos: row.colaboradores_ativos ?? 0,
+  };
+}
+
+// GET /api/admin/unidades?q=&is_active=&vendida=
+router.get('/unidades', async (req, res) => {
+  try {
+    const json = await getAdminUnidades({
+      q: req.query.q,
+      is_active: req.query.is_active,
+      vendida: req.query.vendida,
+      order: 'razao_social:asc',
+      limit: 1000,
+    });
+    const unidades = (json?.data ?? []).map(mapUnidadeRow);
+    res.json({ ok: true, data: { count: json?.count ?? unidades.length, unidades } });
+  } catch (err) {
+    console.error('[admin/unidades] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/unidades?actorId=... — body com colunas reais de empresas
+// (razao_social e cnpj obrigatórios).
+router.post('/unidades', async (req, res) => {
+  try {
+    const json = await postAdminUnidade(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapUnidadeRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/unidades POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/unidades/:id?actorId=...
+router.patch('/unidades/:id', async (req, res) => {
+  try {
+    const json = await patchAdminUnidade(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapUnidadeRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/unidades/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/unidades/:id?actorId=... — 409 se tiver colaborador vinculado.
+router.delete('/unidades/:id', async (req, res) => {
+  try {
+    const json = await deleteAdminUnidade(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/unidades/:id DELETE] erro:', err.message);
+    const status = err.lovableStatus === 409 ? 409 : writeErrorStatus(err);
+    res.status(status).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/unidades/:id/vender?actorId=... — ação única confirmada
+// pelo Lovable: marca a unidade como vendida/inativa e, em lote, transfere
+// (rh_transferencias + rh_colaboradores.empresa_id) ou desliga (status,
+// data_demissao, motivo, bloqueio de acesso/e-mail) cada colaborador ativo
+// dela. Body: { data_venda, comprador?, observacao?, transferencias:
+// [{ colaborador_id, empresa_destino_id }] } — quem não estiver na lista de
+// transferências é desligado por venda.
+router.post('/unidades/:id/vender', async (req, res) => {
+  try {
+    const body = { unidade_id: req.params.id, ...(req.body ?? {}) };
+    const json = await postAdminVenderUnidade(body, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/unidades/:id/vender POST] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });

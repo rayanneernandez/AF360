@@ -276,6 +276,31 @@ function deleteAdminGrupo(id, actorId) {
   return lovableDelete('/api/public/internal/admin-grupos', { id }, actorId);
 }
 
+// --- Unidades (tabela própria public.empresas, schema completo confirmado
+// pelo Lovable em 29/07/2026) e a ação especial "Vender unidade" (uma
+// chamada só: marca a unidade como vendida/inativa e transfere/desliga em
+// lote os colaboradores ativos dela). ---
+
+function getAdminUnidades({ limit, offset, q, order, is_active, vendida } = {}) {
+  return lovableGet('/api/public/internal/admin-unidades', { limit, offset, q, order, is_active, vendida });
+}
+
+function postAdminUnidade(body, actorId) {
+  return lovablePost('/api/public/internal/admin-unidades', {}, body, actorId);
+}
+
+function patchAdminUnidade(id, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-unidades', { id }, body, actorId);
+}
+
+function deleteAdminUnidade(id, actorId) {
+  return lovableDelete('/api/public/internal/admin-unidades', { id }, actorId);
+}
+
+function postAdminVenderUnidade(body, actorId) {
+  return lovablePost('/api/public/internal/admin-vender-unidade', {}, body, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -303,4 +328,9 @@ module.exports = {
   postAdminGrupo,
   patchAdminGrupo,
   deleteAdminGrupo,
+  getAdminUnidades,
+  postAdminUnidade,
+  patchAdminUnidade,
+  deleteAdminUnidade,
+  postAdminVenderUnidade,
 };

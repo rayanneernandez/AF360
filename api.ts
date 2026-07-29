@@ -866,6 +866,108 @@ export async function deleteAdminGrupo(id: string, actorId?: string | null): Pro
   await api.delete(withActorId(`/api/admin/grupos/${encodeURIComponent(id)}`, actorId));
 }
 
+// --- Admin: Unidades (tabela própria public.empresas — schema completo e
+// ação "Vender unidade" confirmados pelo Lovable em 29/07/2026) ---
+
+export type AdminUnidadeBandeira = 'American Fuel' | 'Ipiranga' | 'Shell' | 'Vibra';
+export type AdminUnidadeTipo = 'Matriz' | 'Posto' | 'Loja' | 'Escritório';
+
+export type AdminUnidadeItem = {
+  id: string;
+  nomeFantasia: string | null;
+  apelido: string | null;
+  razaoSocial: string | null;
+  cnpj: string | null;
+  bandeira: AdminUnidadeBandeira | null;
+  tipo: AdminUnidadeTipo | null;
+  cidade: string | null;
+  estado: string | null;
+  idq: string | null;
+  isActive: boolean;
+  cdRede: string | null;
+  regiao: string | null;
+  rua: string | null;
+  numero: string | null;
+  bairro: string | null;
+  cep: string | null;
+  enderecoTexto: string | null;
+  proprietario: string | null;
+  ipirangaHabilitado: boolean;
+  vendida: boolean;
+  dataVenda: string | null;
+  comprador: string | null;
+  vendaObservacao: string | null;
+  colaboradoresAtivos: number;
+};
+
+export type AdminUnidadesDetalhe = { count: number; unidades: AdminUnidadeItem[] };
+
+export async function fetchAdminUnidades(q?: string): Promise<AdminUnidadesDetalhe> {
+  const query = q ? `?q=${encodeURIComponent(q)}` : '';
+  const json = await api.get(`/api/admin/unidades${query}`);
+  return json.data as AdminUnidadesDetalhe;
+}
+
+export type AdminUnidadeWriteBody = {
+  nome_fantasia?: string | null;
+  apelido?: string | null;
+  razao_social?: string;
+  cnpj?: string;
+  bandeira?: AdminUnidadeBandeira;
+  tipo?: AdminUnidadeTipo;
+  cidade?: string | null;
+  estado?: string | null;
+  idq?: string | null;
+  is_active?: boolean;
+};
+
+export async function createAdminUnidade(
+  body: AdminUnidadeWriteBody,
+  actorId?: string | null
+): Promise<AdminUnidadeItem> {
+  const json = await api.post(withActorId('/api/admin/unidades', actorId), body);
+  return json.data as AdminUnidadeItem;
+}
+
+export async function updateAdminUnidade(
+  id: string,
+  body: AdminUnidadeWriteBody,
+  actorId?: string | null
+): Promise<AdminUnidadeItem> {
+  const json = await api.patch(withActorId(`/api/admin/unidades/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdminUnidadeItem;
+}
+
+export async function deleteAdminUnidade(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/admin/unidades/${encodeURIComponent(id)}`, actorId));
+}
+
+export type AdminVenderUnidadeBody = {
+  data_venda: string;
+  comprador?: string | null;
+  observacao?: string | null;
+  transferencias: Array<{ colaborador_id: string; empresa_destino_id: string }>;
+};
+
+export type AdminVenderUnidadeResultado = {
+  ok: boolean;
+  transferidos: number;
+  desligados: number;
+  total_ativos: number;
+  webhook_ok_total?: number;
+  webhook_falha_total?: number;
+  falhas?: unknown[];
+};
+
+export async function venderAdminUnidade(
+  id: string,
+  body: AdminVenderUnidadeBody,
+  actorId?: string | null
+): Promise<AdminVenderUnidadeResultado> {
+  const json = await api.post(withActorId(`/api/admin/unidades/${encodeURIComponent(id)}/vender`, actorId), body);
+  return json.data as AdminVenderUnidadeResultado;
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {

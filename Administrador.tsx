@@ -60,6 +60,12 @@ import {
   resetAdminUsuarioModulos,
   putAdminUsuarioPermissoes,
   fetchRhUnidades,
+  fetchAdminUnidades,
+  createAdminUnidade,
+  updateAdminUnidade,
+  deleteAdminUnidade,
+  venderAdminUnidade,
+  fetchRhColaboradores,
   ApiError,
   type AdminUsuarioItem,
   type AdminCargoItem,
@@ -68,7 +74,11 @@ import {
   type AdminModuleItem,
   type AdminModuleFeatureItem,
   type AdminFeaturePermission,
+  type AdminUnidadeItem,
+  type AdminUnidadeBandeira,
+  type AdminUnidadeTipo,
   type RhUnidadeItem,
+  type RhColaboradorRaw,
 } from './api';
 
 // ---------- Cores compartilhadas ----------
@@ -3107,47 +3117,764 @@ export function AdminGruposScreen({ navigation }: ScreenProps<'AdminGrupos'>) {
 // 6. Unidades
 // ============================================================================
 
-type AdminUnidade = {
-  id: string;
-  name: string;
-  cnpj: string;
-  bandeira: string;
-  city: string;
-  active: boolean;
-};
-
-const adminUnidadesMock: AdminUnidade[] = [
-  { id: 'un1', name: 'Auto Mecânica Juquinha Ltd', cnpj: '33.358.771/0001-04', bandeira: 'Vibra', city: 'Rio de Janeiro/RJ', active: true },
-  { id: 'un2', name: 'Auto Posto BR 101 Norte Ltda', cnpj: '10.856.579/0001-42', bandeira: 'American Fuel', city: '—', active: true },
-  { id: 'un3', name: 'Auto Posto Estrela do Oceano Ltda', cnpj: '08.638.802/0001-33', bandeira: 'Ipiranga', city: 'Rio de Janeiro/RJ', active: true },
-  { id: 'un4', name: 'Auto Posto de Serviços Via Dutra 1', cnpj: '04.010.834/0001-39', bandeira: 'Ipiranga', city: 'Nova Iguaçu/RJ', active: true },
-  { id: 'un5', name: 'Auto Posto de Serviços Vilar', cnpj: '32.305.732/0001-86', bandeira: 'Ipiranga', city: 'S. J. de Meriti/RJ', active: true },
-  { id: 'un6', name: 'Posto Trabalho Itaguaí', cnpj: '24.314.862/0001-57', bandeira: 'Ipiranga', city: 'Itaguaí/RJ', active: true },
-];
+// Dados reais via GET/POST/PATCH/DELETE /api/admin/unidades — tabela própria
+// public.empresas (schema completo confirmado pelo Lovable em 29/07/2026:
+// cnpj, bandeira, tipo, cidade/estado, is_active, idq, nome_fantasia/apelido/
+// razao_social, endereço, vendida/data_venda/comprador/venda_observacao).
+// "Vender unidade" usa a ação única POST /api/admin/unidades/:id/vender.
 
 const adminBandeiraColorMap: Record<string, { bg: string; color: string }> = {
   Vibra: { bg: PURPLE_BG, color: PURPLE },
   'American Fuel': { bg: RED_BG, color: RED },
   Ipiranga: { bg: GOLD_BG, color: GOLD },
+  Shell: { bg: GOLD_BG, color: GOLD },
 };
 
+const ADMIN_UNIDADE_BANDEIRAS: AdminUnidadeBandeira[] = ['American Fuel', 'Ipiranga', 'Shell', 'Vibra'];
+const ADMIN_UNIDADE_TIPOS: AdminUnidadeTipo[] = ['Matriz', 'Posto', 'Loja', 'Escritório'];
+
+function adminTodayBrLabel(): string {
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}/${now.getFullYear()}`;
+}
+
+function adminBrDateToIso(label: string): string | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(label.trim());
+  if (!match) return null;
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
+
+function adminUnidadeDisplayName(unidade: AdminUnidadeItem): string {
+  return unidade.nomeFantasia || unidade.razaoSocial || '(sem nome)';
+}
+
+// ---------- Modal "Visualizar unidade" ----------
+
+function AdminUnidadeDetailModal({
+  visible,
+  unidade,
+  onClose,
+  onEdit,
+}: {
+  visible: boolean;
+  unidade: AdminUnidadeItem | null;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  if (!unidade) return null;
+  const bandeiraColors = (unidade.bandeira && adminBandeiraColorMap[unidade.bandeira]) || { bg: GRAY_BG, color: GRAY };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>{adminUnidadeDisplayName(unidade)}</Text>
+              <Text style={adminStyles.detailSubEmail}>Unidade • {unidade.cnpj || 'CNPJ não informado'}</Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={adminStyles.detailGridRow}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>RAZÃO SOCIAL</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.razaoSocial || '—'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>IDQ</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.idq || '—'}</Text>
+              </View>
+            </View>
+
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>BANDEIRA</Text>
+                {unidade.bandeira ? (
+                  <AdminColorPill label={unidade.bandeira} bg={bandeiraColors.bg} color={bandeiraColors.color} />
+                ) : (
+                  <Text style={adminStyles.detailFieldValue}>—</Text>
+                )}
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>TIPO</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.tipo || '—'}</Text>
+              </View>
+            </View>
+
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>CIDADE/UF</Text>
+                <Text style={adminStyles.detailFieldValue}>
+                  {unidade.cidade ? `${unidade.cidade}${unidade.estado ? `/${unidade.estado}` : ''}` : '—'}
+                </Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>STATUS</Text>
+                <View
+                  style={[
+                    adminStyles.detailBadgeBase,
+                    { backgroundColor: unidade.vendida ? GRAY_BG : unidade.isActive ? GREEN_BG : RED_BG },
+                  ]}
+                >
+                  <Feather
+                    name={unidade.vendida ? 'archive' : unidade.isActive ? 'check-circle' : 'x-circle'}
+                    size={11}
+                    color={unidade.vendida ? GRAY : unidade.isActive ? GREEN : RED}
+                  />
+                  <Text
+                    style={[
+                      adminStyles.detailBadgeText,
+                      { color: unidade.vendida ? GRAY : unidade.isActive ? GREEN : RED },
+                    ]}
+                  >
+                    {unidade.vendida ? 'Vendida' : unidade.isActive ? 'Ativa' : 'Inativa'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>COLABORADORES ATIVOS</Text>
+            <Text style={adminStyles.detailFieldValue}>{unidade.colaboradoresAtivos}</Text>
+
+            {unidade.vendida ? (
+              <>
+                <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>VENDA</Text>
+                <Text style={adminStyles.detailFieldValue}>
+                  {formatAdminDate(unidade.dataVenda)}
+                  {unidade.comprador ? ` • ${unidade.comprador}` : ''}
+                </Text>
+                {unidade.vendaObservacao ? (
+                  <Text style={adminStyles.groupDescription}>{unidade.vendaObservacao}</Text>
+                ) : null}
+              </>
+            ) : null}
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]} onPress={onEdit}>
+              <Feather name="edit-2" size={13} color="#2E468F" />
+              <Text style={styles.secondaryButtonText}>Editar</Text>
+            </Pressable>
+            <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+              <Text style={adminStyles.ghostButtonText}>Fechar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ---------- Modal "Nova Unidade" / "Editar — {unidade}" ----------
+
+type AdminUnidadeFormValues = {
+  nomeFantasia: string;
+  razaoSocial: string;
+  cnpj: string;
+  bandeira: AdminUnidadeBandeira | '';
+  tipo: AdminUnidadeTipo;
+  cidade: string;
+  estado: string;
+  idq: string;
+  isActive: boolean;
+};
+
+function emptyAdminUnidadeForm(): AdminUnidadeFormValues {
+  return {
+    nomeFantasia: '',
+    razaoSocial: '',
+    cnpj: '',
+    bandeira: '',
+    tipo: 'Posto',
+    cidade: '',
+    estado: '',
+    idq: '',
+    isActive: true,
+  };
+}
+
+function AdminUnidadeFormModal({
+  visible,
+  mode,
+  initialValues,
+  isSaving,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  mode: 'create' | 'edit';
+  initialValues: AdminUnidadeFormValues;
+  isSaving?: boolean;
+  onClose: () => void;
+  onSubmit: (values: AdminUnidadeFormValues) => void;
+}) {
+  const [form, setForm] = useState<AdminUnidadeFormValues>(initialValues);
+  const [isBandeiraPickerOpen, setIsBandeiraPickerOpen] = useState(false);
+  const [isTipoPickerOpen, setIsTipoPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (visible) setForm(initialValues);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, initialValues.razaoSocial]);
+
+  const isValid = form.razaoSocial.trim().length > 0 && form.cnpj.trim().length > 0;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>
+                {mode === 'create' ? 'Nova Unidade' : `Editar — ${initialValues.razaoSocial}`}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Razão social *</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.razaoSocial}
+              onChangeText={(text) => setForm((current) => ({ ...current, razaoSocial: text }))}
+              placeholder="Ex: Auto Posto Exemplo Ltda"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Nome fantasia</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.nomeFantasia}
+              onChangeText={(text) => setForm((current) => ({ ...current, nomeFantasia: text }))}
+              placeholder="Opcional"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>CNPJ *</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.cnpj}
+                  onChangeText={(text) => setForm((current) => ({ ...current, cnpj: text }))}
+                  placeholder="00.000.000/0001-00"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>IDQ</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.idq}
+                  onChangeText={(text) => setForm((current) => ({ ...current, idq: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+            </View>
+
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <AdminSelectField
+                  label="Bandeira"
+                  value={form.bandeira}
+                  placeholder="Selecione..."
+                  onPress={() => setIsBandeiraPickerOpen(true)}
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <AdminSelectField label="Tipo" value={form.tipo} onPress={() => setIsTipoPickerOpen(true)} />
+              </View>
+            </View>
+
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Cidade</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.cidade}
+                  onChangeText={(text) => setForm((current) => ({ ...current, cidade: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>UF</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.estado}
+                  onChangeText={(text) => setForm((current) => ({ ...current, estado: text.toUpperCase().slice(0, 2) }))}
+                  placeholder="RJ"
+                  placeholderTextColor="#A7AEC2"
+                  autoCapitalize="characters"
+                  maxLength={2}
+                />
+              </View>
+            </View>
+
+            <View style={[adminStyles.cargoModuleToggleRow, styles.spacingTop]}>
+              <Text style={adminStyles.cargoModuleToggleLabel}>Unidade ativa</Text>
+              <ToggleSwitch
+                value={form.isActive}
+                onValueChange={() => setForm((current) => ({ ...current, isActive: !current.isActive }))}
+              />
+            </View>
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+              <Text style={adminStyles.ghostButtonText}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.secondaryButton,
+                adminStyles.secondaryButtonCompact,
+                !isValid || isSaving ? { opacity: 0.6 } : null,
+              ]}
+              disabled={!isValid || isSaving}
+              onPress={() => onSubmit(form)}
+            >
+              <Feather name="save" size={13} color="#2E468F" />
+              <Text style={styles.secondaryButtonText}>
+                {isSaving ? 'Salvando...' : mode === 'create' ? 'Criar Unidade' : 'Salvar'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      <AdminSimplePickerModal
+        visible={isBandeiraPickerOpen}
+        title="Bandeira"
+        options={ADMIN_UNIDADE_BANDEIRAS}
+        selectedValue={form.bandeira}
+        onSelect={(value) => setForm((current) => ({ ...current, bandeira: value as AdminUnidadeBandeira }))}
+        onClose={() => setIsBandeiraPickerOpen(false)}
+      />
+      <AdminSimplePickerModal
+        visible={isTipoPickerOpen}
+        title="Tipo"
+        options={ADMIN_UNIDADE_TIPOS}
+        selectedValue={form.tipo}
+        onSelect={(value) => setForm((current) => ({ ...current, tipo: value as AdminUnidadeTipo }))}
+        onClose={() => setIsTipoPickerOpen(false)}
+      />
+    </Modal>
+  );
+}
+
+// ---------- Modal "Vender unidade" ----------
+// Puxa os colaboradores ATIVOS de verdade (fetchRhColaboradores com
+// empresaId/status=ativo) e manda tudo numa chamada só pro endpoint
+// admin-vender-unidade confirmado pelo Lovable: quem for marcado
+// "Transferir?" precisa de uma unidade de destino selecionada; quem não for
+// marcado é desligado por venda automaticamente do lado deles.
+function AdminVenderUnidadeModal({
+  visible,
+  unidade,
+  unidadesDestino,
+  actorId,
+  onClose,
+  onSold,
+}: {
+  visible: boolean;
+  unidade: AdminUnidadeItem | null;
+  unidadesDestino: AdminUnidadeItem[];
+  actorId?: string | null;
+  onClose: () => void;
+  onSold: () => void;
+}) {
+  const [dataVenda, setDataVenda] = useState(adminTodayBrLabel());
+  const [comprador, setComprador] = useState('');
+  const [observacao, setObservacao] = useState('');
+  const [colaboradores, setColaboradores] = useState<RhColaboradorRaw[]>([]);
+  const [isLoadingColabs, setIsLoadingColabs] = useState(false);
+  const [colabsError, setColabsError] = useState<string | null>(null);
+  const [transferMap, setTransferMap] = useState<Record<string, boolean>>({});
+  const [destinoMap, setDestinoMap] = useState<Record<string, string>>({});
+  const [destinoPickerFor, setDestinoPickerFor] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !unidade) return;
+    setDataVenda(adminTodayBrLabel());
+    setComprador('');
+    setObservacao('');
+    setTransferMap({});
+    setDestinoMap({});
+    setIsLoadingColabs(true);
+    setColabsError(null);
+
+    fetchRhColaboradores({ status: 'ativo', empresaId: unidade.id })
+      .then((data) => setColaboradores(data))
+      .catch((err) =>
+        setColabsError(err instanceof Error ? err.message : 'Não foi possível carregar os colaboradores da unidade.')
+      )
+      .finally(() => setIsLoadingColabs(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, unidade?.id]);
+
+  if (!unidade) return null;
+
+  const transferCount = Object.values(transferMap).filter(Boolean).length;
+  const desligarCount = colaboradores.length - transferCount;
+
+  const handleSubmit = () => {
+    const isoData = adminBrDateToIso(dataVenda);
+    if (!isoData) {
+      Alert.alert('Data inválida', 'Informe a data da venda no formato dd/mm/aaaa.');
+      return;
+    }
+    const transferindo = colaboradores.filter((c) => transferMap[c.id]);
+    const semDestino = transferindo.find((c) => !destinoMap[c.id]);
+    if (semDestino) {
+      Alert.alert('Falta destino', `Selecione a unidade de destino para "${semDestino.nome_completo}".`);
+      return;
+    }
+
+    setIsSubmitting(true);
+    venderAdminUnidade(
+      unidade.id,
+      {
+        data_venda: isoData,
+        comprador: comprador.trim() || null,
+        observacao: observacao.trim() || null,
+        transferencias: transferindo.map((c) => ({ colaborador_id: c.id, empresa_destino_id: destinoMap[c.id] })),
+      },
+      actorId
+    )
+      .then((resultado) => {
+        onClose();
+        onSold();
+        const avisoFalhas =
+          resultado.falhas && resultado.falhas.length > 0
+            ? `\n\nAtenção: ${resultado.falhas.length} bloqueio(s) de e-mail pendente(s) para reprocessar.`
+            : '';
+        Alert.alert(
+          'Unidade vendida',
+          `${adminUnidadeDisplayName(unidade)} foi marcada como vendida.\n\nTransferidos: ${resultado.transferidos}\nDesligados: ${resultado.desligados}${avisoFalhas}`
+        );
+      })
+      .catch((err) => showAdminApiError(err, 'Não foi possível concluir a venda da unidade.'))
+      .finally(() => setIsSubmitting(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>Vender unidade</Text>
+              <Text style={adminStyles.detailSubEmail} numberOfLines={1}>
+                {adminUnidadeDisplayName(unidade)}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={adminStyles.groupDescription}>
+              Registre a data da venda e decida, para cada colaborador ativo, se ele será transferido para outra
+              unidade ou desligado por venda do estabelecimento (sem rescisão manual).
+            </Text>
+
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Data da venda *</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={dataVenda}
+                  onChangeText={setDataVenda}
+                  placeholder="dd/mm/aaaa"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Comprador</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={comprador}
+                  onChangeText={setComprador}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+            </View>
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Observação</Text>
+            <TextInput
+              style={[styles.processTextInput, styles.processDocumentationArea]}
+              value={observacao}
+              onChangeText={setObservacao}
+              placeholder="Opcional"
+              placeholderTextColor="#A7AEC2"
+              multiline
+              textAlignVertical="top"
+            />
+
+            <Text style={[adminStyles.cargoFormSectionTitle, styles.spacingTop]}>
+              Colaboradores ativos ({colaboradores.length})
+            </Text>
+            <View style={[adminStyles.roleModulesRow, { marginTop: 6 }]}>
+              <AdminColorPill label={`Transferir: ${transferCount}`} bg={BLUE_BG} color={BLUE} />
+              <AdminColorPill label={`Desligar: ${desligarCount}`} bg={GOLD_BG} color={GOLD} />
+            </View>
+
+            {isLoadingColabs ? (
+              <AdminEmptyState message="Carregando colaboradores..." />
+            ) : colabsError ? (
+              <AdminEmptyState message={colabsError} />
+            ) : colaboradores.length === 0 ? (
+              <AdminEmptyState message="Nenhum colaborador ativo nessa unidade." />
+            ) : (
+              colaboradores.map((colaborador) => {
+                const isTransferindo = Boolean(transferMap[colaborador.id]);
+                const destinoId = destinoMap[colaborador.id];
+                const destinoNome = destinoId
+                  ? adminUnidadeDisplayName(unidadesDestino.find((u) => u.id === destinoId)!)
+                  : '';
+                return (
+                  <View key={colaborador.id} style={adminStyles.venderColabRow}>
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() =>
+                        setTransferMap((current) => ({ ...current, [colaborador.id]: !current[colaborador.id] }))
+                      }
+                    >
+                      <View style={[adminStyles.cargoPermCheckbox, isTransferindo ? adminStyles.cargoPermCheckboxActive : null]}>
+                        {isTransferindo ? <Feather name="check" size={11} color="#FFFFFF" /> : null}
+                      </View>
+                    </Pressable>
+                    <View style={{ flex: 1 }}>
+                      <Text style={adminStyles.listName} numberOfLines={1}>
+                        {colaborador.nome_completo || '(sem nome)'}
+                      </Text>
+                      <Text style={adminStyles.listMeta} numberOfLines={1}>
+                        {colaborador.cargo || 'Sem cargo'}
+                        {colaborador.matricula ? ` • Mat. ${colaborador.matricula}` : ''}
+                      </Text>
+                    </View>
+                    {isTransferindo ? (
+                      <Pressable
+                        style={adminStyles.venderDestinoButton}
+                        onPress={() => setDestinoPickerFor(colaborador.id)}
+                      >
+                        <Text style={adminStyles.venderDestinoButtonText} numberOfLines={1}>
+                          {destinoNome || 'Selecione a unidade destino...'}
+                        </Text>
+                        <Feather name="chevron-down" size={14} color="#7A8299" />
+                      </Pressable>
+                    ) : (
+                      <Text style={adminStyles.venderDesligadoLabel}>Desligado por venda</Text>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+              <Text style={adminStyles.ghostButtonText}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.secondaryButton,
+                adminStyles.secondaryButtonCompact,
+                { backgroundColor: RED_BG },
+                isSubmitting ? { opacity: 0.6 } : null,
+              ]}
+              disabled={isSubmitting}
+              onPress={handleSubmit}
+            >
+              <Feather name="dollar-sign" size={13} color={RED} />
+              <Text style={[styles.secondaryButtonText, { color: RED }]}>
+                {isSubmitting ? 'Processando...' : 'Confirmar venda'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      <AdminSimplePickerModal
+        visible={destinoPickerFor !== null}
+        title="Unidade de destino"
+        options={unidadesDestino.map((u) => adminUnidadeDisplayName(u))}
+        selectedValue={destinoPickerFor ? adminUnidadeDisplayName(unidadesDestino.find((u) => u.id === destinoMap[destinoPickerFor]) ?? ({} as AdminUnidadeItem)) : ''}
+        onSelect={(label) => {
+          const alvo = unidadesDestino.find((u) => adminUnidadeDisplayName(u) === label);
+          if (destinoPickerFor && alvo) {
+            setDestinoMap((current) => ({ ...current, [destinoPickerFor]: alvo.id }));
+          }
+        }}
+        onClose={() => setDestinoPickerFor(null)}
+      />
+    </Modal>
+  );
+}
+
+const ADMIN_UNIDADES_PAGE_SIZE = 10;
+
 export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+
   const [search, setSearch] = useState('');
-  const [unidades, setUnidades] = useState(adminUnidadesMock);
+  const [page, setPage] = useState(0);
+  const [unidades, setUnidades] = useState<AdminUnidadeItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [unitActionsFor, setUnitActionsFor] = useState<AdminUnidadeItem | null>(null);
+  const [unitDetail, setUnitDetail] = useState<AdminUnidadeItem | null>(null);
+  const [isUnitFormOpen, setIsUnitFormOpen] = useState(false);
+  const [unitFormMode, setUnitFormMode] = useState<'create' | 'edit'>('create');
+  const [unitFormInitial, setUnitFormInitial] = useState<AdminUnidadeFormValues>(emptyAdminUnidadeForm());
+  const [unitBeingEdited, setUnitBeingEdited] = useState<AdminUnidadeItem | null>(null);
+  const [isSavingUnit, setIsSavingUnit] = useState(false);
+  const [venderFor, setVenderFor] = useState<AdminUnidadeItem | null>(null);
+
+  const showApiError = showAdminApiError;
+
+  const loadUnidades = () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    return fetchAdminUnidades()
+      .then((data) => setUnidades(data.unidades))
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as unidades.'))
+      .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchAdminUnidades()
+      .then((data) => {
+        if (isActive) setUnidades(data.unidades);
+      })
+      .catch((err) => {
+        if (isActive) setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as unidades.');
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return unidades;
     return unidades.filter(
       (item) =>
-        item.name.toLowerCase().includes(query) ||
-        item.cnpj.toLowerCase().includes(query) ||
-        item.bandeira.toLowerCase().includes(query)
+        (item.nomeFantasia ?? '').toLowerCase().includes(query) ||
+        (item.razaoSocial ?? '').toLowerCase().includes(query) ||
+        (item.cnpj ?? '').toLowerCase().includes(query) ||
+        (item.idq ?? '').toLowerCase().includes(query) ||
+        (item.bandeira ?? '').toLowerCase().includes(query) ||
+        (item.cidade ?? '').toLowerCase().includes(query)
     );
   }, [unidades, search]);
 
-  const toggleUnidade = (id: string) => {
-    setUnidades((current) => current.map((item) => (item.id === id ? { ...item, active: !item.active } : item)));
+  useEffect(() => {
+    setPage(0);
+  }, [search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ADMIN_UNIDADES_PAGE_SIZE));
+  const pageStart = page * ADMIN_UNIDADES_PAGE_SIZE;
+  const paged = filtered.slice(pageStart, pageStart + ADMIN_UNIDADES_PAGE_SIZE);
+  const pageRangeLabel =
+    filtered.length === 0
+      ? '0 de 0'
+      : `${pageStart + 1}-${Math.min(pageStart + ADMIN_UNIDADES_PAGE_SIZE, filtered.length)} de ${filtered.length}`;
+
+  const handleUnidadeSubmit = (values: AdminUnidadeFormValues) => {
+    const body = {
+      nome_fantasia: values.nomeFantasia.trim() || null,
+      razao_social: values.razaoSocial.trim(),
+      cnpj: values.cnpj.trim(),
+      bandeira: values.bandeira || undefined,
+      tipo: values.tipo,
+      cidade: values.cidade.trim() || null,
+      estado: values.estado.trim() || null,
+      idq: values.idq.trim() || null,
+      is_active: values.isActive,
+    };
+
+    setIsSavingUnit(true);
+    const request =
+      unitFormMode === 'create' ? createAdminUnidade(body, actorId) : updateAdminUnidade(unitBeingEdited!.id, body, actorId);
+
+    request
+      .then(() => {
+        setIsUnitFormOpen(false);
+        loadUnidades();
+      })
+      .catch((err) =>
+        showApiError(
+          err,
+          unitFormMode === 'create' ? 'Não foi possível criar a unidade.' : 'Não foi possível salvar a unidade.'
+        )
+      )
+      .finally(() => setIsSavingUnit(false));
+  };
+
+  const handleExcluirUnidade = (unidade: AdminUnidadeItem) => {
+    Alert.alert('Excluir unidade', `Tem certeza que quer excluir "${adminUnidadeDisplayName(unidade)}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdminUnidade(unidade.id, actorId)
+            .then(() => loadUnidades())
+            .catch((err) => {
+              if (err instanceof ApiError && err.status === 409) {
+                Alert.alert(
+                  'Não é possível excluir',
+                  'Essa unidade ainda tem colaborador(es) vinculado(s). Use "Vender unidade" pra transferir/desligar antes de excluir.'
+                );
+                return;
+              }
+              showApiError(err, 'Não foi possível excluir a unidade.');
+            });
+        },
+      },
+    ]);
+  };
+
+  const openEditForm = (unidade: AdminUnidadeItem) => {
+    setUnitFormMode('edit');
+    setUnitBeingEdited(unidade);
+    setUnitFormInitial({
+      nomeFantasia: unidade.nomeFantasia ?? '',
+      razaoSocial: unidade.razaoSocial ?? '',
+      cnpj: unidade.cnpj ?? '',
+      bandeira: unidade.bandeira ?? '',
+      tipo: unidade.tipo ?? 'Posto',
+      cidade: unidade.cidade ?? '',
+      estado: unidade.estado ?? '',
+      idq: unidade.idq ?? '',
+      isActive: unidade.isActive,
+    });
+    setIsUnitFormOpen(true);
   };
 
   return (
@@ -3162,46 +3889,193 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <AdminPageHeader icon="home" title="Unidades" subtitle="58 unidades" />
+        <AdminPageHeader
+          icon="home"
+          title="Unidades"
+          subtitle={isLoading ? 'Carregando...' : `${unidades.length} unidades`}
+        />
 
-        <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar por nome, CNPJ, bandeira..." />
+        <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar por nome, CNPJ, IDQ, bandeira..." />
 
         <View style={[styles.directorNotifHeaderRow, { justifyContent: 'flex-end' }]}>
           <Pressable
             style={styles.directorNotifNewButton}
-            onPress={() => Alert.alert('Nova unidade', 'Cadastro de unidade em breve.')}
+            onPress={() => {
+              setUnitFormMode('create');
+              setUnitBeingEdited(null);
+              setUnitFormInitial(emptyAdminUnidadeForm());
+              setIsUnitFormOpen(true);
+            }}
           >
             <Feather name="plus" size={15} color="#FFFFFF" />
-            <Text style={styles.directorNotifNewButtonText}>Nova</Text>
+            <Text style={styles.directorNotifNewButtonText}>Nova Unidade</Text>
           </Pressable>
         </View>
 
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <AdminEmptyState message="Carregando unidades..." />
+        ) : errorMessage ? (
+          <AdminEmptyState message={errorMessage} />
+        ) : filtered.length === 0 ? (
           <AdminEmptyState message="Nenhuma unidade encontrada." />
         ) : (
-          filtered.map((unidade) => {
-            const bandeiraColors = adminBandeiraColorMap[unidade.bandeira] ?? { bg: GRAY_BG, color: GRAY };
-            return (
-              <View key={unidade.id} style={adminStyles.unitCard}>
-                <View style={adminStyles.unitInfo}>
-                  <Text style={adminStyles.listName} numberOfLines={1}>
-                    {unidade.name}
-                  </Text>
-                  <Text style={adminStyles.listMeta}>{unidade.cnpj}</Text>
-                  <View style={adminStyles.roleModulesRow}>
-                    <AdminColorPill label={unidade.bandeira} bg={bandeiraColors.bg} color={bandeiraColors.color} />
-                    <AdminTagPill label="Posto" />
+          <>
+            {paged.map((unidade) => {
+              const bandeiraColors = (unidade.bandeira && adminBandeiraColorMap[unidade.bandeira]) || {
+                bg: GRAY_BG,
+                color: GRAY,
+              };
+              return (
+                <Pressable key={unidade.id} style={adminStyles.unitCard} onPress={() => setUnitDetail(unidade)}>
+                  <View style={adminStyles.unitInfo}>
+                    <Text style={adminStyles.listName} numberOfLines={1}>
+                      {adminUnidadeDisplayName(unidade)}
+                    </Text>
+                    <Text style={adminStyles.listMeta}>{unidade.cnpj || 'CNPJ não informado'}</Text>
+                    <View style={adminStyles.roleModulesRow}>
+                      {unidade.bandeira ? (
+                        <AdminColorPill label={unidade.bandeira} bg={bandeiraColors.bg} color={bandeiraColors.color} />
+                      ) : null}
+                      <AdminTagPill label={unidade.tipo || 'Posto'} />
+                    </View>
                   </View>
-                </View>
-                <View style={adminStyles.unitRight}>
-                  <Text style={adminStyles.unitCity}>{unidade.city}</Text>
-                  <ToggleSwitch value={unidade.active} onValueChange={() => toggleUnidade(unidade.id)} />
-                </View>
+                  <View style={adminStyles.unitRight}>
+                    <Text style={adminStyles.unitCity}>
+                      {unidade.cidade ? `${unidade.cidade}${unidade.estado ? `/${unidade.estado}` : ''}` : '—'}
+                    </Text>
+                    <View
+                      style={[
+                        adminStyles.detailBadgeBase,
+                        { backgroundColor: unidade.vendida ? GRAY_BG : unidade.isActive ? GREEN_BG : RED_BG },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          adminStyles.detailBadgeText,
+                          { color: unidade.vendida ? GRAY : unidade.isActive ? GREEN : RED },
+                        ]}
+                      >
+                        {unidade.vendida ? 'Vendida' : unidade.isActive ? 'Ativa' : 'Inativa'}
+                      </Text>
+                    </View>
+                    <Pressable hitSlop={10} onPress={() => setUnitActionsFor(unidade)}>
+                      <Feather name="more-vertical" size={18} color="#9AA1B5" />
+                    </Pressable>
+                  </View>
+                </Pressable>
+              );
+            })}
+
+            <View style={adminStyles.paginationRow}>
+              <Text style={adminStyles.paginationLabel}>{pageRangeLabel}</Text>
+              <View style={adminStyles.paginationArrows}>
+                <Pressable
+                  style={[adminStyles.paginationArrowButton, page === 0 ? adminStyles.paginationArrowDisabled : null]}
+                  disabled={page === 0}
+                  onPress={() => setPage((current) => Math.max(0, current - 1))}
+                >
+                  <Feather name="chevron-left" size={16} color={page === 0 ? '#C7CCDA' : '#4C5470'} />
+                </Pressable>
+                <Pressable
+                  style={[
+                    adminStyles.paginationArrowButton,
+                    page >= totalPages - 1 ? adminStyles.paginationArrowDisabled : null,
+                  ]}
+                  disabled={page >= totalPages - 1}
+                  onPress={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
+                >
+                  <Feather name="chevron-right" size={16} color={page >= totalPages - 1 ? '#C7CCDA' : '#4C5470'} />
+                </Pressable>
               </View>
-            );
-          })
+            </View>
+          </>
         )}
       </ScrollView>
+
+      <AdminGenericActionsMenu
+        visible={unitActionsFor !== null}
+        title={unitActionsFor ? adminUnidadeDisplayName(unitActionsFor) : ''}
+        onClose={() => setUnitActionsFor(null)}
+        actions={[
+          {
+            key: 'visualizar',
+            icon: 'eye',
+            label: 'Visualizar',
+            onPress: () => {
+              setUnitDetail(unitActionsFor);
+              setUnitActionsFor(null);
+            },
+          },
+          {
+            key: 'editar',
+            icon: 'edit-2',
+            label: 'Editar',
+            onPress: () => {
+              const unidade = unitActionsFor;
+              setUnitActionsFor(null);
+              if (!unidade) return;
+              openEditForm(unidade);
+            },
+          },
+          {
+            key: 'vender',
+            icon: 'dollar-sign',
+            label: 'Vender unidade',
+            onPress: () => {
+              const unidade = unitActionsFor;
+              setUnitActionsFor(null);
+              if (!unidade) return;
+              if (unidade.vendida) {
+                Alert.alert('Unidade já vendida', 'Essa unidade já foi marcada como vendida anteriormente.');
+                return;
+              }
+              setVenderFor(unidade);
+            },
+          },
+          {
+            key: 'excluir',
+            icon: 'trash-2',
+            label: 'Excluir',
+            danger: true,
+            onPress: () => {
+              const unidade = unitActionsFor;
+              setUnitActionsFor(null);
+              if (!unidade) return;
+              handleExcluirUnidade(unidade);
+            },
+          },
+        ]}
+      />
+
+      <AdminUnidadeDetailModal
+        visible={unitDetail !== null}
+        unidade={unitDetail}
+        onClose={() => setUnitDetail(null)}
+        onEdit={() => {
+          const unidade = unitDetail;
+          if (!unidade) return;
+          setUnitDetail(null);
+          openEditForm(unidade);
+        }}
+      />
+
+      <AdminUnidadeFormModal
+        visible={isUnitFormOpen}
+        mode={unitFormMode}
+        initialValues={unitFormInitial}
+        isSaving={isSavingUnit}
+        onClose={() => setIsUnitFormOpen(false)}
+        onSubmit={handleUnidadeSubmit}
+      />
+
+      <AdminVenderUnidadeModal
+        visible={venderFor !== null}
+        unidade={venderFor}
+        unidadesDestino={unidades.filter((u) => u.id !== venderFor?.id && u.isActive && !u.vendida)}
+        actorId={actorId}
+        onClose={() => setVenderFor(null)}
+        onSold={loadUnidades}
+      />
     </SafeAreaView>
   );
 }
@@ -4928,5 +5802,38 @@ const adminStyles = StyleSheet.create({
   },
   colorSwatchActive: {
     borderColor: '#15203E',
+  },
+  venderColabRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF0F6',
+  },
+  venderDestinoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: 150,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D7DCE8',
+    backgroundColor: '#FAFBFD',
+  },
+  venderDestinoButtonText: {
+    flex: 1,
+    color: '#2E3A59',
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  venderDesligadoLabel: {
+    color: '#9AA1B5',
+    fontSize: 11.5,
+    fontStyle: 'italic',
+    maxWidth: 120,
+    textAlign: 'right',
   },
 });
