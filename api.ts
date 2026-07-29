@@ -693,6 +693,7 @@ export type AdminAcessoUsuarioItem = {
   email: string;
   cargo: string | null;
   moduleCount: number;
+  moduleLabels: string[];
 };
 
 export type AdminAcessoPorUsuarioDetalhe = { count: number; usuarios: AdminAcessoUsuarioItem[] };

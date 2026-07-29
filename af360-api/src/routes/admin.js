@@ -230,12 +230,19 @@ router.get('/acesso-por-usuario', async (req, res) => {
         const extra = extraModulesByUserId.get(p.id);
         if (extra) extra.forEach((m) => modulesSet.add(m));
 
+        // moduleLabels: mesmo dedup/label já usado em loadRolesProcessadas
+        // (cargo.moduleLabels) — permite o app mostrar exatamente quais
+        // módulos estão ligados pra esse usuário (tela "Acesso de X"), não só
+        // a contagem.
+        const moduleLabels = Array.from(new Set(Array.from(modulesSet).map((m) => moduleLabelFor(m))));
+
         return {
           id: p.id,
           fullName: p.full_name || null,
           email: p.email,
           cargo: role?.name || null,
           moduleCount: modulesSet.size,
+          moduleLabels,
         };
       })
       .sort((a, b) => compareFullName(a.fullName, b.fullName));

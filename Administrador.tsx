@@ -1152,25 +1152,242 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
 // group_type cru (capitalizado) que já vimos aparecer no schema/mockup — se o
 // Lovable devolver um group_type que não bate com nenhuma chave aqui, o
 // AdminColorPill cai no fallback cinza (GRAY_BG/GRAY) em vez de quebrar.
+// Corporativo usava NAVY/NAVY_BG, mas essa dupla é tão dessaturada que fica
+// visualmente idêntica à tag cinza neutra dos módulos — trocado por
+// BLUE/BLUE_BG (mais vivo e fácil de distinguir à primeira vista).
 const adminGroupColorMap: Record<string, { bg: string; color: string }> = {
   Administrativo: { bg: PURPLE_BG, color: PURPLE },
-  Corporativo: { bg: NAVY_BG, color: NAVY },
+  Corporativo: { bg: BLUE_BG, color: BLUE },
   Diretoria: { bg: RED_BG, color: RED },
   Gestão: { bg: GOLD_BG, color: GOLD },
   Operacional: { bg: GREEN_BG, color: GREEN },
 };
 
+// Lista canônica dos 9 módulos reconhecidos pelo backend (mesmos labels de
+// MODULE_LABELS em af360-api/src/routes/admin.js) — usada pra montar a tela
+// "Acesso de X" com um toggle por módulo, na ordem em que aparecem no web.
+const adminCanonicalModules: string[] = [
+  'Administrador',
+  'RH',
+  'R&S',
+  'Colaborador',
+  'Financeiro',
+  'Gestão',
+  'Administrativo',
+  'Diretoria',
+  'Marketing & Fidelidade',
+];
+
+// ---------- Menu de ações genérico (reaproveitado por Cargos e Acesso por
+// Usuário — cada tela passa sua própria lista de ações) ----------
+
+type AdminMenuAction = {
+  key: string;
+  icon: FeatherIconName;
+  label: string;
+  danger?: boolean;
+  onPress: () => void;
+};
+
+function AdminGenericActionsMenu({
+  visible,
+  title,
+  actions,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  actions: AdminMenuAction[];
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={onClose}>
+        <Pressable style={adminStyles.actionsMenuCard} onPress={() => {}}>
+          <Text style={adminStyles.actionsMenuTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          {actions.map((action, index) => (
+            <Pressable
+              key={action.key}
+              style={[
+                adminStyles.actionsMenuRow,
+                index === actions.length - 1 ? adminStyles.actionsMenuRowLast : null,
+              ]}
+              onPress={action.onPress}
+            >
+              <Feather name={action.icon} size={16} color={action.danger ? RED : '#4C5470'} />
+              <Text style={[adminStyles.actionsMenuRowText, action.danger ? { color: RED } : null]}>
+                {action.label}
+              </Text>
+            </Pressable>
+          ))}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// ---------- Modal "Visualizar cargo" (aba Cargos) ----------
+
+function AdminCargoDetailModal({
+  visible,
+  cargo,
+  onClose,
+}: {
+  visible: boolean;
+  cargo: AdminCargoItem | null;
+  onClose: () => void;
+}) {
+  if (!cargo) return null;
+  const groupColors = (cargo.group && adminGroupColorMap[cargo.group]) || { bg: GRAY_BG, color: GRAY };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>{cargo.name}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={adminStyles.detailFieldLabel}>GRUPO</Text>
+            <View style={[adminStyles.detailBadgeBase, { backgroundColor: groupColors.bg, marginTop: 6 }]}>
+              <Text style={[adminStyles.detailBadgeText, { color: groupColors.color }]}>
+                {cargo.group || 'Não informado'}
+              </Text>
+            </View>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>MÓDULOS PADRÃO</Text>
+            <View style={[adminStyles.roleModulesRow, styles.spacingTop]}>
+              {cargo.moduleLabels.length === 0 ? (
+                <Text style={adminStyles.listMeta}>Sem módulos vinculados.</Text>
+              ) : (
+                cargo.moduleLabels.map((module) => <AdminTagPill key={module} label={module} />)
+              )}
+            </View>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>STATUS</Text>
+            <Text style={adminStyles.detailFieldValue}>{cargo.isActive ? 'Ativo' : 'Inativo'}</Text>
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]} onPress={onClose}>
+              <Text style={styles.secondaryButtonText}>Fechar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ---------- Modal "Acesso de X" (aba Acesso por Usuário) ----------
+// Mostra os 9 módulos canônicos e se cada um está ligado de verdade pra esse
+// usuário (role.default_modules ∪ user_modules — vem pronto em
+// item.moduleLabels, calculado no af360-api). Salvar/Resetar ainda não
+// gravam: não existe endpoint de escrita pra user_modules hoje. A tela do
+// web também mostra uma sub-lista de "funcionalidades" dentro do módulo
+// Colaborador (Dashboard, Comunicados, Calendário...) — não implementei essa
+// parte aqui porque não confirmamos com o Lovable que existe uma tabela real
+// de permissão por funcionalidade (só por módulo); ver mensagem sobre isso.
+function AdminAcessoUsuarioModal({
+  visible,
+  usuario,
+  onClose,
+}: {
+  visible: boolean;
+  usuario: AdminAcessoUsuarioItem | null;
+  onClose: () => void;
+}) {
+  if (!usuario) return null;
+
+  const showNotAvailable = (action: string) => {
+    Alert.alert(
+      'Ainda não disponível',
+      `"${action}" ainda não tem endpoint de escrita no backend (user_modules só é lido hoje, não gravado).`
+    );
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle} numberOfLines={1}>
+                Acesso de {(usuario.fullName || usuario.email).split(' ')[0]}
+              </Text>
+              <Text style={adminStyles.detailSubEmail} numberOfLines={1}>
+                {usuario.cargo || 'Sem cargo'}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {adminCanonicalModules.map((moduleLabel) => (
+              <View key={moduleLabel} style={adminStyles.checkboxCard}>
+                <Text style={adminStyles.checkboxCardLabel}>{moduleLabel}</Text>
+                <ToggleSwitch
+                  value={usuario.moduleLabels.includes(moduleLabel)}
+                  onValueChange={() => showNotAvailable('Alterar acesso a módulo')}
+                />
+              </View>
+            ))}
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable
+              style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]}
+              onPress={() => showNotAvailable('Resetar para padrão do cargo')}
+            >
+              <Text style={styles.secondaryButtonText}>Resetar para padrão do cargo</Text>
+            </Pressable>
+            <Pressable style={adminStyles.primaryActionButton} onPress={() => showNotAvailable('Salvar alterações')}>
+              <Feather name="save" size={14} color="#FFFFFF" />
+              <Text style={adminStyles.primaryActionButtonText}>Salvar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const ADMIN_ACESSO_PAGE_SIZE = 10;
+
+// Ainda não existe endpoint de escrita pra cargos/roles nem pra user_modules
+// (só GET hoje — ver af360-api/src/routes/admin.js). Avisa isso em vez de
+// fingir sucesso.
+function showAdminWriteNotAvailable(action: string) {
+  Alert.alert(
+    'Ainda não disponível',
+    `"${action}" ainda não tem endpoint de escrita no backend (só leitura hoje).`
+  );
+}
+
 export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfilAcesso'>) {
   const [activeTab, setActiveTab] = useState<'cargos' | 'usuarios'>('cargos');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
 
   const [cargos, setCargos] = useState<AdminCargoItem[]>([]);
   const [isLoadingCargos, setIsLoadingCargos] = useState(true);
   const [cargosErrorMessage, setCargosErrorMessage] = useState<string | null>(null);
+  const [cargoActionsFor, setCargoActionsFor] = useState<AdminCargoItem | null>(null);
+  const [cargoDetail, setCargoDetail] = useState<AdminCargoItem | null>(null);
 
   const [usuariosAcesso, setUsuariosAcesso] = useState<AdminAcessoUsuarioItem[]>([]);
   const [isLoadingUsuarios, setIsLoadingUsuarios] = useState(true);
   const [usuariosErrorMessage, setUsuariosErrorMessage] = useState<string | null>(null);
+  const [acessoActionsFor, setAcessoActionsFor] = useState<AdminAcessoUsuarioItem | null>(null);
+  const [acessoDetail, setAcessoDetail] = useState<AdminAcessoUsuarioItem | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -1228,6 +1445,18 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
         (item.cargo ?? '').toLowerCase().includes(query)
     );
   }, [usuariosAcesso, search]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [search, activeTab]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / ADMIN_ACESSO_PAGE_SIZE));
+  const pageStart = page * ADMIN_ACESSO_PAGE_SIZE;
+  const pagedUsers = filteredUsers.slice(pageStart, pageStart + ADMIN_ACESSO_PAGE_SIZE);
+  const pageRangeLabel =
+    filteredUsers.length === 0
+      ? '0 de 0'
+      : `${pageStart + 1}-${Math.min(pageStart + ADMIN_ACESSO_PAGE_SIZE, filteredUsers.length)} de ${filteredUsers.length}`;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -1297,7 +1526,16 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
                   <View key={cargo.id} style={adminStyles.roleCard}>
                     <View style={adminStyles.roleCardTopRow}>
                       <Text style={adminStyles.roleName}>{cargo.name}</Text>
-                      <AdminColorPill label={cargo.group || 'Não informado'} bg={groupColors.bg} color={groupColors.color} />
+                      <View style={adminStyles.roleCardTopRowRight}>
+                        <AdminColorPill
+                          label={cargo.group || 'Não informado'}
+                          bg={groupColors.bg}
+                          color={groupColors.color}
+                        />
+                        <Pressable hitSlop={10} onPress={() => setCargoActionsFor(cargo)}>
+                          <Feather name="more-vertical" size={18} color="#9AA1B5" />
+                        </Pressable>
+                      </View>
                     </View>
                     <View style={adminStyles.roleModulesRow}>
                       {cargo.moduleLabels.length === 0 ? (
@@ -1322,26 +1560,136 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
             ) : filteredUsers.length === 0 ? (
               <AdminEmptyState message="Nenhum usuário encontrado." />
             ) : (
-              filteredUsers.map((item) => (
-                <View key={item.id} style={adminStyles.listCard}>
-                  <View style={adminStyles.listAvatar}>
-                    <Text style={adminStyles.listAvatarText}>{getInitialsFromName(item.fullName ?? item.email)}</Text>
+              <>
+                {pagedUsers.map((item) => (
+                  <Pressable key={item.id} style={adminStyles.listCard} onPress={() => setAcessoDetail(item)}>
+                    <View style={adminStyles.listAvatar}>
+                      <Text style={adminStyles.listAvatarText}>
+                        {getInitialsFromName(item.fullName ?? item.email)}
+                      </Text>
+                    </View>
+                    <View style={adminStyles.listInfo}>
+                      <Text style={adminStyles.listName} numberOfLines={1}>
+                        {item.fullName || '(sem nome)'}
+                      </Text>
+                      <Text style={adminStyles.listEmail} numberOfLines={1}>
+                        {item.email}
+                      </Text>
+                      <Text style={adminStyles.listMeta} numberOfLines={1}>
+                        {item.cargo || 'Sem cargo'} · {item.moduleCount} módulo{item.moduleCount === 1 ? '' : 's'}{' '}
+                        ativo{item.moduleCount === 1 ? '' : 's'}
+                      </Text>
+                    </View>
+                    <Pressable hitSlop={10} onPress={() => setAcessoActionsFor(item)}>
+                      <Feather name="more-vertical" size={18} color="#9AA1B5" />
+                    </Pressable>
+                  </Pressable>
+                ))}
+
+                <View style={adminStyles.paginationRow}>
+                  <Text style={adminStyles.paginationLabel}>{pageRangeLabel}</Text>
+                  <View style={adminStyles.paginationArrows}>
+                    <Pressable
+                      style={[adminStyles.paginationArrowButton, page === 0 ? adminStyles.paginationArrowDisabled : null]}
+                      disabled={page === 0}
+                      onPress={() => setPage((current) => Math.max(0, current - 1))}
+                    >
+                      <Feather name="chevron-left" size={16} color={page === 0 ? '#C7CCDA' : '#4C5470'} />
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        adminStyles.paginationArrowButton,
+                        page >= totalPages - 1 ? adminStyles.paginationArrowDisabled : null,
+                      ]}
+                      disabled={page >= totalPages - 1}
+                      onPress={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
+                    >
+                      <Feather
+                        name="chevron-right"
+                        size={16}
+                        color={page >= totalPages - 1 ? '#C7CCDA' : '#4C5470'}
+                      />
+                    </Pressable>
                   </View>
-                  <View style={adminStyles.listInfo}>
-                    <Text style={adminStyles.listName} numberOfLines={1}>
-                      {item.fullName || '(sem nome)'}
-                    </Text>
-                    <Text style={adminStyles.listMeta} numberOfLines={1}>
-                      {item.cargo || 'Sem cargo'}
-                    </Text>
-                  </View>
-                  <Text style={adminStyles.moduleCountText}>{item.moduleCount} módulos</Text>
                 </View>
-              ))
+              </>
             )}
           </>
         )}
       </ScrollView>
+
+      <AdminGenericActionsMenu
+        visible={cargoActionsFor !== null}
+        title={cargoActionsFor?.name ?? ''}
+        onClose={() => setCargoActionsFor(null)}
+        actions={[
+          {
+            key: 'visualizar',
+            icon: 'eye',
+            label: 'Visualizar',
+            onPress: () => {
+              setCargoDetail(cargoActionsFor);
+              setCargoActionsFor(null);
+            },
+          },
+          {
+            key: 'editar',
+            icon: 'edit-2',
+            label: 'Editar',
+            onPress: () => {
+              setCargoActionsFor(null);
+              showAdminWriteNotAvailable('Editar cargo');
+            },
+          },
+          {
+            key: 'excluir',
+            icon: 'trash-2',
+            label: 'Excluir',
+            danger: true,
+            onPress: () => {
+              const cargo = cargoActionsFor;
+              setCargoActionsFor(null);
+              if (!cargo) return;
+              Alert.alert('Excluir cargo', `Tem certeza que quer excluir "${cargo.name}"?`, [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Excluir', style: 'destructive', onPress: () => showAdminWriteNotAvailable('Excluir cargo') },
+              ]);
+            },
+          },
+        ]}
+      />
+      <AdminCargoDetailModal visible={cargoDetail !== null} cargo={cargoDetail} onClose={() => setCargoDetail(null)} />
+
+      <AdminGenericActionsMenu
+        visible={acessoActionsFor !== null}
+        title={acessoActionsFor?.fullName ?? acessoActionsFor?.email ?? ''}
+        onClose={() => setAcessoActionsFor(null)}
+        actions={[
+          {
+            key: 'visualizar-gerenciar',
+            icon: 'eye',
+            label: 'Visualizar / Gerenciar',
+            onPress: () => {
+              setAcessoDetail(acessoActionsFor);
+              setAcessoActionsFor(null);
+            },
+          },
+          {
+            key: 'configuracoes',
+            icon: 'settings',
+            label: 'Configurações',
+            onPress: () => {
+              setAcessoDetail(acessoActionsFor);
+              setAcessoActionsFor(null);
+            },
+          },
+        ]}
+      />
+      <AdminAcessoUsuarioModal
+        visible={acessoDetail !== null}
+        usuario={acessoDetail}
+        onClose={() => setAcessoDetail(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -2573,6 +2921,13 @@ const adminStyles = StyleSheet.create({
     color: '#15203E',
     fontSize: 14,
     fontWeight: '800',
+    flex: 1,
+    marginRight: 8,
+  },
+  roleCardTopRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   roleModulesRow: {
     flexDirection: 'row',
@@ -3047,5 +3402,36 @@ const adminStyles = StyleSheet.create({
     marginTop: 2,
     color: '#7C8397',
     fontSize: 11,
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    paddingVertical: 6,
+  },
+  paginationLabel: {
+    color: '#7C8397',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  paginationArrows: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  paginationArrowButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paginationArrowDisabled: {
+    backgroundColor: '#F8F9FC',
+    borderColor: '#EEF1F8',
   },
 });
