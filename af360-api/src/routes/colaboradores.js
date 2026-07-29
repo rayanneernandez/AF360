@@ -11,10 +11,13 @@ const router = express.Router();
 // infinito no futuro).
 router.get('/', async (req, res) => {
   try {
-    const { limit, offset, q, status, all } = req.query;
+    const { limit, offset, q, status, all, empresaId } = req.query;
     const filters = {};
     if (status) filters['status__in'] = status;
     if (q) filters['nome_completo__ilike'] = `%${q}%`;
+    // empresaId: usado pela tela Unidades (Admin) pra listar só os
+    // colaboradores da unidade em questão (ex: modal "Vender unidade").
+    if (empresaId) filters['empresa_id'] = empresaId;
 
     const wantsAll = all === '1' || (!limit && !offset);
     const json = wantsAll

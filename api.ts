@@ -193,9 +193,13 @@ export type RhStats = {
 // Sem limit/offset o backend traz TODOS os colaboradores, paginando
 // internamente por conta própria (o Lovable corta em 1000/2000 por
 // chamada, então isso é feito em vários pedidos, não um só).
-export async function fetchRhColaboradores(params: { q?: string } = {}): Promise<RhColaboradorRaw[]> {
+export async function fetchRhColaboradores(
+  params: { q?: string; status?: string; empresaId?: string } = {}
+): Promise<RhColaboradorRaw[]> {
   const search = new URLSearchParams();
   if (params.q) search.set('q', params.q);
+  if (params.status) search.set('status', params.status);
+  if (params.empresaId) search.set('empresaId', params.empresaId);
   search.set('all', '1');
   const json = await api.get(`/api/rh/colaboradores?${search.toString()}`);
   return json.data as RhColaboradorRaw[];
