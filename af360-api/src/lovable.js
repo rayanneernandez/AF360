@@ -58,15 +58,53 @@ async function lovableGet(path, params = {}) {
   return parseResponse(response, url);
 }
 
-async function lovablePatch(path, params = {}, body = {}) {
+// actorId (opcional): profiles.id de quem está fazendo a ação — os endpoints
+// admin-* usam isso (header x-actor-id) pra validar is_master no Lovable.
+// Para as ações que não são de escrita "geral" (RH), simplesmente não passar.
+function writeHeaders(actorId) {
+  const headers = {
+    'x-internal-secret': getSecret(),
+    'Content-Type': 'application/json',
+  };
+  if (actorId) headers['x-actor-id'] = actorId;
+  return headers;
+}
+
+async function lovablePost(path, params = {}, body = {}, actorId) {
+  const url = buildUrl(path, params);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: writeHeaders(actorId),
+    body: JSON.stringify(body),
+  });
+  return parseResponse(response, url);
+}
+
+async function lovablePatch(path, params = {}, body = {}, actorId) {
   const url = buildUrl(path, params);
   const response = await fetch(url, {
     method: 'PATCH',
-    headers: {
-      'x-internal-secret': getSecret(),
-      'Content-Type': 'application/json',
-    },
+    headers: writeHeaders(actorId),
     body: JSON.stringify(body),
+  });
+  return parseResponse(response, url);
+}
+
+async function lovablePut(path, params = {}, body = {}, actorId) {
+  const url = buildUrl(path, params);
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: writeHeaders(actorId),
+    body: JSON.stringify(body),
+  });
+  return parseResponse(response, url);
+}
+
+async function lovableDelete(path, params = {}, actorId) {
+  const url = buildUrl(path, params);
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: writeHeaders(actorId),
   });
   return parseResponse(response, url);
 }
@@ -123,4 +161,122 @@ async function patchDirContato(phone, body) {
   return lovablePatch('/api/public/internal/dir-contato', { phone }, body);
 }
 
-module.exports = { fetchTable, fetchAllRows, fetchRhStats, patchDirContato };
+// ---------------------------------------------------------------------------
+// Endpoints de escrita confirmados pelo time do Lovable em 29/07/2026 (ver
+// combinado no chat) — todos exigem x-internal-secret; os admin-* aceitam
+// x-actor-id (uuid do profile master) opcional pra validação de is_master.
+// ---------------------------------------------------------------------------
+
+// --- RH ---
+
+function patchRhColaborador(id, body) {
+  return lovablePatch('/api/public/internal/rh-colaborador', { id }, body);
+}
+
+function putRhBeneficios(colaboradorId, body) {
+  return lovablePut('/api/public/internal/rh-beneficios', { colaborador_id: colaboradorId }, body);
+}
+
+function postRhHistoricoContratacao(body) {
+  return lovablePost('/api/public/internal/rh-historico-contratacoes', {}, body);
+}
+
+function patchRhHistoricoContratacao(id, body) {
+  return lovablePatch('/api/public/internal/rh-historico-contratacoes', { id }, body);
+}
+
+function deleteRhHistoricoContratacao(id) {
+  return lovableDelete('/api/public/internal/rh-historico-contratacoes', { id });
+}
+
+// --- Admin ---
+
+function postAdminUsuario(body, actorId) {
+  return lovablePost('/api/public/internal/admin-usuarios', {}, body, actorId);
+}
+
+function postAdminUsuarioResetSenha(userId, password, actorId) {
+  return lovablePost(
+    '/api/public/internal/admin-usuarios',
+    { action: 'reset-senha' },
+    { user_id: userId, password },
+    actorId
+  );
+}
+
+function postAdminUsuarioToggleAtivo(userId, isActive, actorId) {
+  return lovablePost(
+    '/api/public/internal/admin-usuarios',
+    { action: 'toggle-ativo' },
+    { user_id: userId, is_active: isActive },
+    actorId
+  );
+}
+
+function patchAdminUsuario(userId, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-usuarios', { user_id: userId }, body, actorId);
+}
+
+function deleteAdminUsuario(userId, actorId) {
+  return lovableDelete('/api/public/internal/admin-usuarios', { user_id: userId }, actorId);
+}
+
+function postAdminRole(body, actorId) {
+  return lovablePost('/api/public/internal/admin-roles', {}, body, actorId);
+}
+
+function patchAdminRole(id, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-roles', { id }, body, actorId);
+}
+
+function deleteAdminRole(id, actorId) {
+  return lovableDelete('/api/public/internal/admin-roles', { id }, actorId);
+}
+
+function putAdminRolePermissions(roleId, permissions, actorId) {
+  return lovablePut('/api/public/internal/admin-role-permissions', { role_id: roleId }, { permissions }, actorId);
+}
+
+function putAdminUserPermissions(userId, permissions, actorId) {
+  return lovablePut('/api/public/internal/admin-user-permissions', { user_id: userId }, { permissions }, actorId);
+}
+
+function postAdminUserModule(userId, { moduleId, moduleSlug } = {}, actorId) {
+  const body = { user_id: userId };
+  if (moduleId) body.module_id = moduleId;
+  else if (moduleSlug) body.module_slug = moduleSlug;
+  return lovablePost('/api/public/internal/admin-user-modules', {}, body, actorId);
+}
+
+function postAdminUserModulesReset(userId, actorId) {
+  return lovablePost('/api/public/internal/admin-user-modules', { action: 'reset' }, { user_id: userId }, actorId);
+}
+
+function deleteAdminUserModule(userId, moduleId, actorId) {
+  return lovableDelete('/api/public/internal/admin-user-modules', { user_id: userId, module_id: moduleId }, actorId);
+}
+
+module.exports = {
+  fetchTable,
+  fetchAllRows,
+  fetchRhStats,
+  patchDirContato,
+  patchRhColaborador,
+  putRhBeneficios,
+  postRhHistoricoContratacao,
+  patchRhHistoricoContratacao,
+  deleteRhHistoricoContratacao,
+  postAdminUsuario,
+  postAdminUsuarioResetSenha,
+  postAdminUsuarioToggleAtivo,
+  patchAdminUsuario,
+  deleteAdminUsuario,
+  postAdminRole,
+  patchAdminRole,
+  deleteAdminRole,
+  putAdminRolePermissions,
+  putAdminUserPermissions,
+  postAdminUserModule,
+  postAdminUserModulesReset,
+  deleteAdminUserModule,
+};

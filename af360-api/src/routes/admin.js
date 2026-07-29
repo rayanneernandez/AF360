@@ -1,6 +1,29 @@
 const express = require('express');
-const { fetchAllRows } = require('../lovable');
+const {
+  fetchAllRows,
+  postAdminUsuario,
+  postAdminUsuarioResetSenha,
+  postAdminUsuarioToggleAtivo,
+  patchAdminUsuario,
+  deleteAdminUsuario,
+  postAdminRole,
+  patchAdminRole,
+  deleteAdminRole,
+  putAdminRolePermissions,
+  putAdminUserPermissions,
+  postAdminUserModule,
+  postAdminUserModulesReset,
+  deleteAdminUserModule,
+} = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
+
+// Todas as rotas de escrita aceitam ?actorId=<uuid do profile de quem está
+// logado> (o app manda o profileId salvo no login) — repassado como
+// x-actor-id pro Lovable validar is_master. Sem actorId, o Lovable ainda
+// processa, só não valida master (fica por conta da regra deles).
+function writeErrorStatus(err) {
+  return err.lovableStatus && err.lovableStatus >= 400 && err.lovableStatus < 500 ? 400 : 500;
+}
 
 const router = express.Router();
 
@@ -78,6 +101,82 @@ router.get('/cargos', async (req, res) => {
     res.json({ ok: true, data: { count: cargos.length, cargos } });
   } catch (err) {
     console.error('[admin/cargos] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/cargos?actorId=... — cria role. Body: { name, slug?,
+// group_type?, default_modules?, is_active? }.
+router.post('/cargos', async (req, res) => {
+  try {
+    const json = await postAdminRole(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/cargos POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/cargos/:id?actorId=...
+router.patch('/cargos/:id', async (req, res) => {
+  try {
+    const json = await patchAdminRole(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/cargos/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/cargos/:id?actorId=...
+router.delete('/cargos/:id', async (req, res) => {
+  try {
+    const json = await deleteAdminRole(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/cargos/:id DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PUT /api/admin/cargos/:id/permissoes?actorId=... — substitui a grade
+// inteira de role_permissions desse cargo. Body: { permissions: [{feature_id,
+// can_read, can_write, can_edit, can_delete}] }.
+router.put('/cargos/:id/permissoes', async (req, res) => {
+  try {
+    const json = await putAdminRolePermissions(req.params.id, req.body?.permissions ?? [], req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/cargos/:id/permissoes PUT] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/modulos -> tabela "modules" (agora na allowlist do Lovable).
+// Usado pra resolver slug/id dos 9 módulos canônicos nos toggles de
+// Cargos/Acesso por Usuário.
+router.get('/modulos', async (req, res) => {
+  try {
+    const json = await fetchAllRows('modules');
+    res.json({ ok: true, count: json.count ?? json.data.length, data: json.data });
+  } catch (err) {
+    console.error('[admin/modulos] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/module-features?moduleId=opcional -> tabela
+// "module_features" (também na allowlist agora). São as "funcionalidades"
+// (telas) de cada módulo, usadas como feature_id na grade de permissões
+// (role_permissions/user_permissions).
+router.get('/module-features', async (req, res) => {
+  try {
+    const filters = {};
+    if (req.query.moduleId) filters.module_id = req.query.moduleId;
+    const json = await fetchAllRows('module_features', { filters });
+    res.json({ ok: true, count: json.count ?? json.data.length, data: json.data });
+  } catch (err) {
+    console.error('[admin/module-features] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
   }
 });
@@ -185,6 +284,65 @@ router.get('/usuarios', async (req, res) => {
   }
 });
 
+// POST /api/admin/usuarios?actorId=... — cria usuário (Auth + profile no
+// Lovable). Body: { email, full_name, password, is_master?, is_active?,
+// empresa_id?, role_id?, chat_atendente? }. Valida domínio de e-mail e
+// popula user_modules a partir do role — tudo do lado do Lovable.
+router.post('/usuarios', async (req, res) => {
+  try {
+    const json = await postAdminUsuario(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/usuarios POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/usuarios/:id/redefinir-senha?actorId=... — body: { password }.
+router.post('/usuarios/:id/redefinir-senha', async (req, res) => {
+  try {
+    const json = await postAdminUsuarioResetSenha(req.params.id, req.body?.password, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/usuarios/:id/redefinir-senha] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/usuarios/:id/toggle-ativo?actorId=... — body: { isActive }.
+router.post('/usuarios/:id/toggle-ativo', async (req, res) => {
+  try {
+    const json = await postAdminUsuarioToggleAtivo(req.params.id, Boolean(req.body?.isActive), req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/usuarios/:id/toggle-ativo] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/usuarios/:id?actorId=... — edita profile (nome, cargo,
+// unidade, chat_atendente, is_master, e-mail).
+router.patch('/usuarios/:id', async (req, res) => {
+  try {
+    const json = await patchAdminUsuario(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/usuarios/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/usuarios/:id?actorId=...
+router.delete('/usuarios/:id', async (req, res) => {
+  try {
+    const json = await deleteAdminUsuario(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/usuarios/:id DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
 // GET /api/admin/acesso-por-usuario
 // Mesma base profiles + roles da rota /usuarios, mas calcula a contagem de
 // módulos efetivos (role.default_modules ∪ user_modules) por usuário. Em vez
@@ -266,6 +424,58 @@ router.get('/acesso-por-usuario', async (req, res) => {
   } catch (err) {
     console.error('[admin/acesso-por-usuario] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/usuarios/:id/modulos?actorId=... — liga um módulo avulso
+// pro usuário (upsert em user_modules). Body: { moduleSlug } ou { moduleId }.
+router.post('/usuarios/:id/modulos', async (req, res) => {
+  try {
+    const json = await postAdminUserModule(
+      req.params.id,
+      { moduleId: req.body?.moduleId, moduleSlug: req.body?.moduleSlug },
+      req.query.actorId
+    );
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/usuarios/:id/modulos POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/usuarios/:id/modulos/reset?actorId=... — limpa os módulos
+// avulsos e as permissões granulares do usuário, voltando ao padrão do cargo.
+router.post('/usuarios/:id/modulos/reset', async (req, res) => {
+  try {
+    const json = await postAdminUserModulesReset(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/usuarios/:id/modulos/reset] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/usuarios/:id/modulos/:moduleId?actorId=...
+router.delete('/usuarios/:id/modulos/:moduleId', async (req, res) => {
+  try {
+    const json = await deleteAdminUserModule(req.params.id, req.params.moduleId, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/usuarios/:id/modulos/:moduleId DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PUT /api/admin/usuarios/:id/permissoes?actorId=... — substitui a grade
+// inteira de user_permissions (override granular por usuário). Body:
+// { permissions: [{feature_id, can_read, can_write, can_edit, can_delete}] }.
+router.put('/usuarios/:id/permissoes', async (req, res) => {
+  try {
+    const json = await putAdminUserPermissions(req.params.id, req.body?.permissions ?? [], req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/usuarios/:id/permissoes PUT] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
 

@@ -1,5 +1,5 @@
 const express = require('express');
-const { fetchTable, fetchAllRows, fetchRhStats } = require('../lovable');
+const { fetchTable, fetchAllRows, fetchRhStats, patchRhColaborador, putRhBeneficios } = require('../lovable');
 
 const router = express.Router();
 
@@ -58,6 +58,50 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// PATCH /api/rh/colaboradores/:id -> grava dados pessoais/contrato/bancário/
+// uniforme em rh_colaboradores (whitelist ampla confirmada pelo Lovable —
+// endpoint /api/public/internal/rh-colaborador, aceita null). Body passa
+// direto, sem whitelist própria aqui: o Lovable já valida enums (sexo,
+// estado_civil, tipo_contrato, regime_jornada, grau_insalubridade) e devolve
+// 400 com a mensagem original do Postgres se algo não bater.
+router.patch('/:id', async (req, res) => {
+  try {
+    const json = await patchRhColaborador(req.params.id, req.body ?? {});
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/colaboradores/:id PATCH] erro:', err.message);
+    const status = err.lovableStatus && err.lovableStatus >= 400 && err.lovableStatus < 500 ? 400 : 500;
+    res.status(status).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// GET/PUT /api/rh/colaboradores/:id/beneficios -> rh_beneficios_colaborador
+// (VR/VA/seguro de vida/plano de saúde/odontológico — relação 1:1 via
+// colaborador_id UNIQUE). PUT é upsert de verdade no Lovable.
+router.get('/:id/beneficios', async (req, res) => {
+  try {
+    const json = await fetchTable('rh_beneficios_colaborador', {
+      filters: { colaborador_id: req.params.id },
+      limit: 1,
+    });
+    res.json({ ok: true, data: json.data?.[0] ?? null });
+  } catch (err) {
+    console.error('[rh/colaboradores/:id/beneficios GET] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+router.put('/:id/beneficios', async (req, res) => {
+  try {
+    const json = await putRhBeneficios(req.params.id, req.body ?? {});
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/colaboradores/:id/beneficios PUT] erro:', err.message);
+    const status = err.lovableStatus && err.lovableStatus >= 400 && err.lovableStatus < 500 ? 400 : 500;
+    res.status(status).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
 /**
  * Sub-recursos do colaborador, cada um filtrado por colaborador_id.
  * Nomes de tabela confirmados pela allowlist real do Lovable.
@@ -89,6 +133,24 @@ subResources.forEach(({ path, table }) => {
       res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
     }
   });
+});
+
+// GET /api/rh/colaboradores/:id/historico-contratacoes -> passagens
+// anteriores desse colaborador na rede (rh_historico_contratacoes). Tabela
+// ainda não tem coluna created_at confirmada — ordena por data_admissao, que
+// sempre existe.
+router.get('/:id/historico-contratacoes', async (req, res) => {
+  try {
+    const json = await fetchTable('rh_historico_contratacoes', {
+      filters: { colaborador_id: req.params.id },
+      order: 'data_admissao:desc',
+      limit: 200,
+    });
+    res.json({ ok: true, count: json.count ?? json.data.length, data: json.data });
+  } catch (err) {
+    console.error('[rh/colaboradores/:id/historico-contratacoes] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
 });
 
 // "afastamentos" não existe como tabela — devolve vazio com uma nota, em vez de erro.
