@@ -1721,6 +1721,14 @@ function AdminAcessoUsuarioModal({
                     </Pressable>
                   ) : null}
 
+                  {isOn && features.length === 0 ? (
+                    <View style={adminStyles.cargoPermTableWrap}>
+                      <Text style={adminStyles.cargoPermNote}>
+                        Permissões granulares ainda não mapeadas para este módulo.
+                      </Text>
+                    </View>
+                  ) : null}
+
                   {isOn && features.length > 0 && isExpanded ? (
                     <View style={adminStyles.cargoPermTableWrap}>
                       <View style={adminStyles.cargoPermHeaderRow}>
@@ -1752,12 +1760,6 @@ function AdminAcessoUsuarioModal({
                           })}
                         </View>
                       ))}
-                    </View>
-                  ) : isOn ? (
-                    <View style={adminStyles.cargoPermTableWrap}>
-                      <Text style={adminStyles.cargoPermNote}>
-                        Permissões granulares ainda não mapeadas para este módulo.
-                      </Text>
                     </View>
                   ) : null}
                 </View>
