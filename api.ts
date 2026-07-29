@@ -165,6 +165,10 @@ export type RhColaboradorRaw = {
   estado_civil: string | null;
   grau_instrucao: string | null;
   nacionalidade: string | null;
+  // naturalidade é a coluna canônica de cidade de nascimento (confirmado
+  // pelo Lovable em 29/07/2026) — cidade_nascimento é redundante/legado e
+  // não deve ser usada em telas novas.
+  naturalidade: string | null;
   cidade_nascimento: string | null;
   nome_mae: string | null;
   nome_pai: string | null;

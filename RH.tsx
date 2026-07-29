@@ -54,6 +54,12 @@ import {
   fetchRhUnidades,
   fetchRhCargos,
   fetchRhSetores,
+  updateRhColaborador,
+  fetchRhBeneficios,
+  updateRhBeneficios,
+  fetchRhHistoricoContratacoes,
+  createRhHistoricoContratacao,
+  ApiError,
   type RhColaboradorRaw,
   type RhStats,
   type RhUnidadeItem,
@@ -65,6 +71,8 @@ import {
   type RhFolhaDetalhe,
   type RhFeriasDetalhe,
   type RhExperienciaDetalhe,
+  type RhBeneficiosColaborador,
+  type RhHistoricoContratacaoItem,
 } from './api';
 
 // ---------- Types ----------
@@ -425,7 +433,7 @@ function mapRhColaboradorToEmployee(row: RhColaboradorRaw, empresaNomeById: Map<
     estadoCivil: normalizeToOption(row.estado_civil, rhEstadoCivilOptions),
     grauInstrucao: normalizeToOption(row.grau_instrucao, rhGrauInstrucaoOptions),
     nacionalidade: normalizeToOption(row.nacionalidade, rhNacionalidadeOptions),
-    naturalidade: row.cidade_nascimento ?? '',
+    naturalidade: row.naturalidade ?? '',
     nomeMae: row.nome_mae ?? '',
     nomePai: row.nome_pai ?? '',
     telefoneFixo: row.telefone ?? '',
@@ -499,6 +507,27 @@ const rhGrauInstrucaoOptions: string[] = [
 const rhEstadoCivilOptions: string[] = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União estável'];
 
 const rhNacionalidadeOptions: string[] = ['Brasileira', 'Estrangeira'];
+
+// Enums reais do Postgres (rh_sexo, rh_estado_civil) confirmados pelo
+// Lovable em 29/07/2026 — o valor exibido no app é em português com
+// maiúscula/acento (rhSexoOptions/rhEstadoCivilOptions acima), mas a coluna
+// grava um slug em snake_case. Best-effort: se o slug abaixo estiver errado
+// pro enum real, o PATCH falha com 400 e a mensagem original do Postgres
+// aparece no Alert (nunca falha silenciosamente).
+const rhSexoLabelToEnum: Record<string, string> = {
+  Masculino: 'masculino',
+  Feminino: 'feminino',
+  Outro: 'outro',
+  'Prefiro não informar': 'prefiro_nao_informar',
+};
+
+const rhEstadoCivilLabelToEnum: Record<string, string> = {
+  'Solteiro(a)': 'solteiro',
+  'Casado(a)': 'casado',
+  'Divorciado(a)': 'divorciado',
+  'Viúvo(a)': 'viuvo',
+  'União estável': 'uniao_estavel',
+};
 
 const rhDocumentTypeOptions: string[] = [
   'RG',
@@ -2355,6 +2384,17 @@ function RHSimplePickerModal({
   );
 }
 
+// Converte "dd/mm/aaaa" -> "aaaa-mm-dd" (formato date-only do Postgres) via
+// regex direto, sem passar por Date (evita qualquer risco de fuso horário).
+// Retorna null se vazio/inválido — quem chama decide se manda null (limpar
+// campo) ou omite a chave do body.
+function brDateLabelToIso(label: string | undefined | null): string | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((label ?? '').trim());
+  if (!match) return null;
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
+
 // Parseia "dd/mm/aaaa" -> Date. Retorna null se vazio/inválido.
 function parseDateBR(label: string): Date | null {
   const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(label?.trim() ?? '');
@@ -3395,6 +3435,34 @@ const rhJornadaTipoOptions: string[] = [
 
 const rhInsalubridadeOptions: string[] = ['Nenhum', 'Mínimo (10% SM)', 'Médio (20% SM)', 'Máximo (40% SM)'];
 
+// Mesmo esquema de best-effort label -> slug do enum real (rh_tipo_contrato,
+// rh_regime_jornada default '44h', rh_grau_insalubridade default 'nenhum') —
+// ver comentário em rhSexoLabelToEnum acima.
+const rhTipoContratoLabelToEnum: Record<string, string> = {
+  CLT: 'clt',
+  PJ: 'pj',
+  Estagiário: 'estagiario',
+  'Jovem Aprendiz': 'jovem_aprendiz',
+  Temporário: 'temporario',
+  Terceirizado: 'terceirizado',
+};
+
+const rhRegimeJornadaLabelToEnum: Record<string, string> = {
+  '44h semanais': '44h',
+  '40h semanais': '40h',
+  '36h semanais': '36h',
+  '30h semanais': '30h',
+  'Escala 12×36': '12x36',
+  'Escala personalizada': 'personalizada',
+};
+
+const rhGrauInsalubridadeLabelToEnum: Record<string, string> = {
+  Nenhum: 'nenhum',
+  'Mínimo (10% SM)': 'minimo',
+  'Médio (20% SM)': 'medio',
+  'Máximo (40% SM)': 'maximo',
+};
+
 const rhModeloJornadaOptions: string[] = [
   '— Sem modelo vinculado —',
   'Comercial 08h às 16h20',
@@ -3424,6 +3492,14 @@ function formatCurrencyInput(text: string): string {
   const decimalPart = cents.slice(-2);
   const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return `${withThousands},${decimalPart}`;
+}
+
+// Inverso de formatCurrencyInput: "1.234,56" -> 1234.56 (number, pra mandar
+// pro backend). String vazia/só zero -> 0.
+function parseCurrencyBRToNumber(text: string): number {
+  const normalized = text.replace(/\./g, '').replace(',', '.');
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : 0;
 }
 
 // Lista de horários de 30 em 30 minutos (00:00 a 23:30) pros seletores de
@@ -3551,6 +3627,73 @@ function DadosPessoaisModal({
     dentalPlanPrimaryDiscount: '0,00',
     dentalPlanDependentDiscount: '0,00',
   });
+  const [isSavingPessoais, setIsSavingPessoais] = useState(false);
+  const [isSavingContrato, setIsSavingContrato] = useState(false);
+  const [isSavingEncargos, setIsSavingEncargos] = useState(false);
+  const [isSavingBeneficios, setIsSavingBeneficios] = useState(false);
+  const [passagensAnteriores, setPassagensAnteriores] = useState<RhHistoricoContratacaoItem[]>([]);
+  const [isLoadingPassagens, setIsLoadingPassagens] = useState(false);
+  const [isSavingPassagem, setIsSavingPassagem] = useState(false);
+
+  const loadPassagensAnteriores = () => {
+    setIsLoadingPassagens(true);
+    return fetchRhHistoricoContratacoes(employee.id)
+      .then((items) => setPassagensAnteriores(items))
+      .catch(() => {
+        // Silencioso: sem passagens anteriores ainda (ou erro de leitura), a
+        // lista fica vazia em vez de travar a aba.
+        setPassagensAnteriores([]);
+      })
+      .finally(() => setIsLoadingPassagens(false));
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    loadPassagensAnteriores();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, employee.id]);
+
+  // Lê rh_beneficios_colaborador de verdade (VR/VA/seguro de vida/plano de
+  // saúde/odontológico, 1:1 via colaborador_id) quando o modal abre — antes
+  // a aba Benefícios só mostrava os defaults do form (nunca lia do banco).
+  useEffect(() => {
+    if (!visible) return;
+    let isActive = true;
+    fetchRhBeneficios(employee.id)
+      .then((beneficios) => {
+        if (!isActive || !beneficios) return;
+        const toValorDia = (value: number | null) =>
+          typeof value === 'number' ? value.toFixed(2).replace('.', ',') : '0,00';
+        setContractForm((current) => ({
+          ...current,
+          vrEnabled: Boolean(beneficios.vr_ativo),
+          vrDailyValue: toValorDia(beneficios.vr_valor_dia),
+          vaEnabled: Boolean(beneficios.va_ativo),
+          vaDailyValue: toValorDia(beneficios.va_valor_dia),
+          lifeInsuranceEnabled: Boolean(beneficios.seguro_vida_ativo),
+          lifeInsuranceCarrier: beneficios.seguro_vida_seguradora ?? '',
+          lifeInsuranceCoverage: toValorDia(beneficios.seguro_vida_cobertura),
+          lifeInsuranceDiscount: toValorDia(beneficios.seguro_vida_desconto_mensal),
+          healthPlanEnabled: Boolean(beneficios.plano_saude_ativo),
+          healthPlanOperator: beneficios.plano_saude_operadora ?? '',
+          healthPlanName: beneficios.plano_saude_plano ?? '',
+          healthPlanPrimaryDiscount: toValorDia(beneficios.plano_saude_desconto_titular),
+          healthPlanDependentDiscount: toValorDia(beneficios.plano_saude_desconto_dependente),
+          dentalPlanEnabled: Boolean(beneficios.plano_odonto_ativo),
+          dentalPlanOperator: beneficios.plano_odonto_operadora ?? '',
+          dentalPlanName: beneficios.plano_odonto_plano ?? '',
+          dentalPlanPrimaryDiscount: toValorDia(beneficios.plano_odonto_desconto_titular),
+          dentalPlanDependentDiscount: toValorDia(beneficios.plano_odonto_desconto_dependente),
+        }));
+      })
+      .catch(() => {
+        // Silencioso: sem benefícios cadastrados ainda (ou erro de leitura),
+        // a aba fica nos defaults em vez de travar o modal.
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [visible, employee.id]);
 
   // Checklist real de completude do cadastro (aba Pendências), calculado a
   // partir dos dados de verdade (employee/form/contractForm) — nada mocado.
@@ -3679,9 +3822,10 @@ function DadosPessoaisModal({
 
   // Aba Histórico: mostra a passagem real do colaborador (dados reais de
   // employee — cargo, admissão, status), sem inventar movimentações que não
-  // existem no banco. "Passagens anteriores" (vínculos antigos na rede) ainda
-  // não têm fonte real conectada — ver saveNotAvailableAlert no botão Salvar
-  // do formulário "Adicionar passagem anterior".
+  // existem no banco. "Passagens anteriores" (vínculos antigos na rede) vêm
+  // de rh_historico_contratacoes de verdade (fetchRhHistoricoContratacoes) e
+  // o formulário "Adicionar passagem anterior" grava via
+  // createRhHistoricoContratacao — ver handleSalvarPassagemAnterior.
   const currentPassageStatusLabel =
     employee.status === 'desligado'
       ? 'Desligado'
@@ -3760,15 +3904,150 @@ function DadosPessoaisModal({
   const saveSimpleAlert = (title: string, message: string) => {
     Alert.alert(title, message);
   };
-  // Honesto: ainda não existe endpoint de escrita pro Lovable gravar em
-  // rh_colaboradores (só leitura hoje — ver af360-api/src/lovable.js). Em vez
-  // de fingir sucesso salvando "no ar", avisa exatamente isso, seguindo o
-  // mesmo padrão já usado em Importar/Reenviar boas-vindas/Inativar.
-  const saveNotAvailableAlert = () => {
+
+  const showRhSaveError = (err: unknown, fallback: string) => {
     Alert.alert(
-      'Salvar ainda não disponível',
-      'Essa tela ainda só LÊ os dados de rh_colaboradores. Gravar alterações (e refletir no web) depende de um endpoint de escrita no Lovable que ainda não está liberado.'
+      'Não foi possível salvar',
+      err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback
     );
+  };
+
+  // PATCH real em rh_colaboradores (endpoint confirmado pelo Lovable em
+  // 29/07/2026 — ver af360-api/src/routes/colaboradores.js). Campos com enum
+  // real no Postgres (sexo, estado_civil) usam o mapa label -> slug acima;
+  // se o mapeamento estiver errado pro enum de verdade, o Postgres rejeita
+  // com 400 e a mensagem original aparece no Alert (nunca finge sucesso).
+  // Datas: só manda a chave se o valor for uma data completa e válida — texto
+  // parcial/incompleto não sobrescreve o que já está salvo.
+  const handleSalvarPessoais = () => {
+    setIsSavingPessoais(true);
+    const body: Record<string, unknown> = {
+      cpf: form.cpf || null,
+      rg: form.rg || null,
+      orgao_rg: form.orgaoEmissor || null,
+      uf_rg: form.ufRg || null,
+      carteira_habilitacao: form.cnh || null,
+      carteira_trabalho: form.ctps || null,
+      pis_pasep: form.pisPasep || null,
+      data_nascimento: brDateLabelToIso(form.dataNascimento) ?? undefined,
+      sexo: rhSexoLabelToEnum[form.sexo] ?? undefined,
+      tipo_sanguineo: form.tipoSanguineo || null,
+      estado_civil: rhEstadoCivilLabelToEnum[form.estadoCivil] ?? undefined,
+      grau_instrucao: form.grauInstrucao || null,
+      nacionalidade: form.nacionalidade || null,
+      naturalidade: form.naturalidade || null,
+      nome_mae: form.nomeMae || null,
+      nome_pai: form.nomePai || null,
+      telefone: form.telefoneFixo || null,
+      celular: form.celular || null,
+      email_pessoal: form.emailPessoal || null,
+      email_corporativo: form.emailCorporativo || null,
+      endereco_cep: form.cep || null,
+      endereco_logradouro: form.logradouro || null,
+      endereco_numero: form.numero || null,
+      endereco_complemento: form.complemento || null,
+      endereco_bairro: form.bairro || null,
+      endereco_cidade: form.cidade || null,
+      endereco_estado: form.uf || null,
+      contato_emergencia_nome: form.contatoEmergenciaNome || null,
+      contato_emergencia_telefone: form.contatoEmergenciaTelefone || null,
+    };
+    updateRhColaborador(employee.id, body)
+      .then(() => Alert.alert('Salvo', 'Dados pessoais atualizados.'))
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar os dados pessoais.'))
+      .finally(() => setIsSavingPessoais(false));
+  };
+
+  const handleSalvarContrato = () => {
+    setIsSavingContrato(true);
+    const body: Record<string, unknown> = {
+      tipo_contrato: rhTipoContratoLabelToEnum[contractForm.contractType] ?? undefined,
+      cargo: contractForm.role || null,
+      setor: contractForm.setor || null,
+      data_admissao: brDateLabelToIso(contractForm.admissionDate) ?? undefined,
+      regime_jornada: rhRegimeJornadaLabelToEnum[contractForm.scheduleType] ?? undefined,
+    };
+    updateRhColaborador(employee.id, body)
+      .then(() => Alert.alert('Salvo', 'Dados contratuais atualizados.'))
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar o contrato.'))
+      .finally(() => setIsSavingContrato(false));
+  };
+
+  const handleSalvarEncargos = () => {
+    setIsSavingEncargos(true);
+    const body: Record<string, unknown> = {
+      dependentes_irrf: Number(contractForm.irrfDependents.replace(/\D/g, '')) || 0,
+      grau_insalubridade: rhGrauInsalubridadeLabelToEnum[contractForm.insalubrityLevel] ?? undefined,
+    };
+    updateRhColaborador(employee.id, body)
+      .then(() => Alert.alert('Salvo', 'Encargos atualizados.'))
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar os encargos.'))
+      .finally(() => setIsSavingEncargos(false));
+  };
+
+  // PUT real em rh_beneficios_colaborador (1:1 via colaborador_id) — grava
+  // VR/VA/seguro de vida/plano de saúde/odontológico de verdade. Valor por
+  // dia (vr_valor_dia/va_valor_dia) é o que o web usa pra calcular o total
+  // mensal; não escrevemos o campo "valor_vr_mensal" (cache separado em
+  // rh_colaboradores) porque não há sincronia automática confirmada.
+  const handleSalvarBeneficios = () => {
+    setIsSavingBeneficios(true);
+    const body: Record<string, unknown> = {
+      vr_ativo: contractForm.vrEnabled,
+      vr_valor_dia: parseCurrencyBRToNumber(contractForm.vrDailyValue),
+      va_ativo: contractForm.vaEnabled,
+      va_valor_dia: parseCurrencyBRToNumber(contractForm.vaDailyValue),
+      seguro_vida_ativo: contractForm.lifeInsuranceEnabled,
+      seguro_vida_seguradora: contractForm.lifeInsuranceCarrier || null,
+      seguro_vida_cobertura: parseCurrencyBRToNumber(contractForm.lifeInsuranceCoverage),
+      seguro_vida_desconto_mensal: parseCurrencyBRToNumber(contractForm.lifeInsuranceDiscount),
+      plano_saude_ativo: contractForm.healthPlanEnabled,
+      plano_saude_operadora: contractForm.healthPlanOperator || null,
+      plano_saude_plano: contractForm.healthPlanName || null,
+      plano_saude_desconto_titular: parseCurrencyBRToNumber(contractForm.healthPlanPrimaryDiscount),
+      plano_saude_desconto_dependente: parseCurrencyBRToNumber(contractForm.healthPlanDependentDiscount),
+      plano_odonto_ativo: contractForm.dentalPlanEnabled,
+      plano_odonto_operadora: contractForm.dentalPlanOperator || null,
+      plano_odonto_plano: contractForm.dentalPlanName || null,
+      plano_odonto_desconto_titular: parseCurrencyBRToNumber(contractForm.dentalPlanPrimaryDiscount),
+      plano_odonto_desconto_dependente: parseCurrencyBRToNumber(contractForm.dentalPlanDependentDiscount),
+    };
+    updateRhBeneficios(employee.id, body)
+      .then(() => Alert.alert('Salvo', 'Benefícios atualizados.'))
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar os benefícios.'))
+      .finally(() => setIsSavingBeneficios(false));
+  };
+
+  // POST real em rh_historico_contratacoes (aba Histórico > "Adicionar
+  // passagem anterior") — cpf é NOT NULL na tabela, então sempre manda o CPF
+  // do colaborador atual junto com o vínculo antigo sendo registrado.
+  const handleSalvarPassagemAnterior = () => {
+    setIsSavingPassagem(true);
+    const body: Record<string, unknown> = {
+      colaborador_id: employee.id,
+      cpf: employee.cpf,
+      cargo: passagemForm.cargo || null,
+      data_admissao: brDateLabelToIso(passagemForm.dataAdmissao) ?? undefined,
+      data_demissao: brDateLabelToIso(passagemForm.dataDemissao) ?? undefined,
+      motivo_desligamento: passagemForm.motivoDesligamento || null,
+      valor_rescisao_liquida: passagemForm.valorRescisao ? parseCurrencyBRToNumber(passagemForm.valorRescisao) : null,
+      observacoes: passagemForm.observacoes || null,
+    };
+    createRhHistoricoContratacao(body)
+      .then(() => {
+        setIsAddPassagemOpen(false);
+        setPassagemForm({
+          cargo: '',
+          dataAdmissao: '',
+          dataDemissao: '',
+          motivoDesligamento: '',
+          valorRescisao: '',
+          observacoes: '',
+        });
+        loadPassagensAnteriores();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar a passagem anterior.'))
+      .finally(() => setIsSavingPassagem(false));
   };
 
   const handleSaveDependent = () => {
@@ -4277,9 +4556,13 @@ function DadosPessoaisModal({
             </View>
           </View>
 
-          <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={saveNotAvailableAlert}>
+          <Pressable
+            style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSavingPessoais ? { opacity: 0.6 } : null]}
+            disabled={isSavingPessoais}
+            onPress={handleSalvarPessoais}
+          >
             <Feather name="save" size={15} color="#FFFFFF" />
-            <Text style={styles.primaryButtonText}>Salvar dados</Text>
+            <Text style={styles.primaryButtonText}>{isSavingPessoais ? 'Salvando...' : 'Salvar dados'}</Text>
           </Pressable>
         </>
       ) : null}
@@ -4464,11 +4747,12 @@ function DadosPessoaisModal({
             />
 
             <Pressable
-              style={rhStyles.detailSaveButton}
-              onPress={saveNotAvailableAlert}
+              style={[rhStyles.detailSaveButton, isSavingContrato ? { opacity: 0.6 } : null]}
+              disabled={isSavingContrato}
+              onPress={handleSalvarContrato}
             >
               <Feather name="save" size={14} color="#FFFFFF" />
-              <Text style={rhStyles.detailSaveButtonText}>Salvar contrato</Text>
+              <Text style={rhStyles.detailSaveButtonText}>{isSavingContrato ? 'Salvando...' : 'Salvar contrato'}</Text>
             </Pressable>
           </View>
 
@@ -4534,11 +4818,12 @@ function DadosPessoaisModal({
             </View>
 
             <Pressable
-              style={rhStyles.detailSaveButton}
-              onPress={saveNotAvailableAlert}
+              style={[rhStyles.detailSaveButton, isSavingEncargos ? { opacity: 0.6 } : null]}
+              disabled={isSavingEncargos}
+              onPress={handleSalvarEncargos}
             >
               <Feather name="save" size={14} color="#FFFFFF" />
-              <Text style={rhStyles.detailSaveButtonText}>Salvar encargos</Text>
+              <Text style={rhStyles.detailSaveButtonText}>{isSavingEncargos ? 'Salvando...' : 'Salvar encargos'}</Text>
             </Pressable>
           </View>
 
@@ -4740,11 +5025,12 @@ function DadosPessoaisModal({
             </View>
 
             <Pressable
-              style={rhStyles.detailSaveButton}
-              onPress={saveNotAvailableAlert}
+              style={[rhStyles.detailSaveButton, isSavingBeneficios ? { opacity: 0.6 } : null]}
+              disabled={isSavingBeneficios}
+              onPress={handleSalvarBeneficios}
             >
               <Feather name="save" size={14} color="#FFFFFF" />
-              <Text style={rhStyles.detailSaveButtonText}>Salvar benefícios</Text>
+              <Text style={rhStyles.detailSaveButtonText}>{isSavingBeneficios ? 'Salvando...' : 'Salvar benefícios'}</Text>
             </Pressable>
           </View>
         </>
@@ -4873,7 +5159,52 @@ function DadosPessoaisModal({
             </View>
           </View>
 
-          <Text style={[rhStyles.historyEmptyNote, styles.spacingTop]}>Sem passagens anteriores registradas.</Text>
+          {isLoadingPassagens ? (
+            <Text style={[rhStyles.historyEmptyNote, styles.spacingTop]}>Carregando passagens anteriores...</Text>
+          ) : passagensAnteriores.length === 0 ? (
+            <Text style={[rhStyles.historyEmptyNote, styles.spacingTop]}>Sem passagens anteriores registradas.</Text>
+          ) : (
+            passagensAnteriores.map((item, index) => (
+              <View key={item.id} style={[rhStyles.kpiCard, styles.spacingTop]}>
+                <View style={rhStyles.passagemTopRow}>
+                  <View style={rhStyles.passagemTag}>
+                    <Text style={rhStyles.passagemTagText}>
+                      Passagem anterior #{passagensAnteriores.length - index}
+                    </Text>
+                  </View>
+                </View>
+                <View style={[rhStyles.passagemInfoRow, styles.spacingTop]}>
+                  <Feather name="briefcase" size={13} color="#5E667D" />
+                  <Text style={rhStyles.passagemInfoText}>{(item.cargo || '—').toUpperCase()}</Text>
+                </View>
+                <View style={rhStyles.passagemInfoRow}>
+                  <Feather name="calendar" size={13} color="#5E667D" />
+                  <Text style={rhStyles.passagemInfoText}>
+                    {formatDateOnlyBR(item.data_admissao)} →{' '}
+                    {item.data_demissao ? formatDateOnlyBR(item.data_demissao) : 'presente'}
+                  </Text>
+                </View>
+                {item.motivo_desligamento ? (
+                  <View style={rhStyles.passagemInfoRow}>
+                    <Feather name="info" size={13} color="#5E667D" />
+                    <Text style={rhStyles.passagemInfoText}>{item.motivo_desligamento}</Text>
+                  </View>
+                ) : null}
+                {typeof item.valor_rescisao_liquida === 'number' ? (
+                  <View style={rhStyles.passagemInfoRow}>
+                    <Feather name="dollar-sign" size={13} color="#5E667D" />
+                    <Text style={rhStyles.passagemInfoText}>
+                      Rescisão líquida: R${' '}
+                      {item.valor_rescisao_liquida.toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ))
+          )}
         </>
       ) : null}
 
@@ -5121,9 +5452,13 @@ function DadosPessoaisModal({
                 >
                   <Text style={styles.secondaryButtonText}>Cancelar</Text>
                 </Pressable>
-                <Pressable style={[rhStyles.detailSaveButton, { marginTop: 0 }]} onPress={saveNotAvailableAlert}>
+                <Pressable
+                  style={[rhStyles.detailSaveButton, { marginTop: 0 }, isSavingPassagem ? { opacity: 0.6 } : null]}
+                  disabled={isSavingPassagem}
+                  onPress={handleSalvarPassagemAnterior}
+                >
                   <Feather name="save" size={14} color="#FFFFFF" />
-                  <Text style={rhStyles.detailSaveButtonText}>Salvar</Text>
+                  <Text style={rhStyles.detailSaveButtonText}>{isSavingPassagem ? 'Salvando...' : 'Salvar'}</Text>
                 </Pressable>
               </View>
             </ScrollView>
