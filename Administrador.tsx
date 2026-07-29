@@ -1443,9 +1443,23 @@ const adminColaboradorFunctionLabels: string[] = [
   'Notificações',
 ];
 
-// Só RH e Colaborador têm lista de funcionalidades confirmada por enquanto —
-// os outros módulos mostram uma nota honesta em vez de uma lista inventada.
+const adminAdministradorFunctionLabels: string[] = [
+  'Visualizar Dashboard',
+  'Cadastros',
+  'Relatórios',
+  'Configurações',
+  'Integrações',
+  'Versões & Changelog',
+  'Notificações',
+];
+
+// Só Administrador, RH e Colaborador têm lista de funcionalidades confirmada
+// por enquanto (vista no próprio print do web) — os outros módulos (R&S,
+// Financeiro, Gestão, Administrativo, Diretoria, Marketing & Fidelidade)
+// mostram uma nota honesta em vez de uma lista inventada, até confirmarmos
+// as telas reais de cada um.
 const adminModuleFunctionLabels: Record<string, string[]> = {
+  Administrador: adminAdministradorFunctionLabels,
   RH: adminRhFunctionLabels,
   Colaborador: adminColaboradorFunctionLabels,
 };
