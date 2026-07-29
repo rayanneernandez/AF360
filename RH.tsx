@@ -126,6 +126,7 @@ export type Employee = {
   tamanhoCamisa?: string;
   tamanhoCalca?: string;
   tamanhoCalcado?: string;
+  demissaoLabel?: string;
 };
 
 type TransferStatus = 'pendente' | 'aprovada' | 'efetivada';
@@ -438,6 +439,7 @@ function mapRhColaboradorToEmployee(row: RhColaboradorRaw, empresaNomeById: Map<
     tamanhoCamisa: row.tamanho_camisa ?? '',
     tamanhoCalca: row.tamanho_calca ?? '',
     tamanhoCalcado: row.tamanho_calcado ?? '',
+    demissaoLabel: row.data_demissao ? formatDateOnlyBR(row.data_demissao) : '',
   };
 }
 
@@ -3368,6 +3370,19 @@ const createEmptyDependentForm = (): Omit<RHDependentItem, 'id'> => ({
 
 const rhTipoContratoOptions: string[] = ['CLT', 'PJ', 'Estagiário', 'Jovem Aprendiz', 'Temporário', 'Terceirizado'];
 
+const rhMotivoDesligamentoOptions: string[] = [
+  '—',
+  'Pedido de demissão',
+  'Dispensa sem justa causa',
+  'Dispensa com justa causa',
+  'Fim de contrato de experiência',
+  'Fim de contrato por prazo',
+  'Acordo entre as partes',
+  'Aposentadoria',
+  'Falecimento',
+  'Outro',
+];
+
 const rhJornadaTipoOptions: string[] = [
   '— Não definido —',
   '44h semanais',
@@ -3454,6 +3469,18 @@ function DadosPessoaisModal({
   const [isAlmocoInicioPickerOpen, setIsAlmocoInicioPickerOpen] = useState(false);
   const [isAlmocoFimPickerOpen, setIsAlmocoFimPickerOpen] = useState(false);
   const [isScheduleModelPickerOpen, setIsScheduleModelPickerOpen] = useState(false);
+  const [isAddPassagemOpen, setIsAddPassagemOpen] = useState(false);
+  const [isPassagemAdmissaoPickerOpen, setIsPassagemAdmissaoPickerOpen] = useState(false);
+  const [isPassagemDemissaoPickerOpen, setIsPassagemDemissaoPickerOpen] = useState(false);
+  const [isPassagemMotivoPickerOpen, setIsPassagemMotivoPickerOpen] = useState(false);
+  const [passagemForm, setPassagemForm] = useState({
+    cargo: '',
+    dataAdmissao: '',
+    dataDemissao: '',
+    motivoDesligamento: '',
+    valorRescisao: '',
+    observacoes: '',
+  });
   const [form, setForm] = useState({
     cpf: formatCpfInput(employee.cpf),
     rg: employee.rg ?? '',
@@ -3650,35 +3677,22 @@ function DadosPessoaisModal({
     return { totalFields, filledFields, criticalTotal, criticalFilled, percent };
   }, [checklistGroups]);
 
-  const historyItems = useMemo(
-    () => [
-      {
-        id: 'history-1',
-        title: 'Admissão concluída',
-        subtitle: `Cadastro inicial confirmado em ${employee.admissionLabel}.`,
-        meta: 'Movimentação • RH',
-      },
-      {
-        id: 'history-2',
-        title: 'Atualização cadastral',
-        subtitle: 'Telefone celular e e-mail corporativo revisados pela liderança.',
-        meta: 'Cadastro • há 24 dias',
-      },
-      {
-        id: 'history-3',
-        title: 'Pacote de benefícios revisado',
-        subtitle: 'VR/VA recalculados conforme jornada atual.',
-        meta: 'Benefícios • há 12 dias',
-      },
-      {
-        id: 'history-4',
-        title: 'Checklist documental conferido',
-        subtitle: 'Pendências restantes: comprovante de residência e ASO periódico.',
-        meta: 'Documentos • hoje',
-      },
-    ],
-    [employee.admissionLabel]
-  );
+  // Aba Histórico: mostra a passagem real do colaborador (dados reais de
+  // employee — cargo, admissão, status), sem inventar movimentações que não
+  // existem no banco. "Passagens anteriores" (vínculos antigos na rede) ainda
+  // não têm fonte real conectada — ver saveNotAvailableAlert no botão Salvar
+  // do formulário "Adicionar passagem anterior".
+  const currentPassageStatusLabel =
+    employee.status === 'desligado'
+      ? 'Desligado'
+      : employee.status === 'afastado'
+        ? 'Afastado'
+        : employee.status === 'ferias'
+          ? 'Férias'
+          : 'Ativo';
+  const currentPassagePeriodLabel = employee.demissaoLabel
+    ? `${employee.admissionLabel} → ${employee.demissaoLabel}`
+    : `${employee.admissionLabel} → presente`;
 
   useEffect(() => {
     if (visible) {
@@ -4812,20 +4826,54 @@ function DadosPessoaisModal({
 
       {activeTab === 'historico' ? (
         <>
-          <Text style={[rhStyles.detailSectionHeading, styles.spacingTop]}>Histórico do colaborador</Text>
-          {historyItems.map((item, index) => (
-            <View key={item.id} style={rhStyles.timelineRow}>
-              <View style={rhStyles.timelineRail}>
-                <View style={rhStyles.timelineDot} />
-                {index < historyItems.length - 1 ? <View style={rhStyles.timelineLine} /> : null}
+          <View style={[rhStyles.passagensHeaderRow, styles.spacingTop]}>
+            <View style={rhStyles.historyHeaderTextBlock}>
+              <View style={rhStyles.historyHeaderTitleRow}>
+                <Feather name="clock" size={15} color="#15203E" />
+                <Text style={rhStyles.detailSectionHeading}>Linha do tempo na rede</Text>
               </View>
-              <View style={rhStyles.timelineCard}>
-                <Text style={rhStyles.historyCardTitle}>{item.title}</Text>
-                <Text style={rhStyles.historyCardMeta}>{item.meta}</Text>
-                <Text style={rhStyles.timelineDescription}>{item.subtitle}</Text>
+              <Text style={rhStyles.historyHeaderSubtitle}>Primeira passagem do colaborador na rede.</Text>
+            </View>
+            <Pressable style={rhStyles.addPassagemButton} onPress={() => setIsAddPassagemOpen(true)}>
+              <Feather name="plus" size={14} color="#FFFFFF" />
+              <Text style={rhStyles.addPassagemButtonText}>Adicionar passagem anterior</Text>
+            </Pressable>
+          </View>
+
+          <View style={[rhStyles.kpiCard, rhStyles.kpiCardAccentGreen, styles.spacingTop]}>
+            <View style={rhStyles.passagemTopRow}>
+              <View style={rhStyles.passagemTag}>
+                <Text style={rhStyles.passagemTagText}>
+                  Passagem #1{employee.status !== 'desligado' ? ' — Atual' : ''}
+                </Text>
+              </View>
+              <View
+                style={[
+                  rhStyles.passagemStatusTag,
+                  employee.status === 'desligado' ? rhStyles.passagemStatusTagInactive : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    rhStyles.passagemStatusTagText,
+                    employee.status === 'desligado' ? rhStyles.passagemStatusTagTextInactive : null,
+                  ]}
+                >
+                  {currentPassageStatusLabel}
+                </Text>
               </View>
             </View>
-          ))}
+            <View style={[rhStyles.passagemInfoRow, styles.spacingTop]}>
+              <Feather name="briefcase" size={13} color="#5E667D" />
+              <Text style={rhStyles.passagemInfoText}>{employee.role.toUpperCase()}</Text>
+            </View>
+            <View style={rhStyles.passagemInfoRow}>
+              <Feather name="calendar" size={13} color="#5E667D" />
+              <Text style={rhStyles.passagemInfoText}>{currentPassagePeriodLabel}</Text>
+            </View>
+          </View>
+
+          <Text style={[rhStyles.historyEmptyNote, styles.spacingTop]}>Sem passagens anteriores registradas.</Text>
         </>
       ) : null}
 
@@ -4954,6 +5002,158 @@ function DadosPessoaisModal({
               selectedValue={dependentForm.kinship}
               onSelect={(value) => setDependentForm((current) => ({ ...current, kinship: value }))}
               onClose={() => setIsKinshipPickerOpen(false)}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={isAddPassagemOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setIsAddPassagemOpen(false)}
+      >
+        <View style={styles.requestModalBackdrop}>
+          <View style={styles.requestModalCard}>
+            <View style={styles.requestModalHeader}>
+              <Text style={styles.requestModalTitle}>Adicionar passagem anterior</Text>
+              <Pressable
+                onPress={() => {
+                  setIsAddPassagemOpen(false);
+                  setPassagemForm({
+                    cargo: '',
+                    dataAdmissao: '',
+                    dataDemissao: '',
+                    motivoDesligamento: '',
+                    valorRescisao: '',
+                    observacoes: '',
+                  });
+                }}
+                hitSlop={8}
+              >
+                <Feather name="x" size={20} color="#677089" />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={rhStyles.warningBox}>
+                <Text style={rhStyles.warningBoxNote}>
+                  Use este formulário para registrar um vínculo anterior deste colaborador na rede. O vínculo
+                  atual fica nos dados pessoais/contrato.
+                </Text>
+              </View>
+
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Cargo</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={passagemForm.cargo}
+                onChangeText={(text) => setPassagemForm((current) => ({ ...current, cargo: text }))}
+                placeholder="Ex.: Frentista"
+                placeholderTextColor="#A7AEC2"
+              />
+
+              <View style={rhStyles.formRow}>
+                <View style={rhStyles.formRowItem}>
+                  <RHSelectField
+                    label="Data de admissão"
+                    value={passagemForm.dataAdmissao}
+                    placeholder="Selecione a data"
+                    icon="calendar"
+                    onPress={() => setIsPassagemAdmissaoPickerOpen(true)}
+                  />
+                </View>
+                <View style={rhStyles.formRowItem}>
+                  <RHSelectField
+                    label="Data de demissão"
+                    value={passagemForm.dataDemissao}
+                    placeholder="Selecione a data"
+                    icon="calendar"
+                    onPress={() => setIsPassagemDemissaoPickerOpen(true)}
+                  />
+                </View>
+              </View>
+
+              <RHSelectField
+                label="Motivo do desligamento"
+                value={passagemForm.motivoDesligamento || '—'}
+                onPress={() => setIsPassagemMotivoPickerOpen(true)}
+              />
+
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Valor da rescisão líquida (R$)</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={passagemForm.valorRescisao ? `R$ ${passagemForm.valorRescisao}` : ''}
+                onChangeText={(text) =>
+                  setPassagemForm((current) => ({
+                    ...current,
+                    valorRescisao: formatCurrencyInput(text.replace(/^R\$\s?/, '')),
+                  }))
+                }
+                placeholder="0,00"
+                placeholderTextColor="#A7AEC2"
+                keyboardType="number-pad"
+              />
+
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Observações</Text>
+              <TextInput
+                style={[styles.processTextInput, styles.processDocumentationArea]}
+                value={passagemForm.observacoes}
+                onChangeText={(text) => setPassagemForm((current) => ({ ...current, observacoes: text }))}
+                placeholderTextColor="#A7AEC2"
+                multiline
+                textAlignVertical="top"
+              />
+
+              <View style={[rhStyles.passagemFormButtonRow, styles.spacingTop]}>
+                <Pressable
+                  style={styles.secondaryButton}
+                  onPress={() => {
+                    setIsAddPassagemOpen(false);
+                    setPassagemForm({
+                      cargo: '',
+                      dataAdmissao: '',
+                      dataDemissao: '',
+                      motivoDesligamento: '',
+                      valorRescisao: '',
+                      observacoes: '',
+                    });
+                  }}
+                >
+                  <Text style={styles.secondaryButtonText}>Cancelar</Text>
+                </Pressable>
+                <Pressable style={[rhStyles.detailSaveButton, { marginTop: 0 }]} onPress={saveNotAvailableAlert}>
+                  <Feather name="save" size={14} color="#FFFFFF" />
+                  <Text style={rhStyles.detailSaveButtonText}>Salvar</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+
+            <RHDatePickerModal
+              inline
+              visible={isPassagemAdmissaoPickerOpen}
+              title="Data de admissão"
+              value={passagemForm.dataAdmissao}
+              onSelect={(dateLabel) => setPassagemForm((current) => ({ ...current, dataAdmissao: dateLabel }))}
+              onClose={() => setIsPassagemAdmissaoPickerOpen(false)}
+            />
+            <RHDatePickerModal
+              inline
+              visible={isPassagemDemissaoPickerOpen}
+              title="Data de demissão"
+              value={passagemForm.dataDemissao}
+              onSelect={(dateLabel) => setPassagemForm((current) => ({ ...current, dataDemissao: dateLabel }))}
+              onClose={() => setIsPassagemDemissaoPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isPassagemMotivoPickerOpen}
+              title="Motivo do desligamento"
+              options={rhMotivoDesligamentoOptions}
+              selectedValue={passagemForm.motivoDesligamento || '—'}
+              onSelect={(value) =>
+                setPassagemForm((current) => ({ ...current, motivoDesligamento: value === '—' ? '' : value }))
+              }
+              onClose={() => setIsPassagemMotivoPickerOpen(false)}
             />
           </View>
         </View>
@@ -9856,6 +10056,99 @@ const rhStyles = StyleSheet.create({
     color: '#D52B47',
     fontSize: 9.5,
     fontWeight: '800',
+  },
+  passagensHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  historyHeaderTextBlock: {
+    flex: 1,
+    minWidth: 180,
+  },
+  historyHeaderTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  historyHeaderSubtitle: {
+    marginTop: 2,
+    color: '#7C8397',
+    fontSize: 11.5,
+  },
+  addPassagemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#E24C52',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  addPassagemButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  passagemTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  passagemTag: {
+    borderRadius: 999,
+    backgroundColor: '#18955A',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  passagemTagText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  passagemStatusTag: {
+    borderRadius: 999,
+    backgroundColor: '#F2F4FA',
+    borderWidth: 1,
+    borderColor: '#DCE1EE',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  passagemStatusTagText: {
+    color: '#4C5470',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  passagemStatusTagInactive: {
+    backgroundColor: '#FCE8EC',
+    borderColor: '#F3C4CE',
+  },
+  passagemStatusTagTextInactive: {
+    color: '#D52B47',
+  },
+  passagemInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  passagemInfoText: {
+    color: '#15203E',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  historyEmptyNote: {
+    textAlign: 'center',
+    color: '#9AA1B5',
+    fontSize: 12,
+  },
+  passagemFormButtonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
   },
   timelineRow: {
     flexDirection: 'row',
