@@ -38,10 +38,16 @@ import type {
 } from './App';
 import {
   fetchAdminUsuarios,
+  createAdminUsuario,
+  resetAdminUsuarioSenha,
+  toggleAdminUsuarioAtivo,
+  updateAdminUsuario,
+  deleteAdminUsuario,
   fetchAdminCargos,
   fetchAdminGrupos,
   fetchAdminAcessoPorUsuario,
   fetchRhUnidades,
+  ApiError,
   type AdminUsuarioItem,
   type AdminCargoItem,
   type AdminGrupoItem,
@@ -417,6 +423,75 @@ function AdminActionsMenuModal({
   );
 }
 
+// ---------- Modal "Redefinir senha" ----------
+
+function AdminResetSenhaModal({
+  visible,
+  userLabel,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean;
+  userLabel: string;
+  onClose: () => void;
+  onConfirm: (password: string) => void;
+}) {
+  const [password, setPassword] = useState('');
+
+  useEffect(() => {
+    if (visible) setPassword('');
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>Redefinir senha</Text>
+              <Text style={adminStyles.detailSubEmail} numberOfLines={1}>
+                {userLabel}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <Text style={styles.requestFieldLabel}>Nova senha</Text>
+          <TextInput
+            style={styles.processTextInput}
+            value={password}
+            onChangeText={setPassword}
+            placeholderTextColor="#A7AEC2"
+            secureTextEntry
+            autoFocus
+          />
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]} onPress={onClose}>
+              <Text style={styles.secondaryButtonText}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={adminStyles.primaryActionButton}
+              onPress={() => {
+                if (password.trim().length < 6) {
+                  Alert.alert('Senha muito curta', 'Digite ao menos 6 caracteres.');
+                  return;
+                }
+                onConfirm(password.trim());
+              }}
+            >
+              <Feather name="key" size={14} color="#FFFFFF" />
+              <Text style={adminStyles.primaryActionButtonText}>Redefinir</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 type AdminUserFormValues = {
   fullName: string;
   email: string;
@@ -434,15 +509,16 @@ function emptyAdminUserForm(): AdminUserFormValues {
 // ---------- Modal "Novo Usuário" / "Editar usuário" ----------
 // Cargo e Unidade puxam de verdade do banco (fetchAdminCargos / fetchRhUnidades
 // — os mesmos endpoints já usados em Perfil de Acesso e no módulo RH). Criar/
-// Salvar ainda cai no aviso honesto: não existe POST/PATCH de usuário no
-// af360-api hoje (só GET — ver routes/admin.js), então nada é gravado de
-// verdade ainda.
+// Salvar gravam de verdade via createAdminUsuario/updateAdminUsuario (ver
+// AdminUsuariosScreen), que resolvem o nome do cargo/unidade escolhido pro
+// role_id/empresa_id reais antes de mandar pro backend.
 function AdminUserFormModal({
   visible,
   mode,
   initialValues,
   cargoOptions,
   unidadeOptions,
+  isSaving,
   onClose,
   onSubmit,
 }: {
@@ -451,6 +527,7 @@ function AdminUserFormModal({
   initialValues: AdminUserFormValues;
   cargoOptions: string[];
   unidadeOptions: string[];
+  isSaving?: boolean;
   onClose: () => void;
   onSubmit: (values: AdminUserFormValues) => void;
 }) {
@@ -555,9 +632,15 @@ function AdminUserFormModal({
               <Pressable style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]} onPress={onClose}>
                 <Text style={styles.secondaryButtonText}>Cancelar</Text>
               </Pressable>
-              <Pressable style={adminStyles.primaryActionButton} onPress={() => onSubmit(form)}>
+              <Pressable
+                style={[adminStyles.primaryActionButton, isSaving ? { opacity: 0.6 } : null]}
+                disabled={isSaving}
+                onPress={() => onSubmit(form)}
+              >
                 <Feather name="save" size={14} color="#FFFFFF" />
-                <Text style={adminStyles.primaryActionButtonText}>{mode === 'create' ? 'Criar' : 'Salvar'}</Text>
+                <Text style={adminStyles.primaryActionButtonText}>
+                  {isSaving ? 'Salvando...' : mode === 'create' ? 'Criar' : 'Salvar'}
+                </Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -905,6 +988,9 @@ export function AdminProfileScreen({ navigation }: ScreenProps<'AdminProfile'>) 
 // erro, e lista vazia (ou busca sem resultado) mostra estado vazio honesto.
 
 export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+
   const [search, setSearch] = useState('');
   const [usuarios, setUsuarios] = useState<AdminUsuarioItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -919,6 +1005,24 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   const [formInitialValues, setFormInitialValues] = useState<AdminUserFormValues>(emptyAdminUserForm());
+  const [editingUser, setEditingUser] = useState<AdminUsuarioItem | null>(null);
+  const [isSavingForm, setIsSavingForm] = useState(false);
+  const [resetSenhaUser, setResetSenhaUser] = useState<AdminUsuarioItem | null>(null);
+
+  const loadUsuarios = () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    return fetchAdminUsuarios()
+      .then((data) => {
+        setUsuarios(data.usuarios);
+      })
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os usuários.');
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  };
 
   useEffect(() => {
     let isActive = true;
@@ -983,14 +1087,9 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
 
   const ativosCount = usuarios.filter((u) => u.isActive).length;
 
-  // Nenhuma dessas ações grava de verdade ainda — af360-api/src/routes/admin.js
-  // só tem GET hoje (usuários, cargos, grupos, acesso-por-usuário). Em vez de
-  // fingir sucesso, avisa exatamente o que falta.
-  const showWriteNotAvailable = (action: string) => {
-    Alert.alert(
-      'Ainda não disponível',
-      `"${action}" ainda não tem endpoint de escrita no backend (só leitura hoje). Assim que existir, essa ação passa a gravar de verdade e refletir no web.`
-    );
+  const showApiError = (err: unknown, fallback: string) => {
+    const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
+    Alert.alert('Não foi possível concluir', message);
   };
 
   const openDetail = (user: AdminUsuarioItem) => {
@@ -1003,6 +1102,7 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
     setActionsMenuUser(null);
     setIsDetailModalOpen(false);
     setFormMode('edit');
+    setEditingUser(user);
     setFormInitialValues({
       fullName: user.fullName ?? '',
       email: user.email,
@@ -1017,6 +1117,7 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
 
   const openCreate = () => {
     setFormMode('create');
+    setEditingUser(null);
     setFormInitialValues(emptyAdminUserForm());
     setIsFormModalOpen(true);
   };
@@ -1028,9 +1129,73 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
       `Tem certeza que quer excluir ${user.fullName || user.email}?`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Excluir', style: 'destructive', onPress: () => showWriteNotAvailable('Excluir usuário') },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: () => {
+            deleteAdminUsuario(user.id, actorId)
+              .then(() => loadUsuarios())
+              .catch((err) => showApiError(err, 'Não foi possível excluir o usuário.'));
+          },
+        },
       ]
     );
+  };
+
+  const handleToggleAtivo = (user: AdminUsuarioItem) => {
+    toggleAdminUsuarioAtivo(user.id, !user.isActive, actorId)
+      .then(() => loadUsuarios())
+      .catch((err) => showApiError(err, 'Não foi possível alterar o status do usuário.'));
+  };
+
+  const handleRedefinirSenha = (password: string) => {
+    if (!resetSenhaUser) return;
+    resetAdminUsuarioSenha(resetSenhaUser.id, password, actorId)
+      .then(() => {
+        setResetSenhaUser(null);
+        Alert.alert('Senha redefinida', 'A nova senha já está valendo.');
+      })
+      .catch((err) => showApiError(err, 'Não foi possível redefinir a senha.'));
+  };
+
+  const handleFormSubmit = (values: AdminUserFormValues) => {
+    const cargoId = cargosReais.find((cargo) => cargo.name === values.cargo)?.id ?? null;
+    const unidadeId = unidadesReais.find((unidade) => unidade.nome === values.unidade)?.id ?? null;
+
+    setIsSavingForm(true);
+    const request =
+      formMode === 'create'
+        ? createAdminUsuario(
+            {
+              email: values.email.trim(),
+              full_name: values.fullName.trim(),
+              password: values.password,
+              is_master: values.isMaster,
+              empresa_id: unidadeId,
+              role_id: cargoId,
+              chat_atendente: values.chatAtendente,
+            },
+            actorId
+          )
+        : updateAdminUsuario(
+            editingUser!.id,
+            {
+              full_name: values.fullName.trim(),
+              empresa_id: unidadeId,
+              role_id: cargoId,
+              chat_atendente: values.chatAtendente,
+              is_master: values.isMaster,
+            },
+            actorId
+          );
+
+    request
+      .then(() => {
+        setIsFormModalOpen(false);
+        loadUsuarios();
+      })
+      .catch((err) => showApiError(err, formMode === 'create' ? 'Não foi possível criar o usuário.' : 'Não foi possível salvar o usuário.'))
+      .finally(() => setIsSavingForm(false));
   };
 
   return (
@@ -1115,13 +1280,14 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
         onVisualizar={() => actionsMenuUser && openDetail(actionsMenuUser)}
         onEditar={() => actionsMenuUser && openEdit(actionsMenuUser)}
         onRedefinirSenha={() => {
+          const user = actionsMenuUser;
           setActionsMenuUser(null);
-          showWriteNotAvailable('Redefinir senha');
+          if (user) setResetSenhaUser(user);
         }}
         onToggleAtivo={() => {
           const user = actionsMenuUser;
           setActionsMenuUser(null);
-          if (user) showWriteNotAvailable(user.isActive ? 'Inativar acesso' : 'Ativar acesso');
+          if (user) handleToggleAtivo(user);
         }}
         onExcluir={() => actionsMenuUser && handleExcluir(actionsMenuUser)}
       />
@@ -1132,11 +1298,16 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
         initialValues={formInitialValues}
         cargoOptions={cargoOptions}
         unidadeOptions={unidadeOptions}
+        isSaving={isSavingForm}
         onClose={() => setIsFormModalOpen(false)}
-        onSubmit={() => {
-          setIsFormModalOpen(false);
-          showWriteNotAvailable(formMode === 'create' ? 'Criar usuário' : 'Salvar usuário');
-        }}
+        onSubmit={handleFormSubmit}
+      />
+
+      <AdminResetSenhaModal
+        visible={resetSenhaUser !== null}
+        userLabel={resetSenhaUser?.fullName || resetSenhaUser?.email || ''}
+        onClose={() => setResetSenhaUser(null)}
+        onConfirm={handleRedefinirSenha}
       />
     </SafeAreaView>
   );
