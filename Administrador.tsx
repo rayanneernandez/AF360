@@ -1234,49 +1234,80 @@ function AdminCargoDetailModal({
   visible,
   cargo,
   onClose,
+  onEdit,
 }: {
   visible: boolean;
   cargo: AdminCargoItem | null;
   onClose: () => void;
+  onEdit: () => void;
 }) {
   if (!cargo) return null;
-  const groupColors = (cargo.group && adminGroupColorMap[cargo.group]) || { bg: GRAY_BG, color: GRAY };
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.requestModalBackdrop}>
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
-            <Text style={styles.requestModalTitle}>{cargo.name}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>{cargo.name}</Text>
+              <Text style={adminStyles.detailSubEmail}>Cargo • {(cargo.group || 'não informado').toLowerCase()}</Text>
+            </View>
             <Pressable onPress={onClose} hitSlop={8}>
               <Feather name="x" size={20} color="#677089" />
             </Pressable>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            <Text style={adminStyles.detailFieldLabel}>GRUPO</Text>
-            <View style={[adminStyles.detailBadgeBase, { backgroundColor: groupColors.bg, marginTop: 6 }]}>
-              <Text style={[adminStyles.detailBadgeText, { color: groupColors.color }]}>
-                {cargo.group || 'Não informado'}
-              </Text>
+            <View style={adminStyles.detailGridRow}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>NOME</Text>
+                <Text style={adminStyles.detailFieldValue}>{cargo.name}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>SLUG</Text>
+                <Text style={adminStyles.detailFieldValue}>{cargo.slug}</Text>
+              </View>
+            </View>
+
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>GRUPO</Text>
+                <Text style={adminStyles.detailFieldValue}>{(cargo.group || '—').toLowerCase()}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>ATIVO</Text>
+                <View
+                  style={[adminStyles.detailBadgeBase, { backgroundColor: cargo.isActive ? GREEN_BG : RED_BG }]}
+                >
+                  <Feather
+                    name={cargo.isActive ? 'check-circle' : 'x-circle'}
+                    size={11}
+                    color={cargo.isActive ? GREEN : RED}
+                  />
+                  <Text style={[adminStyles.detailBadgeText, { color: cargo.isActive ? GREEN : RED }]}>
+                    {cargo.isActive ? 'Sim' : 'Não'}
+                  </Text>
+                </View>
+              </View>
             </View>
 
             <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>MÓDULOS PADRÃO</Text>
-            <View style={[adminStyles.roleModulesRow, styles.spacingTop]}>
+            <View style={[adminStyles.roleModulesRow, { marginTop: 6 }]}>
               {cargo.moduleLabels.length === 0 ? (
                 <Text style={adminStyles.listMeta}>Sem módulos vinculados.</Text>
               ) : (
                 cargo.moduleLabels.map((module) => <AdminTagPill key={module} label={module} />)
               )}
             </View>
-
-            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>STATUS</Text>
-            <Text style={adminStyles.detailFieldValue}>{cargo.isActive ? 'Ativo' : 'Inativo'}</Text>
           </ScrollView>
 
           <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
-            <Pressable style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]} onPress={onClose}>
-              <Text style={styles.secondaryButtonText}>Fechar</Text>
+            <Pressable style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]} onPress={onEdit}>
+              <Feather name="edit-2" size={13} color="#2E468F" />
+              <Text style={styles.secondaryButtonText}>Editar</Text>
+            </Pressable>
+            <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+              <Text style={adminStyles.ghostButtonText}>Fechar</Text>
             </Pressable>
           </View>
         </View>
@@ -1360,6 +1391,294 @@ function AdminAcessoUsuarioModal({
   );
 }
 
+// ---------- Permissões granulares por função (Cargos > Editar) ----------
+// Listas reais das telas existentes de cada módulo (mesmas telas de RH.tsx e
+// App.tsx), copiadas na mesma ordem em que aparecem no web. NÃO temos ainda
+// confirmação do Lovable de uma tabela real que grave essas permissões
+// granulares (ver mensagem enviada pedindo os endpoints de escrita) — os
+// checkboxes abaixo funcionam só localmente nesta tela (não persistem),
+// mesmo padrão de exceção documentado no topo deste arquivo.
+const adminRhFunctionLabels: string[] = [
+  'Visualizar Dashboard',
+  'Relatórios',
+  'Configurações',
+  'Colaboradores',
+  'Solicitações',
+  'Comunicados',
+  'Metas',
+  'Ponto',
+  'Férias',
+  'Folha de Pagamento',
+  'Configurações - Folha de Pagamento',
+  'Reajustes Coletivos',
+  'Assinatura de Contracheque',
+  'Documentos',
+  'Workflow',
+  'Fluxos de Aprovação',
+  'Workflow - Hierarquia por Posto',
+  'Notificações',
+  'Treinamentos do colaborador',
+  'Promoções',
+  'Premiações (colaborador)',
+  'Recursos Operacionais',
+  'Recursos Operacionais — Configuração',
+  'Aprovar Reposição de Uniforme/EPI',
+  'Transferências',
+  'Período de Experiência',
+  'Importar PDF',
+  'Treinamentos',
+];
+
+const adminColaboradorFunctionLabels: string[] = [
+  'Dashboard',
+  'Comunicados',
+  'Calendário',
+  'Metas',
+  'Treinamentos',
+  'Contra Cheques',
+  'Reembolso',
+  'Benefícios',
+  'Solicitações',
+  'Meu Perfil',
+  'Notificações',
+];
+
+// Só RH e Colaborador têm lista de funcionalidades confirmada por enquanto —
+// os outros módulos mostram uma nota honesta em vez de uma lista inventada.
+const adminModuleFunctionLabels: Record<string, string[]> = {
+  RH: adminRhFunctionLabels,
+  Colaborador: adminColaboradorFunctionLabels,
+};
+
+const adminPermColumns = ['LER', 'ESCR.', 'EDIT.', 'EXCL.'];
+
+function AdminPermCheckbox({ active, onPress }: { active: boolean; onPress: () => void }) {
+  return (
+    <Pressable style={adminStyles.cargoPermCheckboxCell} onPress={onPress} hitSlop={6}>
+      <View style={[adminStyles.cargoPermCheckbox, active ? adminStyles.cargoPermCheckboxActive : null]}>
+        {active ? <Feather name="check" size={11} color="#FFFFFF" /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+// Picker de Grupo com bolinha colorida por opção (igual o dropdown do web) —
+// sempre overlay absoluto (nunca <Modal> próprio), então pode ser aninhado
+// com segurança dentro do modal de Novo Cargo/Editar Cargo.
+function AdminGroupPickerModal({
+  visible,
+  selectedValue,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  selectedValue: string;
+  onSelect: (value: string) => void;
+  onClose: () => void;
+}) {
+  if (!visible) return null;
+  const options = Object.keys(adminGroupColorMap);
+
+  return (
+    <View style={adminStyles.inlinePickerLayer}>
+      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.simpleListCard} onPress={() => {}}>
+          <Text style={styles.simpleListTitle}>Grupo</Text>
+          <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+            {options.map((option) => {
+              const isSelected = option === selectedValue;
+              const colors = adminGroupColorMap[option];
+              return (
+                <Pressable
+                  key={option}
+                  style={[styles.templateOptionRow, isSelected ? styles.templateOptionRowActive : null]}
+                  onPress={() => {
+                    onSelect(option);
+                    onClose();
+                  }}
+                >
+                  <View style={styles.templateOptionLeft}>
+                    <View style={[adminStyles.groupDot, { backgroundColor: colors.color }]} />
+                    <Text style={[styles.templateOptionText, isSelected ? styles.templateOptionTextActive : null]}>
+                      {option}
+                    </Text>
+                  </View>
+                  {isSelected ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </View>
+  );
+}
+
+type AdminCargoFormValues = {
+  name: string;
+  group: string;
+  moduleLabels: string[];
+};
+
+function emptyAdminCargoForm(): AdminCargoFormValues {
+  return { name: '', group: 'Operacional', moduleLabels: [] };
+}
+
+// ---------- Modal "Novo Cargo" / "Editar — {cargo}" ----------
+// Nome/Grupo/Módulos ligados refletem dado real quando em modo "edit"
+// (cargo.moduleLabels vem do banco). A grade de permissões por
+// funcionalidade (LER/ESCR./EDIT./EXCL.) é só local — ver comentário acima
+// de adminModuleFunctionLabels. Criar/Salvar caem no aviso honesto: não há
+// endpoint de escrita pra roles ainda.
+function AdminCargoFormModal({
+  visible,
+  mode,
+  initialValues,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  mode: 'create' | 'edit';
+  initialValues: AdminCargoFormValues;
+  onClose: () => void;
+  onSubmit: (values: AdminCargoFormValues) => void;
+}) {
+  const [form, setForm] = useState<AdminCargoFormValues>(initialValues);
+  const [isGroupPickerOpen, setIsGroupPickerOpen] = useState(false);
+  const [permState, setPermState] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (visible) {
+      setForm(initialValues);
+      setPermState({});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, initialValues.name]);
+
+  const toggleModule = (moduleLabel: string) => {
+    setForm((current) => ({
+      ...current,
+      moduleLabels: current.moduleLabels.includes(moduleLabel)
+        ? current.moduleLabels.filter((m) => m !== moduleLabel)
+        : [...current.moduleLabels, moduleLabel],
+    }));
+  };
+
+  const togglePerm = (key: string) => {
+    setPermState((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>
+                {mode === 'create' ? 'Novo Cargo' : `Editar — ${initialValues.name}`}
+              </Text>
+              <Text style={adminStyles.detailSubEmail}>
+                Defina nome, grupo, módulos e permissões padrão aplicados a novos usuários deste cargo.
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <Text style={styles.requestFieldLabel}>Nome do cargo</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.name}
+                  onChangeText={(text) => setForm((current) => ({ ...current, name: text }))}
+                  placeholder="Ex: Gerente de RH"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <AdminSelectField label="Grupo" value={form.group} onPress={() => setIsGroupPickerOpen(true)} />
+              </View>
+            </View>
+
+            <Text style={[adminStyles.cargoFormSectionTitle, styles.spacingTop]}>Módulos e Permissões</Text>
+            <Text style={adminStyles.cargoFormSectionHint}>
+              Ative o módulo e defina as permissões granulares por funcionalidade.
+            </Text>
+
+            {adminCanonicalModules.map((moduleLabel) => {
+              const isOn = form.moduleLabels.includes(moduleLabel);
+              const functionLabels = adminModuleFunctionLabels[moduleLabel];
+              return (
+                <View key={moduleLabel}>
+                  <View style={adminStyles.cargoModuleToggleRow}>
+                    <Text style={adminStyles.cargoModuleToggleLabel}>{moduleLabel}</Text>
+                    <ToggleSwitch value={isOn} onValueChange={() => toggleModule(moduleLabel)} />
+                  </View>
+
+                  {isOn && functionLabels ? (
+                    <View style={adminStyles.cargoPermTableWrap}>
+                      <View style={adminStyles.cargoPermHeaderRow}>
+                        <View style={adminStyles.cargoPermFunctionCell}>
+                          <Text style={adminStyles.cargoPermHeaderLabel}>FUNÇÃO</Text>
+                        </View>
+                        {adminPermColumns.map((col) => (
+                          <View key={col} style={adminStyles.cargoPermCheckboxCell}>
+                            <Text style={adminStyles.cargoPermHeaderLabel}>{col}</Text>
+                          </View>
+                        ))}
+                      </View>
+                      {functionLabels.map((functionLabel) => (
+                        <View key={functionLabel} style={adminStyles.cargoPermRow}>
+                          <View style={adminStyles.cargoPermFunctionCell}>
+                            <Text style={adminStyles.cargoPermFunctionText}>{functionLabel}</Text>
+                          </View>
+                          {adminPermColumns.map((col) => {
+                            const key = `${moduleLabel}:${functionLabel}:${col}`;
+                            return (
+                              <AdminPermCheckbox key={col} active={Boolean(permState[key])} onPress={() => togglePerm(key)} />
+                            );
+                          })}
+                        </View>
+                      ))}
+                    </View>
+                  ) : isOn ? (
+                    <View style={adminStyles.cargoPermTableWrap}>
+                      <Text style={adminStyles.cargoPermNote}>
+                        Permissões granulares ainda não mapeadas para este módulo.
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+
+            <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+              <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+                <Text style={adminStyles.ghostButtonText}>Cancelar</Text>
+              </Pressable>
+              <Pressable style={adminStyles.primaryActionButton} onPress={() => onSubmit(form)}>
+                <Text style={adminStyles.primaryActionButtonText}>
+                  {mode === 'create' ? 'Criar Cargo' : 'Salvar Alterações'}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+
+          <AdminGroupPickerModal
+            visible={isGroupPickerOpen}
+            selectedValue={form.group}
+            onSelect={(value) => setForm((current) => ({ ...current, group: value }))}
+            onClose={() => setIsGroupPickerOpen(false)}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const ADMIN_ACESSO_PAGE_SIZE = 10;
 
 // Ainda não existe endpoint de escrita pra cargos/roles nem pra user_modules
@@ -1382,6 +1701,9 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
   const [cargosErrorMessage, setCargosErrorMessage] = useState<string | null>(null);
   const [cargoActionsFor, setCargoActionsFor] = useState<AdminCargoItem | null>(null);
   const [cargoDetail, setCargoDetail] = useState<AdminCargoItem | null>(null);
+  const [isCargoFormOpen, setIsCargoFormOpen] = useState(false);
+  const [cargoFormMode, setCargoFormMode] = useState<'create' | 'edit'>('create');
+  const [cargoFormInitial, setCargoFormInitial] = useState<AdminCargoFormValues>(emptyAdminCargoForm());
 
   const [usuariosAcesso, setUsuariosAcesso] = useState<AdminAcessoUsuarioItem[]>([]);
   const [isLoadingUsuarios, setIsLoadingUsuarios] = useState(true);
@@ -1506,7 +1828,11 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
               </Text>
               <Pressable
                 style={styles.directorNotifNewButton}
-                onPress={() => Alert.alert('Novo cargo', 'Cadastro de cargo em breve.')}
+                onPress={() => {
+                  setCargoFormMode('create');
+                  setCargoFormInitial(emptyAdminCargoForm());
+                  setIsCargoFormOpen(true);
+                }}
               >
                 <Feather name="plus" size={15} color="#FFFFFF" />
                 <Text style={styles.directorNotifNewButtonText}>Novo cargo</Text>
@@ -1637,8 +1963,12 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
             icon: 'edit-2',
             label: 'Editar',
             onPress: () => {
+              const cargo = cargoActionsFor;
               setCargoActionsFor(null);
-              showAdminWriteNotAvailable('Editar cargo');
+              if (!cargo) return;
+              setCargoFormMode('edit');
+              setCargoFormInitial({ name: cargo.name, group: cargo.group || 'Operacional', moduleLabels: cargo.moduleLabels });
+              setIsCargoFormOpen(true);
             },
           },
           {
@@ -1658,7 +1988,33 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
           },
         ]}
       />
-      <AdminCargoDetailModal visible={cargoDetail !== null} cargo={cargoDetail} onClose={() => setCargoDetail(null)} />
+      <AdminCargoDetailModal
+        visible={cargoDetail !== null}
+        cargo={cargoDetail}
+        onClose={() => setCargoDetail(null)}
+        onEdit={() => {
+          const cargo = cargoDetail;
+          if (!cargo) return;
+          setCargoDetail(null);
+          setCargoFormMode('edit');
+          setCargoFormInitial({
+            name: cargo.name,
+            group: cargo.group || 'Operacional',
+            moduleLabels: cargo.moduleLabels,
+          });
+          setIsCargoFormOpen(true);
+        }}
+      />
+      <AdminCargoFormModal
+        visible={isCargoFormOpen}
+        mode={cargoFormMode}
+        initialValues={cargoFormInitial}
+        onClose={() => setIsCargoFormOpen(false)}
+        onSubmit={() => {
+          setIsCargoFormOpen(false);
+          showAdminWriteNotAvailable(cargoFormMode === 'create' ? 'Criar cargo' : 'Salvar alterações do cargo');
+        }}
+      />
 
       <AdminGenericActionsMenu
         visible={acessoActionsFor !== null}
@@ -3433,5 +3789,112 @@ const adminStyles = StyleSheet.create({
   paginationArrowDisabled: {
     backgroundColor: '#F8F9FC',
     borderColor: '#EEF1F8',
+  },
+  ghostButton: {
+    minHeight: 40,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ghostButtonText: {
+    color: '#5E667D',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  groupDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  cargoFormSectionTitle: {
+    color: '#15203E',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  cargoFormSectionHint: {
+    marginTop: 2,
+    color: '#7C8397',
+    fontSize: 11.5,
+  },
+  cargoModuleToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8F9FC',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  cargoModuleToggleLabel: {
+    color: '#15203E',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  cargoPermTableWrap: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderTopWidth: 0,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    marginTop: -8,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+  },
+  cargoPermHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF1F8',
+  },
+  cargoPermHeaderLabel: {
+    color: '#9AA1B5',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  cargoPermRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F6FA',
+  },
+  cargoPermFunctionCell: {
+    flex: 2.4,
+    paddingRight: 6,
+  },
+  cargoPermFunctionText: {
+    color: '#3A415C',
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  cargoPermCheckboxCell: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  cargoPermCheckbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.4,
+    borderColor: '#B9C0D4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cargoPermCheckboxActive: {
+    borderColor: BLUE,
+    backgroundColor: BLUE,
+  },
+  cargoPermNote: {
+    marginTop: -4,
+    marginBottom: 10,
+    color: '#9AA1B5',
+    fontSize: 11,
+    fontStyle: 'italic',
   },
 });
