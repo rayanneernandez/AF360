@@ -1100,10 +1100,7 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
 
   const ativosCount = usuarios.filter((u) => u.isActive).length;
 
-  const showApiError = (err: unknown, fallback: string) => {
-    const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
-    Alert.alert('Não foi possível concluir', message);
-  };
+  const showApiError = showAdminApiError;
 
   const openDetail = (user: AdminUsuarioItem) => {
     setActionsMenuUser(null);
@@ -1403,6 +1400,38 @@ function slugifyAdminName(raw: string): string {
     .replace(/(^-|-$)/g, '');
 }
 
+// Traduz erros crus do backend/Lovable pra mensagens que a pessoa realmente
+// entende, em vez de mostrar o texto técnico direto (ex: "forbidden: master
+// required" ou "Lovable API respondeu 404"). Reaproveitado por qualquer tela
+// do Administrador que chama uma API de escrita.
+function describeAdminApiError(err: unknown, fallback: string): { title: string; message: string } {
+  const raw = err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
+  const normalized = raw.toLowerCase();
+
+  if (normalized.includes('forbidden') && normalized.includes('master')) {
+    return {
+      title: 'Precisa de conta master',
+      message:
+        'Essa ação só pode ser feita por uma conta marcada como "master". A conta que está logada agora não tem esse selo — entre com uma conta master, ou peça pra alguém habilitar o selo master pra essa conta.',
+    };
+  }
+
+  if (normalized.includes('404')) {
+    return {
+      title: 'Ainda não disponível no servidor',
+      message:
+        'O servidor não reconheceu essa ação agora (erro 404) — provavelmente a atualização mais recente ainda não foi publicada. Tente de novo em alguns minutos; se continuar, avise quem cuida do backend.',
+    };
+  }
+
+  return { title: 'Não foi possível concluir', message: raw };
+}
+
+function showAdminApiError(err: unknown, fallback: string) {
+  const { title, message } = describeAdminApiError(err, fallback);
+  Alert.alert(title, message);
+}
+
 // ---------- Menu de ações genérico (reaproveitado por Cargos e Acesso por
 // Usuário — cada tela passa sua própria lista de ações) ----------
 
@@ -1590,9 +1619,7 @@ function AdminAcessoUsuarioModal({
 
   if (!usuario) return null;
 
-  const showApiError = (err: unknown, fallback: string) => {
-    Alert.alert('Não foi possível concluir', err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback);
-  };
+  const showApiError = showAdminApiError;
 
   const firstName = (usuario.fullName || usuario.email).split(' ')[0];
 
@@ -2207,10 +2234,7 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
       ? '0 de 0'
       : `${pageStart + 1}-${Math.min(pageStart + ADMIN_ACESSO_PAGE_SIZE, filteredUsers.length)} de ${filteredUsers.length}`;
 
-  const showApiError = (err: unknown, fallback: string) => {
-    const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
-    Alert.alert('Não foi possível concluir', message);
-  };
+  const showApiError = showAdminApiError;
 
   const handleCargoSubmit = (values: AdminCargoFormValues, permissions: AdminFeaturePermission[]) => {
     const defaultModules = values.moduleLabels.map((label) => adminModuleSlugByLabel[label]).filter(Boolean);
@@ -2513,18 +2537,18 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
         onClose={() => setAcessoActionsFor(null)}
         actions={[
           {
-            key: 'visualizar-gerenciar',
+            key: 'visualizar',
             icon: 'eye',
-            label: 'Visualizar / Gerenciar',
+            label: 'Visualizar',
             onPress: () => {
               setAcessoDetail(acessoActionsFor);
               setAcessoActionsFor(null);
             },
           },
           {
-            key: 'configuracoes',
-            icon: 'settings',
-            label: 'Configurações',
+            key: 'editar',
+            icon: 'edit-2',
+            label: 'Editar',
             onPress: () => {
               setAcessoDetail(acessoActionsFor);
               setAcessoActionsFor(null);

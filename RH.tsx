@@ -3905,11 +3905,30 @@ function DadosPessoaisModal({
     Alert.alert(title, message);
   };
 
+  // Traduz erros crus do backend (ex: "forbidden: master required", "Lovable
+  // API respondeu 404") pra mensagens que dá pra entender, em vez do texto
+  // técnico direto.
   const showRhSaveError = (err: unknown, fallback: string) => {
-    Alert.alert(
-      'Não foi possível salvar',
-      err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback
-    );
+    const raw = err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
+    const normalized = raw.toLowerCase();
+
+    if (normalized.includes('forbidden') && normalized.includes('master')) {
+      Alert.alert(
+        'Precisa de conta master',
+        'Essa ação só pode ser feita por uma conta marcada como "master". A conta logada agora não tem esse selo.'
+      );
+      return;
+    }
+
+    if (normalized.includes('404')) {
+      Alert.alert(
+        'Ainda não disponível no servidor',
+        'O servidor não reconheceu essa ação agora (erro 404) — provavelmente a atualização mais recente ainda não foi publicada. Tente de novo em alguns minutos; se continuar, avise quem cuida do backend.'
+      );
+      return;
+    }
+
+    Alert.alert('Não foi possível salvar', raw);
   };
 
   // PATCH real em rh_colaboradores (endpoint confirmado pelo Lovable em
