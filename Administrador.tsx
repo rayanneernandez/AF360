@@ -341,7 +341,7 @@ function AdminUserDetailModal({
           </ScrollView>
 
           <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
-            <Pressable style={styles.secondaryButton} onPress={onClose}>
+            <Pressable style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]} onPress={onClose}>
               <Text style={styles.secondaryButtonText}>Fechar</Text>
             </Pressable>
             <Pressable style={adminStyles.primaryActionButton} onPress={onEdit}>
@@ -552,7 +552,7 @@ function AdminUserFormModal({
             </View>
 
             <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
-              <Pressable style={styles.secondaryButton} onPress={onClose}>
+              <Pressable style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]} onPress={onClose}>
                 <Text style={styles.secondaryButtonText}>Cancelar</Text>
               </Pressable>
               <Pressable style={adminStyles.primaryActionButton} onPress={() => onSubmit(form)}>
@@ -1080,9 +1080,12 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
                 <Text style={adminStyles.listAvatarText}>{getInitialsFromName(user.fullName ?? user.email)}</Text>
               </View>
               <View style={adminStyles.listInfo}>
-                <Text style={adminStyles.listName} numberOfLines={1}>
-                  {user.fullName || '(sem nome)'}
-                </Text>
+                <View style={adminStyles.listNameRow}>
+                  <View style={[adminStyles.statusDot, { backgroundColor: user.isActive ? GREEN : RED }]} />
+                  <Text style={[adminStyles.listName, adminStyles.listNameText]} numberOfLines={1}>
+                    {user.fullName || '(sem nome)'}
+                  </Text>
+                </View>
                 <Text style={adminStyles.listEmail} numberOfLines={1}>
                   {user.email}
                 </Text>
@@ -1090,17 +1093,9 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
                   {user.cargo || 'Sem cargo'} · {user.unidade || '—'}
                 </Text>
               </View>
-              <View style={adminStyles.listTrailing}>
-                <View
-                  style={[
-                    adminStyles.statusDot,
-                    { backgroundColor: user.isActive ? GREEN : RED },
-                  ]}
-                />
-                <Pressable hitSlop={10} onPress={() => setActionsMenuUser(user)}>
-                  <Feather name="more-vertical" size={18} color="#9AA1B5" />
-                </Pressable>
-              </View>
+              <Pressable hitSlop={10} onPress={() => setActionsMenuUser(user)}>
+                <Feather name="more-vertical" size={18} color="#9AA1B5" />
+              </Pressable>
             </Pressable>
           ))
         )}
@@ -2921,9 +2916,17 @@ const adminStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  listNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  listNameText: {
+    flexShrink: 1,
+  },
   statusDot: {
-    width: 10,
-    height: 10,
+    width: 9,
+    height: 9,
     borderRadius: 5,
   },
   detailSubEmail: {
@@ -2972,6 +2975,12 @@ const adminStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 10,
+  },
+  secondaryButtonCompact: {
+    minHeight: 40,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    alignSelf: 'auto',
   },
   primaryActionButton: {
     flexDirection: 'row',
