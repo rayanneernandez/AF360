@@ -50,7 +50,18 @@ export const api = {
   get: (path: string) => request(path),
   post: (path: string, body?: unknown) => request(path, { method: 'POST', body }),
   patch: (path: string, body?: unknown) => request(path, { method: 'PATCH', body }),
+  put: (path: string, body?: unknown) => request(path, { method: 'PUT', body }),
+  delete: (path: string, body?: unknown) => request(path, { method: 'DELETE', body }),
 };
+
+// actorId (profileId de quem está logado, salvo no login) vai como query
+// string ?actorId=... nas rotas admin — o af360-api repassa como header
+// x-actor-id pro Lovable validar is_master.
+function withActorId(path: string, actorId?: string | null) {
+  if (!actorId) return path;
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}actorId=${encodeURIComponent(actorId)}`;
+}
 
 // --- Diretoria: Fale com a Diretoria (conversas de WhatsApp) ---
 // Status real vem de dir_contatos.chat_status (fonte de verdade no Supabase
@@ -189,6 +200,97 @@ export async function fetchRhColaboradores(params: { q?: string } = {}): Promise
 export async function fetchRhStats(): Promise<RhStats> {
   const json = await api.get('/api/rh/colaboradores/stats');
   return json.data as RhStats;
+}
+
+// PATCH real em rh_colaboradores (dados pessoais/contrato/bancário/uniforme)
+// — endpoint confirmado pelo Lovable em 29/07/2026, aceita null pra limpar um
+// campo. Body: chaves cruas da tabela (mesmos nomes de RhColaboradorRaw).
+export async function updateRhColaborador(
+  id: string,
+  body: Record<string, unknown>
+): Promise<RhColaboradorRaw> {
+  const json = await api.patch(`/api/rh/colaboradores/${encodeURIComponent(id)}`, body);
+  return json.data as RhColaboradorRaw;
+}
+
+// --- RH: benefícios do colaborador (rh_beneficios_colaborador — VR/VA/
+// seguro de vida/plano de saúde/odontológico, 1:1 via colaborador_id) ---
+
+export type RhBeneficiosColaborador = {
+  colaborador_id: string;
+  vr_ativo: boolean | null;
+  vr_valor_dia: number | null;
+  va_ativo: boolean | null;
+  va_valor_dia: number | null;
+  seguro_vida_ativo: boolean | null;
+  seguro_vida_seguradora: string | null;
+  seguro_vida_cobertura: number | null;
+  seguro_vida_desconto_mensal: number | null;
+  plano_saude_ativo: boolean | null;
+  plano_saude_operadora: string | null;
+  plano_saude_plano: string | null;
+  plano_saude_desconto_titular: number | null;
+  plano_saude_desconto_dependente: number | null;
+  plano_odonto_ativo: boolean | null;
+  plano_odonto_operadora: string | null;
+  plano_odonto_plano: string | null;
+  plano_odonto_desconto_titular: number | null;
+  plano_odonto_desconto_dependente: number | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRhBeneficios(colaboradorId: string): Promise<RhBeneficiosColaborador | null> {
+  const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/beneficios`);
+  return (json.data as RhBeneficiosColaborador) ?? null;
+}
+
+export async function updateRhBeneficios(
+  colaboradorId: string,
+  body: Record<string, unknown>
+): Promise<RhBeneficiosColaborador> {
+  const json = await api.put(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/beneficios`, body);
+  return json.data as RhBeneficiosColaborador;
+}
+
+// --- RH: histórico de contratações (rh_historico_contratacoes — passagens
+// anteriores do colaborador na rede, aba Histórico do Dados Pessoais) ---
+
+export type RhHistoricoContratacaoItem = {
+  id: string;
+  colaborador_id: string | null;
+  cpf: string;
+  empresa_id: string | null;
+  cargo: string | null;
+  data_admissao: string | null;
+  data_demissao: string | null;
+  motivo_desligamento: string | null;
+  valor_rescisao_liquida: number | null;
+  observacoes: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRhHistoricoContratacoes(colaboradorId: string): Promise<RhHistoricoContratacaoItem[]> {
+  const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/historico-contratacoes`);
+  return json.data as RhHistoricoContratacaoItem[];
+}
+
+export async function createRhHistoricoContratacao(
+  body: Record<string, unknown>
+): Promise<RhHistoricoContratacaoItem> {
+  const json = await api.post('/api/rh/historico-contratacoes', body);
+  return json.data as RhHistoricoContratacaoItem;
+}
+
+export async function updateRhHistoricoContratacao(
+  id: string,
+  body: Record<string, unknown>
+): Promise<RhHistoricoContratacaoItem> {
+  const json = await api.patch(`/api/rh/historico-contratacoes/${encodeURIComponent(id)}`, body);
+  return json.data as RhHistoricoContratacaoItem;
+}
+
+export async function deleteRhHistoricoContratacao(id: string): Promise<void> {
+  await api.delete(`/api/rh/historico-contratacoes/${encodeURIComponent(id)}`);
 }
 
 // --- RH: unidades reais (tabela empresas no Supabase do Lovable) ---
@@ -653,6 +755,67 @@ export async function fetchAdminCargos(): Promise<AdminCargosDetalhe> {
   return json.data as AdminCargosDetalhe;
 }
 
+export async function createAdminCargo(
+  body: { name: string; slug?: string; group_type?: string; default_modules?: string[]; is_active?: boolean },
+  actorId?: string | null
+): Promise<AdminCargoItem> {
+  const json = await api.post(withActorId('/api/admin/cargos', actorId), body);
+  return json.data as AdminCargoItem;
+}
+
+export async function updateAdminCargo(
+  id: string,
+  body: { name?: string; slug?: string; group_type?: string; default_modules?: string[]; is_active?: boolean },
+  actorId?: string | null
+): Promise<AdminCargoItem> {
+  const json = await api.patch(withActorId(`/api/admin/cargos/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdminCargoItem;
+}
+
+export async function deleteAdminCargo(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/admin/cargos/${encodeURIComponent(id)}`, actorId));
+}
+
+export type AdminFeaturePermission = {
+  feature_id: string;
+  can_read: boolean;
+  can_write: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
+};
+
+export async function putAdminCargoPermissoes(
+  id: string,
+  permissions: AdminFeaturePermission[],
+  actorId?: string | null
+): Promise<void> {
+  await api.put(withActorId(`/api/admin/cargos/${encodeURIComponent(id)}/permissoes`, actorId), { permissions });
+}
+
+// --- Admin: módulos e funcionalidades (tabelas modules/module_features,
+// liberadas na allowlist do Lovable em 29/07/2026) ---
+
+export type AdminModuleItem = { id: string; slug: string | null; name: string | null };
+export type AdminModuleFeatureItem = {
+  id: string;
+  module_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  is_active: boolean;
+};
+
+export async function fetchAdminModulos(): Promise<AdminModuleItem[]> {
+  const json = await api.get('/api/admin/modulos');
+  return json.data as AdminModuleItem[];
+}
+
+export async function fetchAdminModuleFeatures(moduleId?: string): Promise<AdminModuleFeatureItem[]> {
+  const query = moduleId ? `?moduleId=${encodeURIComponent(moduleId)}` : '';
+  const json = await api.get(`/api/admin/module-features${query}`);
+  return json.data as AdminModuleFeatureItem[];
+}
+
 // --- Admin: Grupos (agregação derivada de roles.group_type) ---
 
 export type AdminGrupoItem = { name: string; count: number };
@@ -685,6 +848,59 @@ export async function fetchAdminUsuarios(): Promise<AdminUsuariosDetalhe> {
   return json.data as AdminUsuariosDetalhe;
 }
 
+export async function createAdminUsuario(
+  body: {
+    email: string;
+    full_name: string;
+    password: string;
+    is_master?: boolean;
+    is_active?: boolean;
+    empresa_id?: string | null;
+    role_id?: string | null;
+    chat_atendente?: boolean;
+  },
+  actorId?: string | null
+): Promise<unknown> {
+  const json = await api.post(withActorId('/api/admin/usuarios', actorId), body);
+  return json.data;
+}
+
+export async function resetAdminUsuarioSenha(id: string, password: string, actorId?: string | null): Promise<void> {
+  await api.post(withActorId(`/api/admin/usuarios/${encodeURIComponent(id)}/redefinir-senha`, actorId), {
+    password,
+  });
+}
+
+export async function toggleAdminUsuarioAtivo(
+  id: string,
+  isActive: boolean,
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId(`/api/admin/usuarios/${encodeURIComponent(id)}/toggle-ativo`, actorId), {
+    isActive,
+  });
+}
+
+export async function updateAdminUsuario(
+  id: string,
+  body: {
+    full_name?: string;
+    email?: string;
+    empresa_id?: string | null;
+    role_id?: string | null;
+    chat_atendente?: boolean;
+    is_master?: boolean;
+  },
+  actorId?: string | null
+): Promise<unknown> {
+  const json = await api.patch(withActorId(`/api/admin/usuarios/${encodeURIComponent(id)}`, actorId), body);
+  return json.data;
+}
+
+export async function deleteAdminUsuario(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/admin/usuarios/${encodeURIComponent(id)}`, actorId));
+}
+
 // --- Admin: Acesso por Usuário (profiles + roles + user_modules/modules) ---
 
 export type AdminAcessoUsuarioItem = {
@@ -701,4 +917,36 @@ export type AdminAcessoPorUsuarioDetalhe = { count: number; usuarios: AdminAcess
 export async function fetchAdminAcessoPorUsuario(): Promise<AdminAcessoPorUsuarioDetalhe> {
   const json = await api.get('/api/admin/acesso-por-usuario');
   return json.data as AdminAcessoPorUsuarioDetalhe;
+}
+
+export async function addAdminUsuarioModulo(
+  userId: string,
+  moduleRef: { moduleId?: string; moduleSlug?: string },
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId(`/api/admin/usuarios/${encodeURIComponent(userId)}/modulos`, actorId), moduleRef);
+}
+
+export async function resetAdminUsuarioModulos(userId: string, actorId?: string | null): Promise<void> {
+  await api.post(withActorId(`/api/admin/usuarios/${encodeURIComponent(userId)}/modulos/reset`, actorId));
+}
+
+export async function removeAdminUsuarioModulo(
+  userId: string,
+  moduleId: string,
+  actorId?: string | null
+): Promise<void> {
+  await api.delete(
+    withActorId(`/api/admin/usuarios/${encodeURIComponent(userId)}/modulos/${encodeURIComponent(moduleId)}`, actorId)
+  );
+}
+
+export async function putAdminUsuarioPermissoes(
+  userId: string,
+  permissions: AdminFeaturePermission[],
+  actorId?: string | null
+): Promise<void> {
+  await api.put(withActorId(`/api/admin/usuarios/${encodeURIComponent(userId)}/permissoes`, actorId), {
+    permissions,
+  });
 }
