@@ -52,6 +52,10 @@ import {
   fetchAdminModuleFeatures,
   fetchAdminGrupos,
   fetchAdminAcessoPorUsuario,
+  addAdminUsuarioModulo,
+  removeAdminUsuarioModulo,
+  resetAdminUsuarioModulos,
+  putAdminUsuarioPermissoes,
   fetchRhUnidades,
   ApiError,
   type AdminUsuarioItem,
@@ -1373,6 +1377,20 @@ const adminModuleSlugByLabel: Record<string, string> = {
   'Marketing & Fidelidade': 'marketing',
 };
 
+// Resolve as funcionalidades reais (module_features) de um módulo, a partir
+// do label canônico exibido no app — usado tanto na grade de permissões de
+// Cargo (role_permissions) quanto na de Acesso por Usuário (user_permissions).
+function getFeaturesForModuleLabel(
+  moduleLabel: string,
+  modules: AdminModuleItem[],
+  moduleFeatures: AdminModuleFeatureItem[]
+): AdminModuleFeatureItem[] {
+  const slug = adminModuleSlugByLabel[moduleLabel];
+  const mod = modules.find((m) => m.slug === slug);
+  if (!mod) return [];
+  return moduleFeatures.filter((f) => f.module_id === mod.id && f.is_active !== false);
+}
+
 const ADMIN_DIACRITICS_REGEX = new RegExp('[̀-ͯ]', 'g');
 
 function slugifyAdminName(raw: string): string {
@@ -1527,41 +1545,122 @@ function AdminCargoDetailModal({
 // Header com avatar + nome + cargo (igual ao web), depois "Acesso de
 // {primeiro nome}" e a lista dos 9 módulos canônicos — ligado/desligado vem
 // de dado real (role.default_modules ∪ user_modules, já calculado no
-// af360-api como usuario.moduleLabels). Dentro de Administrador/RH/
-// Colaborador (os 3 módulos com lista de funcionalidades confirmada — ver
-// adminModuleFunctionLabels) o módulo expande em "FUNCIONALIDADES (X/Y)" com
-// um toggle por função, igual ao web. Essa granularidade por função ainda é
-// só local (não existe tabela de permissão por função confirmada no
-// Lovable), e Salvar/Resetar seguem avisando honestamente que não gravam.
+// af360-api como usuario.moduleLabels), e o toggle grava de verdade via
+// addAdminUsuarioModulo/removeAdminUsuarioModulo (user_modules). Módulos com
+// module_features cadastradas expandem em "FUNCIONALIDADES (X/Y)" com um
+// toggle por função — essa grade é per-user (user_permissions, sempre começa
+// vazia até ser salva pelo menos uma vez, sem herdar do cargo — combinado
+// confirmado pelo Lovable) e "Salvar Alterações" grava via
+// putAdminUsuarioPermissoes. "Resetar para padrão do cargo" chama
+// resetAdminUsuarioModulos (remove módulos extras e limpa user_permissions).
 function AdminAcessoUsuarioModal({
   visible,
   usuario,
+  modules,
+  moduleFeatures,
+  actorId,
   onClose,
+  onChanged,
 }: {
   visible: boolean;
   usuario: AdminAcessoUsuarioItem | null;
+  modules: AdminModuleItem[];
+  moduleFeatures: AdminModuleFeatureItem[];
+  actorId?: string | null;
   onClose: () => void;
+  onChanged: () => void;
 }) {
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
   const [functionState, setFunctionState] = useState<Record<string, boolean>>({});
+  const [moduleOnState, setModuleOnState] = useState<Record<string, boolean>>({});
+  const [isSavingPerms, setIsSavingPerms] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
-    if (visible) {
+    if (visible && usuario) {
       setExpandedModule(null);
       setFunctionState({});
+      const initialModuleState: Record<string, boolean> = {};
+      adminCanonicalModules.forEach((label) => {
+        initialModuleState[label] = usuario.moduleLabels.includes(label);
+      });
+      setModuleOnState(initialModuleState);
     }
   }, [visible, usuario?.id]);
 
   if (!usuario) return null;
 
-  const showNotAvailable = (action: string) => {
-    Alert.alert(
-      'Ainda não disponível',
-      `"${action}" ainda não tem endpoint de escrita no backend (user_modules só é lido hoje, não gravado).`
-    );
+  const showApiError = (err: unknown, fallback: string) => {
+    Alert.alert('Não foi possível concluir', err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback);
   };
 
   const firstName = (usuario.fullName || usuario.email).split(' ')[0];
+
+  const handleToggleModule = (moduleLabel: string) => {
+    const slug = adminModuleSlugByLabel[moduleLabel];
+    const mod = modules.find((m) => m.slug === slug);
+    const turningOn = !moduleOnState[moduleLabel];
+
+    setModuleOnState((current) => ({ ...current, [moduleLabel]: turningOn }));
+
+    const request = turningOn
+      ? addAdminUsuarioModulo(usuario.id, mod ? { moduleId: mod.id } : { moduleSlug: slug }, actorId)
+      : mod
+      ? removeAdminUsuarioModulo(usuario.id, mod.id, actorId)
+      : Promise.resolve();
+
+    request
+      .then(() => onChanged())
+      .catch((err) => {
+        setModuleOnState((current) => ({ ...current, [moduleLabel]: !turningOn }));
+        showApiError(err, 'Não foi possível alterar o acesso ao módulo.');
+      });
+  };
+
+  const handleSalvarPermissoes = () => {
+    const payload: AdminFeaturePermission[] = [];
+    adminCanonicalModules.forEach((moduleLabel) => {
+      if (!moduleOnState[moduleLabel]) return;
+      getFeaturesForModuleLabel(moduleLabel, modules, moduleFeatures).forEach((feature) => {
+        const can_read = Boolean(functionState[`${feature.id}:LER`]);
+        const can_write = Boolean(functionState[`${feature.id}:ESCR.`]);
+        const can_edit = Boolean(functionState[`${feature.id}:EDIT.`]);
+        const can_delete = Boolean(functionState[`${feature.id}:EXCL.`]);
+        if (can_read || can_write || can_edit || can_delete) {
+          payload.push({ feature_id: feature.id, can_read, can_write, can_edit, can_delete });
+        }
+      });
+    });
+
+    setIsSavingPerms(true);
+    putAdminUsuarioPermissoes(usuario.id, payload, actorId)
+      .then(() => {
+        Alert.alert('Salvo', 'Permissões atualizadas.');
+        onChanged();
+      })
+      .catch((err) => showApiError(err, 'Não foi possível salvar as permissões.'))
+      .finally(() => setIsSavingPerms(false));
+  };
+
+  const handleResetar = () => {
+    Alert.alert('Resetar para padrão do cargo', 'Isso remove os módulos extras e as permissões avulsas deste usuário. Confirmar?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Resetar',
+        style: 'destructive',
+        onPress: () => {
+          setIsResetting(true);
+          resetAdminUsuarioModulos(usuario.id, actorId)
+            .then(() => {
+              onChanged();
+              onClose();
+            })
+            .catch((err) => showApiError(err, 'Não foi possível resetar para o padrão do cargo.'))
+            .finally(() => setIsResetting(false));
+        },
+      },
+    ]);
+  };
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -1592,45 +1691,62 @@ function AdminAcessoUsuarioModal({
 
           <ScrollView showsVerticalScrollIndicator={false} style={styles.spacingTop}>
             {adminCanonicalModules.map((moduleLabel) => {
-              const isOn = usuario.moduleLabels.includes(moduleLabel);
-              const functionLabels = adminModuleFunctionLabels[moduleLabel];
+              const isOn = Boolean(moduleOnState[moduleLabel]);
+              const features = getFeaturesForModuleLabel(moduleLabel, modules, moduleFeatures);
               const isExpanded = expandedModule === moduleLabel;
-              const onCount = functionLabels
-                ? functionLabels.filter((fn) => functionState[`${moduleLabel}:${fn}`]).length
-                : 0;
+              const onCount = features.filter(
+                (feature) =>
+                  functionState[`${feature.id}:LER`] ||
+                  functionState[`${feature.id}:ESCR.`] ||
+                  functionState[`${feature.id}:EDIT.`] ||
+                  functionState[`${feature.id}:EXCL.`]
+              ).length;
 
               return (
                 <View key={moduleLabel}>
                   <View style={adminStyles.checkboxCard}>
                     <Text style={adminStyles.checkboxCardLabel}>{moduleLabel}</Text>
-                    <ToggleSwitch value={isOn} onValueChange={() => showNotAvailable('Alterar acesso a módulo')} />
+                    <ToggleSwitch value={isOn} onValueChange={() => handleToggleModule(moduleLabel)} />
                   </View>
 
-                  {isOn && functionLabels ? (
+                  {isOn && features.length > 0 ? (
                     <Pressable
                       style={adminStyles.funcHeaderRow}
                       onPress={() => setExpandedModule(isExpanded ? null : moduleLabel)}
                     >
                       <Text style={adminStyles.funcHeaderLabel}>
-                        FUNCIONALIDADES ({onCount}/{functionLabels.length})
+                        FUNCIONALIDADES ({onCount}/{features.length})
                       </Text>
                       <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={14} color="#9AA1B5" />
                     </Pressable>
                   ) : null}
 
-                  {isOn && functionLabels && isExpanded ? (
+                  {isOn && features.length > 0 && isExpanded ? (
                     <View style={adminStyles.funcListWrap}>
-                      {functionLabels.map((fn) => {
-                        const key = `${moduleLabel}:${fn}`;
+                      {features.map((feature) => {
+                        const isFeatureOn =
+                          functionState[`${feature.id}:LER`] ||
+                          functionState[`${feature.id}:ESCR.`] ||
+                          functionState[`${feature.id}:EDIT.`] ||
+                          functionState[`${feature.id}:EXCL.`];
                         return (
-                          <View key={fn} style={adminStyles.funcRow}>
+                          <View key={feature.id} style={adminStyles.funcRow}>
                             <Text style={adminStyles.funcRowText} numberOfLines={1}>
-                              {fn}
+                              {feature.name}
                             </Text>
                             <ToggleSwitch
-                              value={Boolean(functionState[key])}
+                              value={Boolean(isFeatureOn)}
                               onValueChange={() =>
-                                setFunctionState((current) => ({ ...current, [key]: !current[key] }))
+                                setFunctionState((current) => {
+                                  const turningOn = !isFeatureOn;
+                                  return {
+                                    ...current,
+                                    [`${feature.id}:LER`]: turningOn,
+                                    [`${feature.id}:ESCR.`]: turningOn ? current[`${feature.id}:ESCR.`] : false,
+                                    [`${feature.id}:EDIT.`]: turningOn ? current[`${feature.id}:EDIT.`] : false,
+                                    [`${feature.id}:EXCL.`]: turningOn ? current[`${feature.id}:EXCL.`] : false,
+                                  };
+                                })
                               }
                             />
                           </View>
@@ -1644,18 +1760,20 @@ function AdminAcessoUsuarioModal({
           </ScrollView>
 
           <Pressable
-            style={[adminStyles.primaryActionButton, adminStyles.stackedButton, styles.spacingTop]}
-            onPress={() => showNotAvailable('Salvar alterações')}
+            style={[adminStyles.primaryActionButton, adminStyles.stackedButton, styles.spacingTop, isSavingPerms ? { opacity: 0.6 } : null]}
+            disabled={isSavingPerms}
+            onPress={handleSalvarPermissoes}
           >
             <Feather name="save" size={14} color="#FFFFFF" />
-            <Text style={adminStyles.primaryActionButtonText}>Salvar Alterações</Text>
+            <Text style={adminStyles.primaryActionButtonText}>{isSavingPerms ? 'Salvando...' : 'Salvar Alterações'}</Text>
           </Pressable>
           <Pressable
-            style={[styles.secondaryButton, adminStyles.stackedButton, adminStyles.stackedButtonSecondary]}
-            onPress={() => showNotAvailable('Resetar para padrão do cargo')}
+            style={[styles.secondaryButton, adminStyles.stackedButton, adminStyles.stackedButtonSecondary, isResetting ? { opacity: 0.6 } : null]}
+            disabled={isResetting}
+            onPress={handleResetar}
           >
             <Feather name="rotate-ccw" size={13} color="#4C5470" />
-            <Text style={styles.secondaryButtonText}>Resetar para padrão do cargo</Text>
+            <Text style={styles.secondaryButtonText}>{isResetting ? 'Resetando...' : 'Resetar para padrão do cargo'}</Text>
           </Pressable>
         </View>
       </View>
@@ -1663,79 +1781,12 @@ function AdminAcessoUsuarioModal({
   );
 }
 
-// ---------- Permissões granulares por função (Cargos > Editar) ----------
-// Listas reais das telas existentes de cada módulo (mesmas telas de RH.tsx e
-// App.tsx), copiadas na mesma ordem em que aparecem no web. NÃO temos ainda
-// confirmação do Lovable de uma tabela real que grave essas permissões
-// granulares (ver mensagem enviada pedindo os endpoints de escrita) — os
-// checkboxes abaixo funcionam só localmente nesta tela (não persistem),
-// mesmo padrão de exceção documentado no topo deste arquivo.
-const adminRhFunctionLabels: string[] = [
-  'Visualizar Dashboard',
-  'Relatórios',
-  'Configurações',
-  'Colaboradores',
-  'Solicitações',
-  'Comunicados',
-  'Metas',
-  'Ponto',
-  'Férias',
-  'Folha de Pagamento',
-  'Configurações - Folha de Pagamento',
-  'Reajustes Coletivos',
-  'Assinatura de Contracheque',
-  'Documentos',
-  'Workflow',
-  'Fluxos de Aprovação',
-  'Workflow - Hierarquia por Posto',
-  'Notificações',
-  'Treinamentos do colaborador',
-  'Promoções',
-  'Premiações (colaborador)',
-  'Recursos Operacionais',
-  'Recursos Operacionais — Configuração',
-  'Aprovar Reposição de Uniforme/EPI',
-  'Transferências',
-  'Período de Experiência',
-  'Importar PDF',
-  'Treinamentos',
-];
-
-const adminColaboradorFunctionLabels: string[] = [
-  'Dashboard',
-  'Comunicados',
-  'Calendário',
-  'Metas',
-  'Treinamentos',
-  'Contra Cheques',
-  'Reembolso',
-  'Benefícios',
-  'Solicitações',
-  'Meu Perfil',
-  'Notificações',
-];
-
-const adminAdministradorFunctionLabels: string[] = [
-  'Visualizar Dashboard',
-  'Cadastros',
-  'Relatórios',
-  'Configurações',
-  'Integrações',
-  'Versões & Changelog',
-  'Notificações',
-];
-
-// Só Administrador, RH e Colaborador têm lista de funcionalidades confirmada
-// por enquanto (vista no próprio print do web) — os outros módulos (R&S,
-// Financeiro, Gestão, Administrativo, Diretoria, Marketing & Fidelidade)
-// mostram uma nota honesta em vez de uma lista inventada, até confirmarmos
-// as telas reais de cada um.
-const adminModuleFunctionLabels: Record<string, string[]> = {
-  Administrador: adminAdministradorFunctionLabels,
-  RH: adminRhFunctionLabels,
-  Colaborador: adminColaboradorFunctionLabels,
-};
-
+// ---------- Permissões granulares por função (Cargos > Editar, Acesso por
+// Usuário) ----------
+// As funcionalidades por módulo vêm de verdade da tabela module_features
+// (fetchAdminModuleFeatures) — ver getFeaturesForModuleLabel. Se um
+// módulo/menu ainda não tem linha cadastrada em module_features do lado do
+// Lovable, a grade mostra uma nota honesta em vez de inventar uma lista.
 const adminPermColumns = ['LER', 'ESCR.', 'EDIT.', 'EXCL.'];
 
 function AdminPermCheckbox({ active, onPress }: { active: boolean; onPress: () => void }) {
@@ -1863,12 +1914,8 @@ function AdminCargoFormModal({
     setPermState((current) => ({ ...current, [key]: !current[key] }));
   };
 
-  const featuresForModule = (moduleLabel: string): AdminModuleFeatureItem[] => {
-    const slug = adminModuleSlugByLabel[moduleLabel];
-    const mod = modules.find((m) => m.slug === slug);
-    if (!mod) return [];
-    return moduleFeatures.filter((f) => f.module_id === mod.id && f.is_active !== false);
-  };
+  const featuresForModule = (moduleLabel: string): AdminModuleFeatureItem[] =>
+    getFeaturesForModuleLabel(moduleLabel, modules, moduleFeatures);
 
   const buildPermissionsPayload = (): AdminFeaturePermission[] => {
     const payload: AdminFeaturePermission[] = [];
@@ -2003,16 +2050,6 @@ function AdminCargoFormModal({
 
 const ADMIN_ACESSO_PAGE_SIZE = 10;
 
-// Ainda usado só pela aba "Acesso por Usuário" (módulo avulso/permissões por
-// usuário/reset — task #9). Cargos já grava de verdade (createAdminCargo/
-// updateAdminCargo/deleteAdminCargo/putAdminCargoPermissoes).
-function showAdminWriteNotAvailable(action: string) {
-  Alert.alert(
-    'Ainda não disponível',
-    `"${action}" ainda não tem endpoint de escrita no backend (só leitura hoje).`
-  );
-}
-
 export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfilAcesso'>) {
   const { identity } = useContext(AuthIdentityContext);
   const actorId = identity?.profileId;
@@ -2095,6 +2132,21 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
       isActive = false;
     };
   }, []);
+
+  const loadUsuariosAcesso = () => {
+    setIsLoadingUsuarios(true);
+    setUsuariosErrorMessage(null);
+    return fetchAdminAcessoPorUsuario()
+      .then((data) => {
+        setUsuariosAcesso(data.usuarios);
+      })
+      .catch((err) => {
+        setUsuariosErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar o acesso por usuário.');
+      })
+      .finally(() => {
+        setIsLoadingUsuarios(false);
+      });
+  };
 
   useEffect(() => {
     let isActive = true;
@@ -2470,7 +2522,11 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
       <AdminAcessoUsuarioModal
         visible={acessoDetail !== null}
         usuario={acessoDetail}
+        modules={modulos}
+        moduleFeatures={moduleFeatures}
+        actorId={actorId}
         onClose={() => setAcessoDetail(null)}
+        onChanged={loadUsuariosAcesso}
       />
     </SafeAreaView>
   );
