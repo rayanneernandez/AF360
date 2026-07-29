@@ -820,15 +820,46 @@ export async function fetchAdminModuleFeatures(moduleId?: string): Promise<Admin
   return json.data as AdminModuleFeatureItem[];
 }
 
-// --- Admin: Grupos (agregação derivada de roles.group_type) ---
+// --- Admin: Grupos (tabela própria public.grupos, confirmada pelo Lovable
+// em 29/07/2026 — roles.group_type = grupos.slug) ---
 
-export type AdminGrupoItem = { name: string; count: number };
+export type AdminGrupoItem = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  color: string;
+  isActive: boolean;
+  cargosCount: number;
+};
 
 export type AdminGruposDetalhe = { count: number; grupos: AdminGrupoItem[] };
 
-export async function fetchAdminGrupos(): Promise<AdminGruposDetalhe> {
-  const json = await api.get('/api/admin/grupos');
+export async function fetchAdminGrupos(q?: string): Promise<AdminGruposDetalhe> {
+  const query = q ? `?q=${encodeURIComponent(q)}` : '';
+  const json = await api.get(`/api/admin/grupos${query}`);
   return json.data as AdminGruposDetalhe;
+}
+
+export async function createAdminGrupo(
+  body: { nome: string; slug?: string; descricao?: string | null; cor?: string; is_active?: boolean },
+  actorId?: string | null
+): Promise<AdminGrupoItem> {
+  const json = await api.post(withActorId('/api/admin/grupos', actorId), body);
+  return json.data as AdminGrupoItem;
+}
+
+export async function updateAdminGrupo(
+  id: string,
+  body: { nome?: string; descricao?: string | null; cor?: string; is_active?: boolean },
+  actorId?: string | null
+): Promise<AdminGrupoItem> {
+  const json = await api.patch(withActorId(`/api/admin/grupos/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdminGrupoItem;
+}
+
+export async function deleteAdminGrupo(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/admin/grupos/${encodeURIComponent(id)}`, actorId));
 }
 
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---

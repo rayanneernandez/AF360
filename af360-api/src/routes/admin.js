@@ -14,6 +14,10 @@ const {
   postAdminUserModule,
   postAdminUserModulesReset,
   deleteAdminUserModule,
+  getAdminGrupos,
+  postAdminGrupo,
+  patchAdminGrupo,
+  deleteAdminGrupo,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -181,30 +185,73 @@ router.get('/module-features', async (req, res) => {
   }
 });
 
-// GET /api/admin/grupos
-// Não existe tabela separada de "grupos" confirmada no schema — isso é uma
-// agregação derivada de roles.group_type (quantos cargos/roles caem em cada
-// grupo). É uma suposição razoável baseada no mockup do painel Administrador,
-// mas pode precisar de ajuste quando confirmarmos com o Lovable se "grupo" é
-// de fato só um agrupamento de roles ou uma entidade própria no banco deles.
+// Achata a linha crua de public.grupos (nome/descricao/cor/is_active,
+// cargos_count anexado pelo endpoint deles) pro mesmo formato camelCase que o
+// resto do painel Admin usa (cargos, usuários) — mantém app.tsx/Administrador
+// simples, sem lidar com nomes de coluna em português direto na tela.
+function mapGrupoRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.nome,
+    slug: row.slug,
+    description: row.descricao ?? null,
+    color: row.cor || '#1E3A5F',
+    isActive: row.is_active !== false,
+    cargosCount: row.cargos_count ?? 0,
+  };
+}
+
+// GET /api/admin/grupos?q= — tabela própria public.grupos, confirmada pelo
+// Lovable em 29/07/2026 (id, nome, slug, descricao, cor, is_active).
+// roles.group_type = grupos.slug. A contagem de cargos vinculados
+// (cargos_count) já vem pronta no retorno deles. Sem paginação server-side —
+// só 5 grupos hoje, a tela pagina client-side igual Cargos/Acesso por Usuário.
 router.get('/grupos', async (req, res) => {
   try {
-    const { cargos } = await loadRolesProcessadas();
-
-    const countByGroup = new Map();
-    cargos.forEach((cargo) => {
-      const key = cargo.group || 'Não informado';
-      countByGroup.set(key, (countByGroup.get(key) || 0) + 1);
-    });
-
-    const grupos = Array.from(countByGroup.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count);
-
-    res.json({ ok: true, data: { count: grupos.length, grupos } });
+    const json = await getAdminGrupos({ q: req.query.q, order: 'nome:asc', limit: 500 });
+    const grupos = (json?.data ?? []).map(mapGrupoRow);
+    res.json({ ok: true, data: { count: json?.count ?? grupos.length, grupos } });
   } catch (err) {
     console.error('[admin/grupos] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/grupos?actorId=... — cria grupo. Body: { nome, slug?,
+// descricao?, cor?, is_active? } (slug gerado do nome no Lovable se omitido).
+router.post('/grupos', async (req, res) => {
+  try {
+    const json = await postAdminGrupo(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapGrupoRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/grupos POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/grupos/:id?actorId=...
+router.patch('/grupos/:id', async (req, res) => {
+  try {
+    const json = await patchAdminGrupo(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapGrupoRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/grupos/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/grupos/:id?actorId=... — o Lovable devolve 409 se houver
+// cargos vinculados (mesma trava do painel web); repassamos o status pro
+// front mostrar um alerta claro em vez de um erro genérico.
+router.delete('/grupos/:id', async (req, res) => {
+  try {
+    const json = await deleteAdminGrupo(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/grupos/:id DELETE] erro:', err.message);
+    const status = err.lovableStatus === 409 ? 409 : writeErrorStatus(err);
+    res.status(status).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
 

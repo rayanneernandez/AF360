@@ -51,6 +51,9 @@ import {
   fetchAdminModulos,
   fetchAdminModuleFeatures,
   fetchAdminGrupos,
+  createAdminGrupo,
+  updateAdminGrupo,
+  deleteAdminGrupo,
   fetchAdminAcessoPorUsuario,
   addAdminUsuarioModulo,
   removeAdminUsuarioModulo,
@@ -2573,15 +2576,260 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
 // 5. Grupos
 // ============================================================================
 
-// Dados reais via GET /api/admin/grupos — agregação derivada de
-// roles.group_type (quantos cargos caem em cada grupo), não uma tabela
-// própria de "grupos" (ver comentário em af360-api/src/routes/admin.js).
+// Dados reais via GET/POST/PATCH/DELETE /api/admin/grupos — tabela própria
+// public.grupos (id, nome, slug, descricao, cor, is_active), confirmada pelo
+// Lovable em 29/07/2026. roles.group_type = grupos.slug (cargosCount já vem
+// pronto do endpoint deles). Lista, detalhe e formulário batem de verdade no
+// banco, no mesmo padrão de Cargos.
+
+const ADMIN_GROUP_COLOR_SWATCHES = [
+  '#7C3AED',
+  '#3457D5',
+  '#E6213D',
+  '#B07A1E',
+  '#18955A',
+  '#5E667D',
+  '#EC4899',
+  '#0EA5E9',
+];
+
+type AdminGrupoFormValues = {
+  name: string;
+  description: string;
+  color: string;
+  isActive: boolean;
+};
+
+function emptyAdminGrupoForm(): AdminGrupoFormValues {
+  return { name: '', description: '', color: ADMIN_GROUP_COLOR_SWATCHES[0], isActive: true };
+}
+
+// ---------- Modal "Visualizar grupo" ----------
+
+function AdminGrupoDetailModal({
+  visible,
+  grupo,
+  onClose,
+  onEdit,
+}: {
+  visible: boolean;
+  grupo: AdminGrupoItem | null;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  if (!grupo) return null;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>{grupo.name}</Text>
+              <Text style={adminStyles.detailSubEmail}>Grupo • {grupo.slug}</Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={adminStyles.detailGridRow}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>NOME</Text>
+                <Text style={adminStyles.detailFieldValue}>{grupo.name}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>SLUG</Text>
+                <Text style={adminStyles.detailFieldValue}>{grupo.slug}</Text>
+              </View>
+            </View>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>DESCRIÇÃO</Text>
+            <Text style={adminStyles.detailFieldValue}>{grupo.description || '—'}</Text>
+
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>COR</Text>
+                <View style={adminStyles.groupLeft}>
+                  <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: grupo.color }} />
+                  <Text style={adminStyles.detailFieldValue}>{grupo.color}</Text>
+                </View>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>CARGOS VINCULADOS</Text>
+                <Text style={adminStyles.detailFieldValue}>{grupo.cargosCount}</Text>
+              </View>
+            </View>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>ATIVO</Text>
+            <View
+              style={[
+                adminStyles.detailBadgeBase,
+                { backgroundColor: grupo.isActive ? GREEN_BG : RED_BG, marginTop: 4 },
+              ]}
+            >
+              <Feather
+                name={grupo.isActive ? 'check-circle' : 'x-circle'}
+                size={11}
+                color={grupo.isActive ? GREEN : RED}
+              />
+              <Text style={[adminStyles.detailBadgeText, { color: grupo.isActive ? GREEN : RED }]}>
+                {grupo.isActive ? 'Sim' : 'Não'}
+              </Text>
+            </View>
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]} onPress={onEdit}>
+              <Feather name="edit-2" size={13} color="#2E468F" />
+              <Text style={styles.secondaryButtonText}>Editar</Text>
+            </Pressable>
+            <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+              <Text style={adminStyles.ghostButtonText}>Fechar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ---------- Modal "Novo Grupo" / "Editar — {grupo}" ----------
+
+function AdminGrupoFormModal({
+  visible,
+  mode,
+  initialValues,
+  isSaving,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  mode: 'create' | 'edit';
+  initialValues: AdminGrupoFormValues;
+  isSaving?: boolean;
+  onClose: () => void;
+  onSubmit: (values: AdminGrupoFormValues) => void;
+}) {
+  const [form, setForm] = useState<AdminGrupoFormValues>(initialValues);
+
+  useEffect(() => {
+    if (visible) setForm(initialValues);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, initialValues.name]);
+
+  const isValid = form.name.trim().length > 0;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>
+                {mode === 'create' ? 'Novo Grupo' : `Editar — ${initialValues.name}`}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Nome *</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.name}
+              onChangeText={(text) => setForm((current) => ({ ...current, name: text }))}
+              placeholder="Ex: Comercial"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição</Text>
+            <TextInput
+              style={[styles.processTextInput, styles.processDocumentationArea]}
+              value={form.description}
+              onChangeText={(text) => setForm((current) => ({ ...current, description: text }))}
+              placeholder="Opcional"
+              placeholderTextColor="#A7AEC2"
+              multiline
+              textAlignVertical="top"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Cor</Text>
+            <View style={adminStyles.colorSwatchRow}>
+              {ADMIN_GROUP_COLOR_SWATCHES.map((swatch) => (
+                <Pressable
+                  key={swatch}
+                  style={[
+                    adminStyles.colorSwatch,
+                    { backgroundColor: swatch },
+                    form.color === swatch ? adminStyles.colorSwatchActive : null,
+                  ]}
+                  onPress={() => setForm((current) => ({ ...current, color: swatch }))}
+                >
+                  {form.color === swatch ? <Feather name="check" size={14} color="#FFFFFF" /> : null}
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+              <Text style={adminStyles.ghostButtonText}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.secondaryButton,
+                adminStyles.secondaryButtonCompact,
+                !isValid || isSaving ? { opacity: 0.6 } : null,
+              ]}
+              disabled={!isValid || isSaving}
+              onPress={() => onSubmit(form)}
+            >
+              <Feather name="save" size={13} color="#2E468F" />
+              <Text style={styles.secondaryButtonText}>
+                {isSaving ? 'Salvando...' : mode === 'create' ? 'Criar Grupo' : 'Salvar'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const ADMIN_GRUPOS_PAGE_SIZE = 10;
 
 export function AdminGruposScreen({ navigation }: ScreenProps<'AdminGrupos'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
   const [grupos, setGrupos] = useState<AdminGrupoItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [groupActionsFor, setGroupActionsFor] = useState<AdminGrupoItem | null>(null);
+  const [groupDetail, setGroupDetail] = useState<AdminGrupoItem | null>(null);
+  const [isGroupFormOpen, setIsGroupFormOpen] = useState(false);
+  const [groupFormMode, setGroupFormMode] = useState<'create' | 'edit'>('create');
+  const [groupFormInitial, setGroupFormInitial] = useState<AdminGrupoFormValues>(emptyAdminGrupoForm());
+  const [groupBeingEdited, setGroupBeingEdited] = useState<AdminGrupoItem | null>(null);
+  const [isSavingGroup, setIsSavingGroup] = useState(false);
+
+  const showApiError = showAdminApiError;
+
+  const loadGrupos = () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    return fetchAdminGrupos()
+      .then((data) => setGrupos(data.grupos))
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os grupos.'))
+      .finally(() => setIsLoading(false));
+  };
 
   useEffect(() => {
     let isActive = true;
@@ -2609,8 +2857,84 @@ export function AdminGruposScreen({ navigation }: ScreenProps<'AdminGrupos'>) {
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return grupos;
-    return grupos.filter((item) => item.name.toLowerCase().includes(query));
+    return grupos.filter(
+      (item) => item.name.toLowerCase().includes(query) || (item.description ?? '').toLowerCase().includes(query)
+    );
   }, [grupos, search]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ADMIN_GRUPOS_PAGE_SIZE));
+  const pageStart = page * ADMIN_GRUPOS_PAGE_SIZE;
+  const paged = filtered.slice(pageStart, pageStart + ADMIN_GRUPOS_PAGE_SIZE);
+  const pageRangeLabel =
+    filtered.length === 0
+      ? '0 de 0'
+      : `${pageStart + 1}-${Math.min(pageStart + ADMIN_GRUPOS_PAGE_SIZE, filtered.length)} de ${filtered.length}`;
+
+  const handleGroupSubmit = (values: AdminGrupoFormValues) => {
+    setIsSavingGroup(true);
+    const request =
+      groupFormMode === 'create'
+        ? createAdminGrupo(
+            {
+              nome: values.name.trim(),
+              descricao: values.description.trim() || null,
+              cor: values.color,
+              is_active: values.isActive,
+            },
+            actorId
+          )
+        : updateAdminGrupo(
+            groupBeingEdited!.id,
+            {
+              nome: values.name.trim(),
+              descricao: values.description.trim() || null,
+              cor: values.color,
+              is_active: values.isActive,
+            },
+            actorId
+          );
+
+    request
+      .then(() => {
+        setIsGroupFormOpen(false);
+        loadGrupos();
+      })
+      .catch((err) =>
+        showApiError(
+          err,
+          groupFormMode === 'create' ? 'Não foi possível criar o grupo.' : 'Não foi possível salvar o grupo.'
+        )
+      )
+      .finally(() => setIsSavingGroup(false));
+  };
+
+  const handleExcluirGrupo = (grupo: AdminGrupoItem) => {
+    Alert.alert('Excluir grupo', `Tem certeza que quer excluir "${grupo.name}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdminGrupo(grupo.id, actorId)
+            .then(() => loadGrupos())
+            .catch((err) => {
+              if (err instanceof ApiError && err.status === 409) {
+                Alert.alert(
+                  'Não é possível excluir',
+                  `O grupo "${grupo.name}" ainda tem cargos vinculados. Mova ou remova esses cargos antes de excluir.`
+                );
+                return;
+              }
+              showApiError(err, 'Não foi possível excluir o grupo.');
+            });
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -2631,7 +2955,12 @@ export function AdminGruposScreen({ navigation }: ScreenProps<'AdminGrupos'>) {
         <View style={[styles.directorNotifHeaderRow, { justifyContent: 'flex-end' }]}>
           <Pressable
             style={styles.directorNotifNewButton}
-            onPress={() => Alert.alert('Novo grupo', 'Cadastro de grupo em breve.')}
+            onPress={() => {
+              setGroupFormMode('create');
+              setGroupBeingEdited(null);
+              setGroupFormInitial(emptyAdminGrupoForm());
+              setIsGroupFormOpen(true);
+            }}
           >
             <Feather name="plus" size={15} color="#FFFFFF" />
             <Text style={styles.directorNotifNewButtonText}>Novo</Text>
@@ -2645,20 +2974,131 @@ export function AdminGruposScreen({ navigation }: ScreenProps<'AdminGrupos'>) {
         ) : filtered.length === 0 ? (
           <AdminEmptyState message="Nenhum grupo encontrado." />
         ) : (
-          filtered.map((group) => {
-            const colors = adminGroupColorMap[group.name] ?? { bg: GRAY_BG, color: GRAY };
-            return (
-              <View key={group.name} style={adminStyles.groupRow}>
+          <>
+            {paged.map((grupo) => (
+              <Pressable key={grupo.id} style={adminStyles.groupRow} onPress={() => setGroupDetail(grupo)}>
                 <View style={adminStyles.groupLeft}>
-                  <AdminColorPill label={group.name} bg={colors.bg} color={colors.color} />
-                  <Text style={adminStyles.groupDescription}>—</Text>
+                  <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: grupo.color }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={adminStyles.roleName}>{grupo.name}</Text>
+                    <Text style={adminStyles.groupDescription} numberOfLines={1}>
+                      {grupo.description || 'Sem descrição.'}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={adminStyles.groupCount}>{group.count} cargos</Text>
+                <View style={adminStyles.roleCardTopRowRight}>
+                  <Text style={adminStyles.groupCount}>
+                    {grupo.cargosCount} cargo{grupo.cargosCount === 1 ? '' : 's'}
+                  </Text>
+                  <Pressable hitSlop={10} onPress={() => setGroupActionsFor(grupo)}>
+                    <Feather name="more-vertical" size={18} color="#9AA1B5" />
+                  </Pressable>
+                </View>
+              </Pressable>
+            ))}
+
+            <View style={adminStyles.paginationRow}>
+              <Text style={adminStyles.paginationLabel}>{pageRangeLabel}</Text>
+              <View style={adminStyles.paginationArrows}>
+                <Pressable
+                  style={[adminStyles.paginationArrowButton, page === 0 ? adminStyles.paginationArrowDisabled : null]}
+                  disabled={page === 0}
+                  onPress={() => setPage((current) => Math.max(0, current - 1))}
+                >
+                  <Feather name="chevron-left" size={16} color={page === 0 ? '#C7CCDA' : '#4C5470'} />
+                </Pressable>
+                <Pressable
+                  style={[
+                    adminStyles.paginationArrowButton,
+                    page >= totalPages - 1 ? adminStyles.paginationArrowDisabled : null,
+                  ]}
+                  disabled={page >= totalPages - 1}
+                  onPress={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
+                >
+                  <Feather name="chevron-right" size={16} color={page >= totalPages - 1 ? '#C7CCDA' : '#4C5470'} />
+                </Pressable>
               </View>
-            );
-          })
+            </View>
+          </>
         )}
       </ScrollView>
+
+      <AdminGenericActionsMenu
+        visible={groupActionsFor !== null}
+        title={groupActionsFor?.name ?? ''}
+        onClose={() => setGroupActionsFor(null)}
+        actions={[
+          {
+            key: 'visualizar',
+            icon: 'eye',
+            label: 'Visualizar',
+            onPress: () => {
+              setGroupDetail(groupActionsFor);
+              setGroupActionsFor(null);
+            },
+          },
+          {
+            key: 'editar',
+            icon: 'edit-2',
+            label: 'Editar',
+            onPress: () => {
+              const grupo = groupActionsFor;
+              setGroupActionsFor(null);
+              if (!grupo) return;
+              setGroupFormMode('edit');
+              setGroupBeingEdited(grupo);
+              setGroupFormInitial({
+                name: grupo.name,
+                description: grupo.description ?? '',
+                color: grupo.color,
+                isActive: grupo.isActive,
+              });
+              setIsGroupFormOpen(true);
+            },
+          },
+          {
+            key: 'excluir',
+            icon: 'trash-2',
+            label: 'Excluir',
+            danger: true,
+            onPress: () => {
+              const grupo = groupActionsFor;
+              setGroupActionsFor(null);
+              if (!grupo) return;
+              handleExcluirGrupo(grupo);
+            },
+          },
+        ]}
+      />
+
+      <AdminGrupoDetailModal
+        visible={groupDetail !== null}
+        grupo={groupDetail}
+        onClose={() => setGroupDetail(null)}
+        onEdit={() => {
+          const grupo = groupDetail;
+          if (!grupo) return;
+          setGroupDetail(null);
+          setGroupFormMode('edit');
+          setGroupBeingEdited(grupo);
+          setGroupFormInitial({
+            name: grupo.name,
+            description: grupo.description ?? '',
+            color: grupo.color,
+            isActive: grupo.isActive,
+          });
+          setIsGroupFormOpen(true);
+        }}
+      />
+
+      <AdminGrupoFormModal
+        visible={isGroupFormOpen}
+        mode={groupFormMode}
+        initialValues={groupFormInitial}
+        isSaving={isSavingGroup}
+        onClose={() => setIsGroupFormOpen(false)}
+        onSubmit={handleGroupSubmit}
+      />
     </SafeAreaView>
   );
 }
@@ -4470,5 +4910,23 @@ const adminStyles = StyleSheet.create({
     color: '#9AA1B5',
     fontSize: 11,
     fontStyle: 'italic',
+  },
+  colorSwatchRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 6,
+  },
+  colorSwatch: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  colorSwatchActive: {
+    borderColor: '#15203E',
   },
 });

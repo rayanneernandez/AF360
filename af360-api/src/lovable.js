@@ -256,6 +256,26 @@ function deleteAdminUserModule(userId, moduleId, actorId) {
   return lovableDelete('/api/public/internal/admin-user-modules', { user_id: userId, module_id: moduleId }, actorId);
 }
 
+// --- Grupos (tabela própria public.grupos, confirmada pelo Lovable em
+// 29/07/2026 — roles.group_type = grupos.slug). Contagem de cargos vem
+// pronta do endpoint deles (cargos_count), não precisa ser recalculada. ---
+
+function getAdminGrupos({ limit, offset, q, order } = {}) {
+  return lovableGet('/api/public/internal/admin-grupos', { limit, offset, q, order });
+}
+
+function postAdminGrupo(body, actorId) {
+  return lovablePost('/api/public/internal/admin-grupos', {}, body, actorId);
+}
+
+function patchAdminGrupo(id, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-grupos', { id }, body, actorId);
+}
+
+function deleteAdminGrupo(id, actorId) {
+  return lovableDelete('/api/public/internal/admin-grupos', { id }, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -279,4 +299,8 @@ module.exports = {
   postAdminUserModule,
   postAdminUserModulesReset,
   deleteAdminUserModule,
+  getAdminGrupos,
+  postAdminGrupo,
+  patchAdminGrupo,
+  deleteAdminGrupo,
 };
