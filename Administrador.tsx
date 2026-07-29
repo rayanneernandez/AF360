@@ -44,6 +44,12 @@ import {
   updateAdminUsuario,
   deleteAdminUsuario,
   fetchAdminCargos,
+  createAdminCargo,
+  updateAdminCargo,
+  deleteAdminCargo,
+  putAdminCargoPermissoes,
+  fetchAdminModulos,
+  fetchAdminModuleFeatures,
   fetchAdminGrupos,
   fetchAdminAcessoPorUsuario,
   fetchRhUnidades,
@@ -52,6 +58,9 @@ import {
   type AdminCargoItem,
   type AdminGrupoItem,
   type AdminAcessoUsuarioItem,
+  type AdminModuleItem,
+  type AdminModuleFeatureItem,
+  type AdminFeaturePermission,
   type RhUnidadeItem,
 } from './api';
 
@@ -1349,6 +1358,33 @@ const adminCanonicalModules: string[] = [
   'Marketing & Fidelidade',
 ];
 
+// Slug real (tabela modules/roles.default_modules) por trás de cada label
+// canônico acima — espelha MODULE_LABELS em af360-api/src/routes/admin.js,
+// só que invertido (label -> slug em vez de slug -> label).
+const adminModuleSlugByLabel: Record<string, string> = {
+  Administrador: 'administrador',
+  RH: 'rh',
+  'R&S': 'recrutamento',
+  Colaborador: 'colaborador',
+  Financeiro: 'financeiro',
+  Gestão: 'gestao',
+  Administrativo: 'administrativo',
+  Diretoria: 'diretoria',
+  'Marketing & Fidelidade': 'marketing',
+};
+
+const ADMIN_DIACRITICS_REGEX = new RegExp('[̀-ͯ]', 'g');
+
+function slugifyAdminName(raw: string): string {
+  return raw
+    .normalize('NFD')
+    .replace(ADMIN_DIACRITICS_REGEX, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
 // ---------- Menu de ações genérico (reaproveitado por Cargos e Acesso por
 // Usuário — cada tela passa sua própria lista de ações) ----------
 
@@ -1777,21 +1813,30 @@ function emptyAdminCargoForm(): AdminCargoFormValues {
 // ---------- Modal "Novo Cargo" / "Editar — {cargo}" ----------
 // Nome/Grupo/Módulos ligados refletem dado real quando em modo "edit"
 // (cargo.moduleLabels vem do banco). A grade de permissões por
-// funcionalidade (LER/ESCR./EDIT./EXCL.) é só local — ver comentário acima
-// de adminModuleFunctionLabels. Criar/Salvar caem no aviso honesto: não há
-// endpoint de escrita pra roles ainda.
+// funcionalidade (LER/ESCR./EDIT./EXCL.) usa module_features de verdade
+// (fetchAdminModuleFeatures) — se um módulo/menu ainda não tem linha em
+// module_features do lado do Lovable, mostra uma nota honesta em vez de
+// inventar funcionalidades. Criar/Salvar gravam de verdade via
+// createAdminCargo/updateAdminCargo + putAdminCargoPermissoes (ver
+// AdminPerfilAcessoScreen).
 function AdminCargoFormModal({
   visible,
   mode,
   initialValues,
+  modules,
+  moduleFeatures,
+  isSaving,
   onClose,
   onSubmit,
 }: {
   visible: boolean;
   mode: 'create' | 'edit';
   initialValues: AdminCargoFormValues;
+  modules: AdminModuleItem[];
+  moduleFeatures: AdminModuleFeatureItem[];
+  isSaving?: boolean;
   onClose: () => void;
-  onSubmit: (values: AdminCargoFormValues) => void;
+  onSubmit: (values: AdminCargoFormValues, permissions: AdminFeaturePermission[]) => void;
 }) {
   const [form, setForm] = useState<AdminCargoFormValues>(initialValues);
   const [isGroupPickerOpen, setIsGroupPickerOpen] = useState(false);
@@ -1816,6 +1861,29 @@ function AdminCargoFormModal({
 
   const togglePerm = (key: string) => {
     setPermState((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const featuresForModule = (moduleLabel: string): AdminModuleFeatureItem[] => {
+    const slug = adminModuleSlugByLabel[moduleLabel];
+    const mod = modules.find((m) => m.slug === slug);
+    if (!mod) return [];
+    return moduleFeatures.filter((f) => f.module_id === mod.id && f.is_active !== false);
+  };
+
+  const buildPermissionsPayload = (): AdminFeaturePermission[] => {
+    const payload: AdminFeaturePermission[] = [];
+    form.moduleLabels.forEach((moduleLabel) => {
+      featuresForModule(moduleLabel).forEach((feature) => {
+        const can_read = Boolean(permState[`${feature.id}:LER`]);
+        const can_write = Boolean(permState[`${feature.id}:ESCR.`]);
+        const can_edit = Boolean(permState[`${feature.id}:EDIT.`]);
+        const can_delete = Boolean(permState[`${feature.id}:EXCL.`]);
+        if (can_read || can_write || can_edit || can_delete) {
+          payload.push({ feature_id: feature.id, can_read, can_write, can_edit, can_delete });
+        }
+      });
+    });
+    return payload;
   };
 
   return (
@@ -1860,7 +1928,7 @@ function AdminCargoFormModal({
 
             {adminCanonicalModules.map((moduleLabel) => {
               const isOn = form.moduleLabels.includes(moduleLabel);
-              const functionLabels = adminModuleFunctionLabels[moduleLabel];
+              const features = featuresForModule(moduleLabel);
               return (
                 <View key={moduleLabel}>
                   <View style={adminStyles.cargoModuleToggleRow}>
@@ -1868,7 +1936,7 @@ function AdminCargoFormModal({
                     <ToggleSwitch value={isOn} onValueChange={() => toggleModule(moduleLabel)} />
                   </View>
 
-                  {isOn && functionLabels ? (
+                  {isOn && features.length > 0 ? (
                     <View style={adminStyles.cargoPermTableWrap}>
                       <View style={adminStyles.cargoPermHeaderRow}>
                         <View style={adminStyles.cargoPermFunctionCell}>
@@ -1880,13 +1948,13 @@ function AdminCargoFormModal({
                           </View>
                         ))}
                       </View>
-                      {functionLabels.map((functionLabel) => (
-                        <View key={functionLabel} style={adminStyles.cargoPermRow}>
+                      {features.map((feature) => (
+                        <View key={feature.id} style={adminStyles.cargoPermRow}>
                           <View style={adminStyles.cargoPermFunctionCell}>
-                            <Text style={adminStyles.cargoPermFunctionText}>{functionLabel}</Text>
+                            <Text style={adminStyles.cargoPermFunctionText}>{feature.name}</Text>
                           </View>
                           {adminPermColumns.map((col) => {
-                            const key = `${moduleLabel}:${functionLabel}:${col}`;
+                            const key = `${feature.id}:${col}`;
                             return (
                               <AdminPermCheckbox key={col} active={Boolean(permState[key])} onPress={() => togglePerm(key)} />
                             );
@@ -1909,9 +1977,13 @@ function AdminCargoFormModal({
               <Pressable style={adminStyles.ghostButton} onPress={onClose}>
                 <Text style={adminStyles.ghostButtonText}>Cancelar</Text>
               </Pressable>
-              <Pressable style={adminStyles.primaryActionButton} onPress={() => onSubmit(form)}>
+              <Pressable
+                style={[adminStyles.primaryActionButton, isSaving ? { opacity: 0.6 } : null]}
+                disabled={isSaving}
+                onPress={() => onSubmit(form, buildPermissionsPayload())}
+              >
                 <Text style={adminStyles.primaryActionButtonText}>
-                  {mode === 'create' ? 'Criar Cargo' : 'Salvar Alterações'}
+                  {isSaving ? 'Salvando...' : mode === 'create' ? 'Criar Cargo' : 'Salvar Alterações'}
                 </Text>
               </Pressable>
             </View>
@@ -1931,9 +2003,9 @@ function AdminCargoFormModal({
 
 const ADMIN_ACESSO_PAGE_SIZE = 10;
 
-// Ainda não existe endpoint de escrita pra cargos/roles nem pra user_modules
-// (só GET hoje — ver af360-api/src/routes/admin.js). Avisa isso em vez de
-// fingir sucesso.
+// Ainda usado só pela aba "Acesso por Usuário" (módulo avulso/permissões por
+// usuário/reset — task #9). Cargos já grava de verdade (createAdminCargo/
+// updateAdminCargo/deleteAdminCargo/putAdminCargoPermissoes).
 function showAdminWriteNotAvailable(action: string) {
   Alert.alert(
     'Ainda não disponível',
@@ -1942,6 +2014,9 @@ function showAdminWriteNotAvailable(action: string) {
 }
 
 export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfilAcesso'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+
   const [activeTab, setActiveTab] = useState<'cargos' | 'usuarios'>('cargos');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -1954,12 +2029,32 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
   const [isCargoFormOpen, setIsCargoFormOpen] = useState(false);
   const [cargoFormMode, setCargoFormMode] = useState<'create' | 'edit'>('create');
   const [cargoFormInitial, setCargoFormInitial] = useState<AdminCargoFormValues>(emptyAdminCargoForm());
+  const [cargoBeingEdited, setCargoBeingEdited] = useState<AdminCargoItem | null>(null);
+  const [isSavingCargo, setIsSavingCargo] = useState(false);
+
+  const [modulos, setModulos] = useState<AdminModuleItem[]>([]);
+  const [moduleFeatures, setModuleFeatures] = useState<AdminModuleFeatureItem[]>([]);
 
   const [usuariosAcesso, setUsuariosAcesso] = useState<AdminAcessoUsuarioItem[]>([]);
   const [isLoadingUsuarios, setIsLoadingUsuarios] = useState(true);
   const [usuariosErrorMessage, setUsuariosErrorMessage] = useState<string | null>(null);
   const [acessoActionsFor, setAcessoActionsFor] = useState<AdminAcessoUsuarioItem | null>(null);
   const [acessoDetail, setAcessoDetail] = useState<AdminAcessoUsuarioItem | null>(null);
+
+  const loadCargos = () => {
+    setIsLoadingCargos(true);
+    setCargosErrorMessage(null);
+    return fetchAdminCargos()
+      .then((data) => {
+        setCargos(data.cargos);
+      })
+      .catch((err) => {
+        setCargosErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os cargos.');
+      })
+      .finally(() => {
+        setIsLoadingCargos(false);
+      });
+  };
 
   useEffect(() => {
     let isActive = true;
@@ -1979,6 +2074,23 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
         if (isActive) setIsLoadingCargos(false);
       });
 
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+    Promise.all([fetchAdminModulos(), fetchAdminModuleFeatures()])
+      .then(([modulosData, featuresData]) => {
+        if (!isActive) return;
+        setModulos(modulosData);
+        setModuleFeatures(featuresData);
+      })
+      .catch(() => {
+        // Silencioso: sem módulos/features reais, a grade de permissões cai
+        // na nota honesta "ainda não mapeadas", sem travar a tela.
+      });
     return () => {
       isActive = false;
     };
@@ -2030,6 +2142,70 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
       ? '0 de 0'
       : `${pageStart + 1}-${Math.min(pageStart + ADMIN_ACESSO_PAGE_SIZE, filteredUsers.length)} de ${filteredUsers.length}`;
 
+  const showApiError = (err: unknown, fallback: string) => {
+    const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
+    Alert.alert('Não foi possível concluir', message);
+  };
+
+  const handleCargoSubmit = (values: AdminCargoFormValues, permissions: AdminFeaturePermission[]) => {
+    const defaultModules = values.moduleLabels.map((label) => adminModuleSlugByLabel[label]).filter(Boolean);
+
+    setIsSavingCargo(true);
+    const request =
+      cargoFormMode === 'create'
+        ? createAdminCargo(
+            {
+              name: values.name.trim(),
+              slug: slugifyAdminName(values.name),
+              group_type: values.group,
+              default_modules: defaultModules,
+              is_active: true,
+            },
+            actorId
+          )
+        : updateAdminCargo(
+            cargoBeingEdited!.id,
+            {
+              name: values.name.trim(),
+              group_type: values.group,
+              default_modules: defaultModules,
+            },
+            actorId
+          );
+
+    request
+      .then((cargo: any) => {
+        const cargoId = cargoFormMode === 'create' ? cargo?.id : cargoBeingEdited!.id;
+        if (cargoId && permissions.length > 0) {
+          return putAdminCargoPermissoes(cargoId, permissions, actorId);
+        }
+        return undefined;
+      })
+      .then(() => {
+        setIsCargoFormOpen(false);
+        loadCargos();
+      })
+      .catch((err) =>
+        showApiError(err, cargoFormMode === 'create' ? 'Não foi possível criar o cargo.' : 'Não foi possível salvar o cargo.')
+      )
+      .finally(() => setIsSavingCargo(false));
+  };
+
+  const handleExcluirCargo = (cargo: AdminCargoItem) => {
+    Alert.alert('Excluir cargo', `Tem certeza que quer excluir "${cargo.name}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdminCargo(cargo.id, actorId)
+            .then(() => loadCargos())
+            .catch((err) => showApiError(err, 'Não foi possível excluir o cargo.'));
+        },
+      },
+    ]);
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -2080,6 +2256,7 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
                 style={styles.directorNotifNewButton}
                 onPress={() => {
                   setCargoFormMode('create');
+                  setCargoBeingEdited(null);
                   setCargoFormInitial(emptyAdminCargoForm());
                   setIsCargoFormOpen(true);
                 }}
@@ -2217,6 +2394,7 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
               setCargoActionsFor(null);
               if (!cargo) return;
               setCargoFormMode('edit');
+              setCargoBeingEdited(cargo);
               setCargoFormInitial({ name: cargo.name, group: cargo.group || 'Operacional', moduleLabels: cargo.moduleLabels });
               setIsCargoFormOpen(true);
             },
@@ -2230,10 +2408,7 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
               const cargo = cargoActionsFor;
               setCargoActionsFor(null);
               if (!cargo) return;
-              Alert.alert('Excluir cargo', `Tem certeza que quer excluir "${cargo.name}"?`, [
-                { text: 'Cancelar', style: 'cancel' },
-                { text: 'Excluir', style: 'destructive', onPress: () => showAdminWriteNotAvailable('Excluir cargo') },
-              ]);
+              handleExcluirCargo(cargo);
             },
           },
         ]}
@@ -2247,6 +2422,7 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
           if (!cargo) return;
           setCargoDetail(null);
           setCargoFormMode('edit');
+          setCargoBeingEdited(cargo);
           setCargoFormInitial({
             name: cargo.name,
             group: cargo.group || 'Operacional',
@@ -2259,11 +2435,11 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
         visible={isCargoFormOpen}
         mode={cargoFormMode}
         initialValues={cargoFormInitial}
+        modules={modulos}
+        moduleFeatures={moduleFeatures}
+        isSaving={isSavingCargo}
         onClose={() => setIsCargoFormOpen(false)}
-        onSubmit={() => {
-          setIsCargoFormOpen(false);
-          showAdminWriteNotAvailable(cargoFormMode === 'create' ? 'Criar cargo' : 'Salvar alterações do cargo');
-        }}
+        onSubmit={handleCargoSubmit}
       />
 
       <AdminGenericActionsMenu
