@@ -1603,7 +1603,7 @@ function AdminCargoFormModal({
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View style={adminStyles.formRow}>
               <View style={adminStyles.formRowItem}>
-                <Text style={styles.requestFieldLabel}>Nome do cargo</Text>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Nome do cargo</Text>
                 <TextInput
                   style={styles.processTextInput}
                   value={form.name}
