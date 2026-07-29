@@ -1317,14 +1317,15 @@ function AdminCargoDetailModal({
 }
 
 // ---------- Modal "Acesso de X" (aba Acesso por Usuário) ----------
-// Mostra os 9 módulos canônicos e se cada um está ligado de verdade pra esse
-// usuário (role.default_modules ∪ user_modules — vem pronto em
-// item.moduleLabels, calculado no af360-api). Salvar/Resetar ainda não
-// gravam: não existe endpoint de escrita pra user_modules hoje. A tela do
-// web também mostra uma sub-lista de "funcionalidades" dentro do módulo
-// Colaborador (Dashboard, Comunicados, Calendário...) — não implementei essa
-// parte aqui porque não confirmamos com o Lovable que existe uma tabela real
-// de permissão por funcionalidade (só por módulo); ver mensagem sobre isso.
+// Header com avatar + nome + cargo (igual ao web), depois "Acesso de
+// {primeiro nome}" e a lista dos 9 módulos canônicos — ligado/desligado vem
+// de dado real (role.default_modules ∪ user_modules, já calculado no
+// af360-api como usuario.moduleLabels). Dentro de Administrador/RH/
+// Colaborador (os 3 módulos com lista de funcionalidades confirmada — ver
+// adminModuleFunctionLabels) o módulo expande em "FUNCIONALIDADES (X/Y)" com
+// um toggle por função, igual ao web. Essa granularidade por função ainda é
+// só local (não existe tabela de permissão por função confirmada no
+// Lovable), e Salvar/Resetar seguem avisando honestamente que não gravam.
 function AdminAcessoUsuarioModal({
   visible,
   usuario,
@@ -1334,6 +1335,16 @@ function AdminAcessoUsuarioModal({
   usuario: AdminAcessoUsuarioItem | null;
   onClose: () => void;
 }) {
+  const [expandedModule, setExpandedModule] = useState<string | null>(null);
+  const [functionState, setFunctionState] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (visible) {
+      setExpandedModule(null);
+      setFunctionState({});
+    }
+  }, [visible, usuario?.id]);
+
   if (!usuario) return null;
 
   const showNotAvailable = (action: string) => {
@@ -1343,48 +1354,102 @@ function AdminAcessoUsuarioModal({
     );
   };
 
+  const firstName = (usuario.fullName || usuario.email).split(' ')[0];
+
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.requestModalBackdrop}>
         <View style={styles.requestModalCard}>
-          <View style={styles.requestModalHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle} numberOfLines={1}>
-                Acesso de {(usuario.fullName || usuario.email).split(' ')[0]}
-              </Text>
-              <Text style={adminStyles.detailSubEmail} numberOfLines={1}>
-                {usuario.cargo || 'Sem cargo'}
-              </Text>
-            </View>
+          <View style={adminStyles.acessoCloseRow}>
             <Pressable onPress={onClose} hitSlop={8}>
               <Feather name="x" size={20} color="#677089" />
             </Pressable>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {adminCanonicalModules.map((moduleLabel) => (
-              <View key={moduleLabel} style={adminStyles.checkboxCard}>
-                <Text style={adminStyles.checkboxCardLabel}>{moduleLabel}</Text>
-                <ToggleSwitch
-                  value={usuario.moduleLabels.includes(moduleLabel)}
-                  onValueChange={() => showNotAvailable('Alterar acesso a módulo')}
-                />
-              </View>
-            ))}
+          <View style={adminStyles.acessoUserHeaderRow}>
+            <View style={adminStyles.listAvatar}>
+              <Text style={adminStyles.listAvatarText}>{getInitialsFromName(usuario.fullName ?? usuario.email)}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={adminStyles.listName} numberOfLines={1}>
+                {usuario.fullName || usuario.email}
+              </Text>
+              <Text style={adminStyles.listMeta} numberOfLines={1}>
+                {usuario.cargo || 'Sem cargo'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={adminStyles.acessoDivider} />
+          <Text style={adminStyles.cargoFormSectionTitle}>Acesso de {firstName}</Text>
+
+          <ScrollView showsVerticalScrollIndicator={false} style={styles.spacingTop}>
+            {adminCanonicalModules.map((moduleLabel) => {
+              const isOn = usuario.moduleLabels.includes(moduleLabel);
+              const functionLabels = adminModuleFunctionLabels[moduleLabel];
+              const isExpanded = expandedModule === moduleLabel;
+              const onCount = functionLabels
+                ? functionLabels.filter((fn) => functionState[`${moduleLabel}:${fn}`]).length
+                : 0;
+
+              return (
+                <View key={moduleLabel}>
+                  <View style={adminStyles.checkboxCard}>
+                    <Text style={adminStyles.checkboxCardLabel}>{moduleLabel}</Text>
+                    <ToggleSwitch value={isOn} onValueChange={() => showNotAvailable('Alterar acesso a módulo')} />
+                  </View>
+
+                  {isOn && functionLabels ? (
+                    <Pressable
+                      style={adminStyles.funcHeaderRow}
+                      onPress={() => setExpandedModule(isExpanded ? null : moduleLabel)}
+                    >
+                      <Text style={adminStyles.funcHeaderLabel}>
+                        FUNCIONALIDADES ({onCount}/{functionLabels.length})
+                      </Text>
+                      <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={14} color="#9AA1B5" />
+                    </Pressable>
+                  ) : null}
+
+                  {isOn && functionLabels && isExpanded ? (
+                    <View style={adminStyles.funcListWrap}>
+                      {functionLabels.map((fn) => {
+                        const key = `${moduleLabel}:${fn}`;
+                        return (
+                          <View key={fn} style={adminStyles.funcRow}>
+                            <Text style={adminStyles.funcRowText} numberOfLines={1}>
+                              {fn}
+                            </Text>
+                            <ToggleSwitch
+                              value={Boolean(functionState[key])}
+                              onValueChange={() =>
+                                setFunctionState((current) => ({ ...current, [key]: !current[key] }))
+                              }
+                            />
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
           </ScrollView>
 
-          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
-            <Pressable
-              style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]}
-              onPress={() => showNotAvailable('Resetar para padrão do cargo')}
-            >
-              <Text style={styles.secondaryButtonText}>Resetar para padrão do cargo</Text>
-            </Pressable>
-            <Pressable style={adminStyles.primaryActionButton} onPress={() => showNotAvailable('Salvar alterações')}>
-              <Feather name="save" size={14} color="#FFFFFF" />
-              <Text style={adminStyles.primaryActionButtonText}>Salvar</Text>
-            </Pressable>
-          </View>
+          <Pressable
+            style={[adminStyles.primaryActionButton, adminStyles.stackedButton, styles.spacingTop]}
+            onPress={() => showNotAvailable('Salvar alterações')}
+          >
+            <Feather name="save" size={14} color="#FFFFFF" />
+            <Text style={adminStyles.primaryActionButtonText}>Salvar Alterações</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.secondaryButton, adminStyles.stackedButton, adminStyles.stackedButtonSecondary]}
+            onPress={() => showNotAvailable('Resetar para padrão do cargo')}
+          >
+            <Feather name="rotate-ccw" size={13} color="#4C5470" />
+            <Text style={styles.secondaryButtonText}>Resetar para padrão do cargo</Text>
+          </Pressable>
         </View>
       </View>
     </Modal>
@@ -3803,6 +3868,61 @@ const adminStyles = StyleSheet.create({
   paginationArrowDisabled: {
     backgroundColor: '#F8F9FC',
     borderColor: '#EEF1F8',
+  },
+  acessoCloseRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  acessoUserHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: -8,
+  },
+  acessoDivider: {
+    height: 1,
+    backgroundColor: '#EEF1F8',
+    marginTop: 14,
+    marginBottom: 12,
+  },
+  funcHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+  },
+  funcHeaderLabel: {
+    color: '#9AA1B5',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  funcListWrap: {
+    marginBottom: 6,
+  },
+  funcRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  funcRowText: {
+    flex: 1,
+    color: '#3A415C',
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  stackedButton: {
+    width: '100%',
+    minHeight: 44,
+    borderRadius: 10,
+    justifyContent: 'center',
+  },
+  stackedButtonSecondary: {
+    marginTop: 8,
   },
   ghostButton: {
     minHeight: 40,
