@@ -6626,14 +6626,24 @@ export function AdminVersoesScreen({ navigation }: ScreenProps<'AdminVersoes'>) 
               })}
             </View>
 
-            <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar nas versões..." />
-            <Pressable
-              style={[adminStyles.mdCopyButton, { alignSelf: 'flex-start', marginTop: 10, marginBottom: 4 }]}
-              onPress={() => setIsFilterPickerOpen(true)}
-            >
-              <Feather name="filter" size={13} color="#4C5470" />
-              <Text style={adminStyles.mdCopyButtonText}>Filtrar: {selectedFilterLabel}</Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+              <View style={[adminStyles.searchRow, { flex: 1, marginBottom: 0 }]}>
+                <Feather name="search" size={16} color="#9AA1B5" />
+                <TextInput
+                  style={adminStyles.searchInput}
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Buscar nas versões..."
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+              <Pressable style={adminStyles.filterPill} onPress={() => setIsFilterPickerOpen(true)}>
+                <Feather name="filter" size={13} color="#4C5470" />
+                <Text style={adminStyles.filterPillText} numberOfLines={1}>
+                  Filtrar: {selectedFilterLabel}
+                </Text>
+              </Pressable>
+            </View>
 
             {filteredVersoes.length === 0 ? (
               <AdminEmptyState message="Nenhuma versão encontrada." />
@@ -7642,15 +7652,13 @@ const adminStyles = StyleSheet.create({
   },
   miniStatRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
     marginBottom: 14,
   },
   miniStatCard: {
-    flexGrow: 1,
-    minWidth: '18%',
+    flex: 1,
     borderRadius: 14,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
     paddingVertical: 10,
     alignItems: 'flex-start',
   },
