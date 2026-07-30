@@ -5248,12 +5248,82 @@ const ADMIN_MODULE_ICON_MAP: Record<string, FeatherIconName> = {
 
 const ADMIN_MODULOS_PAGE_SIZE = 10;
 
+// ---------- Modal "Detalhe do módulo" ----------
+// Abre ao tocar no card — no celular a descrição às vezes corta na lista,
+// então aqui mostra o texto completo, junto com o resto dos dados reais.
+function AdminModuloDetailModal({
+  visible,
+  modulo,
+  onClose,
+}: {
+  visible: boolean;
+  modulo: AdminModuleItem | null;
+  onClose: () => void;
+}) {
+  if (!modulo) return null;
+  const icon = (modulo.icon && ADMIN_MODULE_ICON_MAP[modulo.icon]) || 'grid';
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={[styles.iconShell, adminStyles.iconAccentNavy]}>
+                <Feather name={icon} size={17} color={NAVY} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.requestModalTitle}>{modulo.name || '(sem nome)'}</Text>
+                <Text style={adminStyles.detailSubEmail}>{modulo.slug || '—'}</Text>
+              </View>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={adminStyles.detailFieldLabel}>DESCRIÇÃO</Text>
+            <Text style={adminStyles.detailFieldValue}>{modulo.description || 'Sem descrição cadastrada.'}</Text>
+
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>COR</Text>
+                <View style={adminStyles.groupLeft}>
+                  {modulo.color ? (
+                    <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: modulo.color }} />
+                  ) : null}
+                  <Text style={adminStyles.detailFieldValue}>{modulo.color || '—'}</Text>
+                </View>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>ORDEM</Text>
+                <Text style={adminStyles.detailFieldValue}>{modulo.order_index ?? '—'}</Text>
+              </View>
+            </View>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>ATIVO</Text>
+            <AdminDetailBoolBadge value={modulo.is_active} />
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+              <Text style={adminStyles.ghostButtonText}>Fechar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [modulos, setModulos] = useState<AdminModuleItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [moduloDetail, setModuloDetail] = useState<AdminModuleItem | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -5332,7 +5402,7 @@ export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) 
             {paged.map((modulo) => {
               const icon = (modulo.icon && ADMIN_MODULE_ICON_MAP[modulo.icon]) || 'grid';
               return (
-                <View key={modulo.id} style={adminStyles.listCard}>
+                <Pressable key={modulo.id} style={adminStyles.listCard} onPress={() => setModuloDetail(modulo)}>
                   <View style={[styles.iconShell, adminStyles.iconAccentNavy]}>
                     <Feather name={icon} size={17} color={NAVY} />
                   </View>
@@ -5346,7 +5416,7 @@ export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) 
                     ) : null}
                   </View>
                   <AdminDetailBoolBadge value={modulo.is_active} />
-                </View>
+                </Pressable>
               );
             })}
 
@@ -5375,6 +5445,11 @@ export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) 
           </>
         )}
       </ScrollView>
+      <AdminModuloDetailModal
+        visible={moduloDetail !== null}
+        modulo={moduloDetail}
+        onClose={() => setModuloDetail(null)}
+      />
     </SafeAreaView>
   );
 }
