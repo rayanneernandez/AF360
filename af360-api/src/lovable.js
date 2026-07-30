@@ -320,6 +320,18 @@ function deleteAdminContabilidade(id, actorId) {
   return lovableDelete('/api/public/internal/admin-contabilidades', { id }, actorId);
 }
 
+// --- Módulos (tabela própria public.modules, leitura já existente via
+// fetchAllRows; escrita — toggle de is_active e edição de campos — confirmada
+// pelo Lovable em 30/07/2026). ---
+
+function getAdminModulos() {
+  return lovableGet('/api/public/internal/admin-modulos');
+}
+
+function patchAdminModulo(id, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-modulos', { id }, body, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -356,4 +368,6 @@ module.exports = {
   postAdminContabilidade,
   patchAdminContabilidade,
   deleteAdminContabilidade,
+  getAdminModulos,
+  patchAdminModulo,
 };

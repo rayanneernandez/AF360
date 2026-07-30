@@ -827,6 +827,23 @@ export async function fetchAdminModulos(): Promise<AdminModuleItem[]> {
   return json.data as AdminModuleItem[];
 }
 
+export async function updateAdminModulo(
+  id: string,
+  body: Partial<{
+    is_active: boolean;
+    name: string;
+    description: string;
+    icon: string;
+    color: string;
+    gradient: string;
+    order_index: number;
+  }>,
+  actorId?: string | null
+): Promise<AdminModuleItem> {
+  const json = await api.patch(withActorId(`/api/admin/modulos/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdminModuleItem;
+}
+
 export async function fetchAdminModuleFeatures(moduleId?: string): Promise<AdminModuleFeatureItem[]> {
   const query = moduleId ? `?moduleId=${encodeURIComponent(moduleId)}` : '';
   const json = await api.get(`/api/admin/module-features${query}`);

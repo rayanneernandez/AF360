@@ -27,6 +27,7 @@ const {
   postAdminContabilidade,
   patchAdminContabilidade,
   deleteAdminContabilidade,
+  patchAdminModulo,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -175,6 +176,19 @@ router.get('/modulos', async (req, res) => {
   } catch (err) {
     console.error('[admin/modulos] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/modulos/:id?actorId=... -> toggle de is_active (e demais
+// campos) do módulo, via endpoint admin-modulos confirmado pelo Lovable em
+// 30/07/2026.
+router.patch('/modulos/:id', async (req, res) => {
+  try {
+    const json = await patchAdminModulo(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/modulos/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
 

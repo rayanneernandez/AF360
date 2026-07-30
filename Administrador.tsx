@@ -15,7 +15,7 @@
 // fetchRh*), e remova os comentários "MOCK" espalhados pelo arquivo.
 // ============================================================================
 
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -52,6 +52,7 @@ import {
   deleteAdminCargo,
   putAdminCargoPermissoes,
   fetchAdminModulos,
+  updateAdminModulo,
   fetchAdminModuleFeatures,
   fetchAdminGrupos,
   createAdminGrupo,
@@ -5255,10 +5256,14 @@ function AdminModuloDetailModal({
   visible,
   modulo,
   onClose,
+  onToggleAtivo,
+  isToggling,
 }: {
   visible: boolean;
   modulo: AdminModuleItem | null;
   onClose: () => void;
+  onToggleAtivo: (modulo: AdminModuleItem) => void;
+  isToggling: boolean;
 }) {
   if (!modulo) return null;
   const icon = (modulo.icon && ADMIN_MODULE_ICON_MAP[modulo.icon]) || 'grid';
@@ -5302,8 +5307,16 @@ function AdminModuloDetailModal({
               </View>
             </View>
 
-            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>ATIVO</Text>
-            <AdminDetailBoolBadge value={modulo.is_active} />
+            <View style={[styles.spacingTop, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+              <Text style={adminStyles.detailFieldLabel}>ATIVO</Text>
+              <ToggleSwitch
+                value={modulo.is_active}
+                onValueChange={() => {
+                  if (isToggling) return;
+                  onToggleAtivo(modulo);
+                }}
+              />
+            </View>
           </ScrollView>
 
           <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
@@ -5318,12 +5331,36 @@ function AdminModuloDetailModal({
 }
 
 export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [modulos, setModulos] = useState<AdminModuleItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [moduloDetail, setModuloDetail] = useState<AdminModuleItem | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const handleToggleModuloAtivo = useCallback(
+    (modulo: AdminModuleItem) => {
+      const nextValue = !modulo.is_active;
+      setTogglingId(modulo.id);
+      updateAdminModulo(modulo.id, { is_active: nextValue }, actorId)
+        .then((updated) => {
+          setModulos((current) => current.map((item) => (item.id === modulo.id ? { ...item, ...updated } : item)));
+          setModuloDetail((current) => (current && current.id === modulo.id ? { ...current, ...updated } : current));
+        })
+        .catch((err) => {
+          Alert.alert(
+            'Não foi possível atualizar',
+            err instanceof Error ? err.message : 'Falha ao alterar o status do módulo.'
+          );
+        })
+        .finally(() => setTogglingId(null));
+    },
+    [actorId]
+  );
 
   useEffect(() => {
     let isActive = true;
@@ -5415,7 +5452,13 @@ export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) 
                       </Text>
                     ) : null}
                   </View>
-                  <AdminDetailBoolBadge value={modulo.is_active} />
+                  <ToggleSwitch
+                    value={modulo.is_active}
+                    onValueChange={() => {
+                      if (togglingId) return;
+                      handleToggleModuloAtivo(modulo);
+                    }}
+                  />
                 </Pressable>
               );
             })}
@@ -5449,6 +5492,8 @@ export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) 
         visible={moduloDetail !== null}
         modulo={moduloDetail}
         onClose={() => setModuloDetail(null)}
+        onToggleAtivo={handleToggleModuloAtivo}
+        isToggling={togglingId !== null}
       />
     </SafeAreaView>
   );
