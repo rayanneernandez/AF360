@@ -5666,10 +5666,18 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
   const [enabledForm, setEnabledForm] = useState(true);
   const [apiUrlForm, setApiUrlForm] = useState('');
   const [departmentIdForm, setDepartmentIdForm] = useState('');
-  const [apiTokenNew, setApiTokenNew] = useState('');
+  // Campo único "API Token" (mesma nomenclatura do web) — pré-preenchido com
+  // o valor mascarado que o backend manda; só vira um valor novo de verdade
+  // se a pessoa realmente editar (apiTokenEdited). O backend NUNCA devolve o
+  // token completo (confirmado testando reveal=1 em produção em 30/07/2026 —
+  // só webhook_secret/webhook_url são revelados), então não tem como
+  // pré-preencher com o valor real.
+  const [apiTokenField, setApiTokenField] = useState('');
+  const [apiTokenEdited, setApiTokenEdited] = useState(false);
   const [metaBusinessIdForm, setMetaBusinessIdForm] = useState('');
   const [metaPhoneNumberIdForm, setMetaPhoneNumberIdForm] = useState('');
-  const [metaAccessTokenNew, setMetaAccessTokenNew] = useState('');
+  const [metaAccessTokenField, setMetaAccessTokenField] = useState('');
+  const [metaAccessTokenEdited, setMetaAccessTokenEdited] = useState(false);
   const [isProviderPickerOpen, setIsProviderPickerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -5696,8 +5704,12 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
     setEnabledForm(config.enabled);
     setApiUrlForm(config.apiUrl ?? '');
     setDepartmentIdForm(config.departmentId ?? '');
+    setApiTokenField(config.apiTokenMasked ?? '');
+    setApiTokenEdited(false);
     setMetaBusinessIdForm(config.metaBusinessId ?? '');
     setMetaPhoneNumberIdForm(config.metaPhoneNumberId ?? '');
+    setMetaAccessTokenField(config.metaAccessTokenMasked ?? '');
+    setMetaAccessTokenEdited(false);
   }, []);
 
   const loadConfig = useCallback(() => {
@@ -5763,17 +5775,18 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
     if (providerForm === 'zapresponder') {
       body.api_url = apiUrlForm.trim();
       body.department_id = departmentIdForm.trim();
-      if (apiTokenNew.trim()) body.api_token = apiTokenNew.trim();
+      // Só manda api_token se a pessoa de fato editou o campo — caso
+      // contrário o texto ali é só o valor mascarado que veio do backend
+      // (ex: "eyJ••••pdc"), e mandar isso de volta apagaria o token real.
+      if (apiTokenEdited && apiTokenField.trim()) body.api_token = apiTokenField.trim();
     } else {
       body.meta_business_id = metaBusinessIdForm.trim();
       body.meta_phone_number_id = metaPhoneNumberIdForm.trim();
-      if (metaAccessTokenNew.trim()) body.meta_access_token = metaAccessTokenNew.trim();
+      if (metaAccessTokenEdited && metaAccessTokenField.trim()) body.meta_access_token = metaAccessTokenField.trim();
     }
     updateAdminWaConfig(body, actorId)
       .then((result) => {
         applyConfig(result);
-        setApiTokenNew('');
-        setMetaAccessTokenNew('');
         Alert.alert('Salvo', 'Configuração atualizada.');
       })
       .catch((err) => showAdminApiError(err, 'Não foi possível salvar a configuração.'))
@@ -5983,24 +5996,22 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                           autoCapitalize="none"
                         />
 
-                        <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API TOKEN ATUAL</Text>
-                        <View style={adminStyles.staticField}>
-                          <Text style={adminStyles.staticFieldText} numberOfLines={1}>
-                            {waConfig?.hasApiToken ? waConfig?.apiTokenMasked ?? '••••••••' : 'Nenhum token configurado ainda.'}
-                          </Text>
-                        </View>
-
-                        <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>NOVO API TOKEN</Text>
+                        <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API TOKEN</Text>
                         <TextInput
                           style={styles.processTextInput}
-                          value={apiTokenNew}
-                          onChangeText={setApiTokenNew}
-                          placeholder="Deixe vazio para manter o token atual"
+                          value={apiTokenField}
+                          onChangeText={(text) => {
+                            setApiTokenField(text);
+                            setApiTokenEdited(true);
+                          }}
+                          placeholder={waConfig?.hasApiToken ? undefined : 'Nenhum token configurado ainda'}
                           placeholderTextColor="#A7AEC2"
                           autoCapitalize="none"
-                          secureTextEntry
                         />
-                        <Text style={adminStyles.integrationHint}>Gere em app.zapresponder.com.br → Integrações → API</Text>
+                        <Text style={adminStyles.integrationHint}>
+                          Gere em app.zapresponder.com.br → Integrações → API. O backend nunca devolve o token
+                          completo — edite este campo só se quiser trocar por um novo.
+                        </Text>
                       </>
                     ) : (
                       <>
@@ -6024,25 +6035,22 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                           autoCapitalize="none"
                         />
 
-                        <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>ACCESS TOKEN ATUAL</Text>
-                        <View style={adminStyles.staticField}>
-                          <Text style={adminStyles.staticFieldText} numberOfLines={1}>
-                            {waConfig?.hasMetaAccessToken
-                              ? waConfig?.metaAccessTokenMasked ?? '••••••••'
-                              : 'Nenhum token configurado ainda.'}
-                          </Text>
-                        </View>
-
-                        <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>NOVO ACCESS TOKEN</Text>
+                        <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>ACCESS TOKEN</Text>
                         <TextInput
                           style={styles.processTextInput}
-                          value={metaAccessTokenNew}
-                          onChangeText={setMetaAccessTokenNew}
-                          placeholder="Deixe vazio para manter o token atual"
+                          value={metaAccessTokenField}
+                          onChangeText={(text) => {
+                            setMetaAccessTokenField(text);
+                            setMetaAccessTokenEdited(true);
+                          }}
+                          placeholder={waConfig?.hasMetaAccessToken ? undefined : 'Nenhum token configurado ainda'}
                           placeholderTextColor="#A7AEC2"
                           autoCapitalize="none"
-                          secureTextEntry
                         />
+                        <Text style={adminStyles.integrationHint}>
+                          O backend nunca devolve o token completo — edite este campo só se quiser trocar por um
+                          novo.
+                        </Text>
                       </>
                     )}
 
