@@ -5949,6 +5949,7 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
   const [isNovoCargoPickerOpen, setIsNovoCargoPickerOpen] = useState(false);
   const [rowProviderPickerId, setRowProviderPickerId] = useState<string | null>(null);
   const [isSavingCargoDominio, setIsSavingCargoDominio] = useState(false);
+  const rowPickerItem = cargoDominios.find((item) => item.id === rowProviderPickerId) ?? null;
 
   const loadCargoDominios = useCallback(() => {
     setIsLoadingCargoDominios(true);
@@ -6116,7 +6117,7 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
             <AdminColorPill label={`Google: ${googleCount}`} bg={GOLD_BG} color={GOLD} />
           </View>
 
-          <View style={[adminStyles.formRow, styles.spacingTop, { position: 'relative' }]}>
+          <View style={[adminStyles.formRow, styles.spacingTop]}>
             <View style={adminStyles.formRowItem}>
               <Text style={styles.requestFieldLabel}>Cargo</Text>
               <TextInput
@@ -6134,19 +6135,6 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
                 onPress={() => setIsNovoCargoPickerOpen(true)}
               />
             </View>
-            <AdminSimplePickerModal
-              visible={isNovoCargoPickerOpen}
-              title="Provedor"
-              options={Object.values(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS)}
-              selectedValue={ADMIN_CARGO_DOMINIO_PROVIDER_LABELS[novoCargoProvider]}
-              onSelect={(label) => {
-                const found = (Object.entries(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS) as Array<
-                  [AdminCargoDominioProvider, string]
-                >).find(([, value]) => value === label);
-                if (found) setNovoCargoProvider(found[0]);
-              }}
-              onClose={() => setIsNovoCargoPickerOpen(false)}
-            />
           </View>
           <View style={adminStyles.formRow}>
             <View style={adminStyles.formRowItem}>
@@ -6188,7 +6176,6 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
                 key={item.id}
                 style={[
                   adminStyles.contabRow,
-                  { position: 'relative' },
                   index === filteredCargoDominios.length - 1 ? { borderBottomWidth: 0 } : null,
                 ]}
               >
@@ -6207,19 +6194,6 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
                 >
                   <Text style={adminStyles.prefixCode}>{item.provider ?? '—'}</Text>
                 </Pressable>
-                <AdminSimplePickerModal
-                  visible={rowProviderPickerId === item.id}
-                  title="Provedor"
-                  options={Object.values(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS)}
-                  selectedValue={item.provider ? ADMIN_CARGO_DOMINIO_PROVIDER_LABELS[item.provider] : ''}
-                  onSelect={(label) => {
-                    const found = (Object.entries(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS) as Array<
-                      [AdminCargoDominioProvider, string]
-                    >).find(([, value]) => value === label);
-                    if (found) handleChangeCargoProvider(item, found[0]);
-                  }}
-                  onClose={() => setRowProviderPickerId(null)}
-                />
                 <ToggleSwitch value={item.isActive} onValueChange={() => handleToggleCargoDominio(item)} />
                 <Pressable
                   hitSlop={8}
@@ -6267,6 +6241,33 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
           })}
         </View>
       </ScrollView>
+
+      <AdminSimplePickerModal
+        visible={isNovoCargoPickerOpen}
+        title="Provedor"
+        options={Object.values(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS)}
+        selectedValue={ADMIN_CARGO_DOMINIO_PROVIDER_LABELS[novoCargoProvider]}
+        onSelect={(label) => {
+          const found = (Object.entries(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS) as Array<
+            [AdminCargoDominioProvider, string]
+          >).find(([, value]) => value === label);
+          if (found) setNovoCargoProvider(found[0]);
+        }}
+        onClose={() => setIsNovoCargoPickerOpen(false)}
+      />
+      <AdminSimplePickerModal
+        visible={rowPickerItem !== null}
+        title="Provedor"
+        options={Object.values(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS)}
+        selectedValue={rowPickerItem?.provider ? ADMIN_CARGO_DOMINIO_PROVIDER_LABELS[rowPickerItem.provider] : ''}
+        onSelect={(label) => {
+          const found = (Object.entries(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS) as Array<
+            [AdminCargoDominioProvider, string]
+          >).find(([, value]) => value === label);
+          if (found && rowPickerItem) handleChangeCargoProvider(rowPickerItem, found[0]);
+        }}
+        onClose={() => setRowProviderPickerId(null)}
+      />
     </SafeAreaView>
   );
 }
