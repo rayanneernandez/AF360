@@ -1481,15 +1481,21 @@ export type AdminWaConfig = {
   departmentId: string | null;
   webhookUrl: string | null;
   webhookSecretMasked: string | null;
-  // Só vem preenchido quando fetchAdminWaConfig({ reveal: true }) é chamado
-  // (exige actorId de usuário master no backend).
-  webhookSecret?: string | null;
   metaBusinessId: string | null;
   metaAccessTokenMasked: string | null;
   hasMetaAccessToken: boolean;
   metaPhoneNumberId: string | null;
   updatedAt: string | null;
   templates: AdminWaTemplateItem[];
+  // wa_templates ficou sem GRANT até 30/07/2026 — se a leitura falhar de
+  // novo, o backend expõe o motivo aqui em vez de simplesmente devolver [].
+  templatesError?: string | null;
+  // Os 4 campos abaixo só vêm preenchidos quando
+  // fetchAdminWaConfig({ reveal: true }) é chamado (exige actorId de
+  // usuário master no backend) — confirmado pela Lovable em 30/07/2026.
+  webhookSecret?: string | null;
+  apiToken?: string | null;
+  metaAccessToken?: string | null;
 };
 
 export async function fetchAdminWaConfig(opts?: {
@@ -1536,9 +1542,9 @@ export async function rotateAdminWaWebhookSecret(
 
 export async function syncAdminWaTemplates(
   actorId?: string | null
-): Promise<{ templates: AdminWaTemplateItem[] }> {
+): Promise<{ templates: AdminWaTemplateItem[]; templatesError?: string | null }> {
   const json = await api.post(withActorId('/api/admin/integracoes/whatsapp/sincronizar-templates', actorId), {});
-  return json.data as { templates: AdminWaTemplateItem[] };
+  return json.data as { templates: AdminWaTemplateItem[]; templatesError?: string | null };
 }
 
 export async function testAdminWaTemplate(

@@ -5682,13 +5682,18 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
 
-  // Webhook — revelado uma vez (exige actorId master) e mantido em memória;
-  // o "olho" só mascara/desmascara localmente o que já foi revelado.
+  // Webhook + tokens completos — revelados juntos numa única chamada (exige
+  // actorId master) e mantidos em memória; o "olho" só mascara/desmascara
+  // localmente o que já foi revelado.
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   const [revealedUrl, setRevealedUrl] = useState<string | null>(null);
+  const [revealedApiToken, setRevealedApiToken] = useState<string | null>(null);
+  const [revealedMetaAccessToken, setRevealedMetaAccessToken] = useState<string | null>(null);
   const [isRevealing, setIsRevealing] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
   const [isSecretVisible, setIsSecretVisible] = useState(false);
+  const [isApiTokenVisible, setIsApiTokenVisible] = useState(false);
+  const [isMetaTokenVisible, setIsMetaTokenVisible] = useState(false);
   const [justCopiedUrl, setJustCopiedUrl] = useState(false);
   const [justCopiedSecret, setJustCopiedSecret] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
@@ -5710,6 +5715,16 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
     setMetaPhoneNumberIdForm(config.metaPhoneNumberId ?? '');
     setMetaAccessTokenField(config.metaAccessTokenMasked ?? '');
     setMetaAccessTokenEdited(false);
+    // Config mudou (recarregou ou acabou de salvar) — qualquer valor
+    // revelado antes fica obsoleto.
+    setRevealedSecret(null);
+    setRevealedUrl(null);
+    setRevealedApiToken(null);
+    setRevealedMetaAccessToken(null);
+    setRevealError(null);
+    setIsSecretVisible(false);
+    setIsApiTokenVisible(false);
+    setIsMetaTokenVisible(false);
   }, []);
 
   const loadConfig = useCallback(() => {
@@ -5725,8 +5740,17 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
     loadConfig();
   }, [loadConfig]);
 
-  const ensureRevealed = useCallback(async (): Promise<{ secret: string; url: string } | null> => {
-    if (revealedSecret && revealedUrl) return { secret: revealedSecret, url: revealedUrl };
+  type AdminWaRevealed = {
+    secret: string | null;
+    url: string | null;
+    apiToken: string | null;
+    metaAccessToken: string | null;
+  };
+
+  const ensureRevealed = useCallback(async (): Promise<AdminWaRevealed | null> => {
+    if (revealedSecret && revealedUrl) {
+      return { secret: revealedSecret, url: revealedUrl, apiToken: revealedApiToken, metaAccessToken: revealedMetaAccessToken };
+    }
     setIsRevealing(true);
     setRevealError(null);
     try {
@@ -5737,16 +5761,55 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
       }
       setRevealedSecret(data.webhookSecret);
       setRevealedUrl(data.webhookUrl);
-      return { secret: data.webhookSecret, url: data.webhookUrl };
+      setRevealedApiToken(data.apiToken ?? null);
+      setRevealedMetaAccessToken(data.metaAccessToken ?? null);
+      return {
+        secret: data.webhookSecret,
+        url: data.webhookUrl,
+        apiToken: data.apiToken ?? null,
+        metaAccessToken: data.metaAccessToken ?? null,
+      };
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Não foi possível revelar o segredo (só usuários master podem ver).';
+        err instanceof Error ? err.message : 'Não foi possível revelar (só usuários master podem ver).';
       setRevealError(message);
       return null;
     } finally {
       setIsRevealing(false);
     }
-  }, [actorId, revealedSecret, revealedUrl]);
+  }, [actorId, revealedSecret, revealedUrl, revealedApiToken, revealedMetaAccessToken]);
+
+  const handleToggleApiTokenVisible = () => {
+    if (isApiTokenVisible) {
+      setIsApiTokenVisible(false);
+      if (!apiTokenEdited) setApiTokenField(waConfig?.apiTokenMasked ?? '');
+      return;
+    }
+    ensureRevealed().then((revealed) => {
+      if (revealed?.apiToken) {
+        setApiTokenField(revealed.apiToken);
+        setIsApiTokenVisible(true);
+      } else if (revealError) {
+        Alert.alert('Não foi possível revelar', revealError);
+      }
+    });
+  };
+
+  const handleToggleMetaTokenVisible = () => {
+    if (isMetaTokenVisible) {
+      setIsMetaTokenVisible(false);
+      if (!metaAccessTokenEdited) setMetaAccessTokenField(waConfig?.metaAccessTokenMasked ?? '');
+      return;
+    }
+    ensureRevealed().then((revealed) => {
+      if (revealed?.metaAccessToken) {
+        setMetaAccessTokenField(revealed.metaAccessToken);
+        setIsMetaTokenVisible(true);
+      } else if (revealError) {
+        Alert.alert('Não foi possível revelar', revealError);
+      }
+    });
+  };
 
   useEffect(() => {
     if (activeWaSubTab === 'webhook' && !revealedSecret && !isRevealing && !revealError) {
@@ -5835,8 +5898,14 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
     setIsSyncingTemplates(true);
     syncAdminWaTemplates(actorId)
       .then((result) => {
-        setWaConfig((current) => (current ? { ...current, templates: result.templates } : current));
-        Alert.alert('Sincronizado', `${result.templates.length} template(s) atualizados.`);
+        setWaConfig((current) =>
+          current ? { ...current, templates: result.templates, templatesError: result.templatesError ?? null } : current
+        );
+        if (result.templatesError) {
+          Alert.alert('Sincronizado com aviso', result.templatesError);
+        } else {
+          Alert.alert('Sincronizado', `${result.templates.length} template(s) atualizados.`);
+        }
       })
       .catch((err) => showAdminApiError(err, 'Não foi possível sincronizar os templates.'))
       .finally(() => setIsSyncingTemplates(false));
@@ -5997,20 +6066,28 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                         />
 
                         <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API TOKEN</Text>
-                        <TextInput
-                          style={styles.processTextInput}
-                          value={apiTokenField}
-                          onChangeText={(text) => {
-                            setApiTokenField(text);
-                            setApiTokenEdited(true);
-                          }}
-                          placeholder={waConfig?.hasApiToken ? undefined : 'Nenhum token configurado ainda'}
-                          placeholderTextColor="#A7AEC2"
-                          autoCapitalize="none"
-                        />
+                        <View style={adminStyles.tokenFieldRow}>
+                          <TextInput
+                            style={[styles.processTextInput, { flex: 1 }]}
+                            value={apiTokenField}
+                            onChangeText={(text) => {
+                              setApiTokenField(text);
+                              setApiTokenEdited(true);
+                              setIsApiTokenVisible(false);
+                            }}
+                            placeholder={waConfig?.hasApiToken ? undefined : 'Nenhum token configurado ainda'}
+                            placeholderTextColor="#A7AEC2"
+                            autoCapitalize="none"
+                          />
+                          {waConfig?.hasApiToken && !apiTokenEdited ? (
+                            <Pressable onPress={handleToggleApiTokenVisible} hitSlop={8} style={adminStyles.tokenEyeButton}>
+                              <Feather name={isApiTokenVisible ? 'eye-off' : 'eye'} size={16} color="#7A8299" />
+                            </Pressable>
+                          ) : null}
+                        </View>
                         <Text style={adminStyles.integrationHint}>
-                          Gere em app.zapresponder.com.br → Integrações → API. O backend nunca devolve o token
-                          completo — edite este campo só se quiser trocar por um novo.
+                          Gere em app.zapresponder.com.br → Integrações → API. Toque no olho para ver o token
+                          completo (só usuários master) — edite o campo só se quiser trocar por um novo.
                         </Text>
                       </>
                     ) : (
@@ -6036,20 +6113,28 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                         />
 
                         <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>ACCESS TOKEN</Text>
-                        <TextInput
-                          style={styles.processTextInput}
-                          value={metaAccessTokenField}
-                          onChangeText={(text) => {
-                            setMetaAccessTokenField(text);
-                            setMetaAccessTokenEdited(true);
-                          }}
-                          placeholder={waConfig?.hasMetaAccessToken ? undefined : 'Nenhum token configurado ainda'}
-                          placeholderTextColor="#A7AEC2"
-                          autoCapitalize="none"
-                        />
+                        <View style={adminStyles.tokenFieldRow}>
+                          <TextInput
+                            style={[styles.processTextInput, { flex: 1 }]}
+                            value={metaAccessTokenField}
+                            onChangeText={(text) => {
+                              setMetaAccessTokenField(text);
+                              setMetaAccessTokenEdited(true);
+                              setIsMetaTokenVisible(false);
+                            }}
+                            placeholder={waConfig?.hasMetaAccessToken ? undefined : 'Nenhum token configurado ainda'}
+                            placeholderTextColor="#A7AEC2"
+                            autoCapitalize="none"
+                          />
+                          {waConfig?.hasMetaAccessToken && !metaAccessTokenEdited ? (
+                            <Pressable onPress={handleToggleMetaTokenVisible} hitSlop={8} style={adminStyles.tokenEyeButton}>
+                              <Feather name={isMetaTokenVisible ? 'eye-off' : 'eye'} size={16} color="#7A8299" />
+                            </Pressable>
+                          ) : null}
+                        </View>
                         <Text style={adminStyles.integrationHint}>
-                          O backend nunca devolve o token completo — edite este campo só se quiser trocar por um
-                          novo.
+                          Toque no olho para ver o token completo (só usuários master) — edite o campo só se quiser
+                          trocar por um novo.
                         </Text>
                       </>
                     )}
@@ -6209,7 +6294,11 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                       Use em um template aprovado abaixo para descobrir qual formato o ZapResponder aceita.
                     </Text>
 
-                    {templates.length === 0 ? (
+                    {waConfig?.templatesError ? (
+                      <View style={adminStyles.fieldSpacing}>
+                        <AdminEmptyState message={waConfig.templatesError} />
+                      </View>
+                    ) : templates.length === 0 ? (
                       <View style={adminStyles.fieldSpacing}>
                         <AdminEmptyState message="Nenhum template sincronizado ainda. Toque em Sincronizar agora." />
                       </View>
@@ -8642,6 +8731,17 @@ const adminStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  tokenFieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tokenEyeButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   templateCard: {
     backgroundColor: '#FFFFFF',

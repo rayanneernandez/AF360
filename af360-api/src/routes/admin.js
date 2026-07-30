@@ -1228,33 +1228,26 @@ function mapWaConfigRow(row) {
   };
 }
 
-// wa-config?acao=... bundla "templates" na mesma resposta, mas na prática
-// esse campo voltou vazio mesmo com linhas reais em wa_templates (visto em
-// produção em 30/07/2026: GET wa-config -> templates:[], mas
-// GET table?name=wa_templates -> 1 linha real "contrato_geral"). Como
-// wa_templates já está na allowlist genérica de leitura, busca sempre por
-// ali em vez de confiar no bundle — mais confiável.
-async function fetchWaTemplatesFresh() {
-  const json = await fetchTable('wa_templates', { order: 'created_at:desc', limit: 200 });
-  return (json?.data ?? []).map(mapWaTemplateRow);
-}
-
 // GET /api/admin/integracoes/whatsapp?actorId=&reveal=1
+// reveal=1 (exige x-actor-id master) devolve api_token, meta_access_token,
+// webhook_secret e webhook_url completos — confirmado pela Lovable em
+// 30/07/2026 (o site usa uma server fn autenticada equivalente; o endpoint
+// interno inicialmente só mascarava, foi corrigido do lado deles). Os
+// campos *_masked continuam vindo sempre, mesmo com reveal.
+// "templates" vem embutido nesta mesma resposta — o bundle vazio visto
+// antes era falta de GRANT em wa_templates (corrigido pela Lovable);
+// "templates_error" pode vir preenchido se a leitura falhar de novo.
 router.get('/integracoes/whatsapp', async (req, res) => {
   try {
     const reveal = req.query.reveal === '1' || req.query.reveal === 'true';
-    const [json, templates] = await Promise.all([
-      getWaConfig({ reveal, actorId: req.query.actorId }),
-      fetchWaTemplatesFresh().catch((err) => {
-        console.error('[admin/integracoes/whatsapp] wa_templates erro:', err.message);
-        return [];
-      }),
-    ]);
+    const json = await getWaConfig({ reveal, actorId: req.query.actorId });
     const row = json?.data ?? json ?? {};
     const data = mapWaConfigRow(row);
-    data.templates = templates;
+    data.templatesError = row.templates_error ?? null;
     if (reveal) {
       data.webhookSecret = row.webhook_secret ?? null;
+      data.apiToken = row.api_token ?? null;
+      data.metaAccessToken = row.meta_access_token ?? null;
     }
     res.json({ ok: true, data });
   } catch (err) {
@@ -1303,12 +1296,17 @@ router.post('/integracoes/whatsapp/rotacionar-secret', async (req, res) => {
 // POST /api/admin/integracoes/whatsapp/sincronizar-templates?actorId=...
 router.post('/integracoes/whatsapp/sincronizar-templates', async (req, res) => {
   try {
-    await postWaConfigAcao('sincronizar-templates', {}, req.query.actorId);
-    // O "acao" dispara a sincronização de verdade lá na Lovable, mas o
-    // bundle de retorno não é confiável (mesmo problema do GET acima) —
-    // busca a lista fresca direto de wa_templates depois de sincronizar.
-    const templates = await fetchWaTemplatesFresh();
-    res.json({ ok: true, data: { templates } });
+    const json = await postWaConfigAcao('sincronizar-templates', {}, req.query.actorId);
+    const row = json?.data ?? json ?? {};
+    const templatesRaw = Array.isArray(row.templates)
+      ? row.templates
+      : Array.isArray(json?.templates)
+      ? json.templates
+      : [];
+    res.json({
+      ok: true,
+      data: { templates: templatesRaw.map(mapWaTemplateRow), templatesError: row.templates_error ?? null },
+    });
   } catch (err) {
     console.error('[admin/integracoes/whatsapp/sincronizar-templates] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'sync_failed', message: err.message });
