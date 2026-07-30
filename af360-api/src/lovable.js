@@ -50,11 +50,13 @@ async function parseResponse(response, url) {
   return json;
 }
 
-async function lovableGet(path, params = {}) {
+// actorId opcional (3º parâmetro): alguns GETs (ex: wa-config?reveal=1)
+// também exigem x-actor-id pra validar is_master no Lovable.
+async function lovableGet(path, params = {}, actorId) {
   const url = buildUrl(path, params);
-  const response = await fetch(url, {
-    headers: { 'x-internal-secret': getSecret() },
-  });
+  const headers = { 'x-internal-secret': getSecret() };
+  if (actorId) headers['x-actor-id'] = actorId;
+  const response = await fetch(url, { headers });
   return parseResponse(response, url);
 }
 
@@ -433,6 +435,26 @@ function deleteAdminNotifTemplate(id, actorId) {
   return lovableDelete('/api/public/internal/admin-notif-templates', { id }, actorId);
 }
 
+// --- Integrações: WhatsApp (tabela real wa_config, singleton) — confirmado
+// pelo Lovable em 30/07/2026. Não está na allowlist genérica de leitura
+// (tem api_token/meta_access_token/webhook_secret em claro), por isso rota
+// dedicada própria. GET sem reveal vem mascarado; GET ?reveal=1 exige
+// x-actor-id de um usuário master e devolve webhook_secret/webhook_url
+// completos. "acao" (query string no POST) pode ser: testar,
+// rotacionar-secret, sincronizar-templates, testar-template. ---
+
+function getWaConfig({ reveal, actorId } = {}) {
+  return lovableGet('/api/public/internal/wa-config', reveal ? { reveal: 1 } : {}, actorId);
+}
+
+function patchWaConfig(body, actorId) {
+  return lovablePatch('/api/public/internal/wa-config', {}, body, actorId);
+}
+
+function postWaConfigAcao(acao, body, actorId) {
+  return lovablePost('/api/public/internal/wa-config', { acao }, body ?? {}, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -491,4 +513,7 @@ module.exports = {
   postAdminNotifTemplate,
   patchAdminNotifTemplate,
   deleteAdminNotifTemplate,
+  getWaConfig,
+  patchWaConfig,
+  postWaConfigAcao,
 };

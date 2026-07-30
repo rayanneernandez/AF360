@@ -49,6 +49,9 @@ const {
   postAdminNotifTemplate,
   patchAdminNotifTemplate,
   deleteAdminNotifTemplate,
+  getWaConfig,
+  patchWaConfig,
+  postWaConfigAcao,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -1174,6 +1177,143 @@ router.get('/logs', async (req, res) => {
   } catch (err) {
     console.error('[admin/logs] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// --- Integrações: WhatsApp (tabela real wa_config, singleton — confirmado
+// pela Lovable em 30/07/2026). Rota dedicada própria, NÃO passa pela
+// allowlist genérica (tem token/segredo em claro). GET normal vem mascarado
+// (api_token_masked, meta_access_token_masked, webhook_secret_masked); GET
+// ?reveal=1 exige actorId de usuário master e devolve webhook_secret e
+// webhook_url completos — usado só quando a pessoa toca no "olho" do
+// segredo ou em "copiar" a URL do webhook. wa_templates vem embutido na
+// mesma resposta. Ações (query string "acao" no POST): testar,
+// rotacionar-secret, sincronizar-templates, testar-template. ---
+
+function mapWaTemplateRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id ?? row.template_name ?? null,
+    templateName: row.template_name ?? null,
+    language: row.language ?? null,
+    category: row.category ?? null,
+    status: row.status ?? null,
+    components: row.components ?? null,
+    lastSyncedAt: row.last_synced_at ?? null,
+  };
+}
+
+function mapWaConfigRow(row) {
+  if (!row) return null;
+  const templatesRaw = Array.isArray(row.templates)
+    ? row.templates
+    : Array.isArray(row.wa_templates)
+    ? row.wa_templates
+    : [];
+  return {
+    provider: row.provider ?? null,
+    enabled: Boolean(row.enabled),
+    apiUrl: row.api_url ?? null,
+    apiTokenMasked: row.api_token_masked ?? null,
+    hasApiToken: Boolean(row.has_api_token ?? row.api_token_masked),
+    departmentId: row.department_id ?? null,
+    webhookUrl: row.webhook_url ?? null,
+    webhookSecretMasked: row.webhook_secret_masked ?? null,
+    metaBusinessId: row.meta_business_id ?? null,
+    metaAccessTokenMasked: row.meta_access_token_masked ?? null,
+    hasMetaAccessToken: Boolean(row.has_meta_access_token ?? row.meta_access_token_masked),
+    metaPhoneNumberId: row.meta_phone_number_id ?? null,
+    updatedAt: row.updated_at ?? null,
+    templates: templatesRaw.map(mapWaTemplateRow),
+  };
+}
+
+// GET /api/admin/integracoes/whatsapp?actorId=&reveal=1
+router.get('/integracoes/whatsapp', async (req, res) => {
+  try {
+    const reveal = req.query.reveal === '1' || req.query.reveal === 'true';
+    const json = await getWaConfig({ reveal, actorId: req.query.actorId });
+    const row = json?.data ?? json ?? {};
+    const data = mapWaConfigRow(row);
+    if (reveal) {
+      data.webhookSecret = row.webhook_secret ?? null;
+    }
+    res.json({ ok: true, data });
+  } catch (err) {
+    console.error('[admin/integracoes/whatsapp] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/integracoes/whatsapp?actorId=... — body em snake_case
+// (mesmas colunas de wa_config); campos de token vazios/omitidos = "não
+// alterar" (o Lovable preserva o valor existente).
+router.patch('/integracoes/whatsapp', async (req, res) => {
+  try {
+    const json = await patchWaConfig(req.body ?? {}, req.query.actorId);
+    const row = json?.data ?? json ?? {};
+    res.json({ ok: true, data: mapWaConfigRow(row) });
+  } catch (err) {
+    console.error('[admin/integracoes/whatsapp PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'save_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/whatsapp/testar?actorId=...
+router.post('/integracoes/whatsapp/testar', async (req, res) => {
+  try {
+    const json = await postWaConfigAcao('testar', {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/whatsapp/testar] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'test_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/whatsapp/rotacionar-secret?actorId=...
+router.post('/integracoes/whatsapp/rotacionar-secret', async (req, res) => {
+  try {
+    const json = await postWaConfigAcao('rotacionar-secret', {}, req.query.actorId);
+    const row = json?.data ?? json ?? {};
+    res.json({ ok: true, data: { webhookSecret: row.webhook_secret ?? null, webhookUrl: row.webhook_url ?? null } });
+  } catch (err) {
+    console.error('[admin/integracoes/whatsapp/rotacionar-secret] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'rotate_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/whatsapp/sincronizar-templates?actorId=...
+router.post('/integracoes/whatsapp/sincronizar-templates', async (req, res) => {
+  try {
+    const json = await postWaConfigAcao('sincronizar-templates', {}, req.query.actorId);
+    const row = json?.data ?? json ?? {};
+    const templatesRaw = Array.isArray(row.templates)
+      ? row.templates
+      : Array.isArray(json?.templates)
+      ? json.templates
+      : [];
+    res.json({ ok: true, data: { templates: templatesRaw.map(mapWaTemplateRow) } });
+  } catch (err) {
+    console.error('[admin/integracoes/whatsapp/sincronizar-templates] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'sync_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/whatsapp/testar-template?actorId=... — body:
+// { phone, templateName, language?, variables? }
+router.post('/integracoes/whatsapp/testar-template', async (req, res) => {
+  try {
+    const body = {
+      phone: req.body?.phone,
+      template_name: req.body?.templateName,
+      language: req.body?.language,
+      variables: req.body?.variables,
+    };
+    const json = await postWaConfigAcao('testar-template', body, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/whatsapp/testar-template] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'test_template_failed', message: err.message });
   }
 });
 

@@ -1456,6 +1456,99 @@ export async function fetchAdminLogs(params?: {
   return json.data as AdminLogsResponse;
 }
 
+// --- Admin: Integrações — WhatsApp (tabela real wa_config, singleton;
+// confirmado pela Lovable em 30/07/2026). Rota dedicada (não passa pela
+// allowlist genérica porque wa_config guarda token/segredo em claro). ---
+
+export type AdminWaProvider = 'zapresponder' | 'meta_cloud';
+
+export type AdminWaTemplateItem = {
+  id: string | null;
+  templateName: string | null;
+  language: string | null;
+  category: string | null;
+  status: string | null;
+  components: unknown;
+  lastSyncedAt: string | null;
+};
+
+export type AdminWaConfig = {
+  provider: AdminWaProvider | null;
+  enabled: boolean;
+  apiUrl: string | null;
+  apiTokenMasked: string | null;
+  hasApiToken: boolean;
+  departmentId: string | null;
+  webhookUrl: string | null;
+  webhookSecretMasked: string | null;
+  // Só vem preenchido quando fetchAdminWaConfig({ reveal: true }) é chamado
+  // (exige actorId de usuário master no backend).
+  webhookSecret?: string | null;
+  metaBusinessId: string | null;
+  metaAccessTokenMasked: string | null;
+  hasMetaAccessToken: boolean;
+  metaPhoneNumberId: string | null;
+  updatedAt: string | null;
+  templates: AdminWaTemplateItem[];
+};
+
+export async function fetchAdminWaConfig(opts?: {
+  reveal?: boolean;
+  actorId?: string | null;
+}): Promise<AdminWaConfig> {
+  const path = `/api/admin/integracoes/whatsapp${opts?.reveal ? '?reveal=1' : ''}`;
+  const json = await api.get(withActorId(path, opts?.actorId));
+  return json.data as AdminWaConfig;
+}
+
+// Colunas exatas de wa_config — campos de token omitidos/vazios preservam o
+// valor já salvo (o Lovable não apaga com string vazia).
+export type AdminWaConfigWriteBody = {
+  provider?: AdminWaProvider;
+  enabled?: boolean;
+  api_url?: string;
+  api_token?: string;
+  department_id?: string;
+  meta_business_id?: string;
+  meta_access_token?: string;
+  meta_phone_number_id?: string;
+};
+
+export async function updateAdminWaConfig(
+  body: AdminWaConfigWriteBody,
+  actorId?: string | null
+): Promise<AdminWaConfig> {
+  const json = await api.patch(withActorId('/api/admin/integracoes/whatsapp', actorId), body);
+  return json.data as AdminWaConfig;
+}
+
+export async function testAdminWaConnection(actorId?: string | null): Promise<Record<string, unknown>> {
+  const json = await api.post(withActorId('/api/admin/integracoes/whatsapp/testar', actorId), {});
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
+export async function rotateAdminWaWebhookSecret(
+  actorId?: string | null
+): Promise<{ webhookSecret: string | null; webhookUrl: string | null }> {
+  const json = await api.post(withActorId('/api/admin/integracoes/whatsapp/rotacionar-secret', actorId), {});
+  return json.data as { webhookSecret: string | null; webhookUrl: string | null };
+}
+
+export async function syncAdminWaTemplates(
+  actorId?: string | null
+): Promise<{ templates: AdminWaTemplateItem[] }> {
+  const json = await api.post(withActorId('/api/admin/integracoes/whatsapp/sincronizar-templates', actorId), {});
+  return json.data as { templates: AdminWaTemplateItem[] };
+}
+
+export async function testAdminWaTemplate(
+  body: { phone: string; templateName: string; language?: string; variables?: string[] },
+  actorId?: string | null
+): Promise<Record<string, unknown>> {
+  const json = await api.post(withActorId('/api/admin/integracoes/whatsapp/testar-template', actorId), body);
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {
