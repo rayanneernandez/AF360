@@ -46,6 +46,7 @@ import type {
   NotificationRoutineItem,
   NotificationTemplateItem,
   NotificationChannels,
+  NotificationAudienceType,
 } from './App';
 import {
   fetchAdminUsuarios,
