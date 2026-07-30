@@ -5613,7 +5613,7 @@ const ADMIN_WA_SUBTABS: Array<{ key: AdminWaSubTabKey; label: string }> = [
 
 const ADMIN_WA_PROVIDER_LABELS: Record<AdminWaProvider, string> = {
   zapresponder: 'ZapResponder (API oficial)',
-  meta_cloud: 'Meta Cloud',
+  meta_cloud: 'Meta Cloud API (direto)',
 };
 
 const ADMIN_WA_TEMPLATE_STATUS_STYLE: Record<string, { bg: string; color: string }> = {
