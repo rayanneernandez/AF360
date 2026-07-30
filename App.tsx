@@ -8606,8 +8606,8 @@ export function TemplateFormModal({
   }, [visible, initialTemplate]);
 
   const handleSubmit = () => {
-    if (!form.code.trim() || !form.messageTitle.trim() || !form.message.trim()) {
-      Alert.alert('Campos obrigatórios', 'Preencha código, título e mensagem do template.');
+    if (!form.code.trim() || !form.title.trim() || !form.messageTitle.trim() || !form.message.trim()) {
+      Alert.alert('Campos obrigatórios', 'Preencha código, nome, título e mensagem do template.');
       return;
     }
 
@@ -8643,24 +8643,29 @@ export function TemplateFormModal({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Text style={styles.requestFieldLabel}>Código *</Text>
-            <TextInput
-              style={styles.processTextInput}
-              value={form.code}
-              onChangeText={(text) => setForm((current) => ({ ...current, code: text }))}
-              placeholder="Ex.: dir_flash_diario"
-              placeholderTextColor="#A7AEC2"
-              autoCapitalize="none"
-            />
-
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Nome</Text>
-            <TextInput
-              style={styles.processTextInput}
-              value={form.title}
-              onChangeText={(text) => setForm((current) => ({ ...current, title: text }))}
-              placeholder="Ex.: Flash diário"
-              placeholderTextColor="#A7AEC2"
-            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.requestFieldLabel}>Código *</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.code}
+                  onChangeText={(text) => setForm((current) => ({ ...current, code: text }))}
+                  placeholder="meu_template"
+                  placeholderTextColor="#A7AEC2"
+                  autoCapitalize="none"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.requestFieldLabel}>Nome *</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.title}
+                  onChangeText={(text) => setForm((current) => ({ ...current, title: text }))}
+                  placeholder="Ex.: Flash diário"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+            </View>
 
             <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Título da mensagem *</Text>
             <TextInput
@@ -8684,12 +8689,12 @@ export function TemplateFormModal({
               textAlignVertical="top"
             />
 
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Variáveis disponíveis</Text>
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Variáveis disponíveis (separadas por vírgula)</Text>
             <TextInput
               style={styles.processTextInput}
               value={form.variablesText}
               onChangeText={(text) => setForm((current) => ({ ...current, variablesText: text }))}
-              placeholder="Ex.: data, faturamento, margem"
+              placeholder="nome, cargo, posto, data"
               placeholderTextColor="#A7AEC2"
               autoCapitalize="none"
             />

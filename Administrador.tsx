@@ -33,6 +33,9 @@ import {
   AdminThemeContext,
   NotificationRoutineFormModal,
   TemplateFormModal,
+  notificationTriggerOptions,
+  notificationChannelMeta,
+  notificationAudienceOptions,
   formatDateBR,
   getCalendarWeeks,
   calendarMonthNames,
@@ -42,6 +45,7 @@ import type {
   AdminThemePreset,
   NotificationRoutineItem,
   NotificationTemplateItem,
+  NotificationChannels,
 } from './App';
 import {
   fetchAdminUsuarios,
@@ -6727,8 +6731,17 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
   const [isTemplateFormOpen, setIsTemplateFormOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<NotificationTemplateItem | null>(null);
 
+  const toggleRoutine = (id: string) => {
+    setRoutines((current) => current.map((item) => (item.id === id ? { ...item, enabled: !item.enabled } : item)));
+  };
+
   const openCreateRoutineModal = () => {
     setEditingRoutine(null);
+    setIsRoutineFormOpen(true);
+  };
+
+  const openEditRoutineModal = (routine: NotificationRoutineItem) => {
+    setEditingRoutine(routine);
     setIsRoutineFormOpen(true);
   };
 
@@ -6743,8 +6756,32 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
     setIsRoutineFormOpen(false);
   };
 
+  const handleRunRoutine = (routine: NotificationRoutineItem) => {
+    const todayLabel = formatDateBR(new Date());
+    setRoutines((current) =>
+      current.map((item) => (item.id === routine.id ? { ...item, lastRunLabel: todayLabel } : item))
+    );
+    Alert.alert('Rotina executada', `"${routine.title}" foi executada agora.`);
+  };
+
+  const handleDeleteRoutine = (routine: NotificationRoutineItem) => {
+    Alert.alert('Excluir rotina', `Tem certeza que deseja excluir "${routine.title}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => setRoutines((current) => current.filter((item) => item.id !== routine.id)),
+      },
+    ]);
+  };
+
   const openCreateTemplateModal = () => {
     setEditingTemplate(null);
+    setIsTemplateFormOpen(true);
+  };
+
+  const openEditTemplateModal = (template: NotificationTemplateItem) => {
+    setEditingTemplate(template);
     setIsTemplateFormOpen(true);
   };
 
@@ -6812,23 +6849,101 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
             {routines.length === 0 ? (
               <AdminEmptyState message="Nenhuma rotina cadastrada. Clique em Nova rotina." />
             ) : (
-              routines.map((routine) => (
-                <View key={routine.id} style={styles.routineCard}>
-                  <View style={styles.routineTopRow}>
-                    <Text style={styles.routineTitle}>{routine.title}</Text>
+              routines.map((routine) => {
+                const triggerMeta =
+                  notificationTriggerOptions.find((option) => option.value === routine.triggerKind) ??
+                  notificationTriggerOptions[2];
+                const triggerDetail =
+                  routine.triggerKind === 'recorrente'
+                    ? routine.cronSchedule
+                    : routine.triggerKind === 'evento'
+                    ? routine.eventCode
+                    : '';
+                const channelLabels = (Object.keys(notificationChannelMeta) as Array<keyof NotificationChannels>)
+                  .filter((key) => routine.channels[key])
+                  .map((key) => notificationChannelMeta[key].label);
+                const audienceLabel =
+                  routine.audienceType === 'cargo'
+                    ? `Por cargo (${routine.audienceCargos.length})`
+                    : notificationAudienceOptions.find((option) => option.value === routine.audienceType)?.label ??
+                      'Todos os colaboradores';
+
+                return (
+                  <View key={routine.id} style={styles.routineCard}>
+                    <View style={styles.routineTopRow}>
+                      <Text style={styles.routineTitle}>{routine.title}</Text>
+                      <ToggleSwitch value={routine.enabled} onValueChange={() => toggleRoutine(routine.id)} />
+                    </View>
+                    <Text style={styles.routineSubtitle}>{routine.messageTitle}</Text>
+                    <View style={styles.routineTagsRow}>
+                      <View
+                        style={[
+                          styles.routineTag,
+                          routine.triggerKind === 'recorrente' ? styles.routineTagRecurring : styles.routineTagEvent,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.routineTagText,
+                            routine.triggerKind === 'recorrente'
+                              ? styles.routineTagTextRecurring
+                              : styles.routineTagTextEvent,
+                          ]}
+                        >
+                          {triggerMeta.label}
+                        </Text>
+                      </View>
+                      <View style={styles.routineChannelRow}>
+                        <Feather name="message-circle" size={12} color="#7C8397" />
+                        <Text style={styles.routineChannelText} numberOfLines={1}>
+                          {channelLabels.length > 0 ? channelLabels.join(', ') : 'Nenhum canal'}
+                        </Text>
+                      </View>
+                      <Text style={styles.routineAudience}>{audienceLabel}</Text>
+                    </View>
+                    {triggerDetail ? <Text style={styles.routineTriggerDetail}>{triggerDetail}</Text> : null}
+
+                    <View style={styles.routineFooterRow}>
+                      <View style={styles.routineLastRunRow}>
+                        <Feather name="clock" size={12} color="#9AA1B5" />
+                        <Text style={styles.routineLastRunText} numberOfLines={1}>
+                          {routine.lastRunLabel === '—' ? 'Nunca executada' : `Última exec.: ${routine.lastRunLabel}`}
+                        </Text>
+                      </View>
+                      <View style={styles.routineActionsRow}>
+                        <Pressable style={styles.routineActionButton} onPress={() => handleRunRoutine(routine)} hitSlop={6}>
+                          <Feather name="play" size={15} color="#18955A" />
+                        </Pressable>
+                        <Pressable
+                          style={styles.routineActionButton}
+                          onPress={() => openEditRoutineModal(routine)}
+                          hitSlop={6}
+                        >
+                          <Feather name="edit-2" size={15} color="#3457D5" />
+                        </Pressable>
+                        <Pressable
+                          style={styles.routineActionButton}
+                          onPress={() => handleDeleteRoutine(routine)}
+                          hitSlop={6}
+                        >
+                          <Feather name="trash-2" size={15} color="#E6213D" />
+                        </Pressable>
+                      </View>
+                    </View>
                   </View>
-                  <Text style={styles.routineSubtitle}>{routine.messageTitle}</Text>
-                </View>
-              ))
+                );
+              })
             )}
           </>
         ) : (
           <>
             <View style={styles.directorNotifHeaderRow}>
-              <Text style={styles.directorNotifCountLabel}>{templates.length} template(s)</Text>
+              <Text style={styles.directorNotifCountLabel}>
+                {templates.length} template(s){templates.length > 0 ? ' — ⭐ padrão do sistema, demais customizados' : ''}
+              </Text>
               <Pressable style={styles.directorNotifNewButton} onPress={openCreateTemplateModal}>
                 <Feather name="plus" size={15} color="#FFFFFF" />
-                <Text style={styles.directorNotifNewButtonText}>Novo</Text>
+                <Text style={styles.directorNotifNewButtonText}>Novo template</Text>
               </Pressable>
             </View>
 
@@ -6837,8 +6952,32 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
             ) : (
               templates.map((template) => (
                 <View key={template.id} style={styles.templateCard}>
-                  <Text style={styles.templateTitle}>{template.title}</Text>
+                  <View style={styles.templateTopRow}>
+                    {template.isSystemDefault ? <Feather name="star" size={14} color="#D79A22" /> : null}
+                    <Text style={styles.templateTitle}>{template.title}</Text>
+                  </View>
+                  <Text style={styles.templateCode}>{template.code}</Text>
                   <Text style={styles.templateDescription}>{template.messageTitle}</Text>
+                  <Text style={styles.templateDescription} numberOfLines={2}>
+                    {template.message}
+                  </Text>
+                  <View style={styles.templateTagsRow}>
+                    {template.variables.map((variable) => (
+                      <View key={variable} style={styles.templateTag}>
+                        <Text style={styles.templateTagText}>{variable}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <View style={styles.templateFooterRow}>
+                    <Pressable
+                      style={styles.routineActionButton}
+                      onPress={() => openEditTemplateModal(template)}
+                      hitSlop={6}
+                    >
+                      <Feather name="edit-2" size={15} color="#3457D5" />
+                    </Pressable>
+                  </View>
                 </View>
               ))
             )}
