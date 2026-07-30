@@ -5696,6 +5696,8 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
   const [isMetaTokenVisible, setIsMetaTokenVisible] = useState(false);
   const [justCopiedUrl, setJustCopiedUrl] = useState(false);
   const [justCopiedSecret, setJustCopiedSecret] = useState(false);
+  const [justCopiedApiToken, setJustCopiedApiToken] = useState(false);
+  const [justCopiedMetaToken, setJustCopiedMetaToken] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
 
   // Templates Meta
@@ -5807,6 +5809,34 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
         setIsMetaTokenVisible(true);
       } else if (revealError) {
         Alert.alert('Não foi possível revelar', revealError);
+      }
+    });
+  };
+
+  const handleCopyApiToken = () => {
+    if (apiTokenEdited) {
+      copyToClipboard(apiTokenField, () => flashCopied(setJustCopiedApiToken));
+      return;
+    }
+    ensureRevealed().then((revealed) => {
+      if (revealed?.apiToken) {
+        copyToClipboard(revealed.apiToken, () => flashCopied(setJustCopiedApiToken));
+      } else if (revealError) {
+        Alert.alert('Não foi possível copiar', revealError);
+      }
+    });
+  };
+
+  const handleCopyMetaToken = () => {
+    if (metaAccessTokenEdited) {
+      copyToClipboard(metaAccessTokenField, () => flashCopied(setJustCopiedMetaToken));
+      return;
+    }
+    ensureRevealed().then((revealed) => {
+      if (revealed?.metaAccessToken) {
+        copyToClipboard(revealed.metaAccessToken, () => flashCopied(setJustCopiedMetaToken));
+      } else if (revealError) {
+        Alert.alert('Não foi possível copiar', revealError);
       }
     });
   };
@@ -6084,6 +6114,15 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                               <Feather name={isApiTokenVisible ? 'eye-off' : 'eye'} size={16} color="#7A8299" />
                             </Pressable>
                           ) : null}
+                          {waConfig?.hasApiToken ? (
+                            <Pressable onPress={handleCopyApiToken} hitSlop={8} style={adminStyles.tokenEyeButton}>
+                              <Feather
+                                name={justCopiedApiToken ? 'check' : 'copy'}
+                                size={16}
+                                color={justCopiedApiToken ? GREEN : '#7A8299'}
+                              />
+                            </Pressable>
+                          ) : null}
                         </View>
                         <Text style={adminStyles.integrationHint}>
                           Gere em app.zapresponder.com.br → Integrações → API. Toque no olho para ver o token
@@ -6129,6 +6168,15 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                           {waConfig?.hasMetaAccessToken && !metaAccessTokenEdited ? (
                             <Pressable onPress={handleToggleMetaTokenVisible} hitSlop={8} style={adminStyles.tokenEyeButton}>
                               <Feather name={isMetaTokenVisible ? 'eye-off' : 'eye'} size={16} color="#7A8299" />
+                            </Pressable>
+                          ) : null}
+                          {waConfig?.hasMetaAccessToken ? (
+                            <Pressable onPress={handleCopyMetaToken} hitSlop={8} style={adminStyles.tokenEyeButton}>
+                              <Feather
+                                name={justCopiedMetaToken ? 'check' : 'copy'}
+                                size={16}
+                                color={justCopiedMetaToken ? GREEN : '#7A8299'}
+                              />
                             </Pressable>
                           ) : null}
                         </View>
