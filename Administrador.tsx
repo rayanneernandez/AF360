@@ -5650,6 +5650,54 @@ function copyToClipboard(text: string, onDone: () => void) {
     .catch(() => Alert.alert('Não foi possível copiar', 'Tente novamente.'));
 }
 
+// ---------- Máscaras de formatação (CPF/CNPJ/data) reaproveitadas pelos
+// formulários de consulta (Busca PF, Jurídico) — só formatação visual
+// enquanto o usuário digita, sem validação de dígito verificador.
+type AdminFieldMask = 'cpf' | 'cnpj' | 'date';
+
+function admOnlyDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+function admFormatCpf(digits: string): string {
+  const d = digits.slice(0, 11);
+  if (d.length > 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  if (d.length > 6) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  if (d.length > 3) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  return d;
+}
+
+function admFormatCnpj(digits: string): string {
+  const d = digits.slice(0, 14);
+  if (d.length > 12) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+  if (d.length > 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
+  if (d.length > 5) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
+  if (d.length > 2) return `${d.slice(0, 2)}.${d.slice(2)}`;
+  return d;
+}
+
+function admFormatDate(digits: string): string {
+  const d = digits.slice(0, 8);
+  if (d.length > 4) return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+  if (d.length > 2) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return d;
+}
+
+function admApplyFieldMask(mask: AdminFieldMask | undefined, rawValue: string): string {
+  if (!mask) return rawValue;
+  const digits = admOnlyDigits(rawValue);
+  if (mask === 'cpf') return admFormatCpf(digits);
+  if (mask === 'cnpj') return admFormatCnpj(digits);
+  return admFormatDate(digits);
+}
+
+function admFieldMaskMaxLength(mask: AdminFieldMask | undefined): number | undefined {
+  if (mask === 'cpf') return 14; // 000.000.000-00
+  if (mask === 'cnpj') return 18; // 00.000.000/0000-00
+  if (mask === 'date') return 10; // DD/MM/AAAA
+  return undefined;
+}
+
 // ---------- Busca PF (Infosimples/Fonte Data) — estrutura da tela igual ao
 // web (screenshots de 30/07/2026). Sem backend ainda (Lovable só confirmou
 // que existem logs em adm_infosimples_consultas/adm_fontedata_consultas,
@@ -5666,7 +5714,7 @@ type AdminIntegrationServiceField = {
   key: string;
   label: string;
   required?: boolean;
-  isDate?: boolean;
+  mask?: AdminFieldMask;
   placeholder?: string;
   options?: string[];
   defaultValue?: string;
@@ -5687,8 +5735,8 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
     title: 'Receita Federal — CPF',
     description: 'Consulta dados cadastrais e situação fiscal do CPF na Receita Federal.',
     fields: [
-      { key: 'cpf', label: 'CPF', required: true, placeholder: '000.000.000-00' },
-      { key: 'dataNascimento', label: 'Data de nascimento', required: true, isDate: true },
+      { key: 'cpf', label: 'CPF', required: true, mask: 'cpf', placeholder: '000.000.000-00' },
+      { key: 'dataNascimento', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
     ],
   },
   {
@@ -5697,8 +5745,8 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
     description: 'Emite a Certidão de Antecedentes Criminais na Polícia Federal.',
     fields: [
       { key: 'nomeCompleto', label: 'Nome completo', required: true, placeholder: 'Nome conforme RG' },
-      { key: 'dataNascimento', label: 'Data de nascimento', required: true, isDate: true },
-      { key: 'cpf', label: 'CPF (opcional)', placeholder: '000.000.000-00' },
+      { key: 'dataNascimento', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
+      { key: 'cpf', label: 'CPF (opcional)', mask: 'cpf', placeholder: '000.000.000-00' },
       { key: 'nomeMae', label: 'Nome da mãe (opcional)' },
       { key: 'nomePai', label: 'Nome do pai (opcional)' },
       { key: 'ufNascimento', label: 'UF de nascimento (opcional)', placeholder: 'Ex: SP' },
@@ -5715,9 +5763,9 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
         required: true,
         options: ['Cível', 'Criminal', 'Cível e Criminal'],
       },
-      { key: 'cpf', label: 'CPF (PF)', placeholder: '000.000.000-00' },
-      { key: 'dataNascimento', label: 'Data de nascimento (PF)', isDate: true },
-      { key: 'cnpj', label: 'CNPJ (PJ)', placeholder: '00.000.000/0000-00' },
+      { key: 'cpf', label: 'CPF (PF)', mask: 'cpf', placeholder: '000.000.000-00' },
+      { key: 'dataNascimento', label: 'Data de nascimento (PF)', mask: 'date', placeholder: 'DD/MM/AAAA' },
+      { key: 'cnpj', label: 'CNPJ (PJ)', mask: 'cnpj', placeholder: '00.000.000/0000-00' },
     ],
   },
   {
@@ -5725,9 +5773,9 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
     title: 'CNIS — Pré-inscrição (PIS/NIT/NIS)',
     description: 'Consulta a inscrição (PIS/NIT/NIS) de uma pessoa física no CNIS.',
     fields: [
-      { key: 'cpf', label: 'CPF', required: true, placeholder: '000.000.000-00' },
+      { key: 'cpf', label: 'CPF', required: true, mask: 'cpf', placeholder: '000.000.000-00' },
       { key: 'nomeCompleto', label: 'Nome completo', required: true },
-      { key: 'dataNascimento', label: 'Data de nascimento', required: true, isDate: true },
+      { key: 'dataNascimento', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
       { key: 'nomeMae', label: 'Nome da mãe', required: true },
     ],
   },
@@ -5846,10 +5894,11 @@ function AdminIntegrationServiceCard({
                     <TextInput
                       style={[styles.processTextInput, { marginTop: 6 }]}
                       value={currentValue}
-                      onChangeText={(text) => onChangeField(field.key, text)}
+                      onChangeText={(text) => onChangeField(field.key, admApplyFieldMask(field.mask, text))}
                       placeholder={field.placeholder}
                       placeholderTextColor="#A7AEC2"
-                      keyboardType={field.isDate ? 'numbers-and-punctuation' : 'default'}
+                      keyboardType={field.mask ? 'numeric' : 'default'}
+                      maxLength={admFieldMaskMaxLength(field.mask)}
                     />
                   )}
                 </View>
@@ -5857,13 +5906,13 @@ function AdminIntegrationServiceCard({
             })}
           </View>
 
-          <View style={[adminStyles.integrationActionsRow, adminStyles.fieldSpacing]}>
-            <Pressable style={[adminStyles.primaryButtonGreen, { flexDirection: 'row', gap: 6 }]} onPress={onExecute}>
+          <View style={adminStyles.pillButtonRow}>
+            <Pressable style={adminStyles.pillButtonPrimary} onPress={onExecute}>
               <Feather name="play" size={13} color="#FFFFFF" />
               <Text style={adminStyles.primaryButtonGreenText}>Executar consulta</Text>
             </Pressable>
             {service.extraActionLabel && onExtraAction ? (
-              <Pressable style={adminStyles.outlineButton} onPress={onExtraAction}>
+              <Pressable style={adminStyles.pillButtonOutline} onPress={onExtraAction}>
                 <Text style={adminStyles.outlineButtonText}>{service.extraActionLabel}</Text>
               </Pressable>
             ) : null}
@@ -6777,21 +6826,25 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
               <>
                 <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
                   <Text style={adminStyles.sectionTitle}>Credenciais</Text>
-                  <View style={[adminStyles.integrationActionsRow, adminStyles.fieldSpacing]}>
-                    <View style={[adminStyles.staticField, { flex: 1 }]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={adminStyles.fieldLabel}>TOKEN INFOSIMPLES</Text>
-                        <Text style={adminStyles.staticFieldText}>Status pendente de confirmação</Text>
-                      </View>
-                      <AdminColorPill label="Aguardando Lovable" bg="#F4F1E8" color="#8A6D1E" />
-                    </View>
-                    <View style={[adminStyles.staticField, { flex: 1 }]}>
-                      <Text style={adminStyles.staticFieldText}>api.infosimples.com</Text>
-                    </View>
+
+                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>TOKEN INFOSIMPLES</Text>
+                  <View style={adminStyles.staticField}>
+                    <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                      Status pendente de confirmação
+                    </Text>
+                    <AdminColorPill label="Pendente" bg="#F4F1E8" color="#8A6D1E" />
                   </View>
-                  <View style={[adminStyles.integrationActionsRow, adminStyles.fieldSpacing]}>
+
+                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>ENDPOINT BASE</Text>
+                  <View style={adminStyles.staticField}>
+                    <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                      api.infosimples.com
+                    </Text>
+                  </View>
+
+                  <View style={adminStyles.pillButtonRow}>
                     <Pressable
-                      style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6 }]}
+                      style={adminStyles.pillButtonOutline}
                       onPress={() =>
                         Alert.alert(
                           'Ainda não disponível',
@@ -6803,7 +6856,7 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                       <Text style={adminStyles.outlineButtonText}>Testar conexão</Text>
                     </Pressable>
                     <Pressable
-                      style={adminStyles.outlineButton}
+                      style={adminStyles.pillButtonOutline}
                       onPress={() =>
                         Alert.alert('Ainda não disponível', 'Vou abrir a documentação do Infosimples direto no app numa próxima rodada.')
                       }
@@ -6813,13 +6866,13 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                   </View>
                 </View>
 
-                <View style={[adminStyles.integrationHeaderRow, adminStyles.fieldSpacing]}>
-                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={adminStyles.headerRowWrap}>
+                  <View style={adminStyles.headerRowTitleWrap}>
                     <Text style={adminStyles.sectionTitle}>Consultas disponíveis</Text>
                     <AdminColorPill label="4 serviços" bg={BLUE_BG} color={BLUE} />
                   </View>
                   <Pressable
-                    style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6, flexShrink: 0 }]}
+                    style={adminStyles.pillButtonOutline}
                     onPress={() =>
                       Alert.alert(
                         'Ainda não disponível',
@@ -6861,10 +6914,12 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                 ))}
 
                 <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
-                  <View style={adminStyles.integrationHeaderRow}>
-                    <Text style={[adminStyles.sectionTitle, { flex: 1 }]}>Uso e custo mensal</Text>
+                  <View style={adminStyles.headerRowWrap}>
+                    <View style={adminStyles.headerRowTitleWrap}>
+                      <Text style={adminStyles.sectionTitle}>Uso e custo mensal</Text>
+                    </View>
                     <Pressable
-                      style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6, flexShrink: 0 }]}
+                      style={adminStyles.pillButtonOutline}
                       onPress={() =>
                         Alert.alert(
                           'Ainda não disponível',
@@ -6960,24 +7015,23 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                   </Text>
 
                   <Text style={[adminStyles.sectionTitle, adminStyles.fieldSpacing, { fontSize: 14 }]}>Credenciais</Text>
-                  <View style={[adminStyles.integrationActionsRow, { marginTop: 8 }]}>
-                    <View style={[adminStyles.staticField, { flex: 1 }]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={adminStyles.fieldLabel}>APIKEY (PÚBLICA DO CNJ)</Text>
-                      </View>
-                      <AdminColorPill label="Embutida" bg="#E7F5EC" color="#1E8A4C" />
-                    </View>
-                    <View style={[adminStyles.staticField, { flex: 1 }]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={adminStyles.fieldLabel}>ENDPOINT BASE</Text>
-                        <Text style={adminStyles.staticFieldText}>api-publica.datajud.cnj.jus.br</Text>
-                      </View>
-                    </View>
+
+                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>APIKEY (PÚBLICA DO CNJ)</Text>
+                  <View style={adminStyles.staticField}>
+                    <Text style={adminStyles.staticFieldText}>Não exige credencial secreta</Text>
+                    <AdminColorPill label="Embutida" bg="#E7F5EC" color="#1E8A4C" />
                   </View>
 
-                  <View style={[adminStyles.integrationActionsRow, adminStyles.fieldSpacing]}>
+                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>ENDPOINT BASE</Text>
+                  <View style={adminStyles.staticField}>
+                    <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                      api-publica.datajud.cnj.jus.br
+                    </Text>
+                  </View>
+
+                  <View style={adminStyles.pillButtonRow}>
                     <Pressable
-                      style={[adminStyles.primaryButtonGreen, { flexDirection: 'row', gap: 6 }]}
+                      style={adminStyles.pillButtonPrimary}
                       onPress={() =>
                         Alert.alert(
                           'Ainda não disponível',
@@ -6989,7 +7043,7 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                       <Text style={adminStyles.primaryButtonGreenText}>Testar conexão (TST)</Text>
                     </Pressable>
                     <Pressable
-                      style={adminStyles.outlineButton}
+                      style={adminStyles.pillButtonOutline}
                       onPress={() =>
                         Alert.alert('Ainda não disponível', 'Vou abrir a documentação do Datajud direto no app numa próxima rodada.')
                       }
@@ -6997,7 +7051,7 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                       <Text style={adminStyles.outlineButtonText}>Documentação Datajud</Text>
                     </Pressable>
                     <Pressable
-                      style={adminStyles.outlineButton}
+                      style={adminStyles.pillButtonOutline}
                       onPress={() =>
                         Alert.alert('Ainda não disponível', 'Vou abrir o termo de uso do Datajud direto no app numa próxima rodada.')
                       }
@@ -7007,13 +7061,13 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                   </View>
                 </View>
 
-                <View style={[adminStyles.integrationHeaderRow, adminStyles.fieldSpacing]}>
-                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={adminStyles.headerRowWrap}>
+                  <View style={adminStyles.headerRowTitleWrap}>
                     <Text style={adminStyles.sectionTitle}>Consultas disponíveis</Text>
                     <AdminColorPill label="3 serviços" bg={BLUE_BG} color={BLUE} />
                   </View>
                   <Pressable
-                    style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6, flexShrink: 0 }]}
+                    style={adminStyles.pillButtonOutline}
                     onPress={() =>
                       Alert.alert(
                         'Ainda não disponível',
@@ -7074,10 +7128,12 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                 ))}
 
                 <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
-                  <View style={adminStyles.integrationHeaderRow}>
-                    <Text style={[adminStyles.sectionTitle, { flex: 1 }]}>Uso mensal</Text>
+                  <View style={adminStyles.headerRowWrap}>
+                    <View style={adminStyles.headerRowTitleWrap}>
+                      <Text style={adminStyles.sectionTitle}>Uso mensal</Text>
+                    </View>
                     <Pressable
-                      style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6, flexShrink: 0 }]}
+                      style={adminStyles.pillButtonOutline}
                       onPress={() =>
                         Alert.alert('Ainda não disponível', 'Vou registrar o uso mensal do Datajud quando a rota proxy existir.')
                       }
@@ -9566,6 +9622,64 @@ const adminStyles = StyleSheet.create({
     color: '#9AA1B5',
     fontSize: 11,
     marginTop: 4,
+  },
+  // Cabeçalho de seção com título (+ pill opcional) à esquerda e um botão de
+  // ação à direita, ambos permitidos a quebrar linha em telas estreitas —
+  // substitui o padrão antigo (título flex:1 ao lado de outlineButton/
+  // primaryButtonGreen, que também tem flex:1 e "disputa" largura com o
+  // título, causando sobreposição em telas de celular).
+  headerRowWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 14,
+  },
+  headerRowTitleWrap: {
+    flex: 1,
+    flexBasis: 180,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  },
+  // Botões de ação que NÃO devem dividir a linha em partes iguais (ao
+  // contrário de primaryButtonGreen/outlineButton, que têm flex:1) — usados
+  // em linhas com 1 a 3 botões de tamanhos bem diferentes (ex.: "Testar
+  // conexão" + "Documentação Infosimples"). A linha quebra normalmente
+  // quando não cabe tudo.
+  pillButtonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 18,
+  },
+  pillButtonOutline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    flexGrow: 0,
+    flexShrink: 0,
+    borderWidth: 1,
+    borderColor: '#DDE4F0',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  pillButtonPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    flexGrow: 0,
+    flexShrink: 0,
+    backgroundColor: GREEN,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   prefixRow: {
     flexDirection: 'row',
