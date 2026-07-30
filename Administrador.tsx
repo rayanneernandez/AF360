@@ -5554,23 +5554,110 @@ export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) 
 // ============================================================================
 // 8. Integrações
 // ============================================================================
+// Ainda 100% mock (nenhuma rota real no af360-api para config de integração,
+// webhook ou templates Meta — confirmado por revisão de código em 30/07/2026).
+// Segue a exceção MOCK documentada no topo do arquivo: UI já fiel ao web,
+// ações de escrita (Salvar/Testar conexão/Gerar-Rotacionar/Sincronizar/Testar
+// template) mostram Alert explicitamente marcado "(mock)" até a Lovable
+// confirmar tabelas/endpoints (ver mensagem-lovable-integracoes.txt).
 
-type IntegrationTabKey = 'whatsapp' | 'ponto' | 'folha' | 'agentes' | 'business';
+type AdminIntegrationProviderKey =
+  | 'whatsapp'
+  | 'google'
+  | 'ponto'
+  | 'folha'
+  | 'agentes'
+  | 'buscapf'
+  | 'juridico'
+  | 'webposto'
+  | 'levamais';
 
-const adminIntegrationTabs: Array<{ key: IntegrationTabKey; label: string }> = [
-  { key: 'whatsapp', label: 'WhatsApp' },
-  { key: 'ponto', label: 'Ponto' },
-  { key: 'folha', label: 'Folha' },
-  { key: 'agentes', label: 'Agentes IA' },
-  // A 5ª aba veio cortada no mockup — assumida como "Business" (Business
-  // Intelligence). Ajustar o nome/rota quando o back confirmar.
-  { key: 'business', label: 'Business' },
+const ADMIN_INTEGRATION_PROVIDERS: Array<{
+  key: AdminIntegrationProviderKey;
+  label: string;
+  icon: FeatherIconName;
+  color: string;
+}> = [
+  { key: 'whatsapp', label: 'WhatsApp', icon: 'message-circle', color: GREEN },
+  { key: 'google', label: 'Google', icon: 'star', color: GOLD },
+  { key: 'ponto', label: 'Ponto', icon: 'clock', color: GRAY },
+  { key: 'folha', label: 'Folha', icon: 'file-text', color: GRAY },
+  { key: 'agentes', label: 'Agentes IA', icon: 'cpu', color: BLUE },
+  { key: 'buscapf', label: 'Busca PF', icon: 'search', color: BLUE },
+  { key: 'juridico', label: 'Jurídico', icon: 'briefcase', color: NAVY },
+  { key: 'webposto', label: 'WebPosto', icon: 'video', color: RED },
+  { key: 'levamais', label: 'Leva+', icon: 'gift', color: GOLD },
 ];
 
+type AdminWaSubTabKey = 'conexao' | 'webhook' | 'templates' | 'janela';
+
+const ADMIN_WA_SUBTABS: Array<{ key: AdminWaSubTabKey; label: string }> = [
+  { key: 'conexao', label: 'Conexão' },
+  { key: 'webhook', label: 'Webhook' },
+  { key: 'templates', label: 'Templates Meta' },
+  { key: 'janela', label: 'Janela 24h' },
+];
+
+const ADMIN_WA_PROVIDER_OPTIONS = ['ZapResponder (API oficial)', 'Meta Cloud'];
+
+// Valores exatamente como no mockup enviado pela Rayanne (screenshots do web
+// em 30/07/2026) — mock temporário, ver aviso no topo desta seção.
+const ADMIN_WA_MOCK = {
+  apiUrl: 'https://api.zapresponder.com.br/api',
+  departmentId: '8ab012bd-7483-44ef-ada4-002c69c174ce',
+  webhookUrl:
+    'https://americanfuel.com.br/api/public/wa/webhook?secret=2ae13ff9c4e849c2950dd7567530285a704cd695e8c048549d8e94294b4f7965',
+  webhookSecret: '2ae13ff9c4e849c2950dd7567530285a704cd695e8c048549d8e94294b4f7965',
+  lastSyncLabel: '30/07/2026, 03:00:06',
+  template: {
+    code: 'contrato_geral',
+    locale: 'pt_BR',
+    category: 'MARKETING',
+    preview: 'Olá, {{1}}. Tudo bem? Estamos entrando em contato para tratar de um assunto relacionado ao...',
+  },
+};
+
+function copyToClipboard(text: string, onDone: () => void) {
+  Clipboard.setStringAsync(text)
+    .then(onDone)
+    .catch(() => Alert.alert('Não foi possível copiar', 'Tente novamente.'));
+}
+
 export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegracoes'>) {
-  const { theme } = useContext(AdminThemeContext);
-  const [activeTab, setActiveTab] = useState<IntegrationTabKey>('whatsapp');
+  const [activeProvider, setActiveProvider] = useState<AdminIntegrationProviderKey>('whatsapp');
+  const [activeWaSubTab, setActiveWaSubTab] = useState<AdminWaSubTabKey>('conexao');
+
+  // Conexão
+  const [isIntegrationActive, setIsIntegrationActive] = useState(true);
+  const [waProvider, setWaProvider] = useState(ADMIN_WA_PROVIDER_OPTIONS[0]);
+  const [isProviderPickerOpen, setIsProviderPickerOpen] = useState(false);
   const [isTokenVisible, setIsTokenVisible] = useState(false);
+
+  // Webhook
+  const [isSecretVisible, setIsSecretVisible] = useState(false);
+  const [justCopiedUrl, setJustCopiedUrl] = useState(false);
+  const [justCopiedSecret, setJustCopiedSecret] = useState(false);
+
+  // Templates Meta
+  const [diagnosticoTelefone, setDiagnosticoTelefone] = useState('');
+
+  const flashCopied = (setFlag: (value: boolean) => void) => {
+    setFlag(true);
+    setTimeout(() => setFlag(false), 1800);
+  };
+
+  const handleRotateSecret = () => {
+    Alert.alert(
+      'Gerar novo segredo',
+      'Isso invalida a URL de webhook atual — será preciso atualizar no ZapResponder de novo. Continuar? (mock, aguardando endpoint real)',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Gerar', style: 'destructive', onPress: () => Alert.alert('Segredo gerado', '(mock) Nenhum dado real foi alterado.') },
+      ]
+    );
+  };
+
+  const activeProviderMeta = ADMIN_INTEGRATION_PROVIDERS.find((p) => p.key === activeProvider)!;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -5586,88 +5673,313 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <AdminPageHeader icon="link-2" title="Integrações" subtitle="Serviços conectados" />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={adminStyles.tabScrollRow}>
-          {adminIntegrationTabs.map((tab) => {
-            const isActive = activeTab === tab.key;
-            return (
-              <Pressable
-                key={tab.key}
-                style={[
-                  adminStyles.tabPill,
-                  isActive ? [adminStyles.tabPillActive, { backgroundColor: theme.primary, borderColor: theme.primary }] : null,
-                ]}
-                onPress={() => setActiveTab(tab.key)}
-              >
-                <Text style={[adminStyles.tabPillText, isActive ? adminStyles.tabPillTextActive : null]}>
-                  {tab.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        <View style={adminStyles.waProviderTabBarWrap}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {ADMIN_INTEGRATION_PROVIDERS.map((provider) => {
+              const isActive = activeProvider === provider.key;
+              return (
+                <Pressable
+                  key={provider.key}
+                  style={[adminStyles.waProviderTabItem, isActive ? { borderBottomColor: provider.color } : null]}
+                  onPress={() => setActiveProvider(provider.key)}
+                >
+                  <Feather name={provider.icon} size={14} color={provider.color} />
+                  <Text
+                    style={[
+                      adminStyles.waProviderTabText,
+                      isActive ? [adminStyles.waProviderTabTextActive, { color: provider.color }] : null,
+                    ]}
+                  >
+                    {provider.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <View style={adminStyles.waFadeEdge} pointerEvents="none">
+            <LinearGradient
+              colors={['rgba(245,246,250,0)', '#F5F6FA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{ flex: 1 }}
+            />
+            <Feather name="chevron-right" size={14} color="#9AA1B5" style={adminStyles.waFadeChevron} />
+          </View>
+        </View>
+        <View style={adminStyles.waProviderTabDivider} />
 
-        {activeTab === 'whatsapp' ? (
-          <View style={adminStyles.sectionCard}>
-            <View style={adminStyles.integrationHeaderRow}>
-              <View style={adminStyles.integrationHeaderLeft}>
-                <View style={[styles.iconShell, adminStyles.iconAccentNavy, { backgroundColor: theme.primaryBg }]}>
-                  <Feather name="message-circle" size={17} color={theme.primary} />
+        {activeProvider === 'whatsapp' ? (
+          <>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+              {ADMIN_WA_SUBTABS.map((tab) => {
+                const isActive = activeWaSubTab === tab.key;
+                return (
+                  <Pressable
+                    key={tab.key}
+                    style={[adminStyles.waSubTabItem, isActive ? { borderBottomColor: GREEN } : null]}
+                    onPress={() => setActiveWaSubTab(tab.key)}
+                  >
+                    <Text style={[adminStyles.waSubTabText, isActive ? adminStyles.waSubTabTextActive : null]}>
+                      {tab.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <View style={adminStyles.waProviderTabDivider} />
+
+            {activeWaSubTab === 'conexao' ? (
+              <View style={adminStyles.sectionCard}>
+                <View style={adminStyles.integrationHeaderRow}>
+                  <View style={adminStyles.integrationHeaderLeft}>
+                    <View style={[styles.iconShell, { backgroundColor: GREEN_BG }]}>
+                      <Feather name="message-circle" size={17} color={GREEN} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={adminStyles.sectionTitle}>WhatsApp</Text>
+                      <Text style={adminStyles.integrationDescription}>
+                        Integração com ZapResponder (API oficial) ou Meta Cloud.
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-                <View>
-                  <Text style={adminStyles.sectionTitle}>WhatsApp</Text>
-                  <Text style={adminStyles.integrationDescription}>
-                    Integração com ZapResponder (API oficial) ou Meta Cloud.
+
+                <View style={adminStyles.integrationStatusRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={adminStyles.subsectionTitle}>Status da integração</Text>
+                    <Text style={adminStyles.integrationDescription}>
+                      Quando desligado, nenhum envio é processado.
+                    </Text>
+                  </View>
+                  <AdminColorPill
+                    label={isIntegrationActive ? 'Ativo' : 'Inativo'}
+                    bg={isIntegrationActive ? GREEN_BG : GRAY_BG}
+                    color={isIntegrationActive ? GREEN : GRAY}
+                  />
+                  <ToggleSwitch value={isIntegrationActive} onValueChange={() => setIsIntegrationActive((c) => !c)} />
+                </View>
+
+                <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>PROVEDOR</Text>
+                <Pressable style={adminStyles.selectField} onPress={() => setIsProviderPickerOpen(true)}>
+                  <Text style={adminStyles.selectFieldText}>{waProvider}</Text>
+                  <Feather name="chevron-down" size={16} color="#7A8299" />
+                </Pressable>
+
+                <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API URL</Text>
+                <View style={adminStyles.staticField}>
+                  <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                    {ADMIN_WA_MOCK.apiUrl}
+                  </Text>
+                </View>
+
+                <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>DEPARTMENT ID</Text>
+                <View style={adminStyles.staticField}>
+                  <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                    {ADMIN_WA_MOCK.departmentId}
+                  </Text>
+                </View>
+
+                <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API TOKEN</Text>
+                <View style={adminStyles.staticField}>
+                  <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                    {isTokenVisible ? '(token não exibido — apenas configurável no backend)' : '••••••••••••••••••••'}
+                  </Text>
+                  <Pressable onPress={() => setIsTokenVisible((current) => !current)} hitSlop={8}>
+                    <Feather name={isTokenVisible ? 'eye-off' : 'eye'} size={16} color="#7A8299" />
+                  </Pressable>
+                </View>
+                <Text style={adminStyles.integrationHint}>Gere em app.zapresponder.com.br → Integrações → API</Text>
+
+                <View style={adminStyles.integrationActionsRow}>
+                  <Pressable
+                    style={adminStyles.primaryButtonGreen}
+                    onPress={() => Alert.alert('Salvo', 'Configuração salva. (mock, aguardando endpoint real)')}
+                  >
+                    <Text style={adminStyles.primaryButtonGreenText}>Salvar</Text>
+                  </Pressable>
+                  <Pressable
+                    style={adminStyles.outlineButton}
+                    onPress={() => Alert.alert('Testar conexão', 'Conexão simulada com sucesso. (mock, aguardando endpoint real)')}
+                  >
+                    <Text style={adminStyles.outlineButtonText}>Testar conexão</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+
+            {activeWaSubTab === 'webhook' ? (
+              <View style={adminStyles.sectionCard}>
+                <Text style={adminStyles.fieldLabel}>URL DO WEBHOOK (COM SEGREDO EMBUTIDO)</Text>
+                <Text style={adminStyles.integrationDescription}>
+                  Cole esta URL completa no painel ZapResponder em Integrações → Webhook. O segredo vai como query
+                  string ?secret=... porque o ZapResponder não permite configurar header customizado.
+                </Text>
+                <View style={[adminStyles.staticField, adminStyles.fieldSpacing]}>
+                  <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                    {ADMIN_WA_MOCK.webhookUrl}
+                  </Text>
+                  <Pressable
+                    onPress={() => copyToClipboard(ADMIN_WA_MOCK.webhookUrl, () => flashCopied(setJustCopiedUrl))}
+                    hitSlop={8}
+                  >
+                    <Feather name={justCopiedUrl ? 'check' : 'copy'} size={16} color={justCopiedUrl ? GREEN : '#7A8299'} />
+                  </Pressable>
+                </View>
+
+                <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>SEGREDO DO WEBHOOK</Text>
+                <Text style={adminStyles.integrationDescription}>
+                  Já vai embutido na URL acima — você não precisa colar em lugar nenhum separado.
+                </Text>
+                <View style={[adminStyles.staticField, adminStyles.fieldSpacing]}>
+                  <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                    {isSecretVisible ? ADMIN_WA_MOCK.webhookSecret : '•'.repeat(40)}
+                  </Text>
+                  <View style={adminStyles.staticFieldIcons}>
+                    <Pressable onPress={() => setIsSecretVisible((current) => !current)} hitSlop={8}>
+                      <Feather name={isSecretVisible ? 'eye-off' : 'eye'} size={16} color="#7A8299" />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => copyToClipboard(ADMIN_WA_MOCK.webhookSecret, () => flashCopied(setJustCopiedSecret))}
+                      hitSlop={8}
+                    >
+                      <Feather
+                        name={justCopiedSecret ? 'check' : 'copy'}
+                        size={16}
+                        color={justCopiedSecret ? GREEN : '#7A8299'}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+
+                <Pressable
+                  style={[adminStyles.primaryButtonGreen, adminStyles.fieldSpacing, { flexDirection: 'row', gap: 6 }]}
+                  onPress={handleRotateSecret}
+                >
+                  <Feather name="refresh-cw" size={14} color="#FFFFFF" />
+                  <Text style={adminStyles.primaryButtonGreenText}>Gerar / Rotacionar</Text>
+                </Pressable>
+
+                <View style={[adminStyles.integrationInfoBox, adminStyles.fieldSpacing]}>
+                  <Feather name="info" size={15} color={BLUE} />
+                  <Text style={adminStyles.integrationInfoText}>
+                    Instruções no ZapResponder{'\n'}
+                    1. Acesse Integrações → Webhook{'\n'}
+                    2. Cole a URL completa acima (já com ?secret=...){'\n'}
+                    3. Eventos: mensagens recebidas + status de entrega{'\n'}
+                    4. Salvar — pronto, sem header customizado.
                   </Text>
                 </View>
               </View>
-              <AdminColorPill label="Ativo" bg={GREEN_BG} color={GREEN} />
-            </View>
+            ) : null}
 
-            <Text style={adminStyles.fieldLabel}>PROVEDOR</Text>
-            <Pressable
-              style={adminStyles.selectField}
-              onPress={() => Alert.alert('Provedor', 'Troca de provedor em breve.')}
-            >
-              <Text style={adminStyles.selectFieldText}>ZapResponder (API oficial)</Text>
-              <Feather name="chevron-down" size={16} color="#7A8299" />
-            </Pressable>
+            {activeWaSubTab === 'templates' ? (
+              <View style={adminStyles.sectionCard}>
+                <View style={styles.directorNotifHeaderRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={adminStyles.sectionTitle}>Templates aprovados</Text>
+                    <Text style={adminStyles.integrationDescription}>
+                      Necessários para iniciar conversa fora da janela de 24h.
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={[adminStyles.primaryButtonGreen, { flexDirection: 'row', gap: 6, paddingHorizontal: 14 }]}
+                    onPress={() => Alert.alert('Sincronizado', 'Templates atualizados. (mock, aguardando endpoint real)')}
+                  >
+                    <Feather name="refresh-cw" size={13} color="#FFFFFF" />
+                    <Text style={adminStyles.primaryButtonGreenText}>Sincronizar agora</Text>
+                  </Pressable>
+                </View>
 
-            <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API URL</Text>
-            <View style={adminStyles.staticField}>
-              <Text style={adminStyles.staticFieldText} numberOfLines={1}>
-                https://api.zapresponder.com.br/api
-              </Text>
-            </View>
+                <View style={adminStyles.integrationInfoBox}>
+                  <Feather name="clock" size={15} color={BLUE} />
+                  <Text style={adminStyles.integrationInfoText}>
+                    Sincronização automática 1x por dia (madrugada). Última: {ADMIN_WA_MOCK.lastSyncLabel}. Para
+                    puxar um template recém-aprovado agora, use o botão acima.
+                  </Text>
+                </View>
 
-            <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API TOKEN</Text>
-            <View style={adminStyles.staticField}>
-              <Text style={adminStyles.staticFieldText}>
-                {isTokenVisible ? '(token não exibido — apenas configurável no backend)' : '••••••••••••'}
-              </Text>
-              <Pressable onPress={() => setIsTokenVisible((current) => !current)} hitSlop={8}>
-                <Feather name={isTokenVisible ? 'eye-off' : 'eye'} size={16} color="#7A8299" />
-              </Pressable>
-            </View>
+                <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>TELEFONE PARA DIAGNÓSTICO DE ENVIO</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={diagnosticoTelefone}
+                  onChangeText={setDiagnosticoTelefone}
+                  placeholder="DDD + número do WhatsApp"
+                  placeholderTextColor="#A7AEC2"
+                  keyboardType="phone-pad"
+                />
+                <Text style={adminStyles.integrationHint}>
+                  Use em um template aprovado abaixo para descobrir qual formato o ZapResponder aceita.
+                </Text>
 
-            <View style={adminStyles.integrationActionsRow}>
-              <Pressable
-                style={adminStyles.primaryButtonGreen}
-                onPress={() => Alert.alert('Salvo', 'Configuração salva (mock).')}
-              >
-                <Text style={adminStyles.primaryButtonGreenText}>Salvar</Text>
-              </Pressable>
-              <Pressable
-                style={adminStyles.outlineButton}
-                onPress={() => Alert.alert('Testar conexão', 'Teste de conexão em breve.')}
-              >
-                <Text style={adminStyles.outlineButtonText}>Testar conexão</Text>
-              </Pressable>
-            </View>
-          </View>
+                <View style={[adminStyles.templateCard, adminStyles.fieldSpacing]}>
+                  <View style={adminStyles.templateCardHeaderRow}>
+                    <Text style={adminStyles.templateCardName}>{ADMIN_WA_MOCK.template.code}</Text>
+                    <AdminTagPill label={ADMIN_WA_MOCK.template.locale} />
+                    <AdminTagPill label={ADMIN_WA_MOCK.template.category} />
+                  </View>
+                  <Text style={adminStyles.templateCardBody}>{ADMIN_WA_MOCK.template.preview}</Text>
+                  <View style={adminStyles.templateCardFooterRow}>
+                    <Pressable
+                      style={adminStyles.templateTestButton}
+                      onPress={() =>
+                        Alert.alert(
+                          'Testar template',
+                          diagnosticoTelefone
+                            ? `Envio de teste para ${diagnosticoTelefone} simulado. (mock, aguardando endpoint real)`
+                            : 'Informe um telefone de diagnóstico acima primeiro.'
+                        )
+                      }
+                    >
+                      <Text style={adminStyles.templateTestButtonText}>Testar</Text>
+                    </Pressable>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <AdminColorPill label="APPROVED" bg={GREEN_BG} color={GREEN} />
+                      <Feather name="chevron-right" size={16} color="#9AA1B5" />
+                    </View>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
+            {activeWaSubTab === 'janela' ? (
+              <View style={adminStyles.sectionCard}>
+                <Text style={adminStyles.sectionTitle}>Como funciona a janela de 24 horas</Text>
+                <Text style={adminStyles.integrationDescription}>
+                  A política oficial da Meta permite enviar mensagens livres (texto, mídia) apenas dentro de 24h
+                  após a última mensagem recebida do contato. Fora dessa janela, é obrigatório usar um template
+                  aprovado.
+                </Text>
+                <View style={adminStyles.fieldSpacing}>
+                  <Text style={adminStyles.integrationBullet}>
+                    • O sistema bloqueia automaticamente envios livres com janela fechada e oferece a lista de
+                    templates aprovados.
+                  </Text>
+                  <Text style={adminStyles.integrationBullet}>
+                    • Cada nova mensagem do contato reinicia a contagem de 24h.
+                  </Text>
+                  <Text style={adminStyles.integrationBullet}>
+                    • Templates não consomem janela e podem ser enviados a qualquer momento.
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+          </>
         ) : (
-          <AdminEmptyState message="Em breve. Esta integração ainda está em desenvolvimento." />
+          <AdminEmptyState message={`Em breve. A integração ${activeProviderMeta.label} ainda está em desenvolvimento.`} />
         )}
       </ScrollView>
+
+      <AdminSimplePickerModal
+        visible={isProviderPickerOpen}
+        title="Provedor"
+        options={ADMIN_WA_PROVIDER_OPTIONS}
+        selectedValue={waProvider}
+        onSelect={(value) => {
+          setWaProvider(value);
+          setIsProviderPickerOpen(false);
+        }}
+        onClose={() => setIsProviderPickerOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -7918,6 +8230,142 @@ const adminStyles = StyleSheet.create({
   outlineButtonText: {
     color: '#15203E',
     fontSize: 14,
+    fontWeight: '700',
+  },
+  waProviderTabBarWrap: {
+    position: 'relative',
+  },
+  waProviderTabItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingBottom: 10,
+    marginRight: 22,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  waProviderTabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6F768A',
+  },
+  waProviderTabTextActive: {
+    fontWeight: '800',
+  },
+  waProviderTabDivider: {
+    height: 1,
+    backgroundColor: '#E2E6F0',
+    marginTop: -1,
+    marginBottom: 14,
+  },
+  waFadeEdge: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 10,
+    width: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  waFadeChevron: {
+    position: 'absolute',
+    right: 0,
+  },
+  waSubTabItem: {
+    paddingBottom: 10,
+    marginRight: 20,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  waSubTabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6F768A',
+  },
+  waSubTabTextActive: {
+    color: GREEN,
+    fontWeight: '800',
+  },
+  integrationStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F8FAFD',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 4,
+  },
+  integrationHint: {
+    marginTop: 6,
+    color: '#9AA1B5',
+    fontSize: 11,
+  },
+  integrationInfoBox: {
+    flexDirection: 'row',
+    gap: 10,
+    backgroundColor: BLUE_BG,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 4,
+  },
+  integrationInfoText: {
+    flex: 1,
+    color: '#3A4160',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  integrationBullet: {
+    color: '#4C5470',
+    fontSize: 12.5,
+    lineHeight: 19,
+    marginBottom: 6,
+  },
+  staticFieldIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  templateCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 14,
+  },
+  templateCardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  templateCardName: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  templateCardBody: {
+    color: '#4C5470',
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  templateCardFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  templateTestButton: {
+    borderWidth: 1,
+    borderColor: '#DDE4F0',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  templateTestButtonText: {
+    color: '#15203E',
+    fontSize: 12,
     fontWeight: '700',
   },
   prefixRow: {
