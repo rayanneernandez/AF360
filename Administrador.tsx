@@ -6018,7 +6018,7 @@ function AdminCargoDominioEditModal({
 
             <View style={[adminStyles.themeRowTop, styles.spacingTop]}>
               <Text style={adminStyles.subsectionTitle}>Ativo</Text>
-              <ToggleSwitch value={ativo} onValueChange={setAtivo} />
+              <ToggleSwitch value={ativo} onValueChange={() => setAtivo((current) => !current)} />
             </View>
           </ScrollView>
 
@@ -6662,7 +6662,7 @@ export function AdminVersoesScreen({ navigation }: ScreenProps<'AdminVersoes'>) 
                         style={[adminStyles.releaseItem, index === versao.itens.length - 1 ? { marginBottom: 0 } : null]}
                       >
                         <View style={adminStyles.releaseItemHeaderRow}>
-                          <View style={[adminStyles.iconShell, { width: 30, height: 30, backgroundColor: tipoStyle.bg }]}>
+                          <View style={[styles.iconShell, { width: 30, height: 30, backgroundColor: tipoStyle.bg }]}>
                             <Feather name={tipoStyle.icon} size={14} color={tipoStyle.color} />
                           </View>
                           <Text style={adminStyles.releaseItemTitle} numberOfLines={2}>
