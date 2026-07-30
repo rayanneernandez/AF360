@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   fetchAllRows,
+  fetchTable,
   postAdminUsuario,
   postAdminUsuarioResetSenha,
   postAdminUsuarioToggleAtivo,
@@ -1131,6 +1132,48 @@ router.delete('/notif-templates/:id', async (req, res) => {
   } catch (err) {
     console.error('[admin/notif-templates/:id DELETE] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// --- Logs de auditoria (tabela public.audit_log, liberada na allowlist
+// genérica pelo Lovable em 30/07/2026 — imutável, só leitura). ---
+
+function mapAuditLogRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    createdAt: row.created_at ?? null,
+    action: row.action ?? null,
+    moduleSlug: row.module_slug ?? null,
+    tableName: row.table_name ?? null,
+    userId: row.user_id ?? null,
+    ipAddress: row.ip_address ?? null,
+    recordId: row.record_id ?? null,
+    oldData: row.old_data ?? null,
+    newData: row.new_data ?? null,
+  };
+}
+
+// GET /api/admin/logs?action=&moduleSlug=&tableName=&limit=&offset=
+router.get('/logs', async (req, res) => {
+  try {
+    const filters = {};
+    if (req.query.action) filters.action = req.query.action;
+    if (req.query.moduleSlug) filters.module_slug = req.query.moduleSlug;
+    if (req.query.tableName) filters.table_name__ilike = `%${req.query.tableName}%`;
+
+    const json = await fetchTable('audit_log', {
+      order: 'created_at:desc',
+      limit: req.query.limit ? Number(req.query.limit) : 200,
+      offset: req.query.offset ? Number(req.query.offset) : undefined,
+      count: true,
+      filters,
+    });
+    const logs = (json?.data ?? []).map(mapAuditLogRow);
+    res.json({ ok: true, data: { logs, count: json?.count ?? logs.length } });
+  } catch (err) {
+    console.error('[admin/logs] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
   }
 });
 

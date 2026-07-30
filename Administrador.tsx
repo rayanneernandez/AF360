@@ -100,6 +100,7 @@ import {
   fetchAdminNotifTemplates,
   createAdminNotifTemplate,
   updateAdminNotifTemplate,
+  fetchAdminLogs,
   ApiError,
   type AdminDominioItem,
   type AdminCargoDominioItem,
@@ -111,6 +112,7 @@ import {
   type AdminNotifTemplateItem,
   type AdminNotifTemplateWriteBody,
   type AdminNotifPublicoTipo,
+  type AdminLogItem,
   type AdminUsuarioItem,
   type AdminCargoItem,
   type AdminGrupoItem,
@@ -7206,28 +7208,163 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
 // ============================================================================
 // 13. Logs
 // ============================================================================
+// Conectado à tabela real audit_log (liberada pelo Lovable em 30/07/2026 —
+// imutável, só leitura). Busca livre é feita no app sobre os registros já
+// carregados, igual ao combinado com eles.
 
-type AdminLog = { id: string; action: string; badges: string[]; when: string };
+function formatAdminLogDateTime(iso: string | null): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
+}
 
-const adminLogsMock: AdminLog[] = [
-  { id: 'log1', action: 'wa_webhook_unmapped_payload', badges: ['marketing_whatsapp', 'wa_mensagens'], when: '17/06/2026, 22:53' },
-  { id: 'log2', action: 'wa_webhook_unmapped_payload', badges: ['marketing_whatsapp', 'wa_mensagens', '201.20.44.170'], when: '17/06/2026, 22:52' },
-  { id: 'log3', action: 'migration', badges: ['rh', 'rh_folha'], when: '12/05/2026, 21:19' },
-  { id: 'log4', action: 'function_update', badges: ['gestao', 'leg_produtos_cadastro_suspeito'], when: '08/05/2026, 10:42' },
-  { id: 'log5', action: 'function_update', badges: ['gestao', 'leg_dashboard_margem'], when: '08/05/2026, 10:14' },
-];
+function formatAdminLogJson(data: unknown): string {
+  if (data === null || data === undefined) return '—';
+  try {
+    const text = JSON.stringify(data, null, 2);
+    return text && text !== '{}' && text !== 'null' ? text : '—';
+  } catch {
+    return '—';
+  }
+}
+
+function AdminLogDetailModal({
+  visible,
+  log,
+  onClose,
+}: {
+  visible: boolean;
+  log: AdminLogItem | null;
+  onClose: () => void;
+}) {
+  if (!log) return null;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle} numberOfLines={1}>
+                Log • {log.action ?? '—'}
+              </Text>
+              <Text style={adminStyles.detailSubEmail}>{formatAdminDate(log.createdAt)}</Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={adminStyles.detailGridRow}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>AÇÃO</Text>
+                <Text style={adminStyles.detailFieldValue}>{log.action ?? '—'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>DATA</Text>
+                <Text style={adminStyles.detailFieldValue}>{formatAdminDate(log.createdAt)}</Text>
+              </View>
+            </View>
+
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>MÓDULO</Text>
+                <Text style={adminStyles.detailFieldValue}>{log.moduleSlug ?? '—'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>TABELA</Text>
+                <Text style={adminStyles.detailFieldValue}>{log.tableName ?? '—'}</Text>
+              </View>
+            </View>
+
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>USUÁRIO (ID)</Text>
+                <Text style={adminStyles.detailFieldValue} numberOfLines={1}>
+                  {log.userId ?? '—'}
+                </Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>IP</Text>
+                <Text style={adminStyles.detailFieldValue}>{log.ipAddress ?? '—'}</Text>
+              </View>
+            </View>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>REGISTRO (ID)</Text>
+            <Text style={adminStyles.detailFieldValue} numberOfLines={1}>
+              {log.recordId ?? '—'}
+            </Text>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>DADOS ANTERIORES</Text>
+            <View style={adminStyles.mdCodeBlock}>
+              <ScrollView style={{ maxHeight: 160 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                <Text style={adminStyles.mdCodeBlockText}>{formatAdminLogJson(log.oldData)}</Text>
+              </ScrollView>
+            </View>
+
+            <Text style={adminStyles.detailFieldLabel}>DADOS NOVOS</Text>
+            <View style={adminStyles.mdCodeBlock}>
+              <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                <Text style={adminStyles.mdCodeBlockText}>{formatAdminLogJson(log.newData)}</Text>
+              </ScrollView>
+            </View>
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+              <Text style={adminStyles.ghostButtonText}>Fechar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 export function AdminLogsScreen({ navigation }: ScreenProps<'AdminLogs'>) {
+  const [logs, setLogs] = useState<AdminLogItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [selectedLog, setSelectedLog] = useState<AdminLogItem | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchAdminLogs()
+      .then((data) => {
+        if (isActive) setLogs(data.logs);
+      })
+      .catch((err) => {
+        if (isActive) setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os logs.');
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return adminLogsMock;
-    return adminLogsMock.filter(
+    if (!query) return logs;
+    return logs.filter(
       (log) =>
-        log.action.toLowerCase().includes(query) || log.badges.some((badge) => badge.toLowerCase().includes(query))
+        (log.action ?? '').toLowerCase().includes(query) ||
+        (log.moduleSlug ?? '').toLowerCase().includes(query) ||
+        (log.tableName ?? '').toLowerCase().includes(query)
     );
-  }, [search]);
+  }, [logs, search]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -7241,28 +7378,43 @@ export function AdminLogsScreen({ navigation }: ScreenProps<'AdminLogs'>) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <AdminPageHeader icon="file-text" title="Logs" subtitle="Auditoria · 5 registros" />
+        <AdminPageHeader
+          icon="file-text"
+          title="Logs"
+          subtitle={isLoading ? 'Carregando...' : `Auditoria · ${logs.length} registro(s)`}
+        />
 
         <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar por ação, módulo, tabela..." />
 
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <AdminEmptyState message="Carregando logs..." />
+        ) : errorMessage ? (
+          <AdminEmptyState message={errorMessage} />
+        ) : filtered.length === 0 ? (
           <AdminEmptyState message="Nenhum registro encontrado." />
         ) : (
           filtered.map((log, index) => (
-            <View key={log.id} style={[adminStyles.logCard, index === filtered.length - 1 ? { marginBottom: 0 } : null]}>
+            <Pressable
+              key={log.id}
+              style={[adminStyles.logCard, index === filtered.length - 1 ? { marginBottom: 0 } : null]}
+              onPress={() => setSelectedLog(log)}
+            >
               <View style={adminStyles.logHeaderRow}>
-                <Text style={adminStyles.logAction}>{log.action}</Text>
-                <Text style={adminStyles.logWhen}>{log.when}</Text>
+                <Text style={adminStyles.logAction} numberOfLines={1}>
+                  {log.action}
+                </Text>
+                <Text style={adminStyles.logWhen}>{formatAdminLogDateTime(log.createdAt)}</Text>
               </View>
               <View style={adminStyles.roleModulesRow}>
-                {log.badges.map((badge) => (
-                  <AdminTagPill key={badge} label={badge} />
-                ))}
+                {log.moduleSlug ? <AdminTagPill label={log.moduleSlug} /> : null}
+                {log.tableName ? <AdminTagPill label={log.tableName} /> : null}
               </View>
-            </View>
+            </Pressable>
           ))
         )}
       </ScrollView>
+
+      <AdminLogDetailModal visible={selectedLog !== null} log={selectedLog} onClose={() => setSelectedLog(null)} />
     </SafeAreaView>
   );
 }

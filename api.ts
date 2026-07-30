@@ -1420,6 +1420,42 @@ export async function deleteAdminNotifTemplate(id: string, actorId?: string | nu
   await api.delete(withActorId(`/api/admin/notif-templates/${encodeURIComponent(id)}`, actorId));
 }
 
+// --- Admin: Logs de auditoria (tabela audit_log, liberada pelo Lovable em
+// 30/07/2026 — imutável, só leitura). ---
+
+export type AdminLogItem = {
+  id: string;
+  createdAt: string | null;
+  action: string | null;
+  moduleSlug: string | null;
+  tableName: string | null;
+  userId: string | null;
+  ipAddress: string | null;
+  recordId: string | null;
+  oldData: unknown;
+  newData: unknown;
+};
+
+export type AdminLogsResponse = { logs: AdminLogItem[]; count: number };
+
+export async function fetchAdminLogs(params?: {
+  action?: string;
+  moduleSlug?: string;
+  tableName?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<AdminLogsResponse> {
+  const search = new URLSearchParams();
+  if (params?.action) search.set('action', params.action);
+  if (params?.moduleSlug) search.set('moduleSlug', params.moduleSlug);
+  if (params?.tableName) search.set('tableName', params.tableName);
+  if (params?.limit) search.set('limit', String(params.limit));
+  if (params?.offset) search.set('offset', String(params.offset));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/admin/logs${query}`);
+  return json.data as AdminLogsResponse;
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {
