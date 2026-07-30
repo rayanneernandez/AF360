@@ -28,6 +28,16 @@ const {
   patchAdminContabilidade,
   deleteAdminContabilidade,
   patchAdminModulo,
+  getAdminDominios,
+  postAdminDominio,
+  patchAdminDominio,
+  deleteAdminDominio,
+  getAdminCargoDominio,
+  postAdminCargoDominio,
+  patchAdminCargoDominio,
+  deleteAdminCargoDominio,
+  getAdminTemas,
+  patchAdminTema,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -744,6 +754,169 @@ router.delete('/contabilidades/:id', async (req, res) => {
     console.error('[admin/contabilidades/:id DELETE] erro:', err.message);
     const status = err.lovableStatus === 409 ? 409 : writeErrorStatus(err);
     res.status(status).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Configurações: Domínios permitidos, Domínio de e-mail por cargo, Temas
+// visuais — confirmados pela Lovable em 30/07/2026.
+// ---------------------------------------------------------------------------
+
+function mapDominioRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    dominio: row.dominio ?? null,
+    descricao: row.descricao ?? null,
+    isActive: Boolean(row.ativo),
+    createdAt: row.created_at ?? null,
+  };
+}
+
+// GET /api/admin/dominios?q=&ativo=
+router.get('/dominios', async (req, res) => {
+  try {
+    const json = await getAdminDominios({ q: req.query.q, ativo: req.query.ativo, limit: 500 });
+    const dominios = (json?.data ?? []).map(mapDominioRow);
+    res.json({ ok: true, data: { count: json?.count ?? dominios.length, dominios } });
+  } catch (err) {
+    console.error('[admin/dominios] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/dominios?actorId=... — { dominio, descricao?, ativo? }
+router.post('/dominios', async (req, res) => {
+  try {
+    const json = await postAdminDominio(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapDominioRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/dominios POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/dominios/:id?actorId=...
+router.patch('/dominios/:id', async (req, res) => {
+  try {
+    const json = await patchAdminDominio(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapDominioRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/dominios/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/dominios/:id?actorId=...
+router.delete('/dominios/:id', async (req, res) => {
+  try {
+    const json = await deleteAdminDominio(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/dominios/:id DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+function mapCargoDominioRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    cargo: row.cargo ?? null,
+    dominio: row.dominio ?? null,
+    provider: row.provider ?? null,
+    isActive: Boolean(row.ativo),
+  };
+}
+
+// GET /api/admin/cargo-dominio?q=&provider=&ativo=
+router.get('/cargo-dominio', async (req, res) => {
+  try {
+    const json = await getAdminCargoDominio({
+      q: req.query.q,
+      provider: req.query.provider,
+      ativo: req.query.ativo,
+      limit: 1000,
+    });
+    const itens = (json?.data ?? []).map(mapCargoDominioRow);
+    res.json({ ok: true, data: { count: json?.count ?? itens.length, itens } });
+  } catch (err) {
+    console.error('[admin/cargo-dominio] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/cargo-dominio?actorId=... — { cargo, dominio, provider, ativo? }
+router.post('/cargo-dominio', async (req, res) => {
+  try {
+    const json = await postAdminCargoDominio(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapCargoDominioRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/cargo-dominio POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/cargo-dominio/:id?actorId=...
+router.patch('/cargo-dominio/:id', async (req, res) => {
+  try {
+    const json = await patchAdminCargoDominio(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapCargoDominioRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/cargo-dominio/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/cargo-dominio/:id?actorId=...
+router.delete('/cargo-dominio/:id', async (req, res) => {
+  try {
+    const json = await deleteAdminCargoDominio(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/cargo-dominio/:id DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+function mapTemaRow(row) {
+  if (!row) return null;
+  const cores = row.cores ?? {};
+  return {
+    slug: row.slug ?? null,
+    nome: row.nome ?? null,
+    descricao: row.descricao ?? null,
+    cores: {
+      primary: cores.primary ?? null,
+      accent: cores.accent ?? null,
+      bg: cores.bg ?? null,
+      secondary: cores.secondary ?? null,
+    },
+    isActive: Boolean(row.ativo),
+    isProtected: Boolean(row.is_protected),
+  };
+}
+
+// GET /api/admin/temas
+router.get('/temas', async (req, res) => {
+  try {
+    const json = await getAdminTemas();
+    const temas = (json?.data ?? []).map(mapTemaRow);
+    res.json({ ok: true, data: temas });
+  } catch (err) {
+    console.error('[admin/temas] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/temas/:slug?actorId=... — { ativo: true|false }
+router.patch('/temas/:slug', async (req, res) => {
+  try {
+    const json = await patchAdminTema(req.params.slug, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapTemaRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/temas/:slug PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
 

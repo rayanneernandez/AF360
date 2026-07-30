@@ -31,7 +31,6 @@ import {
   adminUserInitials,
   AuthIdentityContext,
   AdminThemeContext,
-  ADMIN_THEME_PRESETS,
   NotificationRoutineFormModal,
   TemplateFormModal,
   formatDateBR,
@@ -79,7 +78,18 @@ import {
   updateAdminContabilidade,
   deleteAdminContabilidade,
   fetchRhColaboradores,
+  fetchAdminDominios,
+  createAdminDominio,
+  updateAdminDominio,
+  deleteAdminDominio,
+  fetchAdminCargoDominio,
+  createAdminCargoDominio,
+  updateAdminCargoDominio,
+  deleteAdminCargoDominio,
   ApiError,
+  type AdminDominioItem,
+  type AdminCargoDominioItem,
+  type AdminCargoDominioProvider,
   type AdminUsuarioItem,
   type AdminCargoItem,
   type AdminGrupoItem,
@@ -5860,21 +5870,158 @@ export function AdminConvencoesScreen({ navigation }: ScreenProps<'AdminConvenco
 // 10. Configurações
 // ============================================================================
 
+const ADMIN_CARGO_DOMINIO_PROVIDER_LABELS: Record<AdminCargoDominioProvider, string> = {
+  migadu: 'Migadu (operacional)',
+  google: 'Google (administrativo)',
+};
+
 export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfiguracoes'>) {
-  const { theme, setThemeSlug } = useContext(AdminThemeContext);
+  const { identity } = useContext(AuthIdentityContext);
+  const { theme, temas, applyTheme } = useContext(AdminThemeContext);
+  const actorId = identity?.profileId;
 
-  // MOCK: leitura/escrita real de adm_dominios_permitidos ainda depende da
-  // Lovable liberar a tabela na allowlist + criar o endpoint de escrita (ver
-  // mensagem-lovable-configuracoes.txt). Até isso ser confirmado, esses
-  // toggles não gravam em lugar nenhum — é só ilustrativo, como o resto das
-  // telas deste arquivo marcadas como MOCK.
-  const [domains, setDomains] = useState([
-    { id: 'd1', domain: '@americanfuel.com.br', description: 'Domínio corporativo principal', active: true },
-    { id: 'd2', domain: '@rede.americanfuel.com.br', description: 'Domínio da rede de postos', active: true },
-  ]);
+  // ---------- Domínios permitidos (adm_dominios_permitidos) ----------
+  const [dominios, setDominios] = useState<AdminDominioItem[]>([]);
+  const [isLoadingDominios, setIsLoadingDominios] = useState(true);
+  const [dominioErro, setDominioErro] = useState<string | null>(null);
+  const [novoDominio, setNovoDominio] = useState('');
+  const [novaDescricaoDominio, setNovaDescricaoDominio] = useState('');
+  const [isSavingDominio, setIsSavingDominio] = useState(false);
 
-  const toggleDomain = (id: string) => {
-    setDomains((current) => current.map((item) => (item.id === id ? { ...item, active: !item.active } : item)));
+  const loadDominios = useCallback(() => {
+    setIsLoadingDominios(true);
+    setDominioErro(null);
+    fetchAdminDominios()
+      .then((data) => setDominios(data.dominios))
+      .catch((err) => setDominioErro(err instanceof Error ? err.message : 'Não foi possível carregar os domínios.'))
+      .finally(() => setIsLoadingDominios(false));
+  }, []);
+
+  useEffect(() => {
+    loadDominios();
+  }, [loadDominios]);
+
+  const handleAddDominio = () => {
+    if (!novoDominio.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe o domínio (ex: empresa.com.br).');
+      return;
+    }
+    setIsSavingDominio(true);
+    createAdminDominio({ dominio: novoDominio.trim(), descricao: novaDescricaoDominio.trim() || null }, actorId)
+      .then(() => {
+        setNovoDominio('');
+        setNovaDescricaoDominio('');
+        loadDominios();
+      })
+      .catch((err) => showAdminApiError(err, 'Não foi possível adicionar o domínio.'))
+      .finally(() => setIsSavingDominio(false));
+  };
+
+  const handleToggleDominio = (item: AdminDominioItem) => {
+    updateAdminDominio(item.id, { ativo: !item.isActive }, actorId)
+      .then(() => loadDominios())
+      .catch((err) => showAdminApiError(err, 'Não foi possível atualizar o domínio.'));
+  };
+
+  const handleDeleteDominio = (item: AdminDominioItem) => {
+    Alert.alert('Excluir domínio', `Remover "${item.dominio}" da lista de domínios permitidos?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdminDominio(item.id, actorId)
+            .then(() => loadDominios())
+            .catch((err) => showAdminApiError(err, 'Não foi possível excluir o domínio.'));
+        },
+      },
+    ]);
+  };
+
+  // ---------- Domínio de e-mail por cargo (rh_cargo_dominio) ----------
+  const [cargoDominios, setCargoDominios] = useState<AdminCargoDominioItem[]>([]);
+  const [isLoadingCargoDominios, setIsLoadingCargoDominios] = useState(true);
+  const [cargoDominioErro, setCargoDominioErro] = useState<string | null>(null);
+  const [cargoSearch, setCargoSearch] = useState('');
+  const [novoCargo, setNovoCargo] = useState('');
+  const [novoCargoDominio, setNovoCargoDominio] = useState('');
+  const [novoCargoProvider, setNovoCargoProvider] = useState<AdminCargoDominioProvider>('migadu');
+  const [isNovoCargoPickerOpen, setIsNovoCargoPickerOpen] = useState(false);
+  const [rowProviderPickerId, setRowProviderPickerId] = useState<string | null>(null);
+  const [isSavingCargoDominio, setIsSavingCargoDominio] = useState(false);
+
+  const loadCargoDominios = useCallback(() => {
+    setIsLoadingCargoDominios(true);
+    setCargoDominioErro(null);
+    fetchAdminCargoDominio()
+      .then((data) => setCargoDominios(data.itens))
+      .catch((err) =>
+        setCargoDominioErro(err instanceof Error ? err.message : 'Não foi possível carregar os cargos.')
+      )
+      .finally(() => setIsLoadingCargoDominios(false));
+  }, []);
+
+  useEffect(() => {
+    loadCargoDominios();
+  }, [loadCargoDominios]);
+
+  const filteredCargoDominios = useMemo(() => {
+    const query = cargoSearch.trim().toLowerCase();
+    if (!query) return cargoDominios;
+    return cargoDominios.filter(
+      (item) =>
+        (item.cargo ?? '').toLowerCase().includes(query) || (item.dominio ?? '').toLowerCase().includes(query)
+    );
+  }, [cargoDominios, cargoSearch]);
+
+  const migaduCount = cargoDominios.filter((item) => item.provider === 'migadu').length;
+  const googleCount = cargoDominios.filter((item) => item.provider === 'google').length;
+
+  const handleAddCargoDominio = () => {
+    if (!novoCargo.trim() || !novoCargoDominio.trim()) {
+      Alert.alert('Campos obrigatórios', 'Informe o cargo e o domínio.');
+      return;
+    }
+    setIsSavingCargoDominio(true);
+    createAdminCargoDominio(
+      { cargo: novoCargo.trim(), dominio: novoCargoDominio.trim(), provider: novoCargoProvider },
+      actorId
+    )
+      .then(() => {
+        setNovoCargo('');
+        setNovoCargoDominio('');
+        setNovoCargoProvider('migadu');
+        loadCargoDominios();
+      })
+      .catch((err) => showAdminApiError(err, 'Não foi possível adicionar o cargo.'))
+      .finally(() => setIsSavingCargoDominio(false));
+  };
+
+  const handleChangeCargoProvider = (item: AdminCargoDominioItem, provider: AdminCargoDominioProvider) => {
+    updateAdminCargoDominio(item.id, { provider }, actorId)
+      .then(() => loadCargoDominios())
+      .catch((err) => showAdminApiError(err, 'Não foi possível atualizar o provedor.'));
+  };
+
+  const handleToggleCargoDominio = (item: AdminCargoDominioItem) => {
+    updateAdminCargoDominio(item.id, { ativo: !item.isActive }, actorId)
+      .then(() => loadCargoDominios())
+      .catch((err) => showAdminApiError(err, 'Não foi possível atualizar o cargo.'));
+  };
+
+  const handleDeleteCargoDominio = (item: AdminCargoDominioItem) => {
+    Alert.alert('Excluir mapeamento', `Remover o domínio de e-mail do cargo "${item.cargo}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdminCargoDominio(item.id, actorId)
+            .then(() => loadCargoDominios())
+            .catch((err) => showAdminApiError(err, 'Não foi possível excluir o cargo.'));
+        },
+      },
+    ]);
   };
 
   return (
@@ -5892,23 +6039,198 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
         <AdminPageHeader icon="settings" title="Configurações" subtitle="Domínios e tema visual" />
 
         <View style={adminStyles.sectionCard}>
-          <Text style={adminStyles.sectionTitle}>Domínios permitidos</Text>
+          <Text style={adminStyles.sectionTitle}>Domínios permitidos para login</Text>
           <Text style={adminStyles.integrationDescription}>
-            Somente e-mails desses domínios podem entrar na plataforma.
+            Somente e-mails desses domínios podem entrar na plataforma. A trava é aplicada no servidor — qualquer
+            outro e-mail é rejeitado.
           </Text>
 
-          {domains.map((item, index) => (
-            <View
-              key={item.id}
-              style={[adminStyles.domainRow, index === domains.length - 1 ? { borderBottomWidth: 0 } : null]}
-            >
-              <View style={adminStyles.listInfo}>
-                <Text style={adminStyles.listName}>{item.domain}</Text>
-                <Text style={adminStyles.listMeta}>{item.description}</Text>
-              </View>
-              <ToggleSwitch value={item.active} onValueChange={() => toggleDomain(item.id)} />
+          <View style={adminStyles.formRow}>
+            <View style={adminStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Domínio</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={novoDominio}
+                onChangeText={setNovoDominio}
+                placeholder="ex: empresa.com.br"
+                placeholderTextColor="#A7AEC2"
+                autoCapitalize="none"
+              />
             </View>
-          ))}
+            <View style={adminStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Descrição (opcional)</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={novaDescricaoDominio}
+                onChangeText={setNovaDescricaoDominio}
+                placeholder="Ex: domínio da rede de postos"
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+          </View>
+          <Pressable
+            style={[styles.directorNotifNewButton, { alignSelf: 'flex-end', marginTop: 10 }]}
+            onPress={handleAddDominio}
+            disabled={isSavingDominio}
+          >
+            <Feather name="plus" size={15} color="#FFFFFF" />
+            <Text style={styles.directorNotifNewButtonText}>{isSavingDominio ? 'Adicionando...' : 'Adicionar'}</Text>
+          </Pressable>
+
+          {isLoadingDominios ? (
+            <AdminEmptyState message="Carregando domínios..." />
+          ) : dominioErro ? (
+            <AdminEmptyState message={dominioErro} />
+          ) : dominios.length === 0 ? (
+            <AdminEmptyState message="Nenhum domínio cadastrado." />
+          ) : (
+            dominios.map((item, index) => (
+              <View
+                key={item.id}
+                style={[adminStyles.domainRow, index === dominios.length - 1 ? { borderBottomWidth: 0 } : null]}
+              >
+                <View style={adminStyles.listInfo}>
+                  <Text style={adminStyles.listName}>{item.dominio}</Text>
+                  <Text style={adminStyles.listMeta}>{item.descricao || '—'}</Text>
+                </View>
+                <ToggleSwitch value={item.isActive} onValueChange={() => handleToggleDominio(item)} />
+                <Pressable hitSlop={8} style={{ padding: 4, marginLeft: 6 }} onPress={() => handleDeleteDominio(item)}>
+                  <Feather name="trash-2" size={16} color={RED} />
+                </Pressable>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={adminStyles.sectionCard}>
+          <Text style={adminStyles.sectionTitle}>Domínio de e-mail por cargo</Text>
+          <Text style={adminStyles.integrationDescription}>
+            Define qual domínio e provedor serão usados quando o RH ativar o acesso ao portal do colaborador. Cargos
+            operacionais de posto usam Migadu (rede.americanfuel.com.br); cargos administrativos e de liderança usam
+            Google Workspace (americanfuel.com.br). Cargo não cadastrado aqui = ativação bloqueada — nunca há domínio
+            padrão silencioso.
+          </Text>
+
+          <View style={adminStyles.roleModulesRow}>
+            <AdminColorPill label={`Migadu: ${migaduCount}`} bg={BLUE_BG} color={BLUE} />
+            <AdminColorPill label={`Google: ${googleCount}`} bg={GOLD_BG} color={GOLD} />
+          </View>
+
+          <View style={[adminStyles.formRow, styles.spacingTop, { position: 'relative' }]}>
+            <View style={adminStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Cargo</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={novoCargo}
+                onChangeText={setNovoCargo}
+                placeholder="Ex: Frentista"
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+            <View style={adminStyles.formRowItem}>
+              <AdminSelectField
+                label="Provedor"
+                value={ADMIN_CARGO_DOMINIO_PROVIDER_LABELS[novoCargoProvider]}
+                onPress={() => setIsNovoCargoPickerOpen(true)}
+              />
+            </View>
+            <AdminSimplePickerModal
+              visible={isNovoCargoPickerOpen}
+              title="Provedor"
+              options={Object.values(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS)}
+              selectedValue={ADMIN_CARGO_DOMINIO_PROVIDER_LABELS[novoCargoProvider]}
+              onSelect={(label) => {
+                const found = (Object.entries(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS) as Array<
+                  [AdminCargoDominioProvider, string]
+                >).find(([, value]) => value === label);
+                if (found) setNovoCargoProvider(found[0]);
+              }}
+              onClose={() => setIsNovoCargoPickerOpen(false)}
+            />
+          </View>
+          <View style={adminStyles.formRow}>
+            <View style={adminStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Domínio</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={novoCargoDominio}
+                onChangeText={setNovoCargoDominio}
+                placeholder="rede.americanfuel.com.br"
+                placeholderTextColor="#A7AEC2"
+                autoCapitalize="none"
+              />
+            </View>
+            <View style={[adminStyles.formRowItem, { justifyContent: 'flex-end' }]}>
+              <Pressable
+                style={styles.directorNotifNewButton}
+                onPress={handleAddCargoDominio}
+                disabled={isSavingCargoDominio}
+              >
+                <Feather name="plus" size={15} color="#FFFFFF" />
+                <Text style={styles.directorNotifNewButtonText}>
+                  {isSavingCargoDominio ? 'Adicionando...' : 'Adicionar'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <AdminSearchRow value={cargoSearch} onChangeText={setCargoSearch} placeholder="Buscar cargo ou domínio..." />
+
+          {isLoadingCargoDominios ? (
+            <AdminEmptyState message="Carregando cargos..." />
+          ) : cargoDominioErro ? (
+            <AdminEmptyState message={cargoDominioErro} />
+          ) : filteredCargoDominios.length === 0 ? (
+            <AdminEmptyState message="Nenhum cargo cadastrado." />
+          ) : (
+            filteredCargoDominios.map((item, index) => (
+              <View
+                key={item.id}
+                style={[
+                  adminStyles.contabRow,
+                  { position: 'relative' },
+                  index === filteredCargoDominios.length - 1 ? { borderBottomWidth: 0 } : null,
+                ]}
+              >
+                <View style={adminStyles.listInfo}>
+                  <Text style={adminStyles.listName} numberOfLines={1}>
+                    {item.cargo}
+                  </Text>
+                  <Text style={adminStyles.listMeta} numberOfLines={1}>
+                    {item.dominio}
+                  </Text>
+                </View>
+                <Pressable
+                  style={adminStyles.gearButton}
+                  onPress={() => setRowProviderPickerId(item.id)}
+                  hitSlop={4}
+                >
+                  <Text style={adminStyles.prefixCode}>{item.provider ?? '—'}</Text>
+                </Pressable>
+                <AdminSimplePickerModal
+                  visible={rowProviderPickerId === item.id}
+                  title="Provedor"
+                  options={Object.values(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS)}
+                  selectedValue={item.provider ? ADMIN_CARGO_DOMINIO_PROVIDER_LABELS[item.provider] : ''}
+                  onSelect={(label) => {
+                    const found = (Object.entries(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS) as Array<
+                      [AdminCargoDominioProvider, string]
+                    >).find(([, value]) => value === label);
+                    if (found) handleChangeCargoProvider(item, found[0]);
+                  }}
+                  onClose={() => setRowProviderPickerId(null)}
+                />
+                <ToggleSwitch value={item.isActive} onValueChange={() => handleToggleCargoDominio(item)} />
+                <Pressable
+                  hitSlop={8}
+                  style={{ padding: 4, marginLeft: 6 }}
+                  onPress={() => handleDeleteCargoDominio(item)}
+                >
+                  <Feather name="trash-2" size={16} color={RED} />
+                </Pressable>
+              </View>
+            ))
+          )}
         </View>
 
         <View style={[adminStyles.sectionCard, adminStyles.lastSectionCard]}>
@@ -5917,19 +6239,19 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
             Skins reversíveis aplicadas ao painel Administrador. Troca instantânea para todos que abrirem o app.
           </Text>
 
-          {ADMIN_THEME_PRESETS.map((preset, index) => {
+          {temas.map((preset, index) => {
             const isActive = preset.slug === theme.slug;
             return (
               <View
                 key={preset.slug}
-                style={[adminStyles.themeRow, index === ADMIN_THEME_PRESETS.length - 1 ? { borderBottomWidth: 0 } : null]}
+                style={[adminStyles.themeRow, index === temas.length - 1 ? { borderBottomWidth: 0 } : null]}
               >
                 <View style={adminStyles.themeRowTop}>
                   <Text style={adminStyles.subsectionTitle}>{preset.nome}</Text>
                   {isActive ? (
                     <AdminColorPill label="✓ Ativo" bg={GREEN_BG} color={GREEN} />
                   ) : (
-                    <Pressable style={adminStyles.applyButton} onPress={() => setThemeSlug(preset.slug)}>
+                    <Pressable style={adminStyles.applyButton} onPress={() => applyTheme(preset.slug)}>
                       <Text style={adminStyles.applyButtonText}>Aplicar</Text>
                     </Pressable>
                   )}
@@ -5943,11 +6265,6 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
               </View>
             );
           })}
-
-          <Text style={[adminStyles.listMeta, { marginTop: 10 }]}>
-            Por enquanto a troca fica só neste app (a tabela adm_temas ainda não tem endpoint de escrita confirmado
-            pela Lovable) — ao reabrir o app volta pro tema padrão.
-          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>

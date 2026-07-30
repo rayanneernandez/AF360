@@ -99,6 +99,9 @@ import {
   type ColaboradorBeneficioItem,
   type ColaboradorNotificacaoItem,
   type ColaboradorContrachequeItem,
+  type AdminTemaItem,
+  fetchAdminTemas,
+  updateAdminTema,
 } from './api';
 
 export type RootStackParamList = {
@@ -971,17 +974,28 @@ export const AuthIdentityContext = createContext<{
 });
 
 // Tema visual do painel Administrador (Admin > Configurações > "Tema da
-// tela de Início"). Espelha a tabela adm_temas do Lovable (slug, nome,
-// descricao, cores jsonb, ativo, is_protected) — só que por enquanto os
-// presets ficam fixos aqui e a troca fica em memória (sem
-// @react-native-async-storage/async-storage instalado, e o endpoint de
-// escrita de adm_temas ainda não foi confirmado pela Lovable). Quando o
-// endpoint existir, troca-se por fetchAdminTemas/applyAdminTema reais e o
-// shape de "cores" passa a vir do banco em vez destes presets.
+// tela de Início"). Vem de verdade da tabela adm_temas (slug, nome,
+// descricao, cores jsonb {primary,accent,bg,secondary?}, ativo, is_protected
+// — confirmada pela Lovable em 30/07/2026, endpoint admin-temas só com
+// GET/PATCH). "primaryLight" não existe no banco — é calculado aqui
+// clareando "primary", só pro degradê do hero card.
 //
-// Só a cor "navy" (ícones de destaque, cabeçalhos, aba ativa) segue o tema —
-// as cores semânticas (verde=ativo, vermelho=inativo/excluir, azul/dourado
-// de status) continuam fixas, porque mudam de sentido dependendo do skin.
+// Só a cor "navy"/primary (ícones de destaque, cabeçalhos, aba ativa) segue
+// o tema — as cores semânticas (verde=ativo, vermelho=inativo/excluir,
+// azul/dourado de status) continuam fixas, porque mudam de sentido
+// dependendo do skin.
+export function lightenHex(hex: string, amount: number): string {
+  const clean = hex.replace('#', '');
+  if (clean.length !== 6) return hex;
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return hex;
+  const mix = (channel: number) => Math.round(channel + (255 - channel) * amount);
+  const toHex = (channel: number) => channel.toString(16).padStart(2, '0');
+  return `#${toHex(mix(r))}${toHex(mix(g))}${toHex(mix(b))}`;
+}
+
 export type AdminThemePreset = {
   slug: string;
   nome: string;
@@ -993,35 +1007,45 @@ export type AdminThemePreset = {
   isProtected: boolean;
 };
 
-export const ADMIN_THEME_PRESETS: AdminThemePreset[] = [
-  {
-    slug: 'padrao',
-    nome: 'Padrão AF',
-    descricao: 'Identidade visual padrão (navy + vermelho).',
-    primary: '#1B2340',
-    primaryLight: '#2F3A5C',
-    primaryBg: '#E7E9F2',
-    previewColors: ['#1B2340', '#E6213D', '#F5EBD8'],
-    isProtected: true,
-  },
-  {
-    slug: 'copa-brasil-2026',
-    nome: 'Copa do Mundo — Brasil 2026',
-    descricao: 'Cores da Seleção Brasileira para o período da Copa.',
-    primary: '#0F8A3C',
-    primaryLight: '#3DAD5E',
-    primaryBg: '#E5F5EA',
-    previewColors: ['#0F8A3C', '#FFD100', '#1B2340', '#F5EBD8'],
-    isProtected: true,
-  },
-];
+// Usado só enquanto adm_temas ainda não carregou, ou se a chamada falhar —
+// mantém o visual atual (navy) em vez de deixar a tela sem cor.
+export const ADMIN_THEME_FALLBACK: AdminThemePreset = {
+  slug: 'padrao',
+  nome: 'Padrão AF',
+  descricao: 'Identidade visual padrão.',
+  primary: '#1B2340',
+  primaryLight: '#2F3A5C',
+  primaryBg: '#E7E9F2',
+  previewColors: ['#1B2340', '#E6213D', '#F5EBD8'],
+  isProtected: true,
+};
+
+function temaToPreset(tema: AdminTemaItem): AdminThemePreset {
+  const primary = tema.cores.primary || ADMIN_THEME_FALLBACK.primary;
+  return {
+    slug: tema.slug,
+    nome: tema.nome || tema.slug,
+    descricao: tema.descricao || '',
+    primary,
+    primaryLight: lightenHex(primary, 0.35),
+    primaryBg: tema.cores.bg || lightenHex(primary, 0.9),
+    previewColors: [tema.cores.primary, tema.cores.accent, tema.cores.secondary, tema.cores.bg].filter(
+      (color): color is string => Boolean(color)
+    ),
+    isProtected: tema.isProtected,
+  };
+}
 
 export const AdminThemeContext = createContext<{
   theme: AdminThemePreset;
-  setThemeSlug: (slug: string) => void;
+  temas: AdminThemePreset[];
+  isLoading: boolean;
+  applyTheme: (slug: string) => void;
 }>({
-  theme: ADMIN_THEME_PRESETS[0],
-  setThemeSlug: () => {},
+  theme: ADMIN_THEME_FALLBACK,
+  temas: [ADMIN_THEME_FALLBACK],
+  isLoading: false,
+  applyTheme: () => {},
 });
 
 const currentUser = {
@@ -2672,10 +2696,50 @@ export default function App() {
   const [activeRole, setActiveRole] = useState<UserRole>('colaborador');
   const [identity, setIdentity] = useState<AuthIdentity | null>(null);
 
-  const [adminThemeSlug, setAdminThemeSlug] = useState('padrao');
-  const adminTheme = useMemo(
-    () => ADMIN_THEME_PRESETS.find((preset) => preset.slug === adminThemeSlug) ?? ADMIN_THEME_PRESETS[0],
-    [adminThemeSlug]
+  const [adminTemas, setAdminTemas] = useState<AdminTemaItem[]>([]);
+  const [isLoadingAdminTemas, setIsLoadingAdminTemas] = useState(true);
+
+  useEffect(() => {
+    let isActive = true;
+    fetchAdminTemas()
+      .then((data) => {
+        if (isActive) setAdminTemas(data);
+      })
+      .catch(() => {
+        // Sem tema real ainda (endpoint pode não estar publicado no domínio
+        // de produção) — o fallback (ADMIN_THEME_FALLBACK) garante que o app
+        // continua com a cor navy atual em vez de quebrar.
+        if (isActive) setAdminTemas([]);
+      })
+      .finally(() => {
+        if (isActive) setIsLoadingAdminTemas(false);
+      });
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const adminThemePresets = useMemo(
+    () => (adminTemas.length > 0 ? adminTemas.map(temaToPreset) : [ADMIN_THEME_FALLBACK]),
+    [adminTemas]
+  );
+  const adminTheme = useMemo(() => {
+    const activeTema = adminTemas.find((tema) => tema.isActive);
+    return activeTema ? temaToPreset(activeTema) : adminThemePresets[0];
+  }, [adminTemas, adminThemePresets]);
+
+  const applyAdminTheme = useCallback(
+    (slug: string) => {
+      setAdminTemas((current) => current.map((tema) => ({ ...tema, isActive: tema.slug === slug })));
+      updateAdminTema(slug, { ativo: true }, identity?.profileId).catch(() => {
+        // Reverte o otimismo se a escrita falhar de verdade — refaz a busca
+        // pra refletir o estado real do banco.
+        fetchAdminTemas()
+          .then(setAdminTemas)
+          .catch(() => {});
+      });
+    },
+    [identity?.profileId]
   );
 
   const [colaboradorNotifications, setColaboradorNotifications] = useState<ColaboradorNotificacaoItem[]>([]);
@@ -2707,7 +2771,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthIdentityContext.Provider value={{ identity, setIdentity }}>
-      <AdminThemeContext.Provider value={{ theme: adminTheme, setThemeSlug: setAdminThemeSlug }}>
+      <AdminThemeContext.Provider
+        value={{ theme: adminTheme, temas: adminThemePresets, isLoading: isLoadingAdminTemas, applyTheme: applyAdminTheme }}
+      >
       <ColaboradorNotificationsContext.Provider value={{ items: colaboradorNotifications }}>
       <UserRoleContext.Provider value={{ activeRole, setActiveRole }}>
       <UniformReceiptContext.Provider

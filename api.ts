@@ -1097,6 +1097,131 @@ export async function deleteAdminContabilidade(id: string, actorId?: string | nu
   await api.delete(withActorId(`/api/admin/contabilidades/${encodeURIComponent(id)}`, actorId));
 }
 
+// --- Admin: Domínios permitidos de login (tabela adm_dominios_permitidos,
+// confirmada pelo Lovable em 30/07/2026) ---
+
+export type AdminDominioItem = {
+  id: string;
+  dominio: string | null;
+  descricao: string | null;
+  isActive: boolean;
+  createdAt: string | null;
+};
+
+export type AdminDominiosDetalhe = { count: number; dominios: AdminDominioItem[] };
+
+export async function fetchAdminDominios(q?: string): Promise<AdminDominiosDetalhe> {
+  const query = q ? `?q=${encodeURIComponent(q)}` : '';
+  const json = await api.get(`/api/admin/dominios${query}`);
+  return json.data as AdminDominiosDetalhe;
+}
+
+export type AdminDominioWriteBody = { dominio?: string; descricao?: string | null; ativo?: boolean };
+
+export async function createAdminDominio(
+  body: AdminDominioWriteBody,
+  actorId?: string | null
+): Promise<AdminDominioItem> {
+  const json = await api.post(withActorId('/api/admin/dominios', actorId), body);
+  return json.data as AdminDominioItem;
+}
+
+export async function updateAdminDominio(
+  id: string,
+  body: AdminDominioWriteBody,
+  actorId?: string | null
+): Promise<AdminDominioItem> {
+  const json = await api.patch(withActorId(`/api/admin/dominios/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdminDominioItem;
+}
+
+export async function deleteAdminDominio(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/admin/dominios/${encodeURIComponent(id)}`, actorId));
+}
+
+// --- Admin: Domínio de e-mail por cargo (tabela rh_cargo_dominio,
+// confirmada pelo Lovable em 30/07/2026) ---
+
+export type AdminCargoDominioProvider = 'migadu' | 'google';
+
+export type AdminCargoDominioItem = {
+  id: string;
+  cargo: string | null;
+  dominio: string | null;
+  provider: AdminCargoDominioProvider | null;
+  isActive: boolean;
+};
+
+export type AdminCargoDominioDetalhe = { count: number; itens: AdminCargoDominioItem[] };
+
+export async function fetchAdminCargoDominio(params?: {
+  q?: string;
+  provider?: AdminCargoDominioProvider;
+}): Promise<AdminCargoDominioDetalhe> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.provider) search.set('provider', params.provider);
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/admin/cargo-dominio${query}`);
+  return json.data as AdminCargoDominioDetalhe;
+}
+
+export type AdminCargoDominioWriteBody = {
+  cargo?: string;
+  dominio?: string;
+  provider?: AdminCargoDominioProvider;
+  ativo?: boolean;
+};
+
+export async function createAdminCargoDominio(
+  body: AdminCargoDominioWriteBody,
+  actorId?: string | null
+): Promise<AdminCargoDominioItem> {
+  const json = await api.post(withActorId('/api/admin/cargo-dominio', actorId), body);
+  return json.data as AdminCargoDominioItem;
+}
+
+export async function updateAdminCargoDominio(
+  id: string,
+  body: AdminCargoDominioWriteBody,
+  actorId?: string | null
+): Promise<AdminCargoDominioItem> {
+  const json = await api.patch(withActorId(`/api/admin/cargo-dominio/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdminCargoDominioItem;
+}
+
+export async function deleteAdminCargoDominio(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/admin/cargo-dominio/${encodeURIComponent(id)}`, actorId));
+}
+
+// --- Admin: Temas visuais (tabela adm_temas, confirmada pelo Lovable em
+// 30/07/2026) — só leitura + toggle de ativo, sem criar/excluir pelo app. ---
+
+export type AdminTemaCores = { primary: string | null; accent: string | null; bg: string | null; secondary: string | null };
+
+export type AdminTemaItem = {
+  slug: string;
+  nome: string | null;
+  descricao: string | null;
+  cores: AdminTemaCores;
+  isActive: boolean;
+  isProtected: boolean;
+};
+
+export async function fetchAdminTemas(): Promise<AdminTemaItem[]> {
+  const json = await api.get('/api/admin/temas');
+  return json.data as AdminTemaItem[];
+}
+
+export async function updateAdminTema(
+  slug: string,
+  body: { ativo: boolean },
+  actorId?: string | null
+): Promise<AdminTemaItem> {
+  const json = await api.patch(withActorId(`/api/admin/temas/${encodeURIComponent(slug)}`, actorId), body);
+  return json.data as AdminTemaItem;
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {

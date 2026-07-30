@@ -332,6 +332,57 @@ function patchAdminModulo(id, body, actorId) {
   return lovablePatch('/api/public/internal/admin-modulos', { id }, body, actorId);
 }
 
+// --- Domínios permitidos de login (tabela adm_dominios_permitidos,
+// confirmada pelo Lovable em 30/07/2026). ---
+
+function getAdminDominios({ limit, offset, q, ativo } = {}) {
+  return lovableGet('/api/public/internal/admin-dominios', { limit, offset, q, ativo });
+}
+
+function postAdminDominio(body, actorId) {
+  return lovablePost('/api/public/internal/admin-dominios', {}, body, actorId);
+}
+
+function patchAdminDominio(id, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-dominios', { id }, body, actorId);
+}
+
+function deleteAdminDominio(id, actorId) {
+  return lovableDelete('/api/public/internal/admin-dominios', { id }, actorId);
+}
+
+// --- Domínio de e-mail por cargo (tabela rh_cargo_dominio, confirmada pelo
+// Lovable em 30/07/2026 — provider é o enum rh_email_provider: 'migadu' |
+// 'google'). ---
+
+function getAdminCargoDominio({ limit, offset, q, provider, ativo } = {}) {
+  return lovableGet('/api/public/internal/admin-cargo-dominio', { limit, offset, q, provider, ativo });
+}
+
+function postAdminCargoDominio(body, actorId) {
+  return lovablePost('/api/public/internal/admin-cargo-dominio', {}, body, actorId);
+}
+
+function patchAdminCargoDominio(id, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-cargo-dominio', { id }, body, actorId);
+}
+
+function deleteAdminCargoDominio(id, actorId) {
+  return lovableDelete('/api/public/internal/admin-cargo-dominio', { id }, actorId);
+}
+
+// --- Temas visuais (tabela adm_temas, confirmada pelo Lovable em
+// 30/07/2026). Só leitura + toggle de ativo — sem criar/excluir tema pelo
+// app, como definido com eles. ---
+
+function getAdminTemas() {
+  return lovableGet('/api/public/internal/admin-temas');
+}
+
+function patchAdminTema(slug, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-temas', { slug }, body, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -370,4 +421,14 @@ module.exports = {
   deleteAdminContabilidade,
   getAdminModulos,
   patchAdminModulo,
+  getAdminDominios,
+  postAdminDominio,
+  patchAdminDominio,
+  deleteAdminDominio,
+  getAdminCargoDominio,
+  postAdminCargoDominio,
+  patchAdminCargoDominio,
+  deleteAdminCargoDominio,
+  getAdminTemas,
+  patchAdminTema,
 };
