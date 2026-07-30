@@ -5650,6 +5650,230 @@ function copyToClipboard(text: string, onDone: () => void) {
     .catch(() => Alert.alert('Não foi possível copiar', 'Tente novamente.'));
 }
 
+// ---------- Busca PF (Infosimples/Fonte Data) — estrutura da tela igual ao
+// web (screenshots de 30/07/2026). Sem backend ainda (Lovable só confirmou
+// que existem logs em adm_infosimples_consultas/adm_fontedata_consultas,
+// sem endpoint de credencial/execução/histórico/uso) — os formulários dos
+// 4 serviços já são reais (mesmos campos do web), mas os botões mostram
+// aviso honesto até a Lovable confirmar. Ver mensagem-lovable-integracoes-*
+// pendente.
+
+type AdminBuscaPfSubProvider = 'infosimples' | 'fontedata';
+
+// Tipos genéricos reaproveitados também pelo Jurídico (Datajud) — mesma forma
+// de campo/serviço/consulta, só muda o conteúdo.
+type AdminIntegrationServiceField = {
+  key: string;
+  label: string;
+  required?: boolean;
+  isDate?: boolean;
+  placeholder?: string;
+  options?: string[];
+  defaultValue?: string;
+};
+
+type AdminIntegrationService = {
+  code: string;
+  title: string;
+  description: string;
+  fields: AdminIntegrationServiceField[];
+  defaultExpanded?: boolean;
+  extraActionLabel?: string;
+};
+
+const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
+  {
+    code: 'receita-federal/cpf',
+    title: 'Receita Federal — CPF',
+    description: 'Consulta dados cadastrais e situação fiscal do CPF na Receita Federal.',
+    fields: [
+      { key: 'cpf', label: 'CPF', required: true, placeholder: '000.000.000-00' },
+      { key: 'dataNascimento', label: 'Data de nascimento', required: true, isDate: true },
+    ],
+  },
+  {
+    code: 'antecedentes-criminais/pf/emit',
+    title: 'Antecedentes Criminais — Polícia Federal',
+    description: 'Emite a Certidão de Antecedentes Criminais na Polícia Federal.',
+    fields: [
+      { key: 'nomeCompleto', label: 'Nome completo', required: true, placeholder: 'Nome conforme RG' },
+      { key: 'dataNascimento', label: 'Data de nascimento', required: true, isDate: true },
+      { key: 'cpf', label: 'CPF (opcional)', placeholder: '000.000.000-00' },
+      { key: 'nomeMae', label: 'Nome da mãe (opcional)' },
+      { key: 'nomePai', label: 'Nome do pai (opcional)' },
+      { key: 'ufNascimento', label: 'UF de nascimento (opcional)', placeholder: 'Ex: SP' },
+    ],
+  },
+  {
+    code: 'tribunal/trf2/certidao',
+    title: 'TRF2 — Certidão Negativa Cível e Criminal',
+    description: 'Emite certidão no TRF2 (RJ e ES). Informar CPF ou CNPJ.',
+    fields: [
+      {
+        key: 'tipoCertidao',
+        label: 'Tipo de certidão',
+        required: true,
+        options: ['Cível', 'Criminal', 'Cível e Criminal'],
+      },
+      { key: 'cpf', label: 'CPF (PF)', placeholder: '000.000.000-00' },
+      { key: 'dataNascimento', label: 'Data de nascimento (PF)', isDate: true },
+      { key: 'cnpj', label: 'CNPJ (PJ)', placeholder: '00.000.000/0000-00' },
+    ],
+  },
+  {
+    code: 'cnis/pre-inscricao',
+    title: 'CNIS — Pré-inscrição (PIS/NIT/NIS)',
+    description: 'Consulta a inscrição (PIS/NIT/NIS) de uma pessoa física no CNIS.',
+    fields: [
+      { key: 'cpf', label: 'CPF', required: true, placeholder: '000.000.000-00' },
+      { key: 'nomeCompleto', label: 'Nome completo', required: true },
+      { key: 'dataNascimento', label: 'Data de nascimento', required: true, isDate: true },
+      { key: 'nomeMae', label: 'Nome da mãe', required: true },
+    ],
+  },
+];
+
+// ---------- Jurídico (Datajud CNJ + Infosimples — TJRJ) — estrutura igual ao
+// web (screenshots de 30/07/2026). Datajud é a API pública/gratuita do CNJ
+// (não exige credencial secreta — a APIKey é embutida e pública); os 3
+// serviços abaixo têm os campos reais do web, mas os botões (Executar
+// consulta, Testar conexão, Histórico, Tabela de classes, Documentação)
+// mostram aviso honesto até existir a rota proxy no af360-api. Infosimples —
+// TJRJ ainda não tem nenhum screenshot/detalhe — fica como placeholder leve.
+
+type AdminJuridicoSubProvider = 'datajud' | 'infosimples_tjrj';
+
+const ADMIN_DATAJUD_TRIBUNAL_OPTIONS = ['TJRJ — Rio de Janeiro', 'TRT 1ª (RJ)'];
+
+const ADMIN_JURIDICO_DATAJUD_SERVICES: AdminIntegrationService[] = [
+  {
+    code: 'processo-por-numero',
+    title: 'Processo por número (CNJ)',
+    description:
+      'Localiza um processo específico em um tribunal pelo número do CNJ (NNNNNNN-DD.AAAA.J.TR.OOOO). Retorna classe, assuntos, órgão julgador, dataAjuizamento e movimentos.',
+    defaultExpanded: true,
+    fields: [
+      { key: 'tribunal', label: 'Tribunal', required: true, options: ADMIN_DATAJUD_TRIBUNAL_OPTIONS, defaultValue: 'TJRJ — Rio de Janeiro' },
+      { key: 'numeroProcesso', label: 'Número do processo (CNJ)', required: true, placeholder: '0000000-00.0000.0.00.0000' },
+    ],
+  },
+  {
+    code: 'processos-por-classe',
+    title: 'Processos por classe processual',
+    description:
+      'Lista processos de uma classe específica em um tribunal (ex.: classe 1116 = Procedimento Comum Cível). Útil para mapear volume e amostragem.',
+    defaultExpanded: true,
+    extraActionLabel: 'Tabela de classes (CNJ)',
+    fields: [
+      { key: 'tribunal', label: 'Tribunal', required: true, options: ADMIN_DATAJUD_TRIBUNAL_OPTIONS, defaultValue: 'TRT 1ª (RJ)' },
+      { key: 'codigoClasse', label: 'Código da classe', required: true, placeholder: 'Ex.: 1116' },
+      { key: 'limite', label: 'Limite de resultados', placeholder: '10', defaultValue: '10' },
+    ],
+  },
+  {
+    code: 'ultimos-do-orgao-julgador',
+    title: 'Últimos processos de um órgão julgador',
+    description: 'Lista os processos mais recentes de uma vara/órgão (código do órgão julgador). Útil para acompanhar atividade.',
+    defaultExpanded: true,
+    fields: [
+      { key: 'tribunal', label: 'Tribunal', required: true, options: ADMIN_DATAJUD_TRIBUNAL_OPTIONS, defaultValue: 'TRT 1ª (RJ)' },
+      { key: 'codigoOrgaoJulgador', label: 'Código do órgão julgador', required: true, placeholder: 'Ex.: 13597' },
+      { key: 'limite', label: 'Limite de resultados', placeholder: '10', defaultValue: '10' },
+    ],
+  },
+];
+
+// ---------- Componente compartilhado (Busca PF + Jurídico): card de serviço
+// expansível com formulário local (sem persistência real ainda) e botão(ões)
+// de ação honestos. ----------
+function AdminIntegrationServiceCard({
+  service,
+  expanded,
+  onToggleExpand,
+  values,
+  onChangeField,
+  onExecute,
+  onExtraAction,
+}: {
+  service: AdminIntegrationService;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  values: Record<string, string>;
+  onChangeField: (fieldKey: string, value: string) => void;
+  onExecute: () => void;
+  onExtraAction?: () => void;
+}) {
+  return (
+    <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+      <Pressable style={adminStyles.serviceCardHeaderRow} onPress={onToggleExpand} hitSlop={4}>
+        <Feather name={expanded ? 'chevron-down' : 'chevron-right'} size={16} color="#677089" style={{ marginTop: 3 }} />
+        <View style={{ flex: 1, marginLeft: 8 }}>
+          <Text style={adminStyles.sectionTitle}>{service.title}</Text>
+          <Text style={adminStyles.integrationDescription}>{service.description}</Text>
+          <Text style={adminStyles.serviceCardCode}>{service.code}</Text>
+        </View>
+      </Pressable>
+
+      {expanded ? (
+        <View style={adminStyles.fieldSpacing}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+            {service.fields.map((field) => {
+              const currentValue = values[field.key] ?? field.defaultValue ?? '';
+              return (
+                <View key={field.key} style={{ minWidth: 160, flexGrow: 1 }}>
+                  <Text style={adminStyles.fieldLabel}>
+                    {field.label}
+                    {field.required ? <Text style={{ color: '#D93A3A' }}> *</Text> : null}
+                  </Text>
+                  {field.options ? (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                      {field.options.map((opt) => {
+                        const selected = (currentValue || field.options?.[0]) === opt;
+                        return (
+                          <Pressable
+                            key={opt}
+                            onPress={() => onChangeField(field.key, opt)}
+                            style={[adminStyles.subProviderPill, selected ? adminStyles.subProviderPillActive : null]}
+                          >
+                            <Text style={[adminStyles.subProviderPillText, selected ? adminStyles.subProviderPillTextActive : null]}>
+                              {opt}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={[styles.processTextInput, { marginTop: 6 }]}
+                      value={currentValue}
+                      onChangeText={(text) => onChangeField(field.key, text)}
+                      placeholder={field.placeholder}
+                      placeholderTextColor="#A7AEC2"
+                      keyboardType={field.isDate ? 'numbers-and-punctuation' : 'default'}
+                    />
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={[adminStyles.integrationActionsRow, adminStyles.fieldSpacing]}>
+            <Pressable style={[adminStyles.primaryButtonGreen, { flexDirection: 'row', gap: 6 }]} onPress={onExecute}>
+              <Feather name="play" size={13} color="#FFFFFF" />
+              <Text style={adminStyles.primaryButtonGreenText}>Executar consulta</Text>
+            </Pressable>
+            {service.extraActionLabel && onExtraAction ? (
+              <Pressable style={adminStyles.outlineButton} onPress={onExtraAction}>
+                <Text style={adminStyles.outlineButtonText}>{service.extraActionLabel}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegracoes'>) {
   const { identity } = useContext(AuthIdentityContext);
   const actorId = identity?.profileId;
@@ -5704,6 +5928,18 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
   const [diagnosticoTelefone, setDiagnosticoTelefone] = useState('');
   const [isSyncingTemplates, setIsSyncingTemplates] = useState(false);
   const [testingTemplateKey, setTestingTemplateKey] = useState<string | null>(null);
+
+  // Busca PF (Infosimples/Fonte Data) — sem persistência real ainda; guarda
+  // os valores dos formulários dos serviços localmente enquanto a Lovable
+  // não confirma os endpoints de execução/histórico/uso.
+  const [activeBuscaPfSubProvider, setActiveBuscaPfSubProvider] = useState<AdminBuscaPfSubProvider>('infosimples');
+  const [expandedBuscaPfServices, setExpandedBuscaPfServices] = useState<Record<string, boolean>>({});
+  const [buscaPfFieldValues, setBuscaPfFieldValues] = useState<Record<string, string>>({});
+
+  // Jurídico (Datajud CNJ + Infosimples — TJRJ) — mesma lógica.
+  const [activeJuridicoSubProvider, setActiveJuridicoSubProvider] = useState<AdminJuridicoSubProvider>('datajud');
+  const [expandedJuridicoServices, setExpandedJuridicoServices] = useState<Record<string, boolean>>({});
+  const [juridicoFieldValues, setJuridicoFieldValues] = useState<Record<string, string>>({});
 
   const applyConfig = useCallback((config: AdminWaConfig) => {
     setWaConfig(config);
@@ -6480,6 +6716,385 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
 
               <AdminEmptyState message="Estrutura pronta — falta confirmar com a Lovable os endpoints de gmb_locations (leitura paginada e o vínculo com a unidade AF) para trazer a lista real dos 79 postos." />
             </View>
+          </>
+        ) : activeProvider === 'buscapf' ? (
+          <>
+            <View style={adminStyles.sectionCard}>
+              <View style={adminStyles.integrationHeaderRow}>
+                <View style={adminStyles.integrationHeaderLeft}>
+                  <View style={[styles.iconShell, { backgroundColor: BLUE_BG }]}>
+                    <Feather name="search" size={17} color={BLUE} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={adminStyles.sectionTitle}>Busca PF</Text>
+                    <Text style={adminStyles.integrationDescription} numberOfLines={1}>
+                      Consultas de dados públicos de pessoa física via provedores externos.
+                    </Text>
+                  </View>
+                </View>
+                <AdminColorPill label="2 provedores" bg={BLUE_BG} color={BLUE} />
+              </View>
+
+              <View style={[adminStyles.subProviderPillRow, adminStyles.fieldSpacing]}>
+                <Pressable
+                  style={[
+                    adminStyles.subProviderPill,
+                    activeBuscaPfSubProvider === 'infosimples' ? adminStyles.subProviderPillActive : null,
+                  ]}
+                  onPress={() => setActiveBuscaPfSubProvider('infosimples')}
+                >
+                  <Feather name="search" size={13} color={activeBuscaPfSubProvider === 'infosimples' ? '#FFFFFF' : '#4C5470'} />
+                  <Text
+                    style={[
+                      adminStyles.subProviderPillText,
+                      activeBuscaPfSubProvider === 'infosimples' ? adminStyles.subProviderPillTextActive : null,
+                    ]}
+                  >
+                    Infosimples
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    adminStyles.subProviderPill,
+                    activeBuscaPfSubProvider === 'fontedata' ? adminStyles.subProviderPillActive : null,
+                  ]}
+                  onPress={() => setActiveBuscaPfSubProvider('fontedata')}
+                >
+                  <Feather name="database" size={13} color={activeBuscaPfSubProvider === 'fontedata' ? '#FFFFFF' : '#4C5470'} />
+                  <Text
+                    style={[
+                      adminStyles.subProviderPillText,
+                      activeBuscaPfSubProvider === 'fontedata' ? adminStyles.subProviderPillTextActive : null,
+                    ]}
+                  >
+                    Fonte Data
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {activeBuscaPfSubProvider === 'infosimples' ? (
+              <>
+                <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+                  <Text style={adminStyles.sectionTitle}>Credenciais</Text>
+                  <View style={[adminStyles.integrationActionsRow, adminStyles.fieldSpacing]}>
+                    <View style={[adminStyles.staticField, { flex: 1 }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={adminStyles.fieldLabel}>TOKEN INFOSIMPLES</Text>
+                        <Text style={adminStyles.staticFieldText}>Status pendente de confirmação</Text>
+                      </View>
+                      <AdminColorPill label="Aguardando Lovable" bg="#F4F1E8" color="#8A6D1E" />
+                    </View>
+                    <View style={[adminStyles.staticField, { flex: 1 }]}>
+                      <Text style={adminStyles.staticFieldText}>api.infosimples.com</Text>
+                    </View>
+                  </View>
+                  <View style={[adminStyles.integrationActionsRow, adminStyles.fieldSpacing]}>
+                    <Pressable
+                      style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6 }]}
+                      onPress={() =>
+                        Alert.alert(
+                          'Ainda não disponível',
+                          'Preciso confirmar com a Lovable o endpoint de credenciais e teste de conexão do Infosimples antes de ligar este botão.'
+                        )
+                      }
+                    >
+                      <Feather name="check-circle" size={14} color="#15203E" />
+                      <Text style={adminStyles.outlineButtonText}>Testar conexão</Text>
+                    </Pressable>
+                    <Pressable
+                      style={adminStyles.outlineButton}
+                      onPress={() =>
+                        Alert.alert('Ainda não disponível', 'Vou abrir a documentação do Infosimples direto no app numa próxima rodada.')
+                      }
+                    >
+                      <Text style={adminStyles.outlineButtonText}>Documentação Infosimples</Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={[adminStyles.integrationHeaderRow, adminStyles.fieldSpacing]}>
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={adminStyles.sectionTitle}>Consultas disponíveis</Text>
+                    <AdminColorPill label="4 serviços" bg={BLUE_BG} color={BLUE} />
+                  </View>
+                  <Pressable
+                    style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6, flexShrink: 0 }]}
+                    onPress={() =>
+                      Alert.alert(
+                        'Ainda não disponível',
+                        'Preciso confirmar com a Lovable o endpoint de histórico (adm_infosimples_consultas) antes de ligar este botão.'
+                      )
+                    }
+                  >
+                    <Feather name="clock" size={14} color="#15203E" />
+                    <Text style={adminStyles.outlineButtonText}>Histórico</Text>
+                  </Pressable>
+                </View>
+
+                {ADMIN_BUSCAPF_INFOSIMPLES_SERVICES.map((service) => (
+                  <AdminIntegrationServiceCard
+                    key={service.code}
+                    service={service}
+                    expanded={expandedBuscaPfServices[service.code] ?? service.defaultExpanded ?? false}
+                    onToggleExpand={() =>
+                      setExpandedBuscaPfServices((prev) => ({
+                        ...prev,
+                        [service.code]: !(prev[service.code] ?? service.defaultExpanded ?? false),
+                      }))
+                    }
+                    values={Object.fromEntries(
+                      Object.entries(buscaPfFieldValues)
+                        .filter(([k]) => k.startsWith(`${service.code}::`))
+                        .map(([k, v]) => [k.slice(service.code.length + 2), v])
+                    )}
+                    onChangeField={(fieldKey, value) =>
+                      setBuscaPfFieldValues((prev) => ({ ...prev, [`${service.code}::${fieldKey}`]: value }))
+                    }
+                    onExecute={() =>
+                      Alert.alert(
+                        'Ainda não disponível',
+                        'Preciso confirmar com a Lovable o endpoint de execução deste serviço antes de ligar este botão.'
+                      )
+                    }
+                  />
+                ))}
+
+                <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+                  <View style={adminStyles.integrationHeaderRow}>
+                    <Text style={[adminStyles.sectionTitle, { flex: 1 }]}>Uso e custo mensal</Text>
+                    <Pressable
+                      style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6, flexShrink: 0 }]}
+                      onPress={() =>
+                        Alert.alert(
+                          'Ainda não disponível',
+                          'Preciso confirmar com a Lovable o endpoint de uso/custo mensal do Infosimples antes de ligar este botão.'
+                        )
+                      }
+                    >
+                      <Feather name="refresh-cw" size={14} color="#15203E" />
+                      <Text style={adminStyles.outlineButtonText}>Atualizar</Text>
+                    </Pressable>
+                  </View>
+                  <AdminEmptyState message="Estrutura pronta — falta confirmar com a Lovable o endpoint de uso/custo mensal (franquia, consultas realizadas por serviço) para trazer os números reais." />
+                </View>
+              </>
+            ) : (
+              <View style={adminStyles.sectionCard}>
+                <Text style={adminStyles.sectionTitle}>Fonte Data</Text>
+                <AdminEmptyState message="Ainda sem referência de tela para o Fonte Data — vou montar quando tiver o mesmo nível de detalhe do Infosimples." />
+              </View>
+            )}
+          </>
+        ) : activeProvider === 'juridico' ? (
+          <>
+            <View style={adminStyles.sectionCard}>
+              <View style={adminStyles.integrationHeaderRow}>
+                <View style={adminStyles.integrationHeaderLeft}>
+                  <View style={[styles.iconShell, { backgroundColor: '#E7E9F2' }]}>
+                    <Feather name="briefcase" size={17} color={NAVY} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={adminStyles.sectionTitle}>Jurídico</Text>
+                    <Text style={adminStyles.integrationDescription} numberOfLines={1}>
+                      Consultas processuais e certidões via APIs públicas e provedores externos.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={[adminStyles.subProviderPillRow, adminStyles.fieldSpacing]}>
+                <Pressable
+                  style={[
+                    adminStyles.subProviderPill,
+                    activeJuridicoSubProvider === 'datajud' ? adminStyles.subProviderPillActive : null,
+                  ]}
+                  onPress={() => setActiveJuridicoSubProvider('datajud')}
+                >
+                  <Feather name="briefcase" size={13} color={activeJuridicoSubProvider === 'datajud' ? '#FFFFFF' : '#4C5470'} />
+                  <Text
+                    style={[
+                      adminStyles.subProviderPillText,
+                      activeJuridicoSubProvider === 'datajud' ? adminStyles.subProviderPillTextActive : null,
+                    ]}
+                  >
+                    Datajud (CNJ)
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    adminStyles.subProviderPill,
+                    activeJuridicoSubProvider === 'infosimples_tjrj' ? adminStyles.subProviderPillActive : null,
+                  ]}
+                  onPress={() => setActiveJuridicoSubProvider('infosimples_tjrj')}
+                >
+                  <Feather
+                    name="search"
+                    size={13}
+                    color={activeJuridicoSubProvider === 'infosimples_tjrj' ? '#FFFFFF' : '#4C5470'}
+                  />
+                  <Text
+                    style={[
+                      adminStyles.subProviderPillText,
+                      activeJuridicoSubProvider === 'infosimples_tjrj' ? adminStyles.subProviderPillTextActive : null,
+                    ]}
+                  >
+                    Infosimples — TJRJ
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {activeJuridicoSubProvider === 'datajud' ? (
+              <>
+                <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+                  <View style={adminStyles.integrationHeaderRow}>
+                    <Text style={[adminStyles.sectionTitle, { flex: 1 }]}>Datajud — CNJ</Text>
+                    <AdminColorPill label="API pública" bg="#EFE7FB" color="#6A3FBF" />
+                    <AdminColorPill label="Gratuita" bg="#E7F5EC" color="#1E8A4C" />
+                  </View>
+                  <Text style={adminStyles.integrationDescription}>
+                    Base Nacional de Dados do Poder Judiciário (CNJ). Consultas a processos judiciais públicos por
+                    tribunal — número do processo, classe processual, órgão julgador. A API pública não retorna
+                    CPF/CNPJ das partes (LGPD).
+                  </Text>
+
+                  <Text style={[adminStyles.sectionTitle, adminStyles.fieldSpacing, { fontSize: 14 }]}>Credenciais</Text>
+                  <View style={[adminStyles.integrationActionsRow, { marginTop: 8 }]}>
+                    <View style={[adminStyles.staticField, { flex: 1 }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={adminStyles.fieldLabel}>APIKEY (PÚBLICA DO CNJ)</Text>
+                      </View>
+                      <AdminColorPill label="Embutida" bg="#E7F5EC" color="#1E8A4C" />
+                    </View>
+                    <View style={[adminStyles.staticField, { flex: 1 }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={adminStyles.fieldLabel}>ENDPOINT BASE</Text>
+                        <Text style={adminStyles.staticFieldText}>api-publica.datajud.cnj.jus.br</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={[adminStyles.integrationActionsRow, adminStyles.fieldSpacing]}>
+                    <Pressable
+                      style={[adminStyles.primaryButtonGreen, { flexDirection: 'row', gap: 6 }]}
+                      onPress={() =>
+                        Alert.alert(
+                          'Ainda não disponível',
+                          'Preciso criar a rota proxy no af360-api para a API pública do Datajud antes de ligar este botão.'
+                        )
+                      }
+                    >
+                      <Feather name="check-circle" size={14} color="#FFFFFF" />
+                      <Text style={adminStyles.primaryButtonGreenText}>Testar conexão (TST)</Text>
+                    </Pressable>
+                    <Pressable
+                      style={adminStyles.outlineButton}
+                      onPress={() =>
+                        Alert.alert('Ainda não disponível', 'Vou abrir a documentação do Datajud direto no app numa próxima rodada.')
+                      }
+                    >
+                      <Text style={adminStyles.outlineButtonText}>Documentação Datajud</Text>
+                    </Pressable>
+                    <Pressable
+                      style={adminStyles.outlineButton}
+                      onPress={() =>
+                        Alert.alert('Ainda não disponível', 'Vou abrir o termo de uso do Datajud direto no app numa próxima rodada.')
+                      }
+                    >
+                      <Text style={adminStyles.outlineButtonText}>Termo de uso</Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={[adminStyles.integrationHeaderRow, adminStyles.fieldSpacing]}>
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={adminStyles.sectionTitle}>Consultas disponíveis</Text>
+                    <AdminColorPill label="3 serviços" bg={BLUE_BG} color={BLUE} />
+                  </View>
+                  <Pressable
+                    style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6, flexShrink: 0 }]}
+                    onPress={() =>
+                      Alert.alert(
+                        'Ainda não disponível',
+                        'Vou registrar o histórico de consultas do Datajud quando a rota proxy existir.'
+                      )
+                    }
+                  >
+                    <Feather name="clock" size={14} color="#15203E" />
+                    <Text style={adminStyles.outlineButtonText}>Histórico</Text>
+                  </Pressable>
+                </View>
+
+                <View style={[adminStyles.integrationInfoBox, { backgroundColor: GOLD_BG }]}>
+                  <Feather name="alert-triangle" size={15} color={GOLD} />
+                  <Text style={[adminStyles.integrationInfoText, { color: '#7A5A12' }]}>
+                    Sobre a busca por CNPJ: a API pública do CNJ não expõe documentos das partes (CPF/CNPJ) por LGPD.
+                    Os campos disponíveis são{' '}
+                    <Text style={adminStyles.serviceCardCode}>numeroProcesso</Text>,{' '}
+                    <Text style={adminStyles.serviceCardCode}>classe</Text>,{' '}
+                    <Text style={adminStyles.serviceCardCode}>assuntos</Text>,{' '}
+                    <Text style={adminStyles.serviceCardCode}>orgaoJulgador</Text>,{' '}
+                    <Text style={adminStyles.serviceCardCode}>dataAjuizamento</Text> e{' '}
+                    <Text style={adminStyles.serviceCardCode}>movimentos</Text>. Para cruzar com os CNPJs da Rede AF,
+                    use os números de processos já conhecidos (ex.: ações trabalhistas listadas em processos
+                    internos).
+                  </Text>
+                </View>
+
+                {ADMIN_JURIDICO_DATAJUD_SERVICES.map((service) => (
+                  <AdminIntegrationServiceCard
+                    key={service.code}
+                    service={service}
+                    expanded={expandedJuridicoServices[service.code] ?? service.defaultExpanded ?? false}
+                    onToggleExpand={() =>
+                      setExpandedJuridicoServices((prev) => ({
+                        ...prev,
+                        [service.code]: !(prev[service.code] ?? service.defaultExpanded ?? false),
+                      }))
+                    }
+                    values={Object.fromEntries(
+                      Object.entries(juridicoFieldValues)
+                        .filter(([k]) => k.startsWith(`${service.code}::`))
+                        .map(([k, v]) => [k.slice(service.code.length + 2), v])
+                    )}
+                    onChangeField={(fieldKey, value) =>
+                      setJuridicoFieldValues((prev) => ({ ...prev, [`${service.code}::${fieldKey}`]: value }))
+                    }
+                    onExecute={() =>
+                      Alert.alert(
+                        'Ainda não disponível',
+                        'Preciso criar a rota proxy no af360-api para a API pública do Datajud antes de ligar este botão.'
+                      )
+                    }
+                    onExtraAction={() =>
+                      Alert.alert('Ainda não disponível', 'Vou abrir a tabela de classes processuais do CNJ direto no app numa próxima rodada.')
+                    }
+                  />
+                ))}
+
+                <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+                  <View style={adminStyles.integrationHeaderRow}>
+                    <Text style={[adminStyles.sectionTitle, { flex: 1 }]}>Uso mensal</Text>
+                    <Pressable
+                      style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6, flexShrink: 0 }]}
+                      onPress={() =>
+                        Alert.alert('Ainda não disponível', 'Vou registrar o uso mensal do Datajud quando a rota proxy existir.')
+                      }
+                    >
+                      <Feather name="refresh-cw" size={14} color="#15203E" />
+                      <Text style={adminStyles.outlineButtonText}>Atualizar</Text>
+                    </Pressable>
+                  </View>
+                  <AdminEmptyState message="Nenhuma consulta registrada ainda. A API do Datajud é gratuita; aqui registramos o volume por tribunal/serviço para acompanhamento interno." />
+                </View>
+              </>
+            ) : (
+              <View style={adminStyles.sectionCard}>
+                <Text style={adminStyles.sectionTitle}>Infosimples — TJRJ</Text>
+                <AdminEmptyState message="Ainda sem referência de tela para este sub-provedor — vou montar quando tiver o mesmo nível de detalhe do Datajud." />
+              </View>
+            )}
           </>
         ) : (
           <AdminEmptyState message={`Em breve. A integração ${activeProviderMeta.label} ainda está em desenvolvimento.`} />
@@ -8912,6 +9527,45 @@ const adminStyles = StyleSheet.create({
     color: '#15203E',
     fontSize: 12,
     fontWeight: '700',
+  },
+  subProviderPillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  subProviderPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#DDE4F0',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  subProviderPillActive: {
+    backgroundColor: '#15203E',
+    borderColor: '#15203E',
+  },
+  subProviderPillText: {
+    color: '#4C5470',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  subProviderPillTextActive: {
+    color: '#FFFFFF',
+  },
+  serviceCardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  serviceCardCode: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: '#9AA1B5',
+    fontSize: 11,
+    marginTop: 4,
   },
   prefixRow: {
     flexDirection: 'row',
