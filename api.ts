@@ -1222,6 +1222,45 @@ export async function updateAdminTema(
   return json.data as AdminTemaItem;
 }
 
+// --- Admin: Versões (changelog de produto do AF360 — conteúdo único servido
+// pelo Lovable a partir de VersoesTab.tsx, confirmado em 30/07/2026; sem
+// tabela por trás, só leitura). ---
+
+export type AdminVersaoTipoKey = 'novo' | 'melhoria' | 'correcao' | 'seguranca' | 'schema';
+
+export type AdminVersaoTipo = {
+  key: AdminVersaoTipoKey;
+  label: string | null;
+  cor: string | null;
+};
+
+export type AdminVersaoItem = {
+  titulo: string | null;
+  tipo: AdminVersaoTipoKey | null;
+  descricao: string | null;
+  detalhes: string[];
+};
+
+export type AdminVersaoRow = {
+  versao: string | null;
+  data: string | null;
+  rotulo: string | null;
+  destaque: boolean;
+  itens: AdminVersaoItem[];
+};
+
+export type AdminVersoesResponse = {
+  versoes: AdminVersaoRow[];
+  tipos: AdminVersaoTipo[];
+  totais: Partial<Record<AdminVersaoTipoKey, number>>;
+  count: number;
+};
+
+export async function fetchAdminVersoes(): Promise<AdminVersoesResponse> {
+  const json = await api.get('/api/admin/versoes');
+  return json.data as AdminVersoesResponse;
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {

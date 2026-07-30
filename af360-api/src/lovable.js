@@ -383,6 +383,14 @@ function patchAdminTema(slug, body, actorId) {
   return lovablePatch('/api/public/internal/admin-temas', { slug }, body, actorId);
 }
 
+// --- Versões (changelog de produto do AF360 — extraído pelo Lovable de
+// VersoesTab.tsx para uma fonte única em 30/07/2026; site e app leem o
+// mesmo conteúdo, sem tabela por trás). Só leitura. ---
+
+function getAdminVersoes() {
+  return lovableGet('/api/public/internal/admin-versoes');
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -431,4 +439,5 @@ module.exports = {
   deleteAdminCargoDominio,
   getAdminTemas,
   patchAdminTema,
+  getAdminVersoes,
 };

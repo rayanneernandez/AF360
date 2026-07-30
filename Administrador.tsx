@@ -86,10 +86,13 @@ import {
   createAdminCargoDominio,
   updateAdminCargoDominio,
   deleteAdminCargoDominio,
+  fetchAdminVersoes,
   ApiError,
   type AdminDominioItem,
   type AdminCargoDominioItem,
   type AdminCargoDominioProvider,
+  type AdminVersoesResponse,
+  type AdminVersaoTipoKey,
   type AdminUsuarioItem,
   type AdminCargoItem,
   type AdminGrupoItem,
@@ -6514,51 +6517,72 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
 // 11. Versões
 // ============================================================================
 
-const adminVersionStats = [
-  { id: 'v1', label: 'Novo módulo', value: 5, color: GREEN, bg: GREEN_BG },
-  { id: 'v2', label: 'Melhoria', value: 3, color: BLUE, bg: BLUE_BG },
-  { id: 'v3', label: 'Correção', value: 1, color: GRAY, bg: GRAY_BG },
-  { id: 'v4', label: 'Segurança', value: 2, color: GOLD, bg: GOLD_BG },
-  { id: 'v5', label: 'Banco/RLS', value: 0, color: PURPLE, bg: PURPLE_BG },
-];
-
-const adminReleaseItems = [
-  {
-    id: 'ri1',
-    tag: 'Novo módulo',
-    title: 'Módulo Workflow — Hierarquia por Posto',
-    description: 'Gestão de liderança por posto com atribuir/remover/transferir e timeline global.',
-  },
-  {
-    id: 'ri2',
-    tag: 'Novo módulo',
-    title: 'Módulo Workflow — Fluxos de Aprovação',
-    description:
-      'Editor visual drag-and-drop de fluxos com nós de Início, Aprovação, Decisão, Notificação, Prazo e Fim.',
-  },
-  {
-    id: 'ri3',
-    tag: 'Novo módulo',
-    title: 'Documentos do colaborador',
-    description: 'Visualização em pastas com upload, validade colorida e contagem de pendentes.',
-  },
-  {
-    id: 'ri4',
-    tag: 'Novo módulo',
-    title: 'Folha de Pagamento — MVP completo',
-    description: 'Rubricas, tabelas legais 2026 (INSS, IRRF), cálculo CLT e assinatura digital.',
-  },
-  {
-    id: 'ri5',
-    tag: 'Melhoria',
-    // Descrição cortada no mockup original — completada de forma plausível
-    // com base no título ("Cadastro do colaborador — Dados ampliados").
-    title: 'Cadastro do colaborador — Dados ampliados',
-    description: 'Campos adicionais no cadastro do colaborador (dados bancários, contatos de emergência e anexos).',
-  },
-];
+const ADMIN_VERSAO_TIPO_STYLE: Record<AdminVersaoTipoKey, { color: string; bg: string; icon: FeatherIconName }> = {
+  novo: { color: GREEN, bg: GREEN_BG, icon: 'package' },
+  melhoria: { color: BLUE, bg: BLUE_BG, icon: 'tool' },
+  correcao: { color: GRAY, bg: GRAY_BG, icon: 'alert-circle' },
+  seguranca: { color: GOLD, bg: GOLD_BG, icon: 'shield' },
+  schema: { color: PURPLE, bg: PURPLE_BG, icon: 'database' },
+};
+const ADMIN_VERSAO_TIPO_FALLBACK: { color: string; bg: string; icon: FeatherIconName } = {
+  color: GRAY,
+  bg: GRAY_BG,
+  icon: 'circle',
+};
 
 export function AdminVersoesScreen({ navigation }: ScreenProps<'AdminVersoes'>) {
+  const [versoesData, setVersoesData] = useState<AdminVersoesResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [tipoFiltro, setTipoFiltro] = useState<AdminVersaoTipoKey | 'todos'>('todos');
+  const [isFilterPickerOpen, setIsFilterPickerOpen] = useState(false);
+
+  useEffect(() => {
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchAdminVersoes()
+      .then((data) => {
+        if (isActive) setVersoesData(data);
+      })
+      .catch((err) => {
+        if (isActive) setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as versões.');
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const tipos = versoesData?.tipos ?? [];
+  const filterOptions = ['Todos', ...tipos.map((tipo) => tipo.label ?? tipo.key)];
+  const selectedFilterLabel =
+    tipoFiltro === 'todos' ? 'Todos' : tipos.find((tipo) => tipo.key === tipoFiltro)?.label ?? 'Todos';
+
+  const filteredVersoes = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const versoes = versoesData?.versoes ?? [];
+    return versoes
+      .map((versao) => {
+        const versionMatchesQuery =
+          !query ||
+          (versao.rotulo ?? '').toLowerCase().includes(query) ||
+          (versao.versao ?? '').toLowerCase().includes(query);
+        const itens = versao.itens.filter((item) => {
+          if (tipoFiltro !== 'todos' && item.tipo !== tipoFiltro) return false;
+          if (!query || versionMatchesQuery) return true;
+          return (
+            (item.titulo ?? '').toLowerCase().includes(query) || (item.descricao ?? '').toLowerCase().includes(query)
+          );
+        });
+        return { ...versao, itens };
+      })
+      .filter((versao) => versao.itens.length > 0);
+  }, [versoesData, search, tipoFiltro]);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -6573,45 +6597,117 @@ export function AdminVersoesScreen({ navigation }: ScreenProps<'AdminVersoes'>) 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <AdminPageHeader icon="refresh-cw" title="Versões" subtitle="Histórico do AF360" />
 
-        <View style={adminStyles.miniStatRow}>
-          {adminVersionStats.map((item) => (
-            <View key={item.id} style={[adminStyles.miniStatCard, { backgroundColor: item.bg }]}>
-              <Text style={[adminStyles.miniStatValue, { color: item.color }]}>{item.value}</Text>
-              <Text style={[adminStyles.miniStatLabel, { color: item.color }]}>{item.label}</Text>
+        <Text style={[adminStyles.integrationDescription, { marginBottom: 12 }]}>
+          Histórico de novos módulos, melhorias, correções e ajustes de segurança aplicados ao AF 360. As mudanças de
+          schema também ficam registradas em <Text style={adminStyles.mdInlineCode}>docs/database-changelog.md</Text>.
+        </Text>
+
+        {isLoading ? (
+          <AdminEmptyState message="Carregando versões..." />
+        ) : errorMessage ? (
+          <AdminEmptyState message={errorMessage} />
+        ) : (
+          <>
+            <View style={adminStyles.miniStatRow}>
+              {tipos.map((tipo) => {
+                const tipoStyle = ADMIN_VERSAO_TIPO_STYLE[tipo.key] ?? ADMIN_VERSAO_TIPO_FALLBACK;
+                return (
+                  <View key={tipo.key} style={[adminStyles.miniStatCard, { backgroundColor: tipoStyle.bg }]}>
+                    <Text style={[adminStyles.miniStatValue, { color: tipoStyle.color }]}>
+                      {versoesData?.totais[tipo.key] ?? 0}
+                    </Text>
+                    <Text style={[adminStyles.miniStatLabel, { color: tipoStyle.color }]}>{tipo.label}</Text>
+                  </View>
+                );
+              })}
             </View>
-          ))}
-        </View>
 
-        <View style={[adminStyles.sectionCard, adminStyles.lastSectionCard]}>
-          <View style={adminStyles.releaseHeaderRow}>
-            <Text style={adminStyles.subsectionTitle}>v1.4.0 · 13/05/2026</Text>
-            <AdminColorPill label="DESTAQUE" bg={RED_BG} color={RED} />
-          </View>
-          <Text style={adminStyles.sectionTitle}>Workflow + Documentos + Folha completa</Text>
+            <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar nas versões..." />
+            <Pressable
+              style={[adminStyles.mdCopyButton, { alignSelf: 'flex-start', marginTop: 10, marginBottom: 4 }]}
+              onPress={() => setIsFilterPickerOpen(true)}
+            >
+              <Feather name="filter" size={13} color="#4C5470" />
+              <Text style={adminStyles.mdCopyButtonText}>Filtrar: {selectedFilterLabel}</Text>
+            </Pressable>
 
-          {adminReleaseItems.map((item, index) => {
-            const isNewModule = item.tag === 'Novo módulo';
-            return (
-              <View
-                key={item.id}
-                style={[adminStyles.releaseItem, index === adminReleaseItems.length - 1 ? { marginBottom: 0 } : null]}
-              >
-                <View style={adminStyles.releaseItemHeaderRow}>
-                  <AdminColorPill
-                    label={item.tag}
-                    bg={isNewModule ? GREEN_BG : BLUE_BG}
-                    color={isNewModule ? GREEN : BLUE}
-                  />
-                  <Text style={adminStyles.releaseItemTitle} numberOfLines={2}>
-                    {item.title}
-                  </Text>
+            {filteredVersoes.length === 0 ? (
+              <AdminEmptyState message="Nenhuma versão encontrada." />
+            ) : (
+              filteredVersoes.map((versao, vIndex) => (
+                <View
+                  key={versao.versao ?? vIndex}
+                  style={[
+                    adminStyles.sectionCard,
+                    styles.spacingTop,
+                    vIndex === filteredVersoes.length - 1 ? adminStyles.lastSectionCard : null,
+                  ]}
+                >
+                  <View style={adminStyles.releaseHeaderRow}>
+                    <Text style={adminStyles.subsectionTitle}>
+                      {versao.versao} · {formatAdminDate(versao.data)}
+                    </Text>
+                    {versao.destaque ? <AdminColorPill label="DESTAQUE" bg={RED_BG} color={RED} /> : null}
+                  </View>
+                  <Text style={adminStyles.sectionTitle}>{versao.rotulo}</Text>
+
+                  {versao.itens.map((item, index) => {
+                    const tipoStyle = item.tipo
+                      ? ADMIN_VERSAO_TIPO_STYLE[item.tipo] ?? ADMIN_VERSAO_TIPO_FALLBACK
+                      : ADMIN_VERSAO_TIPO_FALLBACK;
+                    const tipoLabel = tipos.find((tipo) => tipo.key === item.tipo)?.label ?? item.tipo ?? '—';
+                    return (
+                      <View
+                        key={`${versao.versao}-${index}`}
+                        style={[adminStyles.releaseItem, index === versao.itens.length - 1 ? { marginBottom: 0 } : null]}
+                      >
+                        <View style={adminStyles.releaseItemHeaderRow}>
+                          <View style={[adminStyles.iconShell, { width: 30, height: 30, backgroundColor: tipoStyle.bg }]}>
+                            <Feather name={tipoStyle.icon} size={14} color={tipoStyle.color} />
+                          </View>
+                          <Text style={adminStyles.releaseItemTitle} numberOfLines={2}>
+                            {item.titulo}
+                          </Text>
+                          <AdminColorPill label={tipoLabel} bg={tipoStyle.bg} color={tipoStyle.color} />
+                        </View>
+                        {item.descricao ? (
+                          <Text style={adminStyles.integrationDescription}>{item.descricao}</Text>
+                        ) : null}
+                        {item.detalhes.length > 0 ? (
+                          <View style={{ marginTop: 6 }}>
+                            {item.detalhes.map((detalhe, dIndex) => (
+                              <View key={dIndex} style={adminStyles.mdBulletRow}>
+                                <Text style={adminStyles.mdBulletDot}>•</Text>
+                                <Text style={adminStyles.mdBulletText}>{detalhe}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  })}
                 </View>
-                <Text style={adminStyles.integrationDescription}>{item.description}</Text>
-              </View>
-            );
-          })}
-        </View>
+              ))
+            )}
+          </>
+        )}
       </ScrollView>
+
+      <AdminSimplePickerModal
+        visible={isFilterPickerOpen}
+        title="Filtrar por categoria"
+        options={filterOptions}
+        selectedValue={selectedFilterLabel}
+        onSelect={(label) => {
+          if (label === 'Todos') {
+            setTipoFiltro('todos');
+            return;
+          }
+          const found = tipos.find((tipo) => (tipo.label ?? tipo.key) === label);
+          setTipoFiltro(found ? found.key : 'todos');
+        }}
+        onClose={() => setIsFilterPickerOpen(false)}
+      />
     </SafeAreaView>
   );
 }

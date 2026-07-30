@@ -38,6 +38,7 @@ const {
   deleteAdminCargoDominio,
   getAdminTemas,
   patchAdminTema,
+  getAdminVersoes,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -917,6 +918,55 @@ router.patch('/temas/:slug', async (req, res) => {
   } catch (err) {
     console.error('[admin/temas/:slug PATCH] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// --- Versões (changelog de produto — conteúdo único servido pelo Lovable,
+// sem tabela por trás; ver combinado em 30/07/2026). Só leitura. ---
+
+function mapVersaoItem(item) {
+  if (!item) return null;
+  return {
+    titulo: item.titulo ?? null,
+    tipo: item.tipo ?? null,
+    descricao: item.descricao ?? null,
+    detalhes: Array.isArray(item.detalhes) ? item.detalhes : [],
+  };
+}
+
+function mapVersaoRow(row) {
+  if (!row) return null;
+  return {
+    versao: row.versao ?? null,
+    data: row.data ?? null,
+    rotulo: row.rotulo ?? null,
+    destaque: Boolean(row.destaque),
+    itens: Array.isArray(row.itens) ? row.itens.map(mapVersaoItem) : [],
+  };
+}
+
+// GET /api/admin/versoes
+router.get('/versoes', async (req, res) => {
+  try {
+    const json = await getAdminVersoes();
+    const versoes = (json?.data ?? []).map(mapVersaoRow);
+    const tipos = (json?.tipos ?? []).map((tipo) => ({
+      key: tipo.key ?? null,
+      label: tipo.label ?? null,
+      cor: tipo.cor ?? null,
+    }));
+    res.json({
+      ok: true,
+      data: {
+        versoes,
+        tipos,
+        totais: json?.totais ?? {},
+        count: json?.count ?? versoes.length,
+      },
+    });
+  } catch (err) {
+    console.error('[admin/versoes] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
   }
 });
 
