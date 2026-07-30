@@ -15,12 +15,13 @@
 // fetchRh*), e remova os comentários "MOCK" espalhados pelo arquivo.
 // ============================================================================
 
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import adminConvencoesContent from './adminConvencoesContent.json';
 import {
   styles,
   TopBar,
@@ -5622,41 +5623,141 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
 // 9. Convenções
 // ============================================================================
 
-const adminPrefixRows = [
-  { module: 'Recrutamento', prefix: 'rs_' },
-  { module: 'Financeiro', prefix: 'fin_' },
-  { module: 'RH', prefix: 'rh_' },
-  { module: 'Gestão', prefix: 'gst_' },
-];
+// Conteúdo real (não mockado) dos dois arquivos de documentação do banco,
+// espelhando o painel web /admin › Convenções. Ver adminConvencoesContent.json
+// (gerado a partir do texto fornecido pelo time — database-conventions.md e
+// database-changelog.md).
+const adminConvencoes = adminConvencoesContent as { regras: string; changelog: string };
 
-type AdminChangelogEntry = { id: string; date: string; title: string; tag: string; description: string };
+// Renderer leve de markdown (só o subconjunto usado nesses dois documentos):
+// # / ## título, **negrito**, `código inline`, blocos ``` ```, listas "- ",
+// checklist "☐ " e divisor "---". Sem libs externas.
+function renderInlineMd(text: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const regex = /\*\*(.+?)\*\*|`([^`]+)`/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let i = 0;
+  while ((match = regex.exec(text))) {
+    if (match.index > lastIndex) {
+      nodes.push(<Text key={`${keyPrefix}-t${i++}`}>{text.slice(lastIndex, match.index)}</Text>);
+    }
+    if (match[1] !== undefined) {
+      nodes.push(
+        <Text key={`${keyPrefix}-b${i++}`} style={{ fontWeight: '800' }}>
+          {match[1]}
+        </Text>
+      );
+    } else if (match[2] !== undefined) {
+      nodes.push(
+        <Text key={`${keyPrefix}-c${i++}`} style={adminStyles.mdInlineCode}>
+          {match[2]}
+        </Text>
+      );
+    }
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    nodes.push(<Text key={`${keyPrefix}-tend`}>{text.slice(lastIndex)}</Text>);
+  }
+  return nodes;
+}
 
-const adminChangelogMock: AdminChangelogEntry[] = [
-  {
-    id: 'log-1',
-    date: '2026-07-02',
-    title: 'Diretoria: Fale com a Diretoria (chat interno)',
-    tag: 'feature',
-    description:
-      'Novas tabelas dir_contatos, dir_mensagens e dir_read_cursors. Base para o chat interno com mesma UX do WhatsApp, sem integração externa por enquanto.',
-  },
-  {
-    id: 'log-2',
-    date: '2026-07-02',
-    title: 'Meta + Google: inbox unificado e triagem',
-    tag: 'feature',
-    description:
-      'wa_contatos e wa_mensagens ganham channel (whatsapp|instagram|messenger). mk_ocorrencias adiciona sentimento_ia e urgencia_ia.',
-  },
-  {
-    id: 'log-3',
-    date: '2026-05-13',
-    title: 'Workflow + Folha completa',
-    tag: 'feature',
-    description:
-      'Módulo Workflow (hierarquia + fluxos de aprovação) e Folha de Pagamento com rubricas e tabelas legais 2026.',
-  },
-];
+function AdminMarkdownBlock({ text }: { text: string }) {
+  const lines = text.split('\n');
+  const blocks: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed === '```') {
+      const codeLines: string[] = [];
+      i += 1;
+      while (i < lines.length && lines[i].trim() !== '```') {
+        codeLines.push(lines[i]);
+        i += 1;
+      }
+      i += 1; // pula o ``` de fechamento
+      blocks.push(
+        <View key={`k${key++}`} style={adminStyles.mdCodeBlock}>
+          <Text style={adminStyles.mdCodeBlockText}>{codeLines.join('\n')}</Text>
+        </View>
+      );
+      continue;
+    }
+
+    if (trimmed === '---') {
+      blocks.push(<View key={`k${key++}`} style={adminStyles.mdDivider} />);
+      i += 1;
+      continue;
+    }
+
+    if (trimmed === '') {
+      i += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith('## ')) {
+      blocks.push(
+        <Text key={`k${key++}`} style={adminStyles.mdH2}>
+          {trimmed.slice(3)}
+        </Text>
+      );
+      i += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith('# ')) {
+      blocks.push(
+        <Text key={`k${key++}`} style={adminStyles.mdH1}>
+          {trimmed.slice(2)}
+        </Text>
+      );
+      i += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith('☐ ')) {
+      const content = trimmed.slice(2);
+      blocks.push(
+        <View key={`k${key++}`} style={adminStyles.mdChecklistRow}>
+          <View style={adminStyles.mdChecklistBox} />
+          <Text style={adminStyles.mdChecklistText}>{renderInlineMd(content, `k${key}`)}</Text>
+        </View>
+      );
+      i += 1;
+      continue;
+    }
+
+    if (/^\s*-\s+/.test(line)) {
+      const indent = line.match(/^\s*/)?.[0].length ?? 0;
+      const content = line.replace(/^\s*-\s+/, '');
+      blocks.push(
+        <View
+          key={`k${key++}`}
+          style={[adminStyles.mdBulletRow, indent >= 2 ? adminStyles.mdBulletRowIndent : null]}
+        >
+          <Text style={adminStyles.mdBulletDot}>•</Text>
+          <Text style={adminStyles.mdBulletText}>{renderInlineMd(content, `k${key}`)}</Text>
+        </View>
+      );
+      i += 1;
+      continue;
+    }
+
+    blocks.push(
+      <Text key={`k${key++}`} style={adminStyles.mdParagraph}>
+        {renderInlineMd(trimmed, `k${key}`)}
+      </Text>
+    );
+    i += 1;
+  }
+
+  return <>{blocks}</>;
+}
 
 export function AdminConvencoesScreen({ navigation }: ScreenProps<'AdminConvencoes'>) {
   const [activeTab, setActiveTab] = useState<'regras' | 'changelog'>('regras');
@@ -5673,7 +5774,7 @@ export function AdminConvencoesScreen({ navigation }: ScreenProps<'AdminConvenco
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <AdminPageHeader icon="book-open" title="Convenções" subtitle="Regras de banco de dados" />
+        <AdminPageHeader icon="book-open" title="Convenções" subtitle="Convenções de Banco" />
 
         <View style={styles.directorNotifTabsRow}>
           <Pressable
@@ -5701,46 +5802,15 @@ export function AdminConvencoesScreen({ navigation }: ScreenProps<'AdminConvenco
           </Pressable>
         </View>
 
-        {activeTab === 'regras' ? (
-          <View style={adminStyles.sectionCard}>
-            <Text style={adminStyles.fileLabel}>database-conventions.md</Text>
-            <Text style={adminStyles.sectionTitle}>Convenções de Banco — AF 360</Text>
-            <Text style={adminStyles.integrationDescription}>
-              Regras para criação e manutenção de tabelas. Toda migration deve seguir estas regras.
+        <View style={adminStyles.sectionCard}>
+          <View style={adminStyles.mdFileLabelRow}>
+            <Feather name="file-text" size={13} color="#7A8299" />
+            <Text style={adminStyles.fileLabel}>
+              {activeTab === 'regras' ? 'database-conventions.md' : 'database-changelog.md'}
             </Text>
-
-            <Text style={[adminStyles.subsectionTitle, adminStyles.fieldSpacing]}>1 · Idioma</Text>
-            <Text style={adminStyles.integrationDescription}>
-              Domínio de negócio → português (empresas, vagas, unidades). Infraestrutura → inglês (profiles, modules,
-              roles, audit_log).
-            </Text>
-
-            <Text style={[adminStyles.subsectionTitle, adminStyles.fieldSpacing]}>2 · Prefixo por módulo</Text>
-            {adminPrefixRows.map((row, index) => (
-              <View
-                key={row.module}
-                style={[adminStyles.prefixRow, index === adminPrefixRows.length - 1 ? { borderBottomWidth: 0 } : null]}
-              >
-                <Text style={adminStyles.prefixModule}>{row.module}</Text>
-                <Text style={adminStyles.prefixCode}>{row.prefix}</Text>
-              </View>
-            ))}
           </View>
-        ) : (
-          adminChangelogMock.map((entry, index) => (
-            <View
-              key={entry.id}
-              style={[adminStyles.sectionCard, index === adminChangelogMock.length - 1 ? adminStyles.lastSectionCard : null]}
-            >
-              <View style={adminStyles.changelogHeaderRow}>
-                <Text style={adminStyles.changelogDate}>{entry.date}</Text>
-                <AdminColorPill label={entry.tag} bg={BLUE_BG} color={BLUE} />
-              </View>
-              <Text style={adminStyles.subsectionTitle}>{entry.title}</Text>
-              <Text style={adminStyles.integrationDescription}>{entry.description}</Text>
-            </View>
-          ))
-        )}
+          <AdminMarkdownBlock text={activeTab === 'regras' ? adminConvencoes.regras : adminConvencoes.changelog} />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -7244,5 +7314,94 @@ const adminStyles = StyleSheet.create({
     color: '#7A5A17',
     fontSize: 11.5,
     lineHeight: 16,
+  },
+  mdH1: {
+    color: NAVY,
+    fontSize: 17,
+    fontWeight: '800',
+    marginTop: 18,
+    marginBottom: 6,
+  },
+  mdH2: {
+    color: NAVY,
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  mdParagraph: {
+    color: '#2A3150',
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 6,
+  },
+  mdBulletRow: {
+    flexDirection: 'row',
+    marginBottom: 5,
+    paddingLeft: 2,
+  },
+  mdBulletRowIndent: {
+    paddingLeft: 16,
+  },
+  mdBulletDot: {
+    color: '#7A8299',
+    fontSize: 13,
+    lineHeight: 19,
+    marginRight: 6,
+  },
+  mdBulletText: {
+    flex: 1,
+    color: '#2A3150',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  mdChecklistRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 6,
+  },
+  mdChecklistBox: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    borderWidth: 1.5,
+    borderColor: '#B7BECF',
+    marginTop: 2,
+  },
+  mdChecklistText: {
+    flex: 1,
+    color: '#2A3150',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  mdInlineCode: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: '#C7254E',
+    backgroundColor: '#F9F2F4',
+    fontSize: 12.5,
+  },
+  mdCodeBlock: {
+    backgroundColor: '#1E2333',
+    borderRadius: 10,
+    padding: 12,
+    marginVertical: 8,
+  },
+  mdCodeBlockText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: '#E4E7F0',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  mdDivider: {
+    height: 1,
+    backgroundColor: '#E2E6F0',
+    marginVertical: 16,
+  },
+  mdFileLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
   },
 });
