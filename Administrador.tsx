@@ -6415,6 +6415,72 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
               </>
             )}
           </>
+        ) : activeProvider === 'google' ? (
+          <>
+            <View style={adminStyles.sectionCard}>
+              <View style={adminStyles.integrationHeaderRow}>
+                <View style={adminStyles.integrationHeaderLeft}>
+                  <View style={[styles.iconShell, { backgroundColor: GOLD_BG }]}>
+                    <Feather name="star" size={17} color={GOLD} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={adminStyles.sectionTitle}>Google Meu Negócio</Text>
+                    <Text style={adminStyles.integrationDescription} numberOfLines={1}>
+                      Conta e sincronização de postos — aguardando confirmação da Lovable.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={adminStyles.integrationActionsRow}>
+                <Pressable
+                  style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6 }]}
+                  onPress={() =>
+                    Alert.alert(
+                      'Ainda não disponível',
+                      'Preciso confirmar com a Lovable o endpoint de sincronização do Google Meu Negócio antes de ligar este botão.'
+                    )
+                  }
+                >
+                  <Feather name="refresh-cw" size={14} color="#15203E" />
+                  <Text style={adminStyles.outlineButtonText}>Sincronizar</Text>
+                </Pressable>
+                <Pressable
+                  style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6 }]}
+                  onPress={() =>
+                    Alert.alert(
+                      'Ainda não disponível',
+                      'Preciso confirmar com a Lovable o endpoint de desconexão do Google Meu Negócio antes de ligar este botão.'
+                    )
+                  }
+                >
+                  <Feather name="x-circle" size={14} color="#15203E" />
+                  <Text style={adminStyles.outlineButtonText}>Desconectar</Text>
+                </Pressable>
+              </View>
+
+              <View style={[adminStyles.integrationInfoBox, adminStyles.fieldSpacing, { backgroundColor: GOLD_BG }]}>
+                <Feather name="alert-triangle" size={15} color={GOLD} />
+                <Text style={[adminStyles.integrationInfoText, { color: '#7A5A12' }]}>
+                  Aguardando aprovação da Business Profile API. Locations sincronizam normalmente. Feed de reviews
+                  ativa após aprovação do Google.
+                </Text>
+              </View>
+            </View>
+
+            <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+              <Text style={adminStyles.sectionTitle}>Postos</Text>
+
+              <View style={adminStyles.gmbTableHeaderRow}>
+                <Text style={[adminStyles.gmbTableHeaderCell, { flex: 2 }]}>NOME NO GOOGLE</Text>
+                <Text style={[adminStyles.gmbTableHeaderCell, { width: 48, textAlign: 'center' }]}>NOTA</Text>
+                <Text style={[adminStyles.gmbTableHeaderCell, { width: 64, textAlign: 'center' }]}>REVIEWS</Text>
+                <Text style={[adminStyles.gmbTableHeaderCell, { flex: 1.4 }]}>VINCULAR A EMPRESA AF</Text>
+              </View>
+
+              <AdminEmptyState message="Estrutura pronta — falta confirmar com a Lovable os endpoints de gmb_locations (leitura paginada e o vínculo com a unidade AF) para trazer a lista real dos 79 postos." />
+            </View>
+          </>
         ) : (
           <AdminEmptyState message={`Em breve. A integração ${activeProviderMeta.label} ainda está em desenvolvimento.`} />
         )}
@@ -8784,6 +8850,20 @@ const adminStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  gmbTableHeaderRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingBottom: 10,
+    marginBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E6F0',
+  },
+  gmbTableHeaderCell: {
+    color: '#9AA1B5',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   tokenEyeButton: {
     width: 44,
