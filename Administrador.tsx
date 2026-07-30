@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 import adminConvencoesContent from './adminConvencoesContent.json';
 import {
   styles,
@@ -5761,6 +5762,17 @@ function AdminMarkdownBlock({ text }: { text: string }) {
 
 export function AdminConvencoesScreen({ navigation }: ScreenProps<'AdminConvencoes'>) {
   const [activeTab, setActiveTab] = useState<'regras' | 'changelog'>('regras');
+  const [justCopied, setJustCopied] = useState(false);
+
+  const handleCopy = () => {
+    const content = activeTab === 'regras' ? adminConvencoes.regras : adminConvencoes.changelog;
+    Clipboard.setStringAsync(content)
+      .then(() => {
+        setJustCopied(true);
+        setTimeout(() => setJustCopied(false), 1800);
+      })
+      .catch(() => Alert.alert('Não foi possível copiar', 'Tente novamente.'));
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -5804,10 +5816,18 @@ export function AdminConvencoesScreen({ navigation }: ScreenProps<'AdminConvenco
 
         <View style={adminStyles.sectionCard}>
           <View style={adminStyles.mdFileLabelRow}>
-            <Feather name="file-text" size={13} color="#7A8299" />
-            <Text style={adminStyles.fileLabel}>
-              {activeTab === 'regras' ? 'database-conventions.md' : 'database-changelog.md'}
-            </Text>
+            <View style={[adminStyles.groupLeft, { flex: 1 }]}>
+              <Feather name="file-text" size={13} color="#7A8299" />
+              <Text style={adminStyles.fileLabel}>
+                {activeTab === 'regras' ? 'database-conventions.md' : 'database-changelog.md'}
+              </Text>
+            </View>
+            <Pressable style={adminStyles.mdCopyButton} onPress={handleCopy} hitSlop={6}>
+              <Feather name={justCopied ? 'check' : 'copy'} size={13} color={justCopied ? GREEN : '#4C5470'} />
+              <Text style={[adminStyles.mdCopyButtonText, justCopied ? { color: GREEN } : null]}>
+                {justCopied ? 'Copiado' : 'Copiar'}
+              </Text>
+            </Pressable>
           </View>
           <AdminMarkdownBlock text={activeTab === 'regras' ? adminConvencoes.regras : adminConvencoes.changelog} />
         </View>
@@ -7403,5 +7423,21 @@ const adminStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginBottom: 10,
+  },
+  mdCopyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+  },
+  mdCopyButtonText: {
+    color: '#4C5470',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
