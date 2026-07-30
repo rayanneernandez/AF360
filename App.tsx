@@ -14677,9 +14677,11 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
     marginBottom: 12,
   },
   directorNotifCountLabel: {
+    flex: 1,
     color: '#E6213D',
     fontSize: 13,
     fontWeight: '700',
@@ -14687,6 +14689,7 @@ export const styles = StyleSheet.create({
   directorNotifNewButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
     gap: 6,
     backgroundColor: '#E6213D',
     borderRadius: 999,
