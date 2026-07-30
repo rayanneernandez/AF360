@@ -39,6 +39,15 @@ const {
   getAdminTemas,
   patchAdminTema,
   getAdminVersoes,
+  getAdminNotifRotinas,
+  postAdminNotifRotina,
+  patchAdminNotifRotina,
+  deleteAdminNotifRotina,
+  postAdminNotifRotinaExecutar,
+  getAdminNotifTemplates,
+  postAdminNotifTemplate,
+  patchAdminNotifTemplate,
+  deleteAdminNotifTemplate,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -967,6 +976,161 @@ router.get('/versoes', async (req, res) => {
   } catch (err) {
     console.error('[admin/versoes] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// --- Notificações: Rotinas (<modulo>_notificacoes) e Templates
+// (notif_templates, compartilhada via coluna modulo) — confirmado pelo
+// Lovable em 30/07/2026. Escrita usa os nomes de coluna do banco direto no
+// body (mesmo padrão de dominios/cargo-dominio), só a leitura é mapeada
+// pra camelCase. ---
+
+function mapNotifRotinaRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    nome: row.nome ?? null,
+    titulo: row.titulo ?? null,
+    mensagem: row.mensagem ?? null,
+    templateId: row.template_id ?? null,
+    isActive: Boolean(row.ativa),
+    tipoGatilho: row.tipo_gatilho ?? 'manual',
+    cronExpressao: row.cron_expressao ?? null,
+    eventoCodigo: row.evento_codigo ?? null,
+    canais: Array.isArray(row.canais) ? row.canais : [],
+    publicoTipo: row.publico_tipo ?? 'todos',
+    publicoIds: Array.isArray(row.publico_ids) ? row.publico_ids : [],
+    ultimaExecucao: row.ultima_execucao ?? null,
+    proximaExecucao: row.proxima_execucao ?? null,
+    totalDestinos: row.total_destinos ?? 0,
+    totalEnviados: row.total_enviados ?? 0,
+    status: row.status ?? null,
+    agendadaPara: row.agendada_para ?? null,
+  };
+}
+
+// GET /api/admin/notif-rotinas?modulo=admin&q=&ativa=&limit=&offset=
+router.get('/notif-rotinas', async (req, res) => {
+  try {
+    const json = await getAdminNotifRotinas(req.query.modulo, {
+      q: req.query.q,
+      ativa: req.query.ativa,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    const rotinas = (json?.data ?? []).map(mapNotifRotinaRow);
+    res.json({ ok: true, data: { rotinas, count: json?.count ?? rotinas.length } });
+  } catch (err) {
+    console.error('[admin/notif-rotinas] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/notif-rotinas?modulo=admin&actorId=...
+router.post('/notif-rotinas', async (req, res) => {
+  try {
+    const json = await postAdminNotifRotina(req.query.modulo, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapNotifRotinaRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/notif-rotinas POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/notif-rotinas/:id?modulo=admin&actorId=...
+router.patch('/notif-rotinas/:id', async (req, res) => {
+  try {
+    const json = await patchAdminNotifRotina(req.query.modulo, req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapNotifRotinaRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/notif-rotinas/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/notif-rotinas/:id?modulo=admin&actorId=...
+router.delete('/notif-rotinas/:id', async (req, res) => {
+  try {
+    await deleteAdminNotifRotina(req.query.modulo, req.params.id, req.query.actorId);
+    res.json({ ok: true, data: null });
+  } catch (err) {
+    console.error('[admin/notif-rotinas/:id DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/notif-rotinas/:id/executar?modulo=admin&actorId=... — dispara
+// envio real (inbox/Resend/n8n) e atualiza ultima_execucao/totais.
+router.post('/notif-rotinas/:id/executar', async (req, res) => {
+  try {
+    const json = await postAdminNotifRotinaExecutar(req.query.modulo, req.params.id, req.query.actorId);
+    res.json({ ok: true, data: mapNotifRotinaRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/notif-rotinas/:id/executar POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+function mapNotifTemplateRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    modulo: row.modulo ?? null,
+    codigo: row.codigo ?? null,
+    nome: row.nome ?? null,
+    titulo: row.titulo ?? null,
+    mensagem: row.mensagem ?? null,
+    variaveis: Array.isArray(row.variaveis) ? row.variaveis : [],
+    isPadrao: Boolean(row.padrao),
+    isActive: Boolean(row.ativo),
+  };
+}
+
+// GET /api/admin/notif-templates?modulo=admin&q=&ativo=
+router.get('/notif-templates', async (req, res) => {
+  try {
+    const json = await getAdminNotifTemplates({ modulo: req.query.modulo, q: req.query.q, ativo: req.query.ativo });
+    const templates = (json?.data ?? []).map(mapNotifTemplateRow);
+    res.json({ ok: true, data: { templates, count: json?.count ?? templates.length } });
+  } catch (err) {
+    console.error('[admin/notif-templates] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/notif-templates?actorId=... — body inclui modulo; sempre
+// entra com padrao=false (não dá pra criar template "padrão do sistema" pelo app).
+router.post('/notif-templates', async (req, res) => {
+  try {
+    const json = await postAdminNotifTemplate(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapNotifTemplateRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/notif-templates POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/notif-templates/:id?actorId=...
+router.patch('/notif-templates/:id', async (req, res) => {
+  try {
+    const json = await patchAdminNotifTemplate(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapNotifTemplateRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/notif-templates/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/notif-templates/:id?actorId=... — Lovable responde 409 se
+// o template for padrão do sistema (padrao=true); a mensagem de erro sobe
+// direto pro app mostrar pro usuário.
+router.delete('/notif-templates/:id', async (req, res) => {
+  try {
+    await deleteAdminNotifTemplate(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: null });
+  } catch (err) {
+    console.error('[admin/notif-templates/:id DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
 

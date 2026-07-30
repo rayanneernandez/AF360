@@ -391,6 +391,48 @@ function getAdminVersoes() {
   return lovableGet('/api/public/internal/admin-versoes');
 }
 
+// --- Notificações: Rotinas (uma tabela <modulo>_notificacoes por módulo,
+// ex: admin_notificacoes) e Templates (tabela única notif_templates,
+// compartilhada entre módulos via coluna `modulo`) — confirmado pelo
+// Lovable em 30/07/2026. "Executar agora" dispara envio real (inbox/Resend
+// /n8n) e só então atualiza ultima_execucao/total_destinos/total_enviados. ---
+
+function getAdminNotifRotinas(modulo, { q, ativa, limit, offset } = {}) {
+  return lovableGet('/api/public/internal/admin-notif-rotinas', { modulo, q, ativa, limit, offset });
+}
+
+function postAdminNotifRotina(modulo, body, actorId) {
+  return lovablePost('/api/public/internal/admin-notif-rotinas', { modulo }, body, actorId);
+}
+
+function patchAdminNotifRotina(modulo, id, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-notif-rotinas', { modulo, id }, body, actorId);
+}
+
+function deleteAdminNotifRotina(modulo, id, actorId) {
+  return lovableDelete('/api/public/internal/admin-notif-rotinas', { modulo, id }, actorId);
+}
+
+function postAdminNotifRotinaExecutar(modulo, id, actorId) {
+  return lovablePost('/api/public/internal/admin-notif-rotinas', { modulo, id, acao: 'executar' }, {}, actorId);
+}
+
+function getAdminNotifTemplates({ modulo, q, ativo } = {}) {
+  return lovableGet('/api/public/internal/admin-notif-templates', { modulo, q, ativo });
+}
+
+function postAdminNotifTemplate(body, actorId) {
+  return lovablePost('/api/public/internal/admin-notif-templates', {}, body, actorId);
+}
+
+function patchAdminNotifTemplate(id, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-notif-templates', { id }, body, actorId);
+}
+
+function deleteAdminNotifTemplate(id, actorId) {
+  return lovableDelete('/api/public/internal/admin-notif-templates', { id }, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -440,4 +482,13 @@ module.exports = {
   getAdminTemas,
   patchAdminTema,
   getAdminVersoes,
+  getAdminNotifRotinas,
+  postAdminNotifRotina,
+  patchAdminNotifRotina,
+  deleteAdminNotifRotina,
+  postAdminNotifRotinaExecutar,
+  getAdminNotifTemplates,
+  postAdminNotifTemplate,
+  patchAdminNotifTemplate,
+  deleteAdminNotifTemplate,
 };

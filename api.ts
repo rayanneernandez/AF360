@@ -1261,6 +1261,165 @@ export async function fetchAdminVersoes(): Promise<AdminVersoesResponse> {
   return json.data as AdminVersoesResponse;
 }
 
+// --- Admin: Notificações — Rotinas (tabela <modulo>_notificacoes, uma por
+// módulo) e Templates (tabela única notif_templates, compartilhada via
+// coluna modulo) — confirmado pelo Lovable em 30/07/2026. Escrita usa os
+// nomes de coluna do banco direto no body (mesmo padrão de dominios). ---
+
+export type AdminNotifGatilho = 'recorrente' | 'evento' | 'manual';
+export type AdminNotifCanal = 'app' | 'email' | 'whatsapp';
+export type AdminNotifPublicoTipo = 'todos' | 'colaboradores' | 'postos' | 'cargos';
+
+export type AdminNotifRotinaItem = {
+  id: string;
+  nome: string | null;
+  titulo: string | null;
+  mensagem: string | null;
+  templateId: string | null;
+  isActive: boolean;
+  tipoGatilho: AdminNotifGatilho;
+  cronExpressao: string | null;
+  eventoCodigo: string | null;
+  canais: AdminNotifCanal[];
+  publicoTipo: AdminNotifPublicoTipo;
+  publicoIds: string[];
+  ultimaExecucao: string | null;
+  proximaExecucao: string | null;
+  totalDestinos: number;
+  totalEnviados: number;
+  status: string | null;
+  agendadaPara: string | null;
+};
+
+export type AdminNotifRotinasResponse = { rotinas: AdminNotifRotinaItem[]; count: number };
+
+export async function fetchAdminNotifRotinas(
+  modulo: string,
+  params?: { q?: string; ativa?: boolean }
+): Promise<AdminNotifRotinasResponse> {
+  const search = new URLSearchParams();
+  search.set('modulo', modulo);
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativa !== undefined) search.set('ativa', String(params.ativa));
+  const json = await api.get(`/api/admin/notif-rotinas?${search.toString()}`);
+  return json.data as AdminNotifRotinasResponse;
+}
+
+export type AdminNotifRotinaWriteBody = {
+  nome?: string;
+  titulo?: string;
+  mensagem?: string;
+  template_id?: string | null;
+  ativa?: boolean;
+  tipo_gatilho?: AdminNotifGatilho;
+  cron_expressao?: string | null;
+  evento_codigo?: string | null;
+  canais?: AdminNotifCanal[];
+  publico_tipo?: AdminNotifPublicoTipo;
+  publico_ids?: string[];
+};
+
+export async function createAdminNotifRotina(
+  modulo: string,
+  body: AdminNotifRotinaWriteBody,
+  actorId?: string | null
+): Promise<AdminNotifRotinaItem> {
+  const json = await api.post(withActorId(`/api/admin/notif-rotinas?modulo=${encodeURIComponent(modulo)}`, actorId), body);
+  return json.data as AdminNotifRotinaItem;
+}
+
+export async function updateAdminNotifRotina(
+  modulo: string,
+  id: string,
+  body: AdminNotifRotinaWriteBody,
+  actorId?: string | null
+): Promise<AdminNotifRotinaItem> {
+  const json = await api.patch(
+    withActorId(`/api/admin/notif-rotinas/${encodeURIComponent(id)}?modulo=${encodeURIComponent(modulo)}`, actorId),
+    body
+  );
+  return json.data as AdminNotifRotinaItem;
+}
+
+export async function deleteAdminNotifRotina(modulo: string, id: string, actorId?: string | null): Promise<void> {
+  await api.delete(
+    withActorId(`/api/admin/notif-rotinas/${encodeURIComponent(id)}?modulo=${encodeURIComponent(modulo)}`, actorId)
+  );
+}
+
+export async function executarAdminNotifRotina(
+  modulo: string,
+  id: string,
+  actorId?: string | null
+): Promise<AdminNotifRotinaItem> {
+  const json = await api.post(
+    withActorId(
+      `/api/admin/notif-rotinas/${encodeURIComponent(id)}/executar?modulo=${encodeURIComponent(modulo)}`,
+      actorId
+    )
+  );
+  return json.data as AdminNotifRotinaItem;
+}
+
+export type AdminNotifTemplateItem = {
+  id: string;
+  modulo: string | null;
+  codigo: string | null;
+  nome: string | null;
+  titulo: string | null;
+  mensagem: string | null;
+  variaveis: string[];
+  isPadrao: boolean;
+  isActive: boolean;
+};
+
+export type AdminNotifTemplatesResponse = { templates: AdminNotifTemplateItem[]; count: number };
+
+export async function fetchAdminNotifTemplates(params?: {
+  modulo?: string;
+  q?: string;
+  ativo?: boolean;
+}): Promise<AdminNotifTemplatesResponse> {
+  const search = new URLSearchParams();
+  if (params?.modulo) search.set('modulo', params.modulo);
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativo !== undefined) search.set('ativo', String(params.ativo));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/admin/notif-templates${query}`);
+  return json.data as AdminNotifTemplatesResponse;
+}
+
+export type AdminNotifTemplateWriteBody = {
+  modulo?: string;
+  codigo?: string;
+  nome?: string;
+  titulo?: string;
+  mensagem?: string;
+  variaveis?: string[];
+  ativo?: boolean;
+};
+
+export async function createAdminNotifTemplate(
+  body: AdminNotifTemplateWriteBody,
+  actorId?: string | null
+): Promise<AdminNotifTemplateItem> {
+  const json = await api.post(withActorId('/api/admin/notif-templates', actorId), body);
+  return json.data as AdminNotifTemplateItem;
+}
+
+export async function updateAdminNotifTemplate(
+  id: string,
+  body: AdminNotifTemplateWriteBody,
+  actorId?: string | null
+): Promise<AdminNotifTemplateItem> {
+  const json = await api.patch(withActorId(`/api/admin/notif-templates/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdminNotifTemplateItem;
+}
+
+export async function deleteAdminNotifTemplate(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/admin/notif-templates/${encodeURIComponent(id)}`, actorId));
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {

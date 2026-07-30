@@ -91,12 +91,25 @@ import {
   updateAdminCargoDominio,
   deleteAdminCargoDominio,
   fetchAdminVersoes,
+  fetchAdminNotifRotinas,
+  createAdminNotifRotina,
+  updateAdminNotifRotina,
+  deleteAdminNotifRotina,
+  executarAdminNotifRotina,
+  fetchAdminNotifTemplates,
+  createAdminNotifTemplate,
+  updateAdminNotifTemplate,
   ApiError,
   type AdminDominioItem,
   type AdminCargoDominioItem,
   type AdminCargoDominioProvider,
   type AdminVersoesResponse,
   type AdminVersaoTipoKey,
+  type AdminNotifRotinaItem,
+  type AdminNotifRotinaWriteBody,
+  type AdminNotifTemplateItem,
+  type AdminNotifTemplateWriteBody,
+  type AdminNotifPublicoTipo,
   type AdminUsuarioItem,
   type AdminCargoItem,
   type AdminGrupoItem,
@@ -6731,20 +6744,165 @@ export function AdminVersoesScreen({ navigation }: ScreenProps<'AdminVersoes'>) 
 // ============================================================================
 // 12. Notificações (Rotinas / Templates)
 // ============================================================================
-// Reaproveita exatamente o padrão de RHNotificationsScreen (RH.tsx), inclusive
-// o estado vazio — apenas com listas mock começando vazias para o Admin.
+// Conectado ao backend real confirmado pela Lovable em 30/07/2026: rotinas
+// moram numa tabela por módulo (<modulo>_notificacoes) e templates numa
+// tabela única (notif_templates, filtrada por coluna modulo).
+//
+// modulo='admin' confirmado pela Lovable como o painel Administrador (existe
+// também 'adm' = módulo Administrativo, área de negócio separada e distinta
+// desta tela — não confundir). admin_notificacoes está vazia hoje, sem dado
+// legado a migrar.
+const ADMIN_NOTIF_MODULO = 'admin';
+
+const ADMIN_NOTIF_AUDIENCE_TO_DB: Record<NotificationAudienceType, AdminNotifPublicoTipo> = {
+  todos: 'todos',
+  colaboradores: 'colaboradores',
+  posto: 'postos',
+  cargo: 'cargos',
+};
+const ADMIN_NOTIF_AUDIENCE_FROM_DB: Record<AdminNotifPublicoTipo, NotificationAudienceType> = {
+  todos: 'todos',
+  colaboradores: 'colaboradores',
+  postos: 'posto',
+  cargos: 'cargo',
+};
+
+function adminNotifTemplateToLocal(item: AdminNotifTemplateItem): NotificationTemplateItem {
+  return {
+    id: item.id,
+    title: item.nome || item.codigo || '',
+    code: item.codigo ?? '',
+    messageTitle: item.titulo ?? '',
+    message: item.mensagem ?? '',
+    variables: item.variaveis,
+    isSystemDefault: item.isPadrao,
+  };
+}
+
+function adminNotifRoutineToLocal(
+  item: AdminNotifRotinaItem,
+  realTemplates: AdminNotifTemplateItem[]
+): NotificationRoutineItem {
+  const linkedTemplate = item.templateId ? realTemplates.find((t) => t.id === item.templateId) : null;
+  return {
+    id: item.id,
+    title: item.nome ?? '',
+    messageTitle: item.titulo ?? '',
+    template: linkedTemplate ? linkedTemplate.nome || linkedTemplate.codigo || '' : 'Mensagem customizada',
+    message: item.mensagem ?? '',
+    triggerKind: item.tipoGatilho,
+    cronSchedule: item.cronExpressao ?? '',
+    eventCode: item.eventoCodigo ?? '',
+    channels: {
+      app: item.canais.includes('app'),
+      email: item.canais.includes('email'),
+      whatsapp: item.canais.includes('whatsapp'),
+    },
+    audienceType: ADMIN_NOTIF_AUDIENCE_FROM_DB[item.publicoTipo] ?? 'todos',
+    audienceCargos: item.publicoTipo === 'cargos' ? item.publicoIds : [],
+    lastRunLabel: item.ultimaExecucao ? formatAdminDate(item.ultimaExecucao) : '—',
+    enabled: item.isActive,
+  };
+}
+
+function adminNotifRoutineToWriteBody(
+  local: NotificationRoutineItem,
+  realTemplates: AdminNotifTemplateItem[]
+): AdminNotifRotinaWriteBody {
+  const matchedTemplate =
+    local.template && local.template !== 'Mensagem customizada'
+      ? realTemplates.find((t) => (t.nome || t.codigo) === local.template)
+      : null;
+  return {
+    nome: local.title,
+    titulo: local.messageTitle,
+    mensagem: local.message,
+    template_id: matchedTemplate ? matchedTemplate.id : null,
+    ativa: local.enabled,
+    tipo_gatilho: local.triggerKind,
+    cron_expressao: local.triggerKind === 'recorrente' ? local.cronSchedule : null,
+    evento_codigo: local.triggerKind === 'evento' ? local.eventCode : null,
+    canais: (Object.keys(local.channels) as Array<keyof NotificationChannels>).filter((key) => local.channels[key]),
+    publico_tipo: ADMIN_NOTIF_AUDIENCE_TO_DB[local.audienceType],
+    publico_ids: local.audienceType === 'cargo' ? local.audienceCargos : [],
+  };
+}
+
+function adminNotifTemplateToWriteBody(local: NotificationTemplateItem): AdminNotifTemplateWriteBody {
+  return {
+    modulo: ADMIN_NOTIF_MODULO,
+    codigo: local.code,
+    nome: local.title,
+    titulo: local.messageTitle,
+    mensagem: local.message,
+    variaveis: local.variables,
+  };
+}
 
 export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotifications'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+
   const [activeTab, setActiveTab] = useState<'routines' | 'templates'>('routines');
-  const [routines, setRoutines] = useState<NotificationRoutineItem[]>([]);
+
+  const [realRoutines, setRealRoutines] = useState<AdminNotifRotinaItem[]>([]);
+  const [isLoadingRoutines, setIsLoadingRoutines] = useState(true);
+  const [routinesError, setRoutinesError] = useState<string | null>(null);
   const [isRoutineFormOpen, setIsRoutineFormOpen] = useState(false);
   const [editingRoutine, setEditingRoutine] = useState<NotificationRoutineItem | null>(null);
-  const [templates, setTemplates] = useState<NotificationTemplateItem[]>([]);
+  const [isSavingRoutine, setIsSavingRoutine] = useState(false);
+
+  const [realTemplates, setRealTemplates] = useState<AdminNotifTemplateItem[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [isTemplateFormOpen, setIsTemplateFormOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<NotificationTemplateItem | null>(null);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+
+  const loadTemplates = useCallback(() => {
+    setIsLoadingTemplates(true);
+    setTemplatesError(null);
+    fetchAdminNotifTemplates({ modulo: ADMIN_NOTIF_MODULO })
+      .then((data) => setRealTemplates(data.templates))
+      .catch((err) =>
+        setTemplatesError(err instanceof Error ? err.message : 'Não foi possível carregar os templates.')
+      )
+      .finally(() => setIsLoadingTemplates(false));
+  }, []);
+
+  const loadRoutines = useCallback(() => {
+    setIsLoadingRoutines(true);
+    setRoutinesError(null);
+    fetchAdminNotifRotinas(ADMIN_NOTIF_MODULO)
+      .then((data) => setRealRoutines(data.rotinas))
+      .catch((err) => setRoutinesError(err instanceof Error ? err.message : 'Não foi possível carregar as rotinas.'))
+      .finally(() => setIsLoadingRoutines(false));
+  }, []);
+
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
+
+  useEffect(() => {
+    loadRoutines();
+  }, [loadRoutines]);
+
+  const templates = useMemo(() => realTemplates.map(adminNotifTemplateToLocal), [realTemplates]);
+  const routines = useMemo(
+    () => realRoutines.map((item) => adminNotifRoutineToLocal(item, realTemplates)),
+    [realRoutines, realTemplates]
+  );
 
   const toggleRoutine = (id: string) => {
-    setRoutines((current) => current.map((item) => (item.id === id ? { ...item, enabled: !item.enabled } : item)));
+    const target = realRoutines.find((item) => item.id === id);
+    if (!target) return;
+    setRealRoutines((current) =>
+      current.map((item) => (item.id === id ? { ...item, isActive: !item.isActive } : item))
+    );
+    updateAdminNotifRotina(ADMIN_NOTIF_MODULO, id, { ativa: !target.isActive }, actorId).catch((err) => {
+      showAdminApiError(err, 'Não foi possível atualizar a rotina.');
+      loadRoutines();
+    });
   };
 
   const openCreateRoutineModal = () => {
@@ -6758,22 +6916,28 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
   };
 
   const handleSaveRoutine = (routine: NotificationRoutineItem) => {
-    setRoutines((current) => {
-      const exists = current.some((item) => item.id === routine.id);
-      if (exists) {
-        return current.map((item) => (item.id === routine.id ? routine : item));
-      }
-      return [routine, ...current];
-    });
-    setIsRoutineFormOpen(false);
+    const body = adminNotifRoutineToWriteBody(routine, realTemplates);
+    const isExisting = realRoutines.some((item) => item.id === routine.id);
+    setIsSavingRoutine(true);
+    const request = isExisting
+      ? updateAdminNotifRotina(ADMIN_NOTIF_MODULO, routine.id, body, actorId)
+      : createAdminNotifRotina(ADMIN_NOTIF_MODULO, body, actorId);
+    request
+      .then(() => {
+        setIsRoutineFormOpen(false);
+        loadRoutines();
+      })
+      .catch((err) => showAdminApiError(err, 'Não foi possível salvar a rotina.'))
+      .finally(() => setIsSavingRoutine(false));
   };
 
   const handleRunRoutine = (routine: NotificationRoutineItem) => {
-    const todayLabel = formatDateBR(new Date());
-    setRoutines((current) =>
-      current.map((item) => (item.id === routine.id ? { ...item, lastRunLabel: todayLabel } : item))
-    );
-    Alert.alert('Rotina executada', `"${routine.title}" foi executada agora.`);
+    executarAdminNotifRotina(ADMIN_NOTIF_MODULO, routine.id, actorId)
+      .then(() => {
+        Alert.alert('Rotina executada', `"${routine.title}" foi executada agora.`);
+        loadRoutines();
+      })
+      .catch((err) => showAdminApiError(err, 'Não foi possível executar a rotina.'));
   };
 
   const handleDeleteRoutine = (routine: NotificationRoutineItem) => {
@@ -6782,7 +6946,11 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
       {
         text: 'Excluir',
         style: 'destructive',
-        onPress: () => setRoutines((current) => current.filter((item) => item.id !== routine.id)),
+        onPress: () => {
+          deleteAdminNotifRotina(ADMIN_NOTIF_MODULO, routine.id, actorId)
+            .then(() => loadRoutines())
+            .catch((err) => showAdminApiError(err, 'Não foi possível excluir a rotina.'));
+        },
       },
     ]);
   };
@@ -6798,14 +6966,19 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
   };
 
   const handleSaveTemplate = (template: NotificationTemplateItem) => {
-    setTemplates((current) => {
-      const exists = current.some((item) => item.id === template.id);
-      if (exists) {
-        return current.map((item) => (item.id === template.id ? template : item));
-      }
-      return [template, ...current];
-    });
-    setIsTemplateFormOpen(false);
+    const body = adminNotifTemplateToWriteBody(template);
+    const isExisting = realTemplates.some((item) => item.id === template.id);
+    setIsSavingTemplate(true);
+    const request = isExisting
+      ? updateAdminNotifTemplate(template.id, body, actorId)
+      : createAdminNotifTemplate(body, actorId);
+    request
+      .then(() => {
+        setIsTemplateFormOpen(false);
+        loadTemplates();
+      })
+      .catch((err) => showAdminApiError(err, 'Não foi possível salvar o template.'))
+      .finally(() => setIsSavingTemplate(false));
   };
 
   return (
@@ -6851,14 +7024,20 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
         {activeTab === 'routines' ? (
           <>
             <View style={styles.directorNotifHeaderRow}>
-              <Text style={styles.directorNotifCountLabel}>{routines.length} rotina(s) cadastrada(s)</Text>
+              <Text style={styles.directorNotifCountLabel}>
+                {isLoadingRoutines ? 'Carregando...' : `${routines.length} rotina(s) cadastrada(s)`}
+              </Text>
               <Pressable style={styles.directorNotifNewButton} onPress={openCreateRoutineModal}>
                 <Feather name="plus" size={15} color="#FFFFFF" />
                 <Text style={styles.directorNotifNewButtonText}>Nova rotina</Text>
               </Pressable>
             </View>
 
-            {routines.length === 0 ? (
+            {isLoadingRoutines ? (
+              <AdminEmptyState message="Carregando rotinas..." />
+            ) : routinesError ? (
+              <AdminEmptyState message={routinesError} />
+            ) : routines.length === 0 ? (
               <AdminEmptyState message="Nenhuma rotina cadastrada. Clique em Nova rotina." />
             ) : (
               routines.map((routine) => {
@@ -6951,7 +7130,11 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
           <>
             <View style={styles.directorNotifHeaderRow}>
               <Text style={styles.directorNotifCountLabel}>
-                {templates.length} template(s){templates.length > 0 ? ' — ⭐ padrão do sistema, demais customizados' : ''}
+                {isLoadingTemplates
+                  ? 'Carregando...'
+                  : `${templates.length} template(s)${
+                      templates.length > 0 ? ' — ⭐ padrão do sistema, demais customizados' : ''
+                    }`}
               </Text>
               <Pressable style={styles.directorNotifNewButton} onPress={openCreateTemplateModal}>
                 <Feather name="plus" size={15} color="#FFFFFF" />
@@ -6959,7 +7142,11 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
               </Pressable>
             </View>
 
-            {templates.length === 0 ? (
+            {isLoadingTemplates ? (
+              <AdminEmptyState message="Carregando templates..." />
+            ) : templatesError ? (
+              <AdminEmptyState message={templatesError} />
+            ) : templates.length === 0 ? (
               <AdminEmptyState message="Nenhum template cadastrado ainda." />
             ) : (
               templates.map((template) => (
