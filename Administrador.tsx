@@ -6620,7 +6620,9 @@ export function AdminVersoesScreen({ navigation }: ScreenProps<'AdminVersoes'>) 
                     <Text style={[adminStyles.miniStatValue, { color: tipoStyle.color }]}>
                       {versoesData?.totais[tipo.key] ?? 0}
                     </Text>
-                    <Text style={[adminStyles.miniStatLabel, { color: tipoStyle.color }]}>{tipo.label}</Text>
+                    <Text style={[adminStyles.miniStatLabel, { color: tipoStyle.color }]} numberOfLines={2}>
+                      {tipo.label}
+                    </Text>
                   </View>
                 );
               })}
@@ -7658,17 +7660,17 @@ const adminStyles = StyleSheet.create({
   miniStatCard: {
     flex: 1,
     borderRadius: 14,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     paddingVertical: 10,
     alignItems: 'flex-start',
   },
   miniStatValue: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
   },
   miniStatLabel: {
     marginTop: 2,
-    fontSize: 10,
+    fontSize: 8.5,
     fontWeight: '700',
   },
   releaseHeaderRow: {
