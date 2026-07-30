@@ -5227,26 +5227,79 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
 // 7. Módulos
 // ============================================================================
 
-type AdminModulo = { id: string; name: string; slug: string; icon: FeatherIconName; active: boolean };
+// Dados reais via GET /api/admin/modulos — tabela própria "modules" (já
+// liberada na allowlist do Lovable), com name/slug/icon/description/color/
+// order_index/is_active. O ícone vem como nome do Lucide (usado no web) —
+// mapeamos pro equivalente mais próximo do Feather (só estética, não afeta
+// nenhum dado real). Sem endpoint de escrita confirmado pra is_active, então
+// o status é mostrado como selo real (Ativo/Inativo), não como toggle
+// editável — não fabricamos uma ação que não grava em lugar nenhum.
+const ADMIN_MODULE_ICON_MAP: Record<string, FeatherIconName> = {
+  Settings: 'settings',
+  Users: 'users',
+  UserPlus: 'user-plus',
+  User: 'user',
+  DollarSign: 'dollar-sign',
+  BarChart2: 'bar-chart-2',
+  Briefcase: 'briefcase',
+  Crown: 'award',
+  Megaphone: 'volume-2',
+};
 
-const adminModulosMock: AdminModulo[] = [
-  { id: 'mod1', name: 'Administrador', slug: 'administrador', icon: 'shield', active: true },
-  { id: 'mod2', name: 'RH', slug: 'rh', icon: 'users', active: true },
-  { id: 'mod3', name: 'R&S', slug: 'recrutamento', icon: 'briefcase', active: true },
-  { id: 'mod4', name: 'Colaborador', slug: 'colaborador', icon: 'user', active: true },
-  { id: 'mod5', name: 'Financeiro', slug: 'financeiro', icon: 'dollar-sign', active: true },
-  { id: 'mod6', name: 'Gestão', slug: 'gestao', icon: 'bar-chart-2', active: true },
-  { id: 'mod7', name: 'Administrativo', slug: 'administrativo', icon: 'clipboard', active: true },
-  { id: 'mod8', name: 'Diretoria', slug: 'diretoria', icon: 'trending-up', active: true },
-  { id: 'mod9', name: 'Marketing & Fidelidade', slug: 'marketing', icon: 'gift', active: true },
-];
+const ADMIN_MODULOS_PAGE_SIZE = 10;
 
 export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) {
-  const [modulos, setModulos] = useState(adminModulosMock);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const [modulos, setModulos] = useState<AdminModuleItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const toggleModulo = (id: string) => {
-    setModulos((current) => current.map((item) => (item.id === id ? { ...item, active: !item.active } : item)));
-  };
+  useEffect(() => {
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetchAdminModulos()
+      .then((data) => {
+        if (isActive) {
+          setModulos([...data].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)));
+        }
+      })
+      .catch((err) => {
+        if (isActive) setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os módulos.');
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return modulos;
+    return modulos.filter(
+      (item) =>
+        (item.name ?? '').toLowerCase().includes(query) ||
+        (item.slug ?? '').toLowerCase().includes(query) ||
+        (item.description ?? '').toLowerCase().includes(query)
+    );
+  }, [modulos, search]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ADMIN_MODULOS_PAGE_SIZE));
+  const pageStart = page * ADMIN_MODULOS_PAGE_SIZE;
+  const paged = filtered.slice(pageStart, pageStart + ADMIN_MODULOS_PAGE_SIZE);
+  const pageRangeLabel =
+    filtered.length === 0
+      ? '0 de 0'
+      : `${pageStart + 1}-${Math.min(pageStart + ADMIN_MODULOS_PAGE_SIZE, filtered.length)} de ${filtered.length}`;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -5260,20 +5313,67 @@ export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) 
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <AdminPageHeader icon="grid" title="Módulos" subtitle="9 módulos da plataforma" />
+        <AdminPageHeader
+          icon="grid"
+          title="Módulos"
+          subtitle={isLoading ? 'Carregando...' : `${modulos.length} módulos`}
+        />
 
-        {modulos.map((modulo) => (
-          <View key={modulo.id} style={adminStyles.listCard}>
-            <View style={[styles.iconShell, adminStyles.iconAccentNavy]}>
-              <Feather name={modulo.icon} size={17} color={NAVY} />
+        <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar módulo..." />
+
+        {isLoading ? (
+          <AdminEmptyState message="Carregando módulos..." />
+        ) : errorMessage ? (
+          <AdminEmptyState message={errorMessage} />
+        ) : filtered.length === 0 ? (
+          <AdminEmptyState message="Nenhum módulo encontrado." />
+        ) : (
+          <>
+            {paged.map((modulo) => {
+              const icon = (modulo.icon && ADMIN_MODULE_ICON_MAP[modulo.icon]) || 'grid';
+              return (
+                <View key={modulo.id} style={adminStyles.listCard}>
+                  <View style={[styles.iconShell, adminStyles.iconAccentNavy]}>
+                    <Feather name={icon} size={17} color={NAVY} />
+                  </View>
+                  <View style={adminStyles.listInfo}>
+                    <Text style={adminStyles.listName}>{modulo.name || '(sem nome)'}</Text>
+                    <Text style={adminStyles.listMeta}>{modulo.slug || '—'}</Text>
+                    {modulo.description ? (
+                      <Text style={adminStyles.listMeta} numberOfLines={1}>
+                        {modulo.description}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <AdminDetailBoolBadge value={modulo.is_active} />
+                </View>
+              );
+            })}
+
+            <View style={adminStyles.paginationRow}>
+              <Text style={adminStyles.paginationLabel}>{pageRangeLabel}</Text>
+              <View style={adminStyles.paginationArrows}>
+                <Pressable
+                  style={[adminStyles.paginationArrowButton, page === 0 ? adminStyles.paginationArrowDisabled : null]}
+                  disabled={page === 0}
+                  onPress={() => setPage((current) => Math.max(0, current - 1))}
+                >
+                  <Feather name="chevron-left" size={16} color={page === 0 ? '#C7CCDA' : '#4C5470'} />
+                </Pressable>
+                <Pressable
+                  style={[
+                    adminStyles.paginationArrowButton,
+                    page >= totalPages - 1 ? adminStyles.paginationArrowDisabled : null,
+                  ]}
+                  disabled={page >= totalPages - 1}
+                  onPress={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
+                >
+                  <Feather name="chevron-right" size={16} color={page >= totalPages - 1 ? '#C7CCDA' : '#4C5470'} />
+                </Pressable>
+              </View>
             </View>
-            <View style={adminStyles.listInfo}>
-              <Text style={adminStyles.listName}>{modulo.name}</Text>
-              <Text style={adminStyles.listMeta}>{modulo.slug}</Text>
-            </View>
-            <ToggleSwitch value={modulo.active} onValueChange={() => toggleModulo(modulo.id)} />
-          </View>
-        ))}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

@@ -803,7 +803,16 @@ export async function putAdminCargoPermissoes(
 // --- Admin: módulos e funcionalidades (tabelas modules/module_features,
 // liberadas na allowlist do Lovable em 29/07/2026) ---
 
-export type AdminModuleItem = { id: string; slug: string | null; name: string | null };
+export type AdminModuleItem = {
+  id: string;
+  slug: string | null;
+  name: string | null;
+  icon: string | null;
+  description: string | null;
+  color: string | null;
+  order_index: number | null;
+  is_active: boolean;
+};
 export type AdminModuleFeatureItem = {
   id: string;
   module_id: string;
