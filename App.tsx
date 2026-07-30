@@ -970,6 +970,60 @@ export const AuthIdentityContext = createContext<{
   setIdentity: () => {},
 });
 
+// Tema visual do painel Administrador (Admin > Configurações > "Tema da
+// tela de Início"). Espelha a tabela adm_temas do Lovable (slug, nome,
+// descricao, cores jsonb, ativo, is_protected) — só que por enquanto os
+// presets ficam fixos aqui e a troca fica em memória (sem
+// @react-native-async-storage/async-storage instalado, e o endpoint de
+// escrita de adm_temas ainda não foi confirmado pela Lovable). Quando o
+// endpoint existir, troca-se por fetchAdminTemas/applyAdminTema reais e o
+// shape de "cores" passa a vir do banco em vez destes presets.
+//
+// Só a cor "navy" (ícones de destaque, cabeçalhos, aba ativa) segue o tema —
+// as cores semânticas (verde=ativo, vermelho=inativo/excluir, azul/dourado
+// de status) continuam fixas, porque mudam de sentido dependendo do skin.
+export type AdminThemePreset = {
+  slug: string;
+  nome: string;
+  descricao: string;
+  primary: string;
+  primaryLight: string;
+  primaryBg: string;
+  previewColors: string[];
+  isProtected: boolean;
+};
+
+export const ADMIN_THEME_PRESETS: AdminThemePreset[] = [
+  {
+    slug: 'padrao',
+    nome: 'Padrão AF',
+    descricao: 'Identidade visual padrão (navy + vermelho).',
+    primary: '#1B2340',
+    primaryLight: '#2F3A5C',
+    primaryBg: '#E7E9F2',
+    previewColors: ['#1B2340', '#E6213D', '#F5EBD8'],
+    isProtected: true,
+  },
+  {
+    slug: 'copa-brasil-2026',
+    nome: 'Copa do Mundo — Brasil 2026',
+    descricao: 'Cores da Seleção Brasileira para o período da Copa.',
+    primary: '#0F8A3C',
+    primaryLight: '#3DAD5E',
+    primaryBg: '#E5F5EA',
+    previewColors: ['#0F8A3C', '#FFD100', '#1B2340', '#F5EBD8'],
+    isProtected: true,
+  },
+];
+
+export const AdminThemeContext = createContext<{
+  theme: AdminThemePreset;
+  setThemeSlug: (slug: string) => void;
+}>({
+  theme: ADMIN_THEME_PRESETS[0],
+  setThemeSlug: () => {},
+});
+
 const currentUser = {
   fullName: 'Bruno Lima',
   role: 'Frentista Líder',
@@ -2618,6 +2672,12 @@ export default function App() {
   const [activeRole, setActiveRole] = useState<UserRole>('colaborador');
   const [identity, setIdentity] = useState<AuthIdentity | null>(null);
 
+  const [adminThemeSlug, setAdminThemeSlug] = useState('padrao');
+  const adminTheme = useMemo(
+    () => ADMIN_THEME_PRESETS.find((preset) => preset.slug === adminThemeSlug) ?? ADMIN_THEME_PRESETS[0],
+    [adminThemeSlug]
+  );
+
   const [colaboradorNotifications, setColaboradorNotifications] = useState<ColaboradorNotificacaoItem[]>([]);
 
   // Busca leve, só pra alimentar o badge de "não lida" no sininho do TopBar
@@ -2647,6 +2707,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthIdentityContext.Provider value={{ identity, setIdentity }}>
+      <AdminThemeContext.Provider value={{ theme: adminTheme, setThemeSlug: setAdminThemeSlug }}>
       <ColaboradorNotificationsContext.Provider value={{ items: colaboradorNotifications }}>
       <UserRoleContext.Provider value={{ activeRole, setActiveRole }}>
       <UniformReceiptContext.Provider
@@ -2793,6 +2854,7 @@ export default function App() {
       </UniformReceiptContext.Provider>
       </UserRoleContext.Provider>
       </ColaboradorNotificationsContext.Provider>
+      </AdminThemeContext.Provider>
       </AuthIdentityContext.Provider>
     </SafeAreaProvider>
   );

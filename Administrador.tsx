@@ -30,6 +30,8 @@ import {
   adminUser,
   adminUserInitials,
   AuthIdentityContext,
+  AdminThemeContext,
+  ADMIN_THEME_PRESETS,
   NotificationRoutineFormModal,
   TemplateFormModal,
   formatDateBR,
@@ -38,6 +40,7 @@ import {
 } from './App';
 import type {
   ScreenProps,
+  AdminThemePreset,
   NotificationRoutineItem,
   NotificationTemplateItem,
 } from './App';
@@ -124,11 +127,12 @@ function AdminPageHeader({
   title: string;
   subtitle?: string;
 }) {
+  const { theme } = useContext(AdminThemeContext);
   return (
     <View style={styles.pageHeader}>
       <View style={styles.directorPageTitleRow}>
-        <View style={[styles.iconShell, adminStyles.iconAccentNavy]}>
-          <Feather name={icon} size={18} color={NAVY} />
+        <View style={[styles.iconShell, adminStyles.iconAccentNavy, { backgroundColor: theme.primaryBg }]}>
+          <Feather name={icon} size={18} color={theme.primary} />
         </View>
         <Text style={styles.pageTitle}>{title}</Text>
       </View>
@@ -801,6 +805,7 @@ const adminTopUnidadesMock = [
 ];
 
 export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard'>) {
+  const { theme } = useContext(AdminThemeContext);
   const maxTableSize = Math.max(...adminBiggestTablesMock.map((item) => item.sizeMb));
   const maxMonthValue = Math.max(1, ...adminNewEmployeesChartMock.map((item) => item.value));
   const chartHeight = 90;
@@ -817,7 +822,7 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <LinearGradient colors={[NAVY, NAVY_LIGHT]} style={adminStyles.heroCard}>
+        <LinearGradient colors={[theme.primary, theme.primaryLight]} style={adminStyles.heroCard}>
           <View style={adminStyles.liveBadge}>
             <View style={adminStyles.liveDot} />
             <Text style={adminStyles.liveBadgeText}>AO VIVO · atualiza a cada 10s</Text>
@@ -834,10 +839,10 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
                 <View
                   style={[
                     styles.iconShell,
-                    { backgroundColor: metric.accentBg ?? NAVY_BG },
+                    { backgroundColor: metric.accentBg ?? theme.primaryBg },
                   ]}
                 >
-                  <Feather name={metric.icon} size={18} color={metric.accentColor ?? NAVY} />
+                  <Feather name={metric.icon} size={18} color={metric.accentColor ?? theme.primary} />
                 </View>
                 <Text style={styles.dashboardCardValue}>{metric.value}</Text>
                 <Text style={styles.dashboardCardLabel}>{metric.label}</Text>
@@ -867,7 +872,7 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
                 <View
                   style={[
                     adminStyles.tableProgressFill,
-                    { width: `${Math.max(3, (table.sizeMb / maxTableSize) * 100)}%` },
+                    { width: `${Math.max(3, (table.sizeMb / maxTableSize) * 100)}%`, backgroundColor: theme.primary },
                   ]}
                 />
               </View>
@@ -926,7 +931,7 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
                 <View
                   style={[
                     adminStyles.monthBar,
-                    { height: Math.max(4, (item.value / maxMonthValue) * chartHeight) },
+                    { height: Math.max(4, (item.value / maxMonthValue) * chartHeight), backgroundColor: theme.primary },
                   ]}
                 />
                 <Text style={adminStyles.monthBarLabel}>{item.label}</Text>
@@ -958,6 +963,7 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
 
 export function AdminProfileScreen({ navigation }: ScreenProps<'AdminProfile'>) {
   const { identity } = useContext(AuthIdentityContext);
+  const { theme } = useContext(AdminThemeContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
 
   // MOCK: base numérica ("56 postos · 1.930 colaboradores") tirada do mockup.
@@ -977,7 +983,7 @@ export function AdminProfileScreen({ navigation }: ScreenProps<'AdminProfile'>) 
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <LinearGradient colors={[NAVY, NAVY_LIGHT]} style={styles.directorProfileHero}>
+        <LinearGradient colors={[theme.primary, theme.primaryLight]} style={styles.directorProfileHero}>
           <View style={styles.directorProfileBadge}>
             <Text style={styles.directorProfileBadgeText}>{adminUserInitials}</Text>
           </View>
@@ -1027,6 +1033,7 @@ export function AdminProfileScreen({ navigation }: ScreenProps<'AdminProfile'>) 
 
 export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>) {
   const { identity } = useContext(AuthIdentityContext);
+  const { theme } = useContext(AdminThemeContext);
   const actorId = identity?.profileId;
 
   const [search, setSearch] = useState('');
@@ -1276,8 +1283,10 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
         ) : (
           filtered.map((user) => (
             <Pressable key={user.id} style={adminStyles.listCard} onPress={() => openDetail(user)}>
-              <View style={adminStyles.listAvatar}>
-                <Text style={adminStyles.listAvatarText}>{getInitialsFromName(user.fullName ?? user.email)}</Text>
+              <View style={[adminStyles.listAvatar, { backgroundColor: theme.primaryBg }]}>
+                <Text style={[adminStyles.listAvatarText, { color: theme.primary }]}>
+                  {getInitialsFromName(user.fullName ?? user.email)}
+                </Text>
               </View>
               <View style={adminStyles.listInfo}>
                 <View style={adminStyles.listNameRow}>
@@ -1624,6 +1633,7 @@ function AdminAcessoUsuarioModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const { theme } = useContext(AdminThemeContext);
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
   const [functionState, setFunctionState] = useState<Record<string, boolean>>({});
   const [moduleOnState, setModuleOnState] = useState<Record<string, boolean>>({});
@@ -1730,8 +1740,10 @@ function AdminAcessoUsuarioModal({
           </View>
 
           <View style={adminStyles.acessoUserHeaderRow}>
-            <View style={adminStyles.listAvatar}>
-              <Text style={adminStyles.listAvatarText}>{getInitialsFromName(usuario.fullName ?? usuario.email)}</Text>
+            <View style={[adminStyles.listAvatar, { backgroundColor: theme.primaryBg }]}>
+              <Text style={[adminStyles.listAvatarText, { color: theme.primary }]}>
+                {getInitialsFromName(usuario.fullName ?? usuario.email)}
+              </Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={adminStyles.listName} numberOfLines={1}>
@@ -2117,6 +2129,7 @@ const ADMIN_ACESSO_PAGE_SIZE = 10;
 
 export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfilAcesso'>) {
   const { identity } = useContext(AuthIdentityContext);
+  const { theme } = useContext(AdminThemeContext);
   const actorId = identity?.profileId;
 
   const [activeTab, setActiveTab] = useState<'cargos' | 'usuarios'>('cargos');
@@ -2430,8 +2443,8 @@ export function AdminPerfilAcessoScreen({ navigation }: ScreenProps<'AdminPerfil
               <>
                 {pagedUsers.map((item) => (
                   <Pressable key={item.id} style={adminStyles.listCard} onPress={() => setAcessoDetail(item)}>
-                    <View style={adminStyles.listAvatar}>
-                      <Text style={adminStyles.listAvatarText}>
+                    <View style={[adminStyles.listAvatar, { backgroundColor: theme.primaryBg }]}>
+                      <Text style={[adminStyles.listAvatarText, { color: theme.primary }]}>
                         {getInitialsFromName(item.fullName ?? item.email)}
                       </Text>
                     </View>
@@ -5269,6 +5282,7 @@ function AdminModuloDetailModal({
   onToggleAtivo: (modulo: AdminModuleItem) => void;
   isToggling: boolean;
 }) {
+  const { theme } = useContext(AdminThemeContext);
   if (!modulo) return null;
   const icon = (modulo.icon && ADMIN_MODULE_ICON_MAP[modulo.icon]) || 'grid';
 
@@ -5278,8 +5292,8 @@ function AdminModuloDetailModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <View style={[styles.iconShell, adminStyles.iconAccentNavy]}>
-                <Feather name={icon} size={17} color={NAVY} />
+              <View style={[styles.iconShell, adminStyles.iconAccentNavy, { backgroundColor: theme.primaryBg }]}>
+                <Feather name={icon} size={17} color={theme.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.requestModalTitle}>{modulo.name || '(sem nome)'}</Text>
@@ -5336,6 +5350,7 @@ function AdminModuloDetailModal({
 
 export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) {
   const { identity } = useContext(AuthIdentityContext);
+  const { theme } = useContext(AdminThemeContext);
   const actorId = identity?.profileId;
 
   const [search, setSearch] = useState('');
@@ -5444,8 +5459,8 @@ export function AdminModulosScreen({ navigation }: ScreenProps<'AdminModulos'>) 
               const icon = (modulo.icon && ADMIN_MODULE_ICON_MAP[modulo.icon]) || 'grid';
               return (
                 <Pressable key={modulo.id} style={adminStyles.listCard} onPress={() => setModuloDetail(modulo)}>
-                  <View style={[styles.iconShell, adminStyles.iconAccentNavy]}>
-                    <Feather name={icon} size={17} color={NAVY} />
+                  <View style={[styles.iconShell, adminStyles.iconAccentNavy, { backgroundColor: theme.primaryBg }]}>
+                    <Feather name={icon} size={17} color={theme.primary} />
                   </View>
                   <View style={adminStyles.listInfo}>
                     <Text style={adminStyles.listName}>{modulo.name || '(sem nome)'}</Text>
@@ -5520,6 +5535,7 @@ const adminIntegrationTabs: Array<{ key: IntegrationTabKey; label: string }> = [
 ];
 
 export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegracoes'>) {
+  const { theme } = useContext(AdminThemeContext);
   const [activeTab, setActiveTab] = useState<IntegrationTabKey>('whatsapp');
   const [isTokenVisible, setIsTokenVisible] = useState(false);
 
@@ -5543,7 +5559,10 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
             return (
               <Pressable
                 key={tab.key}
-                style={[adminStyles.tabPill, isActive ? adminStyles.tabPillActive : null]}
+                style={[
+                  adminStyles.tabPill,
+                  isActive ? [adminStyles.tabPillActive, { backgroundColor: theme.primary, borderColor: theme.primary }] : null,
+                ]}
                 onPress={() => setActiveTab(tab.key)}
               >
                 <Text style={[adminStyles.tabPillText, isActive ? adminStyles.tabPillTextActive : null]}>
@@ -5558,8 +5577,8 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
           <View style={adminStyles.sectionCard}>
             <View style={adminStyles.integrationHeaderRow}>
               <View style={adminStyles.integrationHeaderLeft}>
-                <View style={[styles.iconShell, adminStyles.iconAccentNavy]}>
-                  <Feather name="message-circle" size={17} color={NAVY} />
+                <View style={[styles.iconShell, adminStyles.iconAccentNavy, { backgroundColor: theme.primaryBg }]}>
+                  <Feather name="message-circle" size={17} color={theme.primary} />
                 </View>
                 <View>
                   <Text style={adminStyles.sectionTitle}>WhatsApp</Text>
@@ -5665,6 +5684,7 @@ function renderInlineMd(text: string, keyPrefix: string): ReactNode[] {
 }
 
 function AdminMarkdownBlock({ text }: { text: string }) {
+  const { theme } = useContext(AdminThemeContext);
   const lines = text.split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -5703,7 +5723,7 @@ function AdminMarkdownBlock({ text }: { text: string }) {
 
     if (trimmed.startsWith('## ')) {
       blocks.push(
-        <Text key={`k${key++}`} style={adminStyles.mdH2}>
+        <Text key={`k${key++}`} style={[adminStyles.mdH2, { color: theme.primary }]}>
           {trimmed.slice(3)}
         </Text>
       );
@@ -5713,7 +5733,7 @@ function AdminMarkdownBlock({ text }: { text: string }) {
 
     if (trimmed.startsWith('# ')) {
       blocks.push(
-        <Text key={`k${key++}`} style={adminStyles.mdH1}>
+        <Text key={`k${key++}`} style={[adminStyles.mdH1, { color: theme.primary }]}>
           {trimmed.slice(2)}
         </Text>
       );
@@ -5841,6 +5861,13 @@ export function AdminConvencoesScreen({ navigation }: ScreenProps<'AdminConvenco
 // ============================================================================
 
 export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfiguracoes'>) {
+  const { theme, setThemeSlug } = useContext(AdminThemeContext);
+
+  // MOCK: leitura/escrita real de adm_dominios_permitidos ainda depende da
+  // Lovable liberar a tabela na allowlist + criar o endpoint de escrita (ver
+  // mensagem-lovable-configuracoes.txt). Até isso ser confirmado, esses
+  // toggles não gravam em lugar nenhum — é só ilustrativo, como o resto das
+  // telas deste arquivo marcadas como MOCK.
   const [domains, setDomains] = useState([
     { id: 'd1', domain: '@americanfuel.com.br', description: 'Domínio corporativo principal', active: true },
     { id: 'd2', domain: '@rede.americanfuel.com.br', description: 'Domínio da rede de postos', active: true },
@@ -5886,38 +5913,41 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
 
         <View style={[adminStyles.sectionCard, adminStyles.lastSectionCard]}>
           <Text style={adminStyles.sectionTitle}>Tema da tela de Início</Text>
+          <Text style={adminStyles.integrationDescription}>
+            Skins reversíveis aplicadas ao painel Administrador. Troca instantânea para todos que abrirem o app.
+          </Text>
 
-          <View style={adminStyles.themeRow}>
-            <View style={adminStyles.themeRowTop}>
-              <Text style={adminStyles.subsectionTitle}>Copa do Mundo — Brasil 2026</Text>
-              <AdminColorPill label="✓ Ativo" bg={GREEN_BG} color={GREEN} />
-            </View>
-            <Text style={adminStyles.listMeta}>Cores da Seleção Brasileira para a Copa.</Text>
-            <View style={adminStyles.themeDotsRow}>
-              <View style={[adminStyles.themeDot, { backgroundColor: '#0F8A3C' }]} />
-              <View style={[adminStyles.themeDot, { backgroundColor: '#FFD100' }]} />
-              <View style={[adminStyles.themeDot, { backgroundColor: NAVY }]} />
-              <View style={[adminStyles.themeDot, { backgroundColor: '#F5EBD8' }]} />
-            </View>
-          </View>
-
-          <View style={[adminStyles.themeRow, { borderBottomWidth: 0 }]}>
-            <View style={adminStyles.themeRowTop}>
-              <Text style={adminStyles.subsectionTitle}>Padrão AF</Text>
-              <Pressable
-                style={adminStyles.applyButton}
-                onPress={() => Alert.alert('Tema', 'Tema "Padrão AF" aplicado (mock).')}
+          {ADMIN_THEME_PRESETS.map((preset, index) => {
+            const isActive = preset.slug === theme.slug;
+            return (
+              <View
+                key={preset.slug}
+                style={[adminStyles.themeRow, index === ADMIN_THEME_PRESETS.length - 1 ? { borderBottomWidth: 0 } : null]}
               >
-                <Text style={adminStyles.applyButtonText}>Aplicar</Text>
-              </Pressable>
-            </View>
-            <Text style={adminStyles.listMeta}>Identidade visual padrão (navy + vermelho).</Text>
-            <View style={adminStyles.themeDotsRow}>
-              <View style={[adminStyles.themeDot, { backgroundColor: NAVY }]} />
-              <View style={[adminStyles.themeDot, { backgroundColor: RED }]} />
-              <View style={[adminStyles.themeDot, { backgroundColor: '#F5EBD8' }]} />
-            </View>
-          </View>
+                <View style={adminStyles.themeRowTop}>
+                  <Text style={adminStyles.subsectionTitle}>{preset.nome}</Text>
+                  {isActive ? (
+                    <AdminColorPill label="✓ Ativo" bg={GREEN_BG} color={GREEN} />
+                  ) : (
+                    <Pressable style={adminStyles.applyButton} onPress={() => setThemeSlug(preset.slug)}>
+                      <Text style={adminStyles.applyButtonText}>Aplicar</Text>
+                    </Pressable>
+                  )}
+                </View>
+                <Text style={adminStyles.listMeta}>{preset.descricao}</Text>
+                <View style={adminStyles.themeDotsRow}>
+                  {preset.previewColors.map((color, dotIndex) => (
+                    <View key={`${preset.slug}-${dotIndex}`} style={[adminStyles.themeDot, { backgroundColor: color }]} />
+                  ))}
+                </View>
+              </View>
+            );
+          })}
+
+          <Text style={[adminStyles.listMeta, { marginTop: 10 }]}>
+            Por enquanto a troca fica só neste app (a tabela adm_temas ainda não tem endpoint de escrita confirmado
+            pela Lovable) — ao reabrir o app volta pro tema padrão.
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
