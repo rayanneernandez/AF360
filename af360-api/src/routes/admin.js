@@ -52,6 +52,9 @@ const {
   getWaConfig,
   patchWaConfig,
   postWaConfigAcao,
+  getGmb,
+  patchGmbLocation,
+  postGmbAcao,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -1344,6 +1347,116 @@ router.post('/integracoes/whatsapp/testar-template', async (req, res) => {
   } catch (err) {
     console.error('[admin/integracoes/whatsapp/testar-template] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'test_template_failed', message: err.message });
+  }
+});
+
+// --- Integrações: Google Meu Negócio (gmb_config/gmb_locations/gmb_reviews/
+// gmb_sync_runs) — schema/endpoints confirmados pelo Lovable em 30/07/2026.
+// ---------------------------------------------------------------------------
+
+function mapGmbStatusRow(row = {}) {
+  return {
+    conectado: !!row.conectado,
+    accountName: row.account_name ?? null,
+    connectedAt: row.connected_at ?? null,
+    lastSyncAt: row.last_sync_at ?? null,
+    lastSyncError: row.last_sync_error ?? null,
+    reviewsApiOk: !!row.reviews_api_ok,
+    aviso: row.aviso ?? null,
+  };
+}
+
+function mapGmbLocationRow(row = {}) {
+  return {
+    id: row.id,
+    empresaId: row.empresa_id ?? null,
+    googleLocationName: row.google_location_name ?? null,
+    title: row.title ?? null,
+    address: row.address ?? null,
+    phone: row.phone ?? null,
+    averageRating: row.average_rating ?? null,
+    totalReviews: row.total_reviews ?? null,
+    lastSyncedAt: row.last_synced_at ?? null,
+  };
+}
+
+function mapGmbSyncRunRow(row = {}) {
+  return {
+    startedAt: row.started_at ?? null,
+    finishedAt: row.finished_at ?? null,
+    status: row.status ?? null,
+    locationsSincronizadas: row.locations_syncadas ?? null,
+    reviewsNovos: row.reviews_novos ?? null,
+    reviewsAtualizados: row.reviews_atualizados ?? null,
+    erro: row.erro ?? null,
+  };
+}
+
+// GET /api/admin/integracoes/google?actorId=&limit=&offset=
+router.get('/integracoes/google', async (req, res) => {
+  try {
+    const { limit, offset, actorId } = req.query;
+    const json = await getGmb({ limit, offset, runs: 10, actorId });
+    const data = json?.data ?? json ?? {};
+    res.json({
+      ok: true,
+      data: {
+        status: mapGmbStatusRow(data.status ?? {}),
+        locations: (data.locations ?? []).map(mapGmbLocationRow),
+        locationsCount: data.locations_count ?? (data.locations ?? []).length,
+        syncRuns: (data.sync_runs ?? []).map(mapGmbSyncRunRow),
+      },
+    });
+  } catch (err) {
+    console.error('[admin/integracoes/google] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/integracoes/google?actorId=... — body: { locationId,
+// empresaId | null } (vincula/desvincula a location de uma unidade AF)
+router.patch('/integracoes/google', async (req, res) => {
+  try {
+    const { locationId, empresaId } = req.body ?? {};
+    await patchGmbLocation({ locationId, empresaId }, req.query.actorId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin/integracoes/google PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'save_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/google/sincronizar?actorId=...
+router.post('/integracoes/google/sincronizar', async (req, res) => {
+  try {
+    await postGmbAcao('sincronizar', {}, req.query.actorId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin/integracoes/google/sincronizar] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'sync_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/google/desconectar?actorId=...
+router.post('/integracoes/google/desconectar', async (req, res) => {
+  try {
+    await postGmbAcao('desconectar', {}, req.query.actorId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin/integracoes/google/desconectar] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'disconnect_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/google/account-name?actorId=... — body:
+// { accountName } (aceita "accounts/123" ou só o número)
+router.post('/integracoes/google/account-name', async (req, res) => {
+  try {
+    const json = await postGmbAcao('account-name', { accountName: req.body?.accountName }, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/google/account-name] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'account_name_failed', message: err.message });
   }
 });
 

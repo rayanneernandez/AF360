@@ -1555,6 +1555,86 @@ export async function testAdminWaTemplate(
   return (json.data ?? {}) as Record<string, unknown>;
 }
 
+// --- Integrações: Google Meu Negócio (gmb_config/gmb_locations/
+// gmb_reviews/gmb_sync_runs — schema/endpoints confirmados pela Lovable em
+// 30/07/2026). Rota dedicada (gmb_config guarda refresh_token em claro). ---
+
+export type AdminGmbStatus = {
+  conectado: boolean;
+  accountName: string | null;
+  connectedAt: string | null;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+  reviewsApiOk: boolean;
+  aviso: string | null;
+};
+
+export type AdminGmbLocation = {
+  id: string;
+  empresaId: string | null;
+  googleLocationName: string | null;
+  title: string | null;
+  address: string | null;
+  phone: string | null;
+  averageRating: number | null;
+  totalReviews: number | null;
+  lastSyncedAt: string | null;
+};
+
+export type AdminGmbSyncRun = {
+  startedAt: string | null;
+  finishedAt: string | null;
+  status: string | null;
+  locationsSincronizadas: number | null;
+  reviewsNovos: number | null;
+  reviewsAtualizados: number | null;
+  erro: string | null;
+};
+
+export type AdminGmbData = {
+  status: AdminGmbStatus;
+  locations: AdminGmbLocation[];
+  locationsCount: number;
+  syncRuns: AdminGmbSyncRun[];
+};
+
+export async function fetchAdminGmb(opts?: {
+  limit?: number;
+  offset?: number;
+  actorId?: string | null;
+}): Promise<AdminGmbData> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  if (opts?.offset) params.set('offset', String(opts.offset));
+  const qs = params.toString();
+  const path = `/api/admin/integracoes/google${qs ? `?${qs}` : ''}`;
+  const json = await api.get(withActorId(path, opts?.actorId));
+  return json.data as AdminGmbData;
+}
+
+export async function vincularAdminGmbLocation(
+  body: { locationId: string; empresaId: string | null },
+  actorId?: string | null
+): Promise<void> {
+  await api.patch(withActorId('/api/admin/integracoes/google', actorId), body);
+}
+
+export async function sincronizarAdminGmb(actorId?: string | null): Promise<void> {
+  await api.post(withActorId('/api/admin/integracoes/google/sincronizar', actorId), {});
+}
+
+export async function desconectarAdminGmb(actorId?: string | null): Promise<void> {
+  await api.post(withActorId('/api/admin/integracoes/google/desconectar', actorId), {});
+}
+
+export async function setAdminGmbAccountName(
+  accountName: string,
+  actorId?: string | null
+): Promise<Record<string, unknown>> {
+  const json = await api.post(withActorId('/api/admin/integracoes/google/account-name', actorId), { accountName });
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {

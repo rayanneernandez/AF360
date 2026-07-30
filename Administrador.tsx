@@ -19,7 +19,18 @@ import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode }
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import adminConvencoesContent from './adminConvencoesContent.json';
@@ -107,6 +118,10 @@ import {
   rotateAdminWaWebhookSecret,
   syncAdminWaTemplates,
   testAdminWaTemplate,
+  fetchAdminGmb,
+  vincularAdminGmbLocation,
+  sincronizarAdminGmb,
+  desconectarAdminGmb,
   ApiError,
   type AdminDominioItem,
   type AdminCargoDominioItem,
@@ -123,6 +138,8 @@ import {
   type AdminWaConfigWriteBody,
   type AdminWaTemplateItem,
   type AdminWaProvider,
+  type AdminGmbData,
+  type AdminGmbLocation,
   type AdminUsuarioItem,
   type AdminCargoItem,
   type AdminGrupoItem,
@@ -5990,6 +6007,97 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
   const [expandedJuridicoServices, setExpandedJuridicoServices] = useState<Record<string, boolean>>({});
   const [juridicoFieldValues, setJuridicoFieldValues] = useState<Record<string, string>>({});
 
+  // Google Meu Negócio (gmb_config/gmb_locations) — schema e endpoints
+  // confirmados pela Lovable em 30/07/2026. Carrega só quando a aba é
+  // aberta (lazy), igual ao padrão do reveal do WhatsApp.
+  const [gmbData, setGmbData] = useState<AdminGmbData | null>(null);
+  const [isLoadingGmb, setIsLoadingGmb] = useState(false);
+  const [gmbError, setGmbError] = useState<string | null>(null);
+  const [isSyncingGmb, setIsSyncingGmb] = useState(false);
+  const [isDisconnectingGmb, setIsDisconnectingGmb] = useState(false);
+  const [linkingLocation, setLinkingLocation] = useState<AdminGmbLocation | null>(null);
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linkOptions, setLinkOptions] = useState<AdminUnidadeItem[]>([]);
+  const [isLinkSearching, setIsLinkSearching] = useState(false);
+  const [isSavingLink, setIsSavingLink] = useState(false);
+
+  const loadGmb = useCallback(() => {
+    setIsLoadingGmb(true);
+    setGmbError(null);
+    fetchAdminGmb({ limit: 200, actorId })
+      .then(setGmbData)
+      .catch((err) => setGmbError(err instanceof Error ? err.message : 'Não foi possível carregar o Google Meu Negócio.'))
+      .finally(() => setIsLoadingGmb(false));
+  }, [actorId]);
+
+  useEffect(() => {
+    if (activeProvider === 'google' && !gmbData && !isLoadingGmb && !gmbError) {
+      loadGmb();
+    }
+  }, [activeProvider, gmbData, isLoadingGmb, gmbError, loadGmb]);
+
+  const handleSyncGmb = useCallback(() => {
+    setIsSyncingGmb(true);
+    sincronizarAdminGmb(actorId)
+      .then(() => loadGmb())
+      .catch((err) => Alert.alert('Erro ao sincronizar', err instanceof Error ? err.message : 'Tente novamente.'))
+      .finally(() => setIsSyncingGmb(false));
+  }, [actorId, loadGmb]);
+
+  const handleDisconnectGmb = useCallback(() => {
+    Alert.alert(
+      'Desconectar Google Meu Negócio?',
+      'Isso remove a conexão com a conta Google. É possível reconectar depois.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desconectar',
+          style: 'destructive',
+          onPress: () => {
+            setIsDisconnectingGmb(true);
+            desconectarAdminGmb(actorId)
+              .then(() => loadGmb())
+              .catch((err) => Alert.alert('Erro ao desconectar', err instanceof Error ? err.message : 'Tente novamente.'))
+              .finally(() => setIsDisconnectingGmb(false));
+          },
+        },
+      ]
+    );
+  }, [actorId, loadGmb]);
+
+  const openGmbLinkModal = useCallback((location: AdminGmbLocation) => {
+    setLinkingLocation(location);
+    setLinkSearch('');
+    setLinkOptions([]);
+  }, []);
+
+  useEffect(() => {
+    if (!linkingLocation) return;
+    setIsLinkSearching(true);
+    const handle = setTimeout(() => {
+      fetchAdminUnidades(linkSearch || undefined)
+        .then((res) => setLinkOptions(res.unidades.slice(0, 30)))
+        .catch(() => setLinkOptions([]))
+        .finally(() => setIsLinkSearching(false));
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [linkingLocation, linkSearch]);
+
+  const handleSelectGmbLink = useCallback(
+    (empresaId: string | null) => {
+      if (!linkingLocation) return;
+      setIsSavingLink(true);
+      vincularAdminGmbLocation({ locationId: linkingLocation.id, empresaId }, actorId)
+        .then(() => {
+          setLinkingLocation(null);
+          loadGmb();
+        })
+        .catch((err) => Alert.alert('Erro ao vincular', err instanceof Error ? err.message : 'Tente novamente.'))
+        .finally(() => setIsSavingLink(false));
+    },
+    [linkingLocation, actorId, loadGmb]
+  );
+
   const applyConfig = useCallback((config: AdminWaConfig) => {
     setWaConfig(config);
     setProviderForm(config.provider ?? 'zapresponder');
@@ -6711,59 +6819,111 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                   <View style={{ flex: 1 }}>
                     <Text style={adminStyles.sectionTitle}>Google Meu Negócio</Text>
                     <Text style={adminStyles.integrationDescription} numberOfLines={1}>
-                      Conta e sincronização de postos — aguardando confirmação da Lovable.
+                      {gmbData?.status.conectado
+                        ? `Conectado — ${gmbData.status.accountName ?? 'conta Google'}`
+                        : 'Conta e sincronização de postos.'}
                     </Text>
                   </View>
                 </View>
+                {gmbData ? (
+                  <AdminColorPill
+                    label={gmbData.status.conectado ? 'Conectado' : 'Desconectado'}
+                    bg={gmbData.status.conectado ? '#E7F5EC' : '#F4F1E8'}
+                    color={gmbData.status.conectado ? '#1E8A4C' : '#8A6D1E'}
+                  />
+                ) : null}
               </View>
 
-              <View style={adminStyles.integrationActionsRow}>
-                <Pressable
-                  style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6 }]}
-                  onPress={() =>
-                    Alert.alert(
-                      'Ainda não disponível',
-                      'Preciso confirmar com a Lovable o endpoint de sincronização do Google Meu Negócio antes de ligar este botão.'
-                    )
-                  }
-                >
-                  <Feather name="refresh-cw" size={14} color="#15203E" />
-                  <Text style={adminStyles.outlineButtonText}>Sincronizar</Text>
-                </Pressable>
-                <Pressable
-                  style={[adminStyles.outlineButton, { flexDirection: 'row', gap: 6 }]}
-                  onPress={() =>
-                    Alert.alert(
-                      'Ainda não disponível',
-                      'Preciso confirmar com a Lovable o endpoint de desconexão do Google Meu Negócio antes de ligar este botão.'
-                    )
-                  }
-                >
-                  <Feather name="x-circle" size={14} color="#15203E" />
-                  <Text style={adminStyles.outlineButtonText}>Desconectar</Text>
-                </Pressable>
-              </View>
+              {isLoadingGmb ? (
+                <ActivityIndicator color={NAVY} style={adminStyles.fieldSpacing} />
+              ) : gmbError ? (
+                <View style={adminStyles.fieldSpacing}>
+                  <AdminEmptyState message={gmbError} />
+                </View>
+              ) : (
+                <>
+                  <View style={adminStyles.pillButtonRow}>
+                    <Pressable
+                      style={[adminStyles.pillButtonOutline, isSyncingGmb ? { opacity: 0.6 } : null]}
+                      onPress={handleSyncGmb}
+                      disabled={isSyncingGmb}
+                    >
+                      <Feather name="refresh-cw" size={14} color="#15203E" />
+                      <Text style={adminStyles.outlineButtonText}>{isSyncingGmb ? 'Sincronizando...' : 'Sincronizar'}</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[adminStyles.pillButtonOutline, isDisconnectingGmb ? { opacity: 0.6 } : null]}
+                      onPress={handleDisconnectGmb}
+                      disabled={isDisconnectingGmb}
+                    >
+                      <Feather name="x-circle" size={14} color="#15203E" />
+                      <Text style={adminStyles.outlineButtonText}>{isDisconnectingGmb ? 'Desconectando...' : 'Desconectar'}</Text>
+                    </Pressable>
+                  </View>
 
-              <View style={[adminStyles.integrationInfoBox, adminStyles.fieldSpacing, { backgroundColor: GOLD_BG }]}>
-                <Feather name="alert-triangle" size={15} color={GOLD} />
-                <Text style={[adminStyles.integrationInfoText, { color: '#7A5A12' }]}>
-                  Aguardando aprovação da Business Profile API. Locations sincronizam normalmente. Feed de reviews
-                  ativa após aprovação do Google.
-                </Text>
-              </View>
+                  {gmbData?.status.lastSyncAt ? (
+                    <Text style={[adminStyles.integrationHint, adminStyles.fieldSpacing]}>
+                      Última sincronização: {formatAdminLogDateTime(gmbData.status.lastSyncAt)}
+                    </Text>
+                  ) : null}
+
+                  {gmbData?.status.lastSyncError ? (
+                    <View style={[adminStyles.integrationInfoBox, adminStyles.fieldSpacing, { backgroundColor: '#FBEAEA' }]}>
+                      <Feather name="alert-triangle" size={15} color="#C0392B" />
+                      <Text style={[adminStyles.integrationInfoText, { color: '#8A2E24' }]}>{gmbData.status.lastSyncError}</Text>
+                    </View>
+                  ) : null}
+
+                  {gmbData && !gmbData.status.reviewsApiOk ? (
+                    <View style={[adminStyles.integrationInfoBox, adminStyles.fieldSpacing, { backgroundColor: GOLD_BG }]}>
+                      <Feather name="alert-triangle" size={15} color={GOLD} />
+                      <Text style={[adminStyles.integrationInfoText, { color: '#7A5A12' }]}>
+                        {gmbData.status.aviso ??
+                          'Aguardando aprovação da Business Profile API. Locations sincronizam normalmente. Feed de reviews ativa após aprovação do Google.'}
+                      </Text>
+                    </View>
+                  ) : null}
+                </>
+              )}
             </View>
 
             <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
-              <Text style={adminStyles.sectionTitle}>Postos</Text>
-
-              <View style={adminStyles.gmbTableHeaderRow}>
-                <Text style={[adminStyles.gmbTableHeaderCell, { flex: 2 }]}>NOME NO GOOGLE</Text>
-                <Text style={[adminStyles.gmbTableHeaderCell, { width: 48, textAlign: 'center' }]}>NOTA</Text>
-                <Text style={[adminStyles.gmbTableHeaderCell, { width: 64, textAlign: 'center' }]}>REVIEWS</Text>
-                <Text style={[adminStyles.gmbTableHeaderCell, { flex: 1.4 }]}>VINCULAR A EMPRESA AF</Text>
+              <View style={adminStyles.headerRowWrap}>
+                <View style={adminStyles.headerRowTitleWrap}>
+                  <Text style={adminStyles.sectionTitle}>Postos</Text>
+                  {gmbData ? <AdminColorPill label={`${gmbData.locationsCount}`} bg={BLUE_BG} color={BLUE} /> : null}
+                </View>
               </View>
 
-              <AdminEmptyState message="Estrutura pronta — falta confirmar com a Lovable os endpoints de gmb_locations (leitura paginada e o vínculo com a unidade AF) para trazer a lista real dos 79 postos." />
+              {isLoadingGmb ? null : gmbError ? null : gmbData && gmbData.locations.length > 0 ? (
+                <>
+                  <View style={adminStyles.gmbTableHeaderRow}>
+                    <Text style={[adminStyles.gmbTableHeaderCell, { flex: 2 }]}>NOME NO GOOGLE</Text>
+                    <Text style={[adminStyles.gmbTableHeaderCell, { width: 48, textAlign: 'center' }]}>NOTA</Text>
+                    <Text style={[adminStyles.gmbTableHeaderCell, { width: 64, textAlign: 'center' }]}>REVIEWS</Text>
+                    <Text style={[adminStyles.gmbTableHeaderCell, { flex: 1.4 }]}>VINCULAR A EMPRESA AF</Text>
+                  </View>
+                  {gmbData.locations.map((loc) => (
+                    <View key={loc.id} style={adminStyles.gmbTableRow}>
+                      <Text style={[adminStyles.gmbTableCell, { flex: 2 }]} numberOfLines={2}>
+                        {loc.title ?? loc.googleLocationName ?? '—'}
+                      </Text>
+                      <Text style={[adminStyles.gmbTableCell, { width: 48, textAlign: 'center' }]}>
+                        {loc.averageRating != null ? loc.averageRating.toFixed(1) : '—'}
+                      </Text>
+                      <Text style={[adminStyles.gmbTableCell, { width: 64, textAlign: 'center' }]}>{loc.totalReviews ?? 0}</Text>
+                      <Pressable style={{ flex: 1.4, flexDirection: 'row', alignItems: 'center', gap: 4 }} onPress={() => openGmbLinkModal(loc)}>
+                        {loc.empresaId ? <Feather name="check-circle" size={13} color={GREEN} /> : null}
+                        <Text style={adminStyles.gmbLinkText} numberOfLines={1}>
+                          {loc.empresaId ? 'Vinculado' : 'Vincular'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </>
+              ) : (
+                <AdminEmptyState message="Nenhum posto sincronizado ainda. Toque em Sincronizar acima." />
+              )}
             </View>
           </>
         ) : activeProvider === 'buscapf' ? (
@@ -7171,6 +7331,67 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
         }}
         onClose={() => setIsProviderPickerOpen(false)}
       />
+
+      <Modal
+        visible={!!linkingLocation}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setLinkingLocation(null)}
+      >
+        <View style={styles.requestModalBackdrop}>
+          <View style={styles.requestModalCard}>
+            <View style={styles.requestModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.requestModalTitle}>Vincular a empresa AF</Text>
+                <Text style={adminStyles.detailSubEmail} numberOfLines={1}>
+                  {linkingLocation?.title ?? linkingLocation?.googleLocationName ?? '—'}
+                </Text>
+              </View>
+              <Pressable onPress={() => setLinkingLocation(null)} hitSlop={8}>
+                <Feather name="x" size={20} color="#677089" />
+              </Pressable>
+            </View>
+
+            <TextInput
+              style={[styles.processTextInput, { marginTop: 12 }]}
+              value={linkSearch}
+              onChangeText={setLinkSearch}
+              placeholder="Buscar unidade por nome..."
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <ScrollView style={{ maxHeight: 320, marginTop: 10 }}>
+              {linkingLocation?.empresaId ? (
+                <Pressable
+                  style={styles.templateOptionRow}
+                  onPress={() => handleSelectGmbLink(null)}
+                  disabled={isSavingLink}
+                >
+                  <Text style={[styles.templateOptionText, { color: '#C0392B' }]}>Desvincular</Text>
+                </Pressable>
+              ) : null}
+              {isLinkSearching ? (
+                <ActivityIndicator color={NAVY} style={{ marginTop: 12 }} />
+              ) : linkOptions.length === 0 ? (
+                <AdminEmptyState message="Nenhuma unidade encontrada." />
+              ) : (
+                linkOptions.map((unidade) => (
+                  <Pressable
+                    key={unidade.id}
+                    style={styles.templateOptionRow}
+                    onPress={() => handleSelectGmbLink(unidade.id)}
+                    disabled={isSavingLink}
+                  >
+                    <Text style={styles.templateOptionText}>
+                      {unidade.nomeFantasia ?? unidade.razaoSocial ?? unidade.id}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -9535,6 +9756,23 @@ const adminStyles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  gmbTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF1F7',
+  },
+  gmbTableCell: {
+    color: '#3A4160',
+    fontSize: 12.5,
+  },
+  gmbLinkText: {
+    color: BLUE,
+    fontSize: 12.5,
+    fontWeight: '700',
   },
   tokenEyeButton: {
     width: 44,

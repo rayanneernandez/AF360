@@ -455,6 +455,28 @@ function postWaConfigAcao(acao, body, actorId) {
   return lovablePost('/api/public/internal/wa-config', { acao }, body ?? {}, actorId);
 }
 
+// --- Integrações: Google Meu Negócio (gmb_config singleton + gmb_locations
+// + gmb_reviews + gmb_sync_runs) — confirmado pelo Lovable em 30/07/2026.
+// Rota dedicada própria (gmb_config guarda refresh_token/access_token_cache,
+// não está na allowlist genérica). GET devolve { status, locations,
+// locations_count, sync_runs } — locations paginado (limit/offset, default
+// 50, max 500), sync_runs embutido via "runs" (max 50). PATCH vincula/
+// desvincula empresa AF de uma location (body { locationId, empresaId }).
+// "acao" no POST pode ser: sincronizar, desconectar, account-name (body
+// { accountName }).
+
+function getGmb({ limit, offset, runs, actorId } = {}) {
+  return lovableGet('/api/public/internal/gmb', { limit, offset, runs }, actorId);
+}
+
+function patchGmbLocation(body, actorId) {
+  return lovablePatch('/api/public/internal/gmb', {}, body, actorId);
+}
+
+function postGmbAcao(acao, body, actorId) {
+  return lovablePost('/api/public/internal/gmb', { acao }, body ?? {}, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -516,4 +538,7 @@ module.exports = {
   getWaConfig,
   patchWaConfig,
   postWaConfigAcao,
+  getGmb,
+  patchGmbLocation,
+  postGmbAcao,
 };
