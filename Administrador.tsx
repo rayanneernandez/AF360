@@ -6318,7 +6318,7 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
 
           <View style={[adminStyles.formRow, styles.spacingTop]}>
             <View style={adminStyles.formRowItem}>
-              <Text style={styles.requestFieldLabel}>Cargo</Text>
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Cargo</Text>
               <TextInput
                 style={styles.processTextInput}
                 value={novoCargo}
@@ -6361,7 +6361,9 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
             </View>
           </View>
 
-          <AdminSearchRow value={cargoSearch} onChangeText={setCargoSearch} placeholder="Buscar cargo ou domínio..." />
+          <View style={styles.spacingTop}>
+            <AdminSearchRow value={cargoSearch} onChangeText={setCargoSearch} placeholder="Buscar cargo ou domínio..." />
+          </View>
 
           {isLoadingCargoDominios ? (
             <AdminEmptyState message="Carregando cargos..." />
