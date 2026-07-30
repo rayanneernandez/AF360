@@ -4656,7 +4656,9 @@ function AdminVenderUnidadeModal({
                 />
               </View>
               <View style={adminStyles.formRowItem}>
-                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Comprador (opcional)</Text>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]} numberOfLines={1}>
+                  Comprador (opcional)
+                </Text>
                 <TextInput
                   style={styles.processTextInput}
                   value={comprador}
