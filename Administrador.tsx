@@ -3301,19 +3301,43 @@ function AdminDatePickerModal({
 
 // ---------- Modal "Visualizar unidade" ----------
 
+// Título de seção com linha divisória fina acima — mesmo padrão visual do
+// web (Identificação / Códigos & Bandeira / Localização / Contato / Datas /
+// Serviços do Posto).
+function AdminDetailSectionTitle({ label, first }: { label: string; first?: boolean }) {
+  return (
+    <View style={[adminStyles.detailSectionTitleRow, first ? { borderTopWidth: 0, marginTop: 0 } : null]}>
+      <Text style={adminStyles.detailSectionTitleText}>{label}</Text>
+    </View>
+  );
+}
+
+function AdminDetailBoolBadge({ value }: { value: boolean }) {
+  return (
+    <View style={[adminStyles.detailBadgeBase, { backgroundColor: value ? GREEN_BG : RED_BG }]}>
+      <Feather name={value ? 'check-circle' : 'x-circle'} size={11} color={value ? GREEN : RED} />
+      <Text style={[adminStyles.detailBadgeText, { color: value ? GREEN : RED }]}>{value ? 'Sim' : 'Não'}</Text>
+    </View>
+  );
+}
+
 function AdminUnidadeDetailModal({
   visible,
   unidade,
+  contabilidades,
   onClose,
   onEdit,
 }: {
   visible: boolean;
   unidade: AdminUnidadeItem | null;
+  contabilidades: AdminContabilidadeItem[];
   onClose: () => void;
   onEdit: () => void;
 }) {
   if (!unidade) return null;
   const bandeiraColors = (unidade.bandeira && adminBandeiraColorMap[unidade.bandeira]) || { bg: GRAY_BG, color: GRAY };
+  const contabilidade = unidade.contabilidadeId ? contabilidades.find((c) => c.id === unidade.contabilidadeId) : null;
+  const servicos = unidade.servicos ?? {};
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -3322,7 +3346,17 @@ function AdminUnidadeDetailModal({
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.requestModalTitle}>{adminUnidadeDisplayName(unidade)}</Text>
-              <Text style={adminStyles.detailSubEmail}>Unidade • {unidade.cnpj || 'CNPJ não informado'}</Text>
+              <Text style={adminStyles.detailSubEmail}>{unidade.razaoSocial || adminUnidadeDisplayName(unidade)}</Text>
+              <View style={[adminStyles.roleModulesRow, { marginTop: 6, alignItems: 'center' }]}>
+                {unidade.bandeira ? (
+                  <AdminColorPill label={unidade.bandeira} bg={bandeiraColors.bg} color={bandeiraColors.color} />
+                ) : null}
+                <AdminTagPill label={unidade.tipo || 'Posto'} />
+                <AdminDetailBoolBadge value={unidade.isActive} />
+              </View>
+              <Text style={[adminStyles.detailSubEmail, styles.spacingTop]}>
+                CNPJ: {unidade.cnpj || 'não informado'}
+              </Text>
             </View>
             <Pressable onPress={onClose} hitSlop={8}>
               <Feather name="x" size={20} color="#677089" />
@@ -3330,63 +3364,144 @@ function AdminUnidadeDetailModal({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            <View style={adminStyles.detailGridRow}>
-              <View style={adminStyles.detailGridItem}>
-                <Text style={adminStyles.detailFieldLabel}>RAZÃO SOCIAL</Text>
-                <Text style={adminStyles.detailFieldValue}>{unidade.razaoSocial || '—'}</Text>
-              </View>
-              <View style={adminStyles.detailGridItem}>
-                <Text style={adminStyles.detailFieldLabel}>IDQ</Text>
-                <Text style={adminStyles.detailFieldValue}>{unidade.idq || '—'}</Text>
-              </View>
-            </View>
+            <AdminDetailSectionTitle label="Identificação" first />
+            <Text style={adminStyles.detailFieldLabel}>RAZÃO SOCIAL</Text>
+            <Text style={adminStyles.detailFieldValue}>{unidade.razaoSocial || '—'}</Text>
 
             <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
               <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>NOME FANTASIA</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.nomeFantasia || '—'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>APELIDO</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.apelido || '—'}</Text>
+              </View>
+            </View>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>CNPJ</Text>
+            <Text style={adminStyles.detailFieldValue}>{unidade.cnpj || '—'}</Text>
+
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>PROPRIETÁRIO</Text>
+            <Text style={adminStyles.detailFieldValue}>{unidade.proprietario || '—'}</Text>
+
+            <AdminDetailSectionTitle label="Códigos & Bandeira" />
+            <View style={adminStyles.detailGridRow}>
+              <View style={adminStyles.detailGridItem}>
                 <Text style={adminStyles.detailFieldLabel}>BANDEIRA</Text>
-                {unidade.bandeira ? (
-                  <AdminColorPill label={unidade.bandeira} bg={bandeiraColors.bg} color={bandeiraColors.color} />
-                ) : (
-                  <Text style={adminStyles.detailFieldValue}>—</Text>
-                )}
+                <Text style={adminStyles.detailFieldValue}>{unidade.bandeira || '—'}</Text>
               </View>
               <View style={adminStyles.detailGridItem}>
                 <Text style={adminStyles.detailFieldLabel}>TIPO</Text>
                 <Text style={adminStyles.detailFieldValue}>{unidade.tipo || '—'}</Text>
               </View>
             </View>
-
             <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
               <View style={adminStyles.detailGridItem}>
-                <Text style={adminStyles.detailFieldLabel}>CIDADE/UF</Text>
-                <Text style={adminStyles.detailFieldValue}>
-                  {unidade.cidade ? `${unidade.cidade}${unidade.estado ? `/${unidade.estado}` : ''}` : '—'}
-                </Text>
+                <Text style={adminStyles.detailFieldLabel}>IDQ</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.idq || '—'}</Text>
               </View>
               <View style={adminStyles.detailGridItem}>
-                <Text style={adminStyles.detailFieldLabel}>STATUS</Text>
-                <View
-                  style={[
-                    adminStyles.detailBadgeBase,
-                    { backgroundColor: unidade.vendida ? GRAY_BG : unidade.isActive ? GREEN_BG : RED_BG },
-                  ]}
-                >
-                  <Feather
-                    name={unidade.vendida ? 'archive' : unidade.isActive ? 'check-circle' : 'x-circle'}
-                    size={11}
-                    color={unidade.vendida ? GRAY : unidade.isActive ? GREEN : RED}
-                  />
-                  <Text
-                    style={[
-                      adminStyles.detailBadgeText,
-                      { color: unidade.vendida ? GRAY : unidade.isActive ? GREEN : RED },
-                    ]}
-                  >
-                    {unidade.vendida ? 'Vendida' : unidade.isActive ? 'Ativa' : 'Inativa'}
-                  </Text>
-                </View>
+                <Text style={adminStyles.detailFieldLabel}>CD REDE</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.cdRede || '—'}</Text>
               </View>
             </View>
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>IPIRANGA HABILITADO</Text>
+            <AdminDetailBoolBadge value={unidade.ipirangaHabilitado} />
+
+            <AdminDetailSectionTitle label="Localização" />
+            <Text style={adminStyles.detailFieldLabel}>ENDEREÇO</Text>
+            <Text style={adminStyles.detailFieldValue}>{unidade.enderecoTexto || '—'}</Text>
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>BAIRRO</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.bairro || '—'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>CEP</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.cep || '—'}</Text>
+              </View>
+            </View>
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>CIDADE</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.cidade || '—'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>UF</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.estado || '—'}</Text>
+              </View>
+            </View>
+
+            <AdminDetailSectionTitle label="Contato" />
+            <View style={adminStyles.detailGridRow}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>E-MAIL</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.email || '—'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>TELEFONE</Text>
+                <Text style={adminStyles.detailFieldValue}>{unidade.telefone || '—'}</Text>
+              </View>
+            </View>
+            <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>CONTABILIDADE</Text>
+            <Text style={adminStyles.detailFieldValue}>
+              {contabilidade ? adminContabilidadeDisplayName(contabilidade) : '—'}
+            </Text>
+
+            <AdminDetailSectionTitle label="Datas" />
+            <View style={adminStyles.detailGridRow}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>DATA DE CADASTRO</Text>
+                <Text style={adminStyles.detailFieldValue}>{adminIsoDateToBrLabel(unidade.dataCadastro) || '—'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>PRIMEIRA VENDA</Text>
+                <Text style={adminStyles.detailFieldValue}>
+                  {adminIsoDateToBrLabel(unidade.dataPrimeiraVenda) || '—'}
+                </Text>
+              </View>
+            </View>
+
+            <AdminDetailSectionTitle label="Serviços do Posto" />
+            <View style={adminStyles.detailGridRow}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>HORÁRIO</Text>
+                <Text style={adminStyles.detailFieldValue}>{servicos.horario_funcionamento || '—'}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>CONVENIÊNCIA</Text>
+                <AdminDetailBoolBadge value={Boolean(servicos.conveniencia)} />
+              </View>
+            </View>
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>TROCA DE ÓLEO</Text>
+                <AdminDetailBoolBadge value={Boolean(servicos.troca_oleo)} />
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>GELADEIRA</Text>
+                <AdminDetailBoolBadge value={Boolean(servicos.geladeira)} />
+              </View>
+            </View>
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>LAVA-JATO</Text>
+                <AdminDetailBoolBadge value={Boolean(servicos.lava_jato)} />
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>ESTACIONAMENTO</Text>
+                <AdminDetailBoolBadge value={Boolean(servicos.estacionamento)} />
+              </View>
+            </View>
+            {servicos.geladeira && servicos.geladeira_tipo ? (
+              <>
+                <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>TIPO DA GELADEIRA</Text>
+                <Text style={adminStyles.detailFieldValue}>
+                  {servicos.geladeira_tipo === 'pista' ? 'Pista' : 'Gelo'}
+                </Text>
+              </>
+            ) : null}
 
             <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>COLABORADORES ATIVOS</Text>
             <Text style={adminStyles.detailFieldValue}>{unidade.colaboradoresAtivos}</Text>
@@ -3395,7 +3510,7 @@ function AdminUnidadeDetailModal({
               <>
                 <Text style={[adminStyles.detailFieldLabel, styles.spacingTop]}>VENDA</Text>
                 <Text style={adminStyles.detailFieldValue}>
-                  {formatAdminDate(unidade.dataVenda)}
+                  {adminIsoDateToBrLabel(unidade.dataVenda) || formatAdminDate(unidade.dataVenda)}
                   {unidade.comprador ? ` • ${unidade.comprador}` : ''}
                 </Text>
                 {unidade.vendaObservacao ? (
@@ -3753,12 +3868,14 @@ function AdminContabilidadesModal({
                     />
                   </View>
                   <View style={adminStyles.formRowItem}>
-                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Responsável (Contador)</Text>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]} numberOfLines={1}>
+                      Responsável
+                    </Text>
                     <TextInput
                       style={styles.processTextInput}
                       value={form.responsavel}
                       onChangeText={(text) => setForm((current) => ({ ...current, responsavel: text }))}
-                      placeholder="Opcional"
+                      placeholder="Contador"
                       placeholderTextColor="#A7AEC2"
                     />
                   </View>
@@ -4538,12 +4655,12 @@ function AdminVenderUnidadeModal({
                 />
               </View>
               <View style={adminStyles.formRowItem}>
-                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Comprador</Text>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Comprador (opcional)</Text>
                 <TextInput
                   style={styles.processTextInput}
                   value={comprador}
                   onChangeText={setComprador}
-                  placeholder="Opcional"
+                  placeholder="Nome / razão social"
                   placeholderTextColor="#A7AEC2"
                 />
               </View>
@@ -5067,6 +5184,7 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
       <AdminUnidadeDetailModal
         visible={unitDetail !== null}
         unidade={unitDetail}
+        contabilidades={contabilidades}
         onClose={() => setUnitDetail(null)}
         onEdit={() => {
           const unidade = unitDetail;
@@ -6502,6 +6620,18 @@ const adminStyles = StyleSheet.create({
     marginTop: 2,
     color: '#7C8397',
     fontSize: 11.5,
+  },
+  detailSectionTitleRow: {
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF0F6',
+    marginBottom: 8,
+  },
+  detailSectionTitleText: {
+    color: '#15203E',
+    fontSize: 12.5,
+    fontWeight: '800',
   },
   detailGridRow: {
     flexDirection: 'row',
