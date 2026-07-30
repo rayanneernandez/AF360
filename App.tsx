@@ -2476,6 +2476,15 @@ export const notificationAudienceOptions: Array<{ value: NotificationAudienceTyp
   { value: 'cargo', label: 'Por cargo' },
 ];
 
+export const notificationCronPresets: Array<{ label: string; value: string }> = [
+  { label: 'Todo dia às 08h', value: '0 8 * * *' },
+  { label: 'Todo dia às 09h', value: '0 9 * * *' },
+  { label: 'Todo dia às 18h', value: '0 18 * * *' },
+  { label: 'Toda segunda às 09h', value: '0 9 * * 1' },
+  { label: 'Dia 1 do mês às 09h', value: '0 9 1 * *' },
+  { label: 'Dia 25 do mês às 09h', value: '0 9 25 * *' },
+];
+
 export const notificationTriggerOptions: Array<{
   value: NotificationTriggerKind;
   label: string;
@@ -6088,6 +6097,7 @@ function SimpleListModal({
   selectedValue,
   onSelect,
   onClose,
+  inline,
 }: {
   visible: boolean;
   title: string;
@@ -6095,40 +6105,56 @@ function SimpleListModal({
   selectedValue: string;
   onSelect: (value: string) => void;
   onClose: () => void;
+  // inline=true: não abre <Modal> nativo próprio — renderiza como overlay
+  // absoluto por cima do conteúdo (ver styles.inlinePickerLayer). Necessário
+  // quando o picker é aberto de DENTRO de outro <Modal> já visível.
+  inline?: boolean;
 }) {
+  if (inline && !visible) {
+    return null;
+  }
+
+  const content = (
+    <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+      <Pressable style={styles.simpleListCard} onPress={() => {}}>
+        <Text style={styles.simpleListTitle}>{title}</Text>
+        <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+          {options.map((option) => {
+            const isSelected = option === selectedValue;
+
+            return (
+              <Pressable
+                key={option}
+                style={styles.simpleListOptionRow}
+                onPress={() => {
+                  onSelect(option);
+                  onClose();
+                }}
+              >
+                <Text
+                  style={[
+                    styles.simpleListOptionText,
+                    isSelected ? styles.simpleListOptionTextActive : null,
+                  ]}
+                >
+                  {option}
+                </Text>
+                {isSelected ? <Feather name="check" size={16} color="#E6213D" /> : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </Pressable>
+    </Pressable>
+  );
+
+  if (inline) {
+    return <View style={styles.inlinePickerLayer}>{content}</View>;
+  }
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
-        <Pressable style={styles.simpleListCard} onPress={() => {}}>
-          <Text style={styles.simpleListTitle}>{title}</Text>
-          <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
-            {options.map((option) => {
-              const isSelected = option === selectedValue;
-
-              return (
-                <Pressable
-                  key={option}
-                  style={styles.simpleListOptionRow}
-                  onPress={() => {
-                    onSelect(option);
-                    onClose();
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.simpleListOptionText,
-                      isSelected ? styles.simpleListOptionTextActive : null,
-                    ]}
-                  >
-                    {option}
-                  </Text>
-                  {isSelected ? <Feather name="check" size={16} color="#E6213D" /> : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
+      {content}
     </Modal>
   );
 }
@@ -6139,13 +6165,21 @@ function TemplatePickerModal({
   selectedValue,
   onSelect,
   onClose,
+  inline,
 }: {
   visible: boolean;
   templates: NotificationTemplateItem[];
   selectedValue: string;
   onSelect: (value: string) => void;
   onClose: () => void;
+  // inline=true: ver comentário em SimpleListModal — usado quando aberto de
+  // dentro de outro <Modal> já visível (NotificationRoutineFormModal).
+  inline?: boolean;
 }) {
+  if (inline && !visible) {
+    return null;
+  }
+
   const options: Array<{ label: string; icon: keyof typeof Feather.glyphMap; iconColor: string }> = [
     { label: 'Mensagem customizada', icon: 'edit-3', iconColor: '#E6213D' },
     ...templates.map((template) => ({
@@ -6155,42 +6189,50 @@ function TemplatePickerModal({
     })),
   ];
 
+  const content = (
+    <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+      <Pressable style={styles.simpleListCard} onPress={() => {}}>
+        <Text style={styles.simpleListTitle}>Template</Text>
+        <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+          {options.map((option) => {
+            const isSelected = option.label === selectedValue;
+
+            return (
+              <Pressable
+                key={option.label}
+                style={[styles.templateOptionRow, isSelected ? styles.templateOptionRowActive : null]}
+                onPress={() => {
+                  onSelect(option.label);
+                  onClose();
+                }}
+              >
+                <View style={styles.templateOptionLeft}>
+                  <Feather name={option.icon} size={15} color={isSelected ? '#FFFFFF' : option.iconColor} />
+                  <Text
+                    style={[
+                      styles.templateOptionText,
+                      isSelected ? styles.templateOptionTextActive : null,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </View>
+                {isSelected ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </Pressable>
+    </Pressable>
+  );
+
+  if (inline) {
+    return <View style={styles.inlinePickerLayer}>{content}</View>;
+  }
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
-        <Pressable style={styles.simpleListCard} onPress={() => {}}>
-          <Text style={styles.simpleListTitle}>Template</Text>
-          <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
-            {options.map((option) => {
-              const isSelected = option.label === selectedValue;
-
-              return (
-                <Pressable
-                  key={option.label}
-                  style={[styles.templateOptionRow, isSelected ? styles.templateOptionRowActive : null]}
-                  onPress={() => {
-                    onSelect(option.label);
-                    onClose();
-                  }}
-                >
-                  <View style={styles.templateOptionLeft}>
-                    <Feather name={option.icon} size={15} color={isSelected ? '#FFFFFF' : option.iconColor} />
-                    <Text
-                      style={[
-                        styles.templateOptionText,
-                        isSelected ? styles.templateOptionTextActive : null,
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </View>
-                  {isSelected ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
+      {content}
     </Modal>
   );
 }
@@ -8455,14 +8497,32 @@ export function NotificationRoutineFormModal({
 
               {form.triggerKind === 'recorrente' ? (
                 <>
-                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Horário (cron)</Text>
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Expressão cron</Text>
                   <TextInput
                     style={styles.processTextInput}
                     value={form.cronSchedule}
                     onChangeText={(text) => setForm((current) => ({ ...current, cronSchedule: text }))}
-                    placeholder="0 8 * * *"
+                    placeholder="0 9 * * 1"
                     placeholderTextColor="#A7AEC2"
                   />
+                  <View style={styles.cronPresetRow}>
+                    {notificationCronPresets.map((preset) => {
+                      const isSelected = form.cronSchedule === preset.value;
+                      return (
+                        <Pressable
+                          key={preset.value}
+                          style={[styles.cronPresetChip, isSelected ? { borderColor: '#E6213D' } : null]}
+                          onPress={() => setForm((current) => ({ ...current, cronSchedule: preset.value }))}
+                        >
+                          <Text
+                            style={[styles.cronPresetChipText, isSelected ? { color: '#E6213D' } : null]}
+                          >
+                            {preset.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </>
               ) : null}
 
@@ -8545,31 +8605,33 @@ export function NotificationRoutineFormModal({
                 <Text style={styles.primaryButtonText}>Salvar rotina</Text>
               </Pressable>
             </ScrollView>
+
+            <TemplatePickerModal
+              visible={isTemplatePickerOpen}
+              templates={templates}
+              selectedValue={form.template}
+              onSelect={(value) => setForm((current) => ({ ...current, template: value }))}
+              onClose={() => setIsTemplatePickerOpen(false)}
+              inline
+            />
+            <SimpleListModal
+              visible={isAudiencePickerOpen}
+              title="Público"
+              options={notificationAudienceOptions.map((option) => option.label)}
+              selectedValue={audienceLabel}
+              onSelect={(label) => {
+                const match = notificationAudienceOptions.find((option) => option.label === label);
+
+                if (match) {
+                  setForm((current) => ({ ...current, audienceType: match.value }));
+                }
+              }}
+              onClose={() => setIsAudiencePickerOpen(false)}
+              inline
+            />
           </View>
         </View>
       </Modal>
-
-      <TemplatePickerModal
-        visible={isTemplatePickerOpen}
-        templates={templates}
-        selectedValue={form.template}
-        onSelect={(value) => setForm((current) => ({ ...current, template: value }))}
-        onClose={() => setIsTemplatePickerOpen(false)}
-      />
-      <SimpleListModal
-        visible={isAudiencePickerOpen}
-        title="Público"
-        options={notificationAudienceOptions.map((option) => option.label)}
-        selectedValue={audienceLabel}
-        onSelect={(label) => {
-          const match = notificationAudienceOptions.find((option) => option.label === label);
-
-          if (match) {
-            setForm((current) => ({ ...current, audienceType: match.value }));
-          }
-        }}
-        onClose={() => setIsAudiencePickerOpen(false)}
-      />
     </>
   );
 }
@@ -14771,6 +14833,25 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
   },
+  cronPresetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  cronPresetChip: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  cronPresetChipText: {
+    color: '#4C5470',
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
   routineTriggerList: {
     marginTop: 10,
     gap: 8,
@@ -14959,6 +15040,21 @@ export const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 22,
     padding: 18,
+  },
+  // inline=true: usado por SimpleListModal/TemplatePickerModal quando abertos
+  // de DENTRO de outro <Modal> já visível (ex.: NotificationRoutineFormModal)
+  // — dois <Modal> nativos empilhados podem não repassar toque em alguns
+  // aparelhos (mesmo bug já corrigido em RH.tsx/Administrador.tsx).
+  inlinePickerLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    elevation: 100,
+    borderRadius: 24,
+    overflow: 'hidden',
   },
   simpleListTitle: {
     color: '#15203E',
