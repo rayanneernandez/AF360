@@ -55,6 +55,8 @@ const {
   getGmb,
   patchGmbLocation,
   postGmbAcao,
+  getBuscaPf,
+  postBuscaPfAcao,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -1457,6 +1459,134 @@ router.post('/integracoes/google/account-name', async (req, res) => {
   } catch (err) {
     console.error('[admin/integracoes/google/account-name] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'account_name_failed', message: err.message });
+  }
+});
+
+// --- Integrações: Busca PF (Infosimples + Fonte Data) — endpoint
+// /api/public/internal/busca-pf confirmado pela Lovable em 30/07/2026.
+// ---------------------------------------------------------------------------
+
+function mapBuscaPfStatusRow(raw = {}) {
+  const credenciaisRaw = raw.credenciais ?? {};
+  const credenciais = {};
+  Object.entries(credenciaisRaw).forEach(([key, val]) => {
+    credenciais[key] = {
+      configurado: !!(val && val.configurado),
+      tokenMascarado: (val && val.token_mascarado) ?? null,
+    };
+  });
+  return {
+    credenciais,
+    servicos: raw.servicos ?? {},
+  };
+}
+
+function mapBuscaPfUsoRow(raw = {}) {
+  const porServicoRaw = raw.por_servico ?? {};
+  const porServico = {};
+  Object.entries(porServicoRaw).forEach(([key, val]) => {
+    porServico[key] = {
+      count: (val && (val.count ?? val.total)) ?? null,
+      custo: (val && (val.custo ?? val.custo_total)) ?? null,
+    };
+  });
+  return {
+    total: raw.total ?? null,
+    billable: raw.billable ?? null,
+    custoBase: raw.custo_base ?? null,
+    custoAdicional: raw.custo_adicional ?? null,
+    custoTotal: raw.custo_total ?? null,
+    custoTotalComFranquia: raw.custo_total_com_franquia ?? null,
+    balanceRemaining: raw.balance_remaining ?? null,
+    porServico,
+  };
+}
+
+function mapBuscaPfHistoricoRow(row = {}) {
+  return {
+    id: row.id,
+    provedor: row.provedor ?? null,
+    service: row.service ?? null,
+    params: row.params ?? null,
+    responseCode: row.response_code ?? null,
+    requestId: row.request_id ?? null,
+    costBrl: row.cost_brl ?? null,
+    cpf: row.cpf ?? null,
+    nome: row.nome ?? null,
+    responseData: row.response_data ?? null,
+    createdBy: row.created_by ?? null,
+    createdAt: row.created_at ?? null,
+  };
+}
+
+// GET /api/admin/integracoes/busca-pf/status?actorId=...
+router.get('/integracoes/busca-pf/status', async (req, res) => {
+  try {
+    const json = await getBuscaPf({ recurso: 'status' }, req.query.actorId);
+    const data = json?.data ?? json ?? {};
+    res.json({ ok: true, data: mapBuscaPfStatusRow(data) });
+  } catch (err) {
+    console.error('[admin/integracoes/busca-pf/status] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/integracoes/busca-pf/historico?actorId=&provedor=&limit=&offset=&search=&service=
+router.get('/integracoes/busca-pf/historico', async (req, res) => {
+  try {
+    const { provedor, limit, offset, search, service, actorId } = req.query;
+    const json = await getBuscaPf({ recurso: 'historico', provedor, limit, offset, search, service }, actorId);
+    const data = json?.data ?? json ?? {};
+    res.json({
+      ok: true,
+      data: {
+        rows: (data.rows ?? []).map(mapBuscaPfHistoricoRow),
+        count: data.count ?? 0,
+        limit: data.limit ?? Number(limit) ?? 20,
+        offset: data.offset ?? Number(offset) ?? 0,
+      },
+    });
+  } catch (err) {
+    console.error('[admin/integracoes/busca-pf/historico] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/integracoes/busca-pf/uso?actorId=&provedor=&months=
+router.get('/integracoes/busca-pf/uso', async (req, res) => {
+  try {
+    const { provedor, months, actorId } = req.query;
+    const json = await getBuscaPf({ recurso: 'uso', provedor, months }, actorId);
+    const data = json?.data ?? json ?? {};
+    res.json({ ok: true, data: mapBuscaPfUsoRow(data) });
+  } catch (err) {
+    console.error('[admin/integracoes/busca-pf/uso] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/busca-pf/testar?actorId=... — body: { provedor }
+router.post('/integracoes/busca-pf/testar', async (req, res) => {
+  try {
+    const provedor = req.body?.provedor;
+    const json = await postBuscaPfAcao('testar', { provedor }, {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/busca-pf/testar] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'test_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/busca-pf/consultar?actorId=... — body:
+// { provedor, service, params } — dispara a consulta de verdade.
+router.post('/integracoes/busca-pf/consultar', async (req, res) => {
+  try {
+    const { provedor, service, params } = req.body ?? {};
+    const json = await postBuscaPfAcao('consultar', {}, { provedor, service, params }, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/busca-pf/consultar] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
   }
 });
 

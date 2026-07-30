@@ -122,6 +122,11 @@ import {
   vincularAdminGmbLocation,
   sincronizarAdminGmb,
   desconectarAdminGmb,
+  fetchAdminBuscaPfStatus,
+  testAdminBuscaPfConexao,
+  executarAdminBuscaPfConsulta,
+  fetchAdminBuscaPfHistorico,
+  fetchAdminBuscaPfUso,
   ApiError,
   type AdminDominioItem,
   type AdminCargoDominioItem,
@@ -140,6 +145,10 @@ import {
   type AdminWaProvider,
   type AdminGmbData,
   type AdminGmbLocation,
+  type AdminBuscaPfProvider,
+  type AdminBuscaPfStatus,
+  type AdminBuscaPfHistoricoItem,
+  type AdminBuscaPfUso,
   type AdminUsuarioItem,
   type AdminCargoItem,
   type AdminGrupoItem,
@@ -5715,13 +5724,18 @@ function admFieldMaskMaxLength(mask: AdminFieldMask | undefined): number | undef
   return undefined;
 }
 
+function admFormatBRL(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return '—';
+  return `R$ ${value.toFixed(2).replace('.', ',')}`;
+}
+
 // ---------- Busca PF (Infosimples/Fonte Data) — estrutura da tela igual ao
-// web (screenshots de 30/07/2026). Sem backend ainda (Lovable só confirmou
-// que existem logs em adm_infosimples_consultas/adm_fontedata_consultas,
-// sem endpoint de credencial/execução/histórico/uso) — os formulários dos
-// 4 serviços já são reais (mesmos campos do web), mas os botões mostram
-// aviso honesto até a Lovable confirmar. Ver mensagem-lovable-integracoes-*
-// pendente.
+// web (screenshots de 30/07/2026). Backend real confirmado pela Lovable em
+// 30/07/2026: endpoint único /api/public/internal/busca-pf (recurso=status/
+// historico/uso, acao=testar/consultar). Sem tabela de credenciais — os
+// tokens são secrets do backend deles (INFOSIMPLES_TOKEN/FONTEDATA_API_KEY).
+// Os nomes de campo (key) dos serviços abaixo já são os parâmetros reais
+// esperados pela API (birthdate, nome, nome_mae, etc).
 
 type AdminBuscaPfSubProvider = 'infosimples' | 'fontedata';
 
@@ -5746,6 +5760,9 @@ type AdminIntegrationService = {
   extraActionLabel?: string;
 };
 
+// Nomes de campo (chave) já batem com os parâmetros REAIS da API, confirmados
+// pela Lovable em 30/07/2026 — a chave de cada campo é enviada direto como
+// parâmetro na hora de "Executar consulta" (ver handleExecuteBuscaPf).
 const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
   {
     code: 'receita-federal/cpf',
@@ -5753,7 +5770,7 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
     description: 'Consulta dados cadastrais e situação fiscal do CPF na Receita Federal.',
     fields: [
       { key: 'cpf', label: 'CPF', required: true, mask: 'cpf', placeholder: '000.000.000-00' },
-      { key: 'dataNascimento', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
+      { key: 'birthdate', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
     ],
   },
   {
@@ -5761,12 +5778,12 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
     title: 'Antecedentes Criminais — Polícia Federal',
     description: 'Emite a Certidão de Antecedentes Criminais na Polícia Federal.',
     fields: [
-      { key: 'nomeCompleto', label: 'Nome completo', required: true, placeholder: 'Nome conforme RG' },
-      { key: 'dataNascimento', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
+      { key: 'nome', label: 'Nome completo', required: true, placeholder: 'Nome conforme RG' },
+      { key: 'birthdate', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
       { key: 'cpf', label: 'CPF (opcional)', mask: 'cpf', placeholder: '000.000.000-00' },
-      { key: 'nomeMae', label: 'Nome da mãe (opcional)' },
-      { key: 'nomePai', label: 'Nome do pai (opcional)' },
-      { key: 'ufNascimento', label: 'UF de nascimento (opcional)', placeholder: 'Ex: SP' },
+      { key: 'nome_mae', label: 'Nome da mãe (opcional)' },
+      { key: 'nome_pai', label: 'Nome do pai (opcional)' },
+      { key: 'uf_nascimento', label: 'UF de nascimento (opcional)', placeholder: 'Ex: SP' },
     ],
   },
   {
@@ -5775,13 +5792,13 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
     description: 'Emite certidão no TRF2 (RJ e ES). Informar CPF ou CNPJ.',
     fields: [
       {
-        key: 'tipoCertidao',
+        key: 'tipo_certidao',
         label: 'Tipo de certidão',
         required: true,
-        options: ['Cível', 'Criminal', 'Cível e Criminal'],
+        options: ['Cível', 'Eleitoral', 'Criminal'],
       },
       { key: 'cpf', label: 'CPF (PF)', mask: 'cpf', placeholder: '000.000.000-00' },
-      { key: 'dataNascimento', label: 'Data de nascimento (PF)', mask: 'date', placeholder: 'DD/MM/AAAA' },
+      { key: 'birthdate', label: 'Data de nascimento (PF)', mask: 'date', placeholder: 'DD/MM/AAAA' },
       { key: 'cnpj', label: 'CNPJ (PJ)', mask: 'cnpj', placeholder: '00.000.000/0000-00' },
     ],
   },
@@ -5791,10 +5808,42 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
     description: 'Consulta a inscrição (PIS/NIT/NIS) de uma pessoa física no CNIS.',
     fields: [
       { key: 'cpf', label: 'CPF', required: true, mask: 'cpf', placeholder: '000.000.000-00' },
-      { key: 'nomeCompleto', label: 'Nome completo', required: true },
-      { key: 'dataNascimento', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
-      { key: 'nomeMae', label: 'Nome da mãe', required: true },
+      { key: 'nome', label: 'Nome completo', required: true },
+      { key: 'birthdate', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
+      { key: 'nome_mae', label: 'Nome da mãe', required: true },
     ],
+  },
+];
+
+// "tipo_certidao" é o único campo de opções que a API espera como código
+// numérico em string, não o texto da label.
+const ADMIN_TRF2_TIPO_CERTIDAO_CODES: Record<string, string> = {
+  Cível: '1',
+  Eleitoral: '2',
+  Criminal: '3',
+};
+
+// Fonte Data — só CPF, 3 serviços (confirmados pela Lovable em 30/07/2026).
+const ADMIN_BUSCAPF_FONTEDATA_SERVICES: AdminIntegrationService[] = [
+  {
+    code: 'dados-cadastrais-basicos',
+    title: 'Dados Cadastrais Básicos (CPF)',
+    description: 'Nome completo, CPF, data de nascimento e filiação cruzando fontes oficiais. Custo: R$ 0,22/consulta.',
+    fields: [{ key: 'cpf', label: 'CPF', required: true, mask: 'cpf', placeholder: '000.000.000-00' }],
+  },
+  {
+    code: 'cadastro-rf-pf',
+    title: 'Cadastro Pessoal com Receita Federal',
+    description:
+      'Combina dados cadastrais de CPF com situação na Receita Federal (regular, suspensa, cancelada etc). Retorna nome, nascimento, endereço, status RF e óbito em uma única chamada.',
+    fields: [{ key: 'cpf', label: 'CPF', required: true, mask: 'cpf', placeholder: '000.000.000-00' }],
+  },
+  {
+    code: 'ccd-pf',
+    title: 'Certidão Conjunta de Débitos — PF',
+    description:
+      'Comprova a inexistência de pendências financeiras, civis ou criminais em âmbitos federal, estadual e municipal. Custo: R$ 0,54/consulta.',
+    fields: [{ key: 'cpf', label: 'CPF', required: true, mask: 'cpf', placeholder: '000.000.000-00' }],
   },
 ];
 
@@ -5859,6 +5908,8 @@ function AdminIntegrationServiceCard({
   onChangeField,
   onExecute,
   onExtraAction,
+  isExecuting,
+  result,
 }: {
   service: AdminIntegrationService;
   expanded: boolean;
@@ -5867,6 +5918,8 @@ function AdminIntegrationServiceCard({
   onChangeField: (fieldKey: string, value: string) => void;
   onExecute: () => void;
   onExtraAction?: () => void;
+  isExecuting?: boolean;
+  result?: { ok: boolean; message: string };
 }) {
   return (
     <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
@@ -5924,9 +5977,15 @@ function AdminIntegrationServiceCard({
           </View>
 
           <View style={adminStyles.pillButtonRow}>
-            <Pressable style={adminStyles.pillButtonPrimary} onPress={onExecute}>
+            <Pressable
+              style={[adminStyles.pillButtonPrimary, isExecuting ? { opacity: 0.6 } : null]}
+              onPress={onExecute}
+              disabled={isExecuting}
+            >
               <Feather name="play" size={13} color="#FFFFFF" />
-              <Text style={adminStyles.primaryButtonGreenText}>Executar consulta</Text>
+              <Text style={adminStyles.primaryButtonGreenText}>
+                {isExecuting ? 'Consultando...' : 'Executar consulta'}
+              </Text>
             </Pressable>
             {service.extraActionLabel && onExtraAction ? (
               <Pressable style={adminStyles.pillButtonOutline} onPress={onExtraAction}>
@@ -5934,9 +5993,205 @@ function AdminIntegrationServiceCard({
               </Pressable>
             ) : null}
           </View>
+
+          {result ? (
+            <View
+              style={[
+                adminStyles.integrationInfoBox,
+                adminStyles.fieldSpacing,
+                { backgroundColor: result.ok ? '#E7F5EC' : '#FBEAEA' },
+              ]}
+            >
+              <Feather name={result.ok ? 'check-circle' : 'alert-triangle'} size={15} color={result.ok ? GREEN : '#C0392B'} />
+              <Text style={[adminStyles.integrationInfoText, { color: result.ok ? '#1E5B36' : '#8A2E24' }]}>
+                {result.message}
+              </Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
     </View>
+  );
+}
+
+// ---------- Painel de um provedor da Busca PF (Infosimples ou Fonte Data) —
+// credenciais + serviços + uso, tudo com dado real (endpoint /busca-pf
+// confirmado pela Lovable em 30/07/2026). Um componente só, reaproveitado
+// pelos dois provedores pra não duplicar a mesma estrutura duas vezes. ----------
+function AdminBuscaPfProviderPanel({
+  provedor,
+  services,
+  status,
+  isLoadingStatus,
+  statusError,
+  isTesting,
+  onTestConnection,
+  expandedServices,
+  onToggleExpand,
+  fieldValues,
+  onChangeField,
+  onExecute,
+  executingServiceCode,
+  results,
+  onOpenHistorico,
+  uso,
+  isLoadingUso,
+  usoError,
+  onRefreshUso,
+}: {
+  provedor: AdminBuscaPfProvider;
+  services: AdminIntegrationService[];
+  status: AdminBuscaPfStatus | null;
+  isLoadingStatus: boolean;
+  statusError: string | null;
+  isTesting: boolean;
+  onTestConnection: () => void;
+  expandedServices: Record<string, boolean>;
+  onToggleExpand: (serviceCode: string, defaultExpanded: boolean) => void;
+  fieldValues: Record<string, string>;
+  onChangeField: (serviceCode: string, fieldKey: string, value: string) => void;
+  onExecute: (service: AdminIntegrationService) => void;
+  executingServiceCode: string | null;
+  results: Record<string, { ok: boolean; message: string }>;
+  onOpenHistorico: () => void;
+  uso: AdminBuscaPfUso | undefined;
+  isLoadingUso: boolean | undefined;
+  usoError: string | undefined;
+  onRefreshUso: () => void;
+}) {
+  const providerStatus = status?.credenciais?.[provedor];
+  const porServicoEntries = Object.entries(uso?.porServico ?? {});
+
+  return (
+    <>
+      <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+        <Text style={adminStyles.sectionTitle}>Credenciais</Text>
+
+        {isLoadingStatus ? (
+          <ActivityIndicator color={NAVY} style={adminStyles.fieldSpacing} />
+        ) : statusError ? (
+          <View style={adminStyles.fieldSpacing}>
+            <AdminEmptyState message={statusError} />
+          </View>
+        ) : (
+          <>
+            <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>
+              TOKEN {provedor === 'infosimples' ? 'INFOSIMPLES' : 'FONTE DATA'}
+            </Text>
+            <View style={adminStyles.staticField}>
+              <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                {providerStatus?.tokenMascarado ?? 'Guardado como secret no backend (não é exibido).'}
+              </Text>
+              <AdminColorPill
+                label={providerStatus?.configurado ? 'Configurado' : 'Não configurado'}
+                bg={providerStatus?.configurado ? '#E7F5EC' : '#FBEAEA'}
+                color={providerStatus?.configurado ? '#1E8A4C' : '#C0392B'}
+              />
+            </View>
+
+            <View style={adminStyles.pillButtonRow}>
+              <Pressable
+                style={[adminStyles.pillButtonOutline, isTesting ? { opacity: 0.6 } : null]}
+                onPress={onTestConnection}
+                disabled={isTesting}
+              >
+                <Feather name="check-circle" size={14} color="#15203E" />
+                <Text style={adminStyles.outlineButtonText}>{isTesting ? 'Testando...' : 'Testar conexão'}</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+      </View>
+
+      <View style={adminStyles.headerRowWrap}>
+        <View style={adminStyles.headerRowTitleWrap}>
+          <Text style={adminStyles.sectionTitle}>Consultas disponíveis</Text>
+          <AdminColorPill label={`${services.length} serviços`} bg={BLUE_BG} color={BLUE} />
+        </View>
+        <Pressable style={adminStyles.pillButtonOutline} onPress={onOpenHistorico}>
+          <Feather name="clock" size={14} color="#15203E" />
+          <Text style={adminStyles.outlineButtonText}>Histórico</Text>
+        </Pressable>
+      </View>
+
+      {services.map((service) => (
+        <AdminIntegrationServiceCard
+          key={service.code}
+          service={service}
+          expanded={expandedServices[service.code] ?? service.defaultExpanded ?? false}
+          onToggleExpand={() => onToggleExpand(service.code, service.defaultExpanded ?? false)}
+          values={Object.fromEntries(
+            Object.entries(fieldValues)
+              .filter(([k]) => k.startsWith(`${service.code}::`))
+              .map(([k, v]) => [k.slice(service.code.length + 2), v])
+          )}
+          onChangeField={(fieldKey, value) => onChangeField(service.code, fieldKey, value)}
+          onExecute={() => onExecute(service)}
+          isExecuting={executingServiceCode === service.code}
+          result={results[service.code]}
+        />
+      ))}
+
+      <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+        <View style={adminStyles.headerRowWrap}>
+          <View style={adminStyles.headerRowTitleWrap}>
+            <Text style={adminStyles.sectionTitle}>Uso e custo mensal</Text>
+          </View>
+          <Pressable
+            style={[adminStyles.pillButtonOutline, isLoadingUso ? { opacity: 0.6 } : null]}
+            onPress={onRefreshUso}
+            disabled={!!isLoadingUso}
+          >
+            <Feather name="refresh-cw" size={14} color="#15203E" />
+            <Text style={adminStyles.outlineButtonText}>{isLoadingUso ? 'Atualizando...' : 'Atualizar'}</Text>
+          </Pressable>
+        </View>
+
+        {isLoadingUso && !uso ? (
+          <ActivityIndicator color={NAVY} />
+        ) : usoError ? (
+          <AdminEmptyState message={usoError} />
+        ) : uso ? (
+          <>
+            <View style={adminStyles.staticField}>
+              <Text style={adminStyles.staticFieldText}>Consultas no período</Text>
+              <Text style={adminStyles.gmbLinkText}>{uso.total ?? 0}</Text>
+            </View>
+            <View style={[adminStyles.staticField, adminStyles.fieldSpacing]}>
+              <Text style={adminStyles.staticFieldText}>
+                {uso.custoTotalComFranquia != null ? 'Custo total (com franquia)' : 'Custo total'}
+              </Text>
+              <Text style={adminStyles.gmbLinkText}>
+                {admFormatBRL(uso.custoTotalComFranquia ?? uso.custoTotal)}
+              </Text>
+            </View>
+            {uso.balanceRemaining != null ? (
+              <View style={[adminStyles.staticField, adminStyles.fieldSpacing]}>
+                <Text style={adminStyles.staticFieldText}>Saldo restante</Text>
+                <Text style={adminStyles.gmbLinkText}>{admFormatBRL(uso.balanceRemaining)}</Text>
+              </View>
+            ) : null}
+            {porServicoEntries.length > 0 ? (
+              <View style={adminStyles.fieldSpacing}>
+                <Text style={adminStyles.fieldLabel}>POR SERVIÇO</Text>
+                {porServicoEntries.map(([svc, info]) => (
+                  <View key={svc} style={[adminStyles.staticField, { marginTop: 6 }]}>
+                    <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                      {svc}
+                    </Text>
+                    <Text style={adminStyles.gmbLinkText}>
+                      {info.count ?? 0} · {admFormatBRL(info.custo)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <AdminEmptyState message="Nenhuma consulta registrada neste período." />
+        )}
+      </View>
+    </>
   );
 }
 
@@ -6096,6 +6351,128 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
         .finally(() => setIsSavingLink(false));
     },
     [linkingLocation, actorId, loadGmb]
+  );
+
+  // Busca PF (Infosimples + Fonte Data) — endpoint /busca-pf confirmado pela
+  // Lovable em 30/07/2026. Sem tabela de credenciais (tokens são secrets do
+  // backend deles) — status só diz configurado/não.
+  const [buscaPfStatus, setBuscaPfStatus] = useState<AdminBuscaPfStatus | null>(null);
+  const [isLoadingBuscaPfStatus, setIsLoadingBuscaPfStatus] = useState(false);
+  const [buscaPfStatusError, setBuscaPfStatusError] = useState<string | null>(null);
+  const [testingBuscaPfProvider, setTestingBuscaPfProvider] = useState<AdminBuscaPfProvider | null>(null);
+  const [executingBuscaPfServiceCode, setExecutingBuscaPfServiceCode] = useState<string | null>(null);
+  const [buscaPfResults, setBuscaPfResults] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const [buscaPfHistoricoProvider, setBuscaPfHistoricoProvider] = useState<AdminBuscaPfProvider | null>(null);
+  const [buscaPfHistoricoRows, setBuscaPfHistoricoRows] = useState<AdminBuscaPfHistoricoItem[] | null>(null);
+  const [isLoadingBuscaPfHistorico, setIsLoadingBuscaPfHistorico] = useState(false);
+  const [buscaPfHistoricoError, setBuscaPfHistoricoError] = useState<string | null>(null);
+  const [buscaPfUso, setBuscaPfUso] = useState<Partial<Record<AdminBuscaPfProvider, AdminBuscaPfUso>>>({});
+  const [isLoadingBuscaPfUso, setIsLoadingBuscaPfUso] = useState<Partial<Record<AdminBuscaPfProvider, boolean>>>({});
+  const [buscaPfUsoError, setBuscaPfUsoError] = useState<Partial<Record<AdminBuscaPfProvider, string | undefined>>>({});
+
+  const loadBuscaPfStatus = useCallback(() => {
+    setIsLoadingBuscaPfStatus(true);
+    setBuscaPfStatusError(null);
+    fetchAdminBuscaPfStatus(actorId)
+      .then(setBuscaPfStatus)
+      .catch((err) => setBuscaPfStatusError(err instanceof Error ? err.message : 'Não foi possível carregar o status.'))
+      .finally(() => setIsLoadingBuscaPfStatus(false));
+  }, [actorId]);
+
+  useEffect(() => {
+    if (activeProvider === 'buscapf' && !buscaPfStatus && !isLoadingBuscaPfStatus && !buscaPfStatusError) {
+      loadBuscaPfStatus();
+    }
+  }, [activeProvider, buscaPfStatus, isLoadingBuscaPfStatus, buscaPfStatusError, loadBuscaPfStatus]);
+
+  const loadBuscaPfUso = useCallback(
+    (provedor: AdminBuscaPfProvider) => {
+      setIsLoadingBuscaPfUso((prev) => ({ ...prev, [provedor]: true }));
+      setBuscaPfUsoError((prev) => ({ ...prev, [provedor]: undefined }));
+      fetchAdminBuscaPfUso({ provedor, months: 1, actorId })
+        .then((data) => setBuscaPfUso((prev) => ({ ...prev, [provedor]: data })))
+        .catch((err) =>
+          setBuscaPfUsoError((prev) => ({
+            ...prev,
+            [provedor]: err instanceof Error ? err.message : 'Não foi possível carregar o uso.',
+          }))
+        )
+        .finally(() => setIsLoadingBuscaPfUso((prev) => ({ ...prev, [provedor]: false })));
+    },
+    [actorId]
+  );
+
+  useEffect(() => {
+    if (activeProvider !== 'buscapf') return;
+    const provedor = activeBuscaPfSubProvider;
+    if (!buscaPfUso[provedor] && !isLoadingBuscaPfUso[provedor] && !buscaPfUsoError[provedor]) {
+      loadBuscaPfUso(provedor);
+    }
+  }, [activeProvider, activeBuscaPfSubProvider, buscaPfUso, isLoadingBuscaPfUso, buscaPfUsoError, loadBuscaPfUso]);
+
+  const handleTestBuscaPf = useCallback(
+    (provedor: AdminBuscaPfProvider) => {
+      setTestingBuscaPfProvider(provedor);
+      testAdminBuscaPfConexao(provedor, actorId)
+        .then((result) => {
+          const parts: string[] = [];
+          const r = result as Record<string, unknown>;
+          if (typeof r.configurado !== 'undefined') {
+            parts.push(r.configurado ? 'Token configurado.' : 'Token não configurado.');
+          }
+          if (typeof r.status !== 'undefined') parts.push(`Status: ${String(r.status)}`);
+          if (typeof r.balance_remaining !== 'undefined') parts.push(`Saldo restante: ${String(r.balance_remaining)}`);
+          Alert.alert('Conexão testada', parts.length ? parts.join('\n') : 'OK.');
+        })
+        .catch((err) => Alert.alert('Erro ao testar conexão', err instanceof Error ? err.message : 'Tente novamente.'))
+        .finally(() => setTestingBuscaPfProvider(null));
+    },
+    [actorId]
+  );
+
+  const handleExecuteBuscaPf = useCallback(
+    (provedor: AdminBuscaPfProvider, service: AdminIntegrationService, values: Record<string, string>) => {
+      const params: Record<string, string> = {};
+      service.fields.forEach((field) => {
+        const raw = values[field.key];
+        if (!raw) return;
+        params[field.key] = field.key === 'tipo_certidao' ? ADMIN_TRF2_TIPO_CERTIDAO_CODES[raw] ?? raw : raw;
+      });
+      const missing = service.fields.filter((f) => f.required && !params[f.key]);
+      if (missing.length > 0) {
+        Alert.alert('Preencha os campos obrigatórios', missing.map((f) => f.label).join(', '));
+        return;
+      }
+      setExecutingBuscaPfServiceCode(service.code);
+      executarAdminBuscaPfConsulta({ provedor, service: service.code, params }, actorId)
+        .then((res) => {
+          const resultado = (res.resultado ?? {}) as Record<string, unknown>;
+          const message = String(resultado.code_message ?? resultado.message ?? 'Consulta realizada com sucesso.');
+          setBuscaPfResults((prev) => ({ ...prev, [service.code]: { ok: true, message } }));
+        })
+        .catch((err) => {
+          const message = err instanceof Error ? err.message : 'Tente novamente.';
+          setBuscaPfResults((prev) => ({ ...prev, [service.code]: { ok: false, message } }));
+        })
+        .finally(() => setExecutingBuscaPfServiceCode(null));
+    },
+    [actorId]
+  );
+
+  const openBuscaPfHistorico = useCallback(
+    (provedor: AdminBuscaPfProvider) => {
+      setBuscaPfHistoricoProvider(provedor);
+      setBuscaPfHistoricoRows(null);
+      setIsLoadingBuscaPfHistorico(true);
+      setBuscaPfHistoricoError(null);
+      fetchAdminBuscaPfHistorico({ provedor, limit: 20, actorId })
+        .then((res) => setBuscaPfHistoricoRows(res.rows))
+        .catch((err) =>
+          setBuscaPfHistoricoError(err instanceof Error ? err.message : 'Não foi possível carregar o histórico.')
+        )
+        .finally(() => setIsLoadingBuscaPfHistorico(false));
+    },
+    [actorId]
   );
 
   const applyConfig = useCallback((config: AdminWaConfig) => {
@@ -6982,124 +7359,45 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
               </View>
             </View>
 
-            {activeBuscaPfSubProvider === 'infosimples' ? (
-              <>
-                <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
-                  <Text style={adminStyles.sectionTitle}>Credenciais</Text>
-
-                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>TOKEN INFOSIMPLES</Text>
-                  <View style={adminStyles.staticField}>
-                    <Text style={adminStyles.staticFieldText} numberOfLines={1}>
-                      Status pendente de confirmação
-                    </Text>
-                    <AdminColorPill label="Pendente" bg="#F4F1E8" color="#8A6D1E" />
-                  </View>
-
-                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>ENDPOINT BASE</Text>
-                  <View style={adminStyles.staticField}>
-                    <Text style={adminStyles.staticFieldText} numberOfLines={1}>
-                      api.infosimples.com
-                    </Text>
-                  </View>
-
-                  <View style={adminStyles.pillButtonRow}>
-                    <Pressable
-                      style={adminStyles.pillButtonOutline}
-                      onPress={() =>
-                        Alert.alert(
-                          'Ainda não disponível',
-                          'Preciso confirmar com a Lovable o endpoint de credenciais e teste de conexão do Infosimples antes de ligar este botão.'
-                        )
-                      }
-                    >
-                      <Feather name="check-circle" size={14} color="#15203E" />
-                      <Text style={adminStyles.outlineButtonText}>Testar conexão</Text>
-                    </Pressable>
-                    <Pressable
-                      style={adminStyles.pillButtonOutline}
-                      onPress={() =>
-                        Alert.alert('Ainda não disponível', 'Vou abrir a documentação do Infosimples direto no app numa próxima rodada.')
-                      }
-                    >
-                      <Text style={adminStyles.outlineButtonText}>Documentação Infosimples</Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                <View style={adminStyles.headerRowWrap}>
-                  <View style={adminStyles.headerRowTitleWrap}>
-                    <Text style={adminStyles.sectionTitle}>Consultas disponíveis</Text>
-                    <AdminColorPill label="4 serviços" bg={BLUE_BG} color={BLUE} />
-                  </View>
-                  <Pressable
-                    style={adminStyles.pillButtonOutline}
-                    onPress={() =>
-                      Alert.alert(
-                        'Ainda não disponível',
-                        'Preciso confirmar com a Lovable o endpoint de histórico (adm_infosimples_consultas) antes de ligar este botão.'
-                      )
-                    }
-                  >
-                    <Feather name="clock" size={14} color="#15203E" />
-                    <Text style={adminStyles.outlineButtonText}>Histórico</Text>
-                  </Pressable>
-                </View>
-
-                {ADMIN_BUSCAPF_INFOSIMPLES_SERVICES.map((service) => (
-                  <AdminIntegrationServiceCard
-                    key={service.code}
-                    service={service}
-                    expanded={expandedBuscaPfServices[service.code] ?? service.defaultExpanded ?? false}
-                    onToggleExpand={() =>
-                      setExpandedBuscaPfServices((prev) => ({
-                        ...prev,
-                        [service.code]: !(prev[service.code] ?? service.defaultExpanded ?? false),
-                      }))
-                    }
-                    values={Object.fromEntries(
-                      Object.entries(buscaPfFieldValues)
-                        .filter(([k]) => k.startsWith(`${service.code}::`))
-                        .map(([k, v]) => [k.slice(service.code.length + 2), v])
-                    )}
-                    onChangeField={(fieldKey, value) =>
-                      setBuscaPfFieldValues((prev) => ({ ...prev, [`${service.code}::${fieldKey}`]: value }))
-                    }
-                    onExecute={() =>
-                      Alert.alert(
-                        'Ainda não disponível',
-                        'Preciso confirmar com a Lovable o endpoint de execução deste serviço antes de ligar este botão.'
-                      )
-                    }
-                  />
-                ))}
-
-                <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
-                  <View style={adminStyles.headerRowWrap}>
-                    <View style={adminStyles.headerRowTitleWrap}>
-                      <Text style={adminStyles.sectionTitle}>Uso e custo mensal</Text>
-                    </View>
-                    <Pressable
-                      style={adminStyles.pillButtonOutline}
-                      onPress={() =>
-                        Alert.alert(
-                          'Ainda não disponível',
-                          'Preciso confirmar com a Lovable o endpoint de uso/custo mensal do Infosimples antes de ligar este botão.'
-                        )
-                      }
-                    >
-                      <Feather name="refresh-cw" size={14} color="#15203E" />
-                      <Text style={adminStyles.outlineButtonText}>Atualizar</Text>
-                    </Pressable>
-                  </View>
-                  <AdminEmptyState message="Estrutura pronta — falta confirmar com a Lovable o endpoint de uso/custo mensal (franquia, consultas realizadas por serviço) para trazer os números reais." />
-                </View>
-              </>
-            ) : (
-              <View style={adminStyles.sectionCard}>
-                <Text style={adminStyles.sectionTitle}>Fonte Data</Text>
-                <AdminEmptyState message="Ainda sem referência de tela para o Fonte Data — vou montar quando tiver o mesmo nível de detalhe do Infosimples." />
-              </View>
-            )}
+            <AdminBuscaPfProviderPanel
+              provedor={activeBuscaPfSubProvider}
+              services={
+                activeBuscaPfSubProvider === 'infosimples'
+                  ? ADMIN_BUSCAPF_INFOSIMPLES_SERVICES
+                  : ADMIN_BUSCAPF_FONTEDATA_SERVICES
+              }
+              status={buscaPfStatus}
+              isLoadingStatus={isLoadingBuscaPfStatus}
+              statusError={buscaPfStatusError}
+              isTesting={testingBuscaPfProvider === activeBuscaPfSubProvider}
+              onTestConnection={() => handleTestBuscaPf(activeBuscaPfSubProvider)}
+              expandedServices={expandedBuscaPfServices}
+              onToggleExpand={(serviceCode, defaultExpanded) =>
+                setExpandedBuscaPfServices((prev) => ({
+                  ...prev,
+                  [serviceCode]: !(prev[serviceCode] ?? defaultExpanded),
+                }))
+              }
+              fieldValues={buscaPfFieldValues}
+              onChangeField={(serviceCode, fieldKey, value) =>
+                setBuscaPfFieldValues((prev) => ({ ...prev, [`${serviceCode}::${fieldKey}`]: value }))
+              }
+              onExecute={(service) => {
+                const values = Object.fromEntries(
+                  Object.entries(buscaPfFieldValues)
+                    .filter(([k]) => k.startsWith(`${service.code}::`))
+                    .map(([k, v]) => [k.slice(service.code.length + 2), v])
+                );
+                handleExecuteBuscaPf(activeBuscaPfSubProvider, service, values);
+              }}
+              executingServiceCode={executingBuscaPfServiceCode}
+              results={buscaPfResults}
+              onOpenHistorico={() => openBuscaPfHistorico(activeBuscaPfSubProvider)}
+              uso={buscaPfUso[activeBuscaPfSubProvider]}
+              isLoadingUso={isLoadingBuscaPfUso[activeBuscaPfSubProvider]}
+              usoError={buscaPfUsoError[activeBuscaPfSubProvider]}
+              onRefreshUso={() => loadBuscaPfUso(activeBuscaPfSubProvider)}
+            />
           </>
         ) : activeProvider === 'juridico' ? (
           <>
@@ -7386,6 +7684,58 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                       {unidade.nomeFantasia ?? unidade.razaoSocial ?? unidade.id}
                     </Text>
                   </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!buscaPfHistoricoProvider}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setBuscaPfHistoricoProvider(null)}
+      >
+        <View style={styles.requestModalBackdrop}>
+          <View style={styles.requestModalCard}>
+            <View style={styles.requestModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.requestModalTitle}>Histórico</Text>
+                <Text style={adminStyles.detailSubEmail}>
+                  {buscaPfHistoricoProvider === 'infosimples' ? 'Infosimples' : 'Fonte Data'}
+                </Text>
+              </View>
+              <Pressable onPress={() => setBuscaPfHistoricoProvider(null)} hitSlop={8}>
+                <Feather name="x" size={20} color="#677089" />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 400, marginTop: 12 }}>
+              {isLoadingBuscaPfHistorico ? (
+                <ActivityIndicator color={NAVY} style={{ marginTop: 12 }} />
+              ) : buscaPfHistoricoError ? (
+                <AdminEmptyState message={buscaPfHistoricoError} />
+              ) : !buscaPfHistoricoRows || buscaPfHistoricoRows.length === 0 ? (
+                <AdminEmptyState message="Nenhuma consulta registrada ainda." />
+              ) : (
+                buscaPfHistoricoRows.map((row) => (
+                  <View key={row.id} style={[adminStyles.staticField, { marginBottom: 8 }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                        {row.service ?? '—'} {row.nome ? `— ${row.nome}` : row.cpf ? `— ${row.cpf}` : ''}
+                      </Text>
+                      <Text style={adminStyles.integrationHint}>
+                        {formatAdminLogDateTime(row.createdAt)}
+                        {row.costBrl != null ? ` · ${admFormatBRL(row.costBrl)}` : ''}
+                      </Text>
+                    </View>
+                    <AdminColorPill
+                      label={row.responseCode != null ? String(row.responseCode) : '—'}
+                      bg={row.responseCode === 200 ? '#E7F5EC' : '#F4F1E8'}
+                      color={row.responseCode === 200 ? '#1E8A4C' : '#8A6D1E'}
+                    />
+                  </View>
                 ))
               )}
             </ScrollView>

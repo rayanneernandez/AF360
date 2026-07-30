@@ -477,6 +477,21 @@ function postGmbAcao(acao, body, actorId) {
   return lovablePost('/api/public/internal/gmb', { acao }, body ?? {}, actorId);
 }
 
+// --- Integrações: Busca PF (Infosimples + Fonte Data) — endpoint confirmado
+// pela Lovable em 30/07/2026. Não existe tabela de credenciais (tokens são
+// secrets do backend deles: INFOSIMPLES_TOKEN, FONTEDATA_API_KEY) — só dá
+// pra saber se está configurado via ?recurso=status. "recurso" no GET pode
+// ser: status, historico, uso. "acao" no POST pode ser: testar (body vazio,
+// params { provedor }), consultar (body { provedor, service, params }).
+
+function getBuscaPf(params = {}, actorId) {
+  return lovableGet('/api/public/internal/busca-pf', params, actorId);
+}
+
+function postBuscaPfAcao(acao, params = {}, body = {}, actorId) {
+  return lovablePost('/api/public/internal/busca-pf', { acao, ...params }, body, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -541,4 +556,6 @@ module.exports = {
   getGmb,
   patchGmbLocation,
   postGmbAcao,
+  getBuscaPf,
+  postBuscaPfAcao,
 };

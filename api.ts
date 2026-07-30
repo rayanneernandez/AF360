@@ -1635,6 +1635,110 @@ export async function setAdminGmbAccountName(
   return (json.data ?? {}) as Record<string, unknown>;
 }
 
+// --- Integrações: Busca PF (Infosimples + Fonte Data) — endpoint
+// /api/public/internal/busca-pf confirmado pela Lovable em 30/07/2026. Não
+// existe tabela de credenciais (tokens são secrets do backend deles) — só
+// dá pra saber se está configurado via status.
+
+export type AdminBuscaPfProvider = 'infosimples' | 'fontedata';
+
+export type AdminBuscaPfProviderStatus = {
+  configurado: boolean;
+  tokenMascarado: string | null;
+};
+
+export type AdminBuscaPfStatus = {
+  credenciais: Partial<Record<AdminBuscaPfProvider, AdminBuscaPfProviderStatus>>;
+  servicos: Record<string, unknown>;
+};
+
+export async function fetchAdminBuscaPfStatus(actorId?: string | null): Promise<AdminBuscaPfStatus> {
+  const json = await api.get(withActorId('/api/admin/integracoes/busca-pf/status', actorId));
+  return (json.data ?? { credenciais: {}, servicos: {} }) as AdminBuscaPfStatus;
+}
+
+export async function testAdminBuscaPfConexao(
+  provedor: AdminBuscaPfProvider,
+  actorId?: string | null
+): Promise<Record<string, unknown>> {
+  const json = await api.post(withActorId('/api/admin/integracoes/busca-pf/testar', actorId), { provedor });
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
+export type AdminBuscaPfConsultaResult = {
+  provedor: AdminBuscaPfProvider;
+  service: string;
+  resultado: Record<string, unknown>;
+};
+
+export async function executarAdminBuscaPfConsulta(
+  body: { provedor: AdminBuscaPfProvider; service: string; params: Record<string, string> },
+  actorId?: string | null
+): Promise<AdminBuscaPfConsultaResult> {
+  const json = await api.post(withActorId('/api/admin/integracoes/busca-pf/consultar', actorId), body);
+  return json.data as AdminBuscaPfConsultaResult;
+}
+
+export type AdminBuscaPfHistoricoItem = {
+  id: string;
+  provedor: AdminBuscaPfProvider | null;
+  service: string | null;
+  params: unknown;
+  responseCode: number | string | null;
+  requestId: string | null;
+  costBrl: number | null;
+  cpf: string | null;
+  nome: string | null;
+  responseData: unknown;
+  createdBy: string | null;
+  createdAt: string | null;
+};
+
+export async function fetchAdminBuscaPfHistorico(opts?: {
+  provedor?: AdminBuscaPfProvider;
+  limit?: number;
+  offset?: number;
+  search?: string;
+  service?: string;
+  actorId?: string | null;
+}): Promise<{ rows: AdminBuscaPfHistoricoItem[]; count: number; limit: number; offset: number }> {
+  const params = new URLSearchParams();
+  if (opts?.provedor) params.set('provedor', opts.provedor);
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  if (opts?.offset) params.set('offset', String(opts.offset));
+  if (opts?.search) params.set('search', opts.search);
+  if (opts?.service) params.set('service', opts.service);
+  const qs = params.toString();
+  const path = `/api/admin/integracoes/busca-pf/historico${qs ? `?${qs}` : ''}`;
+  const json = await api.get(withActorId(path, opts?.actorId));
+  return json.data as { rows: AdminBuscaPfHistoricoItem[]; count: number; limit: number; offset: number };
+}
+
+export type AdminBuscaPfUso = {
+  total: number | null;
+  billable: number | null;
+  custoBase: number | null;
+  custoAdicional: number | null;
+  custoTotal: number | null;
+  custoTotalComFranquia: number | null;
+  balanceRemaining: number | null;
+  porServico: Record<string, { count: number | null; custo: number | null }>;
+};
+
+export async function fetchAdminBuscaPfUso(opts?: {
+  provedor?: AdminBuscaPfProvider;
+  months?: number;
+  actorId?: string | null;
+}): Promise<AdminBuscaPfUso> {
+  const params = new URLSearchParams();
+  if (opts?.provedor) params.set('provedor', opts.provedor);
+  if (opts?.months) params.set('months', String(opts.months));
+  const qs = params.toString();
+  const path = `/api/admin/integracoes/busca-pf/uso${qs ? `?${qs}` : ''}`;
+  const json = await api.get(withActorId(path, opts?.actorId));
+  return json.data as AdminBuscaPfUso;
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {
