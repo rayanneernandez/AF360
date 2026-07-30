@@ -5870,6 +5870,187 @@ export function AdminConvencoesScreen({ navigation }: ScreenProps<'AdminConvenco
 // 10. Configurações
 // ============================================================================
 
+// ---------- Modal "Visualizar cargo x domínio" ----------
+
+function AdminCargoDominioDetailModal({
+  visible,
+  item,
+  providerLabels,
+  onClose,
+  onEdit,
+}: {
+  visible: boolean;
+  item: AdminCargoDominioItem | null;
+  providerLabels: Record<AdminCargoDominioProvider, string>;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  if (!item) return null;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>{item.cargo}</Text>
+              <Text style={adminStyles.detailSubEmail}>Domínio de e-mail por cargo</Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={adminStyles.detailGridRow}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>DOMÍNIO</Text>
+                <Text style={adminStyles.detailFieldValue}>{item.dominio}</Text>
+              </View>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>PROVEDOR</Text>
+                <Text style={adminStyles.detailFieldValue}>
+                  {item.provider ? providerLabels[item.provider] : '—'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={[adminStyles.detailGridRow, styles.spacingTop]}>
+              <View style={adminStyles.detailGridItem}>
+                <Text style={adminStyles.detailFieldLabel}>ATIVO</Text>
+                <View style={[adminStyles.detailBadgeBase, { backgroundColor: item.isActive ? GREEN_BG : RED_BG }]}>
+                  <Feather
+                    name={item.isActive ? 'check-circle' : 'x-circle'}
+                    size={11}
+                    color={item.isActive ? GREEN : RED}
+                  />
+                  <Text style={[adminStyles.detailBadgeText, { color: item.isActive ? GREEN : RED }]}>
+                    {item.isActive ? 'Sim' : 'Não'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={[styles.secondaryButton, adminStyles.secondaryButtonCompact]} onPress={onEdit}>
+              <Feather name="edit-2" size={13} color="#2E468F" />
+              <Text style={styles.secondaryButtonText}>Editar</Text>
+            </Pressable>
+            <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+              <Text style={adminStyles.ghostButtonText}>Fechar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ---------- Modal "Editar cargo x domínio" ----------
+
+function AdminCargoDominioEditModal({
+  visible,
+  item,
+  providerLabels,
+  isSaving,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  item: AdminCargoDominioItem | null;
+  providerLabels: Record<AdminCargoDominioProvider, string>;
+  isSaving?: boolean;
+  onClose: () => void;
+  onSubmit: (values: { cargo: string; dominio: string; provider: AdminCargoDominioProvider; ativo: boolean }) => void;
+}) {
+  const [cargo, setCargo] = useState('');
+  const [dominio, setDominio] = useState('');
+  const [provider, setProvider] = useState<AdminCargoDominioProvider>('migadu');
+  const [ativo, setAtivo] = useState(true);
+  const [isProviderPickerOpen, setIsProviderPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (visible && item) {
+      setCargo(item.cargo ?? '');
+      setDominio(item.dominio ?? '');
+      setProvider(item.provider ?? 'migadu');
+      setAtivo(item.isActive);
+    }
+  }, [visible, item]);
+
+  if (!item) return null;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.requestModalTitle}>Editar — {item.cargo}</Text>
+              <Text style={adminStyles.detailSubEmail}>Domínio de e-mail por cargo</Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.requestFieldLabel}>Cargo</Text>
+            <TextInput style={styles.processTextInput} value={cargo} onChangeText={setCargo} placeholder="Ex: Frentista" placeholderTextColor="#A7AEC2" />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Domínio</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={dominio}
+              onChangeText={setDominio}
+              placeholder="rede.americanfuel.com.br"
+              placeholderTextColor="#A7AEC2"
+              autoCapitalize="none"
+            />
+
+            <View style={styles.spacingTop}>
+              <AdminSelectField label="Provedor" value={providerLabels[provider]} onPress={() => setIsProviderPickerOpen(true)} />
+            </View>
+
+            <View style={[adminStyles.themeRowTop, styles.spacingTop]}>
+              <Text style={adminStyles.subsectionTitle}>Ativo</Text>
+              <ToggleSwitch value={ativo} onValueChange={setAtivo} />
+            </View>
+          </ScrollView>
+
+          <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+            <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+              <Text style={adminStyles.ghostButtonText}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={[adminStyles.primaryActionButton, isSaving ? { opacity: 0.6 } : null]}
+              disabled={isSaving}
+              onPress={() => onSubmit({ cargo: cargo.trim(), dominio: dominio.trim(), provider, ativo })}
+            >
+              <Text style={adminStyles.primaryActionButtonText}>{isSaving ? 'Salvando...' : 'Salvar Alterações'}</Text>
+            </Pressable>
+          </View>
+
+          <AdminSimplePickerModal
+            visible={isProviderPickerOpen}
+            title="Provedor"
+            options={Object.values(providerLabels)}
+            selectedValue={providerLabels[provider]}
+            onSelect={(label) => {
+              const found = (Object.entries(providerLabels) as Array<[AdminCargoDominioProvider, string]>).find(
+                ([, value]) => value === label
+              );
+              if (found) setProvider(found[0]);
+            }}
+            onClose={() => setIsProviderPickerOpen(false)}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const ADMIN_CARGO_DOMINIO_PROVIDER_LABELS: Record<AdminCargoDominioProvider, string> = {
   migadu: 'Migadu (operacional)',
   google: 'Google (administrativo)',
@@ -5947,9 +6128,11 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
   const [novoCargoDominio, setNovoCargoDominio] = useState('');
   const [novoCargoProvider, setNovoCargoProvider] = useState<AdminCargoDominioProvider>('migadu');
   const [isNovoCargoPickerOpen, setIsNovoCargoPickerOpen] = useState(false);
-  const [rowProviderPickerId, setRowProviderPickerId] = useState<string | null>(null);
   const [isSavingCargoDominio, setIsSavingCargoDominio] = useState(false);
-  const rowPickerItem = cargoDominios.find((item) => item.id === rowProviderPickerId) ?? null;
+  const [cargoDominioActionsFor, setCargoDominioActionsFor] = useState<AdminCargoDominioItem | null>(null);
+  const [cargoDominioDetail, setCargoDominioDetail] = useState<AdminCargoDominioItem | null>(null);
+  const [cargoDominioEditTarget, setCargoDominioEditTarget] = useState<AdminCargoDominioItem | null>(null);
+  const [isSavingCargoDominioEdit, setIsSavingCargoDominioEdit] = useState(false);
 
   const loadCargoDominios = useCallback(() => {
     setIsLoadingCargoDominios(true);
@@ -5998,10 +6181,26 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
       .finally(() => setIsSavingCargoDominio(false));
   };
 
-  const handleChangeCargoProvider = (item: AdminCargoDominioItem, provider: AdminCargoDominioProvider) => {
-    updateAdminCargoDominio(item.id, { provider }, actorId)
-      .then(() => loadCargoDominios())
-      .catch((err) => showAdminApiError(err, 'Não foi possível atualizar o provedor.'));
+  const handleSubmitCargoDominioEdit = (values: {
+    cargo: string;
+    dominio: string;
+    provider: AdminCargoDominioProvider;
+    ativo: boolean;
+  }) => {
+    const target = cargoDominioEditTarget;
+    if (!target) return;
+    if (!values.cargo || !values.dominio) {
+      Alert.alert('Campos obrigatórios', 'Informe o cargo e o domínio.');
+      return;
+    }
+    setIsSavingCargoDominioEdit(true);
+    updateAdminCargoDominio(target.id, values, actorId)
+      .then(() => {
+        setCargoDominioEditTarget(null);
+        loadCargoDominios();
+      })
+      .catch((err) => showAdminApiError(err, 'Não foi possível salvar as alterações.'))
+      .finally(() => setIsSavingCargoDominioEdit(false));
   };
 
   const handleToggleCargoDominio = (item: AdminCargoDominioItem) => {
@@ -6187,20 +6386,14 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
                     {item.dominio}
                   </Text>
                 </View>
-                <Pressable
-                  style={adminStyles.gearButton}
-                  onPress={() => setRowProviderPickerId(item.id)}
-                  hitSlop={4}
-                >
-                  <Text style={adminStyles.prefixCode}>{item.provider ?? '—'}</Text>
-                </Pressable>
+                <AdminColorPill
+                  label={item.provider ? ADMIN_CARGO_DOMINIO_PROVIDER_LABELS[item.provider].split(' ')[0] : '—'}
+                  bg={item.provider === 'google' ? GOLD_BG : BLUE_BG}
+                  color={item.provider === 'google' ? GOLD : BLUE}
+                />
                 <ToggleSwitch value={item.isActive} onValueChange={() => handleToggleCargoDominio(item)} />
-                <Pressable
-                  hitSlop={8}
-                  style={{ padding: 4, marginLeft: 6 }}
-                  onPress={() => handleDeleteCargoDominio(item)}
-                >
-                  <Feather name="trash-2" size={16} color={RED} />
+                <Pressable hitSlop={10} style={{ padding: 4, marginLeft: 2 }} onPress={() => setCargoDominioActionsFor(item)}>
+                  <Feather name="more-vertical" size={18} color="#9AA1B5" />
                 </Pressable>
               </View>
             ))
@@ -6255,18 +6448,61 @@ export function AdminConfiguracoesScreen({ navigation }: ScreenProps<'AdminConfi
         }}
         onClose={() => setIsNovoCargoPickerOpen(false)}
       />
-      <AdminSimplePickerModal
-        visible={rowPickerItem !== null}
-        title="Provedor"
-        options={Object.values(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS)}
-        selectedValue={rowPickerItem?.provider ? ADMIN_CARGO_DOMINIO_PROVIDER_LABELS[rowPickerItem.provider] : ''}
-        onSelect={(label) => {
-          const found = (Object.entries(ADMIN_CARGO_DOMINIO_PROVIDER_LABELS) as Array<
-            [AdminCargoDominioProvider, string]
-          >).find(([, value]) => value === label);
-          if (found && rowPickerItem) handleChangeCargoProvider(rowPickerItem, found[0]);
+      <AdminGenericActionsMenu
+        visible={cargoDominioActionsFor !== null}
+        title={cargoDominioActionsFor?.cargo ?? ''}
+        onClose={() => setCargoDominioActionsFor(null)}
+        actions={[
+          {
+            key: 'visualizar',
+            icon: 'eye',
+            label: 'Visualizar',
+            onPress: () => {
+              setCargoDominioDetail(cargoDominioActionsFor);
+              setCargoDominioActionsFor(null);
+            },
+          },
+          {
+            key: 'editar',
+            icon: 'edit-2',
+            label: 'Editar',
+            onPress: () => {
+              const item = cargoDominioActionsFor;
+              setCargoDominioActionsFor(null);
+              if (item) setCargoDominioEditTarget(item);
+            },
+          },
+          {
+            key: 'excluir',
+            icon: 'trash-2',
+            label: 'Excluir',
+            danger: true,
+            onPress: () => {
+              const item = cargoDominioActionsFor;
+              setCargoDominioActionsFor(null);
+              if (item) handleDeleteCargoDominio(item);
+            },
+          },
+        ]}
+      />
+      <AdminCargoDominioDetailModal
+        visible={cargoDominioDetail !== null}
+        item={cargoDominioDetail}
+        providerLabels={ADMIN_CARGO_DOMINIO_PROVIDER_LABELS}
+        onClose={() => setCargoDominioDetail(null)}
+        onEdit={() => {
+          const item = cargoDominioDetail;
+          setCargoDominioDetail(null);
+          if (item) setCargoDominioEditTarget(item);
         }}
-        onClose={() => setRowProviderPickerId(null)}
+      />
+      <AdminCargoDominioEditModal
+        visible={cargoDominioEditTarget !== null}
+        item={cargoDominioEditTarget}
+        providerLabels={ADMIN_CARGO_DOMINIO_PROVIDER_LABELS}
+        isSaving={isSavingCargoDominioEdit}
+        onClose={() => setCargoDominioEditTarget(null)}
+        onSubmit={handleSubmitCargoDominioEdit}
       />
     </SafeAreaView>
   );
