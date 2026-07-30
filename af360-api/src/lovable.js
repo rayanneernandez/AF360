@@ -301,6 +301,25 @@ function postAdminVenderUnidade(body, actorId) {
   return lovablePost('/api/public/internal/admin-vender-unidade', {}, body, actorId);
 }
 
+// --- Contabilidades (tabela própria public.contabilidades, confirmada pelo
+// Lovable em 29/07/2026 — empresas.contabilidade_id -> contabilidades.id). ---
+
+function getAdminContabilidades({ limit, offset, q, order, is_active } = {}) {
+  return lovableGet('/api/public/internal/admin-contabilidades', { limit, offset, q, order, is_active });
+}
+
+function postAdminContabilidade(body, actorId) {
+  return lovablePost('/api/public/internal/admin-contabilidades', {}, body, actorId);
+}
+
+function patchAdminContabilidade(id, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-contabilidades', { id }, body, actorId);
+}
+
+function deleteAdminContabilidade(id, actorId) {
+  return lovableDelete('/api/public/internal/admin-contabilidades', { id }, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -333,4 +352,8 @@ module.exports = {
   patchAdminUnidade,
   deleteAdminUnidade,
   postAdminVenderUnidade,
+  getAdminContabilidades,
+  postAdminContabilidade,
+  patchAdminContabilidade,
+  deleteAdminContabilidade,
 };

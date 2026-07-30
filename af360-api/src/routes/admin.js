@@ -23,6 +23,10 @@ const {
   patchAdminUnidade,
   deleteAdminUnidade,
   postAdminVenderUnidade,
+  getAdminContabilidades,
+  postAdminContabilidade,
+  patchAdminContabilidade,
+  deleteAdminContabilidade,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -562,6 +566,12 @@ function mapUnidadeRow(row) {
     enderecoTexto: row.endereco_texto ?? null,
     proprietario: row.proprietario ?? null,
     ipirangaHabilitado: Boolean(row.ipiranga_habilitado),
+    email: row.email ?? null,
+    telefone: row.telefone ?? null,
+    dataCadastro: row.data_cadastro ?? null,
+    dataPrimeiraVenda: row.data_primeira_venda ?? null,
+    contabilidadeId: row.contabilidade_id ?? null,
+    servicos: row.servicos ?? {},
     vendida: Boolean(row.vendida),
     dataVenda: row.data_venda ?? null,
     comprador: row.comprador ?? null,
@@ -638,6 +648,88 @@ router.post('/unidades/:id/vender', async (req, res) => {
   } catch (err) {
     console.error('[admin/unidades/:id/vender POST] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Contabilidades (tabela própria public.contabilidades — schema confirmado
+// pelo Lovable em 29/07/2026: razao_social, nome_fantasia, apelido, cnpj,
+// email, telefone, responsavel, endereço, is_active. Ligada a empresas via
+// empresas.contabilidade_id). "unidades_vinculadas" já vem pronto no retorno
+// da listagem deles.
+// ---------------------------------------------------------------------------
+
+function mapContabilidadeRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    razaoSocial: row.razao_social ?? null,
+    nomeFantasia: row.nome_fantasia ?? null,
+    apelido: row.apelido ?? null,
+    cnpj: row.cnpj ?? null,
+    email: row.email ?? null,
+    telefone: row.telefone ?? null,
+    responsavel: row.responsavel ?? null,
+    rua: row.rua ?? null,
+    numero: row.numero ?? null,
+    bairro: row.bairro ?? null,
+    cep: row.cep ?? null,
+    cidade: row.cidade ?? null,
+    estado: row.estado ?? null,
+    observacoes: row.observacoes ?? null,
+    isActive: row.is_active !== false,
+    unidadesVinculadas: row.unidades_vinculadas ?? 0,
+  };
+}
+
+// GET /api/admin/contabilidades?q=&is_active=
+router.get('/contabilidades', async (req, res) => {
+  try {
+    const json = await getAdminContabilidades({
+      q: req.query.q,
+      is_active: req.query.is_active,
+      order: 'razao_social:asc',
+      limit: 500,
+    });
+    const contabilidades = (json?.data ?? []).map(mapContabilidadeRow);
+    res.json({ ok: true, data: { count: json?.count ?? contabilidades.length, contabilidades } });
+  } catch (err) {
+    console.error('[admin/contabilidades] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/contabilidades?actorId=... — razao_social obrigatório.
+router.post('/contabilidades', async (req, res) => {
+  try {
+    const json = await postAdminContabilidade(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapContabilidadeRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/contabilidades POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/contabilidades/:id?actorId=...
+router.patch('/contabilidades/:id', async (req, res) => {
+  try {
+    const json = await patchAdminContabilidade(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapContabilidadeRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/contabilidades/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/contabilidades/:id?actorId=... — 409 se tiver unidade vinculada.
+router.delete('/contabilidades/:id', async (req, res) => {
+  try {
+    const json = await deleteAdminContabilidade(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[admin/contabilidades/:id DELETE] erro:', err.message);
+    const status = err.lovableStatus === 409 ? 409 : writeErrorStatus(err);
+    res.status(status).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
 

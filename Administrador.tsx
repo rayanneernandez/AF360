@@ -68,6 +68,10 @@ import {
   updateAdminUnidade,
   deleteAdminUnidade,
   venderAdminUnidade,
+  fetchAdminContabilidades,
+  createAdminContabilidade,
+  updateAdminContabilidade,
+  deleteAdminContabilidade,
   fetchRhColaboradores,
   ApiError,
   type AdminUsuarioItem,
@@ -80,6 +84,8 @@ import {
   type AdminUnidadeItem,
   type AdminUnidadeBandeira,
   type AdminUnidadeTipo,
+  type AdminUnidadeServicos,
+  type AdminContabilidadeItem,
   type RhUnidadeItem,
   type RhColaboradorRaw,
 } from './api';
@@ -3150,6 +3156,15 @@ function adminBrDateToIso(label: string): string | null {
   return `${year}-${month}-${day}`;
 }
 
+// Inverso de adminBrDateToIso — "aaaa-mm-dd" (ou com horário/timestamp junto)
+// -> "dd/mm/aaaa" via regex direto, sem passar por Date (evita fuso horário).
+function adminIsoDateToBrLabel(iso: string | null | undefined): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec((iso ?? '').trim());
+  if (!match) return '';
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
 function adminUnidadeDisplayName(unidade: AdminUnidadeItem): string {
   return unidade.nomeFantasia || unidade.razaoSocial || '(sem nome)';
 }
@@ -3405,6 +3420,491 @@ function AdminUnidadeDetailModal({
   );
 }
 
+// ---------- Modal "Contabilidades" (lista + form no mesmo modal, alterna
+// view interna com "← Voltar" em vez de empilhar um <Modal> dentro do outro —
+// mesmo padrão de <Modal> único trocando de conteúdo já usado nesse arquivo,
+// evita o bug de modal-em-modal). Tabela própria public.contabilidades,
+// confirmada pelo Lovable em 29/07/2026 (empresas.contabilidade_id). ----------
+
+type AdminContabilidadeFormValues = {
+  razaoSocial: string;
+  nomeFantasia: string;
+  apelido: string;
+  cnpj: string;
+  responsavel: string;
+  email: string;
+  telefone: string;
+  rua: string;
+  numero: string;
+  bairro: string;
+  cep: string;
+  cidade: string;
+  estado: string;
+  observacoes: string;
+  isActive: boolean;
+};
+
+function emptyAdminContabilidadeForm(): AdminContabilidadeFormValues {
+  return {
+    razaoSocial: '',
+    nomeFantasia: '',
+    apelido: '',
+    cnpj: '',
+    responsavel: '',
+    email: '',
+    telefone: '',
+    rua: '',
+    numero: '',
+    bairro: '',
+    cep: '',
+    cidade: '',
+    estado: '',
+    observacoes: '',
+    isActive: true,
+  };
+}
+
+function adminContabilidadeDisplayName(item: AdminContabilidadeItem): string {
+  return item.nomeFantasia || item.razaoSocial || '(sem nome)';
+}
+
+function AdminContabilidadesModal({
+  visible,
+  actorId,
+  onClose,
+  onChanged,
+}: {
+  visible: boolean;
+  actorId?: string | null;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [view, setView] = useState<'list' | 'form'>('list');
+  const [search, setSearch] = useState('');
+  const [contabilidades, setContabilidades] = useState<AdminContabilidadeItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
+  const [form, setForm] = useState<AdminContabilidadeFormValues>(emptyAdminContabilidadeForm());
+  const [beingEdited, setBeingEdited] = useState<AdminContabilidadeItem | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const load = () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    return fetchAdminContabilidades()
+      .then((data) => setContabilidades(data.contabilidades))
+      .catch((err) =>
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as contabilidades.')
+      )
+      .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    if (visible) {
+      setView('list');
+      setSearch('');
+      load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return contabilidades;
+    return contabilidades.filter(
+      (item) =>
+        adminContabilidadeDisplayName(item).toLowerCase().includes(query) ||
+        (item.cnpj ?? '').toLowerCase().includes(query) ||
+        (item.responsavel ?? '').toLowerCase().includes(query)
+    );
+  }, [contabilidades, search]);
+
+  const handleSubmit = () => {
+    if (!form.razaoSocial.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe a razão social.');
+      return;
+    }
+    const body = {
+      razao_social: form.razaoSocial.trim(),
+      nome_fantasia: form.nomeFantasia.trim() || null,
+      apelido: form.apelido.trim() || null,
+      cnpj: form.cnpj.trim() || null,
+      responsavel: form.responsavel.trim() || null,
+      email: form.email.trim() || null,
+      telefone: form.telefone.trim() || null,
+      rua: form.rua.trim() || null,
+      numero: form.numero.trim() || null,
+      bairro: form.bairro.trim() || null,
+      cep: form.cep.trim() || null,
+      cidade: form.cidade.trim() || null,
+      estado: form.estado.trim() || null,
+      observacoes: form.observacoes.trim() || null,
+      is_active: form.isActive,
+    };
+
+    setIsSaving(true);
+    const request =
+      formMode === 'create' ? createAdminContabilidade(body, actorId) : updateAdminContabilidade(beingEdited!.id, body, actorId);
+
+    request
+      .then(() => {
+        setView('list');
+        load();
+        onChanged();
+      })
+      .catch((err) =>
+        showAdminApiError(
+          err,
+          formMode === 'create' ? 'Não foi possível criar a contabilidade.' : 'Não foi possível salvar a contabilidade.'
+        )
+      )
+      .finally(() => setIsSaving(false));
+  };
+
+  const handleExcluir = (item: AdminContabilidadeItem) => {
+    Alert.alert('Excluir contabilidade', `Tem certeza que quer excluir "${adminContabilidadeDisplayName(item)}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdminContabilidade(item.id, actorId)
+            .then(() => {
+              load();
+              onChanged();
+            })
+            .catch((err) => {
+              if (err instanceof ApiError && err.status === 409) {
+                Alert.alert(
+                  'Não é possível excluir',
+                  'Essa contabilidade ainda está vinculada a alguma unidade. Desvincule antes de excluir.'
+                );
+                return;
+              }
+              showAdminApiError(err, 'Não foi possível excluir a contabilidade.');
+            });
+        },
+      },
+    ]);
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          {view === 'list' ? (
+            <>
+              <View style={styles.requestModalHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.requestModalTitle}>Contabilidades</Text>
+                  <Text style={adminStyles.detailSubEmail}>Cadastre os escritórios contábeis que atendem as unidades da rede.</Text>
+                </View>
+                <Pressable onPress={onClose} hitSlop={8}>
+                  <Feather name="x" size={20} color="#677089" />
+                </Pressable>
+              </View>
+
+              <View style={[styles.directorNotifHeaderRow, { justifyContent: 'flex-end' }]}>
+                <Pressable
+                  style={styles.directorNotifNewButton}
+                  onPress={() => {
+                    setFormMode('create');
+                    setBeingEdited(null);
+                    setForm(emptyAdminContabilidadeForm());
+                    setView('form');
+                  }}
+                >
+                  <Feather name="plus" size={15} color="#FFFFFF" />
+                  <Text style={styles.directorNotifNewButtonText}>Nova Contabilidade</Text>
+                </Pressable>
+              </View>
+
+              <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar por nome, CNPJ, responsável..." />
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {isLoading ? (
+                  <AdminEmptyState message="Carregando contabilidades..." />
+                ) : errorMessage ? (
+                  <AdminEmptyState message={errorMessage} />
+                ) : filtered.length === 0 ? (
+                  <AdminEmptyState message="Nenhuma contabilidade cadastrada." />
+                ) : (
+                  filtered.map((item) => (
+                    <View key={item.id} style={adminStyles.contabRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={adminStyles.listName} numberOfLines={1}>
+                          {adminContabilidadeDisplayName(item)}
+                        </Text>
+                        <Text style={adminStyles.listMeta} numberOfLines={1}>
+                          {item.cnpj || 'CNPJ não informado'}
+                          {item.responsavel ? ` • ${item.responsavel}` : ''}
+                          {item.cidade ? ` • ${item.cidade}${item.estado ? `/${item.estado}` : ''}` : ''}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          adminStyles.detailBadgeBase,
+                          { backgroundColor: item.isActive ? GREEN_BG : RED_BG, marginRight: 6 },
+                        ]}
+                      >
+                        <Text style={[adminStyles.detailBadgeText, { color: item.isActive ? GREEN : RED }]}>
+                          {item.isActive ? 'Ativa' : 'Inativa'}
+                        </Text>
+                      </View>
+                      <Pressable
+                        hitSlop={8}
+                        style={{ padding: 4 }}
+                        onPress={() => {
+                          setFormMode('edit');
+                          setBeingEdited(item);
+                          setForm({
+                            razaoSocial: item.razaoSocial ?? '',
+                            nomeFantasia: item.nomeFantasia ?? '',
+                            apelido: item.apelido ?? '',
+                            cnpj: item.cnpj ?? '',
+                            responsavel: item.responsavel ?? '',
+                            email: item.email ?? '',
+                            telefone: item.telefone ?? '',
+                            rua: item.rua ?? '',
+                            numero: item.numero ?? '',
+                            bairro: item.bairro ?? '',
+                            cep: item.cep ?? '',
+                            cidade: item.cidade ?? '',
+                            estado: item.estado ?? '',
+                            observacoes: item.observacoes ?? '',
+                            isActive: item.isActive,
+                          });
+                          setView('form');
+                        }}
+                      >
+                        <Feather name="edit-2" size={16} color="#4C5470" />
+                      </Pressable>
+                      <Pressable hitSlop={8} style={{ padding: 4 }} onPress={() => handleExcluir(item)}>
+                        <Feather name="trash-2" size={16} color={RED} />
+                      </Pressable>
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+
+              <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+                <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+                  <Text style={adminStyles.ghostButtonText}>Fechar</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.requestModalHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.requestModalTitle}>
+                    {formMode === 'create' ? 'Nova Contabilidade' : `Editar — ${beingEdited ? adminContabilidadeDisplayName(beingEdited) : ''}`}
+                  </Text>
+                  <Text style={adminStyles.detailSubEmail}>Preencha os dados do escritório contábil.</Text>
+                </View>
+                <Pressable onPress={onClose} hitSlop={8}>
+                  <Feather name="x" size={20} color="#677089" />
+                </Pressable>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Razão Social *</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.razaoSocial}
+                  onChangeText={(text) => setForm((current) => ({ ...current, razaoSocial: text }))}
+                  placeholder="Razão social"
+                  placeholderTextColor="#A7AEC2"
+                />
+
+                <View style={adminStyles.formRow}>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Nome Fantasia</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.nomeFantasia}
+                      onChangeText={(text) => setForm((current) => ({ ...current, nomeFantasia: text }))}
+                      placeholder="Opcional"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Apelido</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.apelido}
+                      onChangeText={(text) => setForm((current) => ({ ...current, apelido: text }))}
+                      placeholder="Ex: Contab. Silva"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                </View>
+
+                <View style={adminStyles.formRow}>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>CNPJ</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.cnpj}
+                      onChangeText={(text) => setForm((current) => ({ ...current, cnpj: text }))}
+                      placeholder="00.000.000/0001-00"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Responsável (Contador)</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.responsavel}
+                      onChangeText={(text) => setForm((current) => ({ ...current, responsavel: text }))}
+                      placeholder="Opcional"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                </View>
+
+                <View style={adminStyles.formRow}>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>E-mail</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.email}
+                      onChangeText={(text) => setForm((current) => ({ ...current, email: text }))}
+                      placeholder="Opcional"
+                      placeholderTextColor="#A7AEC2"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                    />
+                  </View>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Telefone</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.telefone}
+                      onChangeText={(text) => setForm((current) => ({ ...current, telefone: text }))}
+                      placeholder="Opcional"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                </View>
+
+                <View style={adminStyles.formRow}>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Rua</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.rua}
+                      onChangeText={(text) => setForm((current) => ({ ...current, rua: text }))}
+                      placeholder="Opcional"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Número</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.numero}
+                      onChangeText={(text) => setForm((current) => ({ ...current, numero: text }))}
+                      placeholder="Opcional"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                </View>
+
+                <View style={adminStyles.formRow}>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Bairro</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.bairro}
+                      onChangeText={(text) => setForm((current) => ({ ...current, bairro: text }))}
+                      placeholder="Opcional"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>CEP</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.cep}
+                      onChangeText={(text) => setForm((current) => ({ ...current, cep: text }))}
+                      placeholder="Opcional"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                </View>
+
+                <View style={adminStyles.formRow}>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Cidade</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.cidade}
+                      onChangeText={(text) => setForm((current) => ({ ...current, cidade: text }))}
+                      placeholder="Opcional"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>UF</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.estado}
+                      onChangeText={(text) => setForm((current) => ({ ...current, estado: text.toUpperCase().slice(0, 2) }))}
+                      placeholder="RJ"
+                      placeholderTextColor="#A7AEC2"
+                      autoCapitalize="characters"
+                      maxLength={2}
+                    />
+                  </View>
+                </View>
+
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Observações</Text>
+                <TextInput
+                  style={[styles.processTextInput, { minHeight: 64 }]}
+                  value={form.observacoes}
+                  onChangeText={(text) => setForm((current) => ({ ...current, observacoes: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                  multiline
+                  textAlignVertical="top"
+                />
+
+                <View style={[adminStyles.cargoModuleToggleRow, styles.spacingTop]}>
+                  <Text style={adminStyles.cargoModuleToggleLabel}>Ativa</Text>
+                  <ToggleSwitch
+                    value={form.isActive}
+                    onValueChange={() => setForm((current) => ({ ...current, isActive: !current.isActive }))}
+                  />
+                </View>
+              </ScrollView>
+
+              <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+                <Pressable
+                  style={[adminStyles.ghostButton, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                  onPress={() => setView('list')}
+                >
+                  <Feather name="arrow-left" size={13} color="#5E667D" />
+                  <Text style={adminStyles.ghostButtonText}>Voltar</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.secondaryButton, adminStyles.secondaryButtonCompact, isSaving ? { opacity: 0.6 } : null]}
+                  disabled={isSaving}
+                  onPress={handleSubmit}
+                >
+                  <Feather name="save" size={13} color="#2E468F" />
+                  <Text style={styles.secondaryButtonText}>{isSaving ? 'Salvando...' : 'Salvar'}</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ---------- Modal "Nova Unidade" / "Editar — {unidade}" ----------
 
 type AdminUnidadeFormValues = {
@@ -3426,6 +3926,18 @@ type AdminUnidadeFormValues = {
   enderecoTexto: string;
   ipirangaHabilitado: boolean;
   isActive: boolean;
+  email: string;
+  telefone: string;
+  dataCadastro: string;
+  dataPrimeiraVenda: string;
+  contabilidadeId: string | null;
+  horarioFuncionamento: string;
+  conveniencia: boolean;
+  trocaOleo: boolean;
+  lavaJato: boolean;
+  estacionamento: boolean;
+  geladeira: boolean;
+  geladeiraTipo: 'pista' | 'gelo' | '';
 };
 
 function emptyAdminUnidadeForm(): AdminUnidadeFormValues {
@@ -3448,6 +3960,18 @@ function emptyAdminUnidadeForm(): AdminUnidadeFormValues {
     enderecoTexto: '',
     ipirangaHabilitado: false,
     isActive: true,
+    email: '',
+    telefone: '',
+    dataCadastro: '',
+    dataPrimeiraVenda: '',
+    contabilidadeId: null,
+    horarioFuncionamento: '',
+    conveniencia: false,
+    trocaOleo: false,
+    lavaJato: false,
+    estacionamento: false,
+    geladeira: false,
+    geladeiraTipo: '',
   };
 }
 
@@ -3455,6 +3979,7 @@ function AdminUnidadeFormModal({
   visible,
   mode,
   initialValues,
+  contabilidades,
   isSaving,
   onClose,
   onSubmit,
@@ -3462,6 +3987,7 @@ function AdminUnidadeFormModal({
   visible: boolean;
   mode: 'create' | 'edit';
   initialValues: AdminUnidadeFormValues;
+  contabilidades: AdminContabilidadeItem[];
   isSaving?: boolean;
   onClose: () => void;
   onSubmit: (values: AdminUnidadeFormValues) => void;
@@ -3469,6 +3995,10 @@ function AdminUnidadeFormModal({
   const [form, setForm] = useState<AdminUnidadeFormValues>(initialValues);
   const [isBandeiraPickerOpen, setIsBandeiraPickerOpen] = useState(false);
   const [isTipoPickerOpen, setIsTipoPickerOpen] = useState(false);
+  const [isContabilidadePickerOpen, setIsContabilidadePickerOpen] = useState(false);
+  const [isGeladeiraTipoPickerOpen, setIsGeladeiraTipoPickerOpen] = useState(false);
+  const [isDataCadastroPickerOpen, setIsDataCadastroPickerOpen] = useState(false);
+  const [isDataPrimeiraVendaPickerOpen, setIsDataPrimeiraVendaPickerOpen] = useState(false);
 
   useEffect(() => {
     if (visible) setForm(initialValues);
@@ -3665,6 +4195,61 @@ function AdminUnidadeFormModal({
               placeholderTextColor="#A7AEC2"
             />
 
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>E-mail</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.email}
+                  onChangeText={(text) => setForm((current) => ({ ...current, email: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Telefone</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.telefone}
+                  onChangeText={(text) => setForm((current) => ({ ...current, telefone: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </View>
+            </View>
+
+            <View style={adminStyles.formRow}>
+              <View style={adminStyles.formRowItem}>
+                <AdminSelectField
+                  label="Data Cadastro"
+                  value={form.dataCadastro}
+                  placeholder="dd/mm/aaaa"
+                  onPress={() => setIsDataCadastroPickerOpen(true)}
+                />
+              </View>
+              <View style={adminStyles.formRowItem}>
+                <AdminSelectField
+                  label="Primeira Venda"
+                  value={form.dataPrimeiraVenda}
+                  placeholder="dd/mm/aaaa"
+                  onPress={() => setIsDataPrimeiraVendaPickerOpen(true)}
+                />
+              </View>
+            </View>
+
+            <AdminSelectField
+              label="Contabilidade"
+              value={
+                form.contabilidadeId
+                  ? adminContabilidadeDisplayName(contabilidades.find((c) => c.id === form.contabilidadeId) ?? ({} as AdminContabilidadeItem))
+                  : ''
+              }
+              placeholder="Sem contabilidade"
+              onPress={() => setIsContabilidadePickerOpen(true)}
+            />
+
             <View style={[adminStyles.cargoModuleToggleRow, styles.spacingTop]}>
               <Text style={adminStyles.cargoModuleToggleLabel}>Ipiranga habilitado</Text>
               <ToggleSwitch
@@ -3681,10 +4266,65 @@ function AdminUnidadeFormModal({
               />
             </View>
 
-            <Text style={adminStyles.groupDescription}>
-              E-mail, telefone, datas de cadastro/primeira venda, contabilidade vinculada e serviços do posto ainda
-              não têm o schema/endpoints confirmados com o Lovable — entram aqui assim que confirmado.
-            </Text>
+            <Text style={[adminStyles.cargoFormSectionTitle, styles.spacingTop]}>Serviços do posto</Text>
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Horário de funcionamento</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.horarioFuncionamento}
+              onChangeText={(text) => setForm((current) => ({ ...current, horarioFuncionamento: text }))}
+              placeholder="Ex: 24 Horas, 06h às 22h..."
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <View style={[adminStyles.cargoModuleToggleRow, styles.spacingTop]}>
+              <Text style={adminStyles.cargoModuleToggleLabel}>Conveniência</Text>
+              <ToggleSwitch
+                value={form.conveniencia}
+                onValueChange={() => setForm((current) => ({ ...current, conveniencia: !current.conveniencia }))}
+              />
+            </View>
+            <View style={adminStyles.cargoModuleToggleRow}>
+              <Text style={adminStyles.cargoModuleToggleLabel}>Troca de Óleo</Text>
+              <ToggleSwitch
+                value={form.trocaOleo}
+                onValueChange={() => setForm((current) => ({ ...current, trocaOleo: !current.trocaOleo }))}
+              />
+            </View>
+            <View style={adminStyles.cargoModuleToggleRow}>
+              <Text style={adminStyles.cargoModuleToggleLabel}>Lava-Jato</Text>
+              <ToggleSwitch
+                value={form.lavaJato}
+                onValueChange={() => setForm((current) => ({ ...current, lavaJato: !current.lavaJato }))}
+              />
+            </View>
+            <View style={adminStyles.cargoModuleToggleRow}>
+              <Text style={adminStyles.cargoModuleToggleLabel}>Estacionamento</Text>
+              <ToggleSwitch
+                value={form.estacionamento}
+                onValueChange={() => setForm((current) => ({ ...current, estacionamento: !current.estacionamento }))}
+              />
+            </View>
+            <View style={adminStyles.cargoModuleToggleRow}>
+              <Text style={adminStyles.cargoModuleToggleLabel}>Geladeira</Text>
+              <ToggleSwitch
+                value={form.geladeira}
+                onValueChange={() =>
+                  setForm((current) => ({
+                    ...current,
+                    geladeira: !current.geladeira,
+                    geladeiraTipo: !current.geladeira ? current.geladeiraTipo : '',
+                  }))
+                }
+              />
+            </View>
+            {form.geladeira ? (
+              <AdminSelectField
+                label="Tipo da geladeira"
+                value={form.geladeiraTipo === 'pista' ? 'Pista' : form.geladeiraTipo === 'gelo' ? 'Gelo' : ''}
+                placeholder="Selecione..."
+                onPress={() => setIsGeladeiraTipoPickerOpen(true)}
+              />
+            ) : null}
           </ScrollView>
 
           <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
@@ -3724,6 +4364,45 @@ function AdminUnidadeFormModal({
         selectedValue={form.tipo}
         onSelect={(value) => setForm((current) => ({ ...current, tipo: value as AdminUnidadeTipo }))}
         onClose={() => setIsTipoPickerOpen(false)}
+      />
+      <AdminSimplePickerModal
+        visible={isContabilidadePickerOpen}
+        title="Contabilidade"
+        options={contabilidades.map((c) => adminContabilidadeDisplayName(c))}
+        selectedValue={
+          form.contabilidadeId
+            ? adminContabilidadeDisplayName(contabilidades.find((c) => c.id === form.contabilidadeId) ?? ({} as AdminContabilidadeItem))
+            : ''
+        }
+        onSelect={(label) => {
+          const alvo = contabilidades.find((c) => adminContabilidadeDisplayName(c) === label);
+          setForm((current) => ({ ...current, contabilidadeId: alvo ? alvo.id : null }));
+        }}
+        onClose={() => setIsContabilidadePickerOpen(false)}
+      />
+      <AdminSimplePickerModal
+        visible={isGeladeiraTipoPickerOpen}
+        title="Tipo da geladeira"
+        options={['Pista', 'Gelo']}
+        selectedValue={form.geladeiraTipo === 'pista' ? 'Pista' : form.geladeiraTipo === 'gelo' ? 'Gelo' : ''}
+        onSelect={(label) =>
+          setForm((current) => ({ ...current, geladeiraTipo: label === 'Pista' ? 'pista' : 'gelo' }))
+        }
+        onClose={() => setIsGeladeiraTipoPickerOpen(false)}
+      />
+      <AdminDatePickerModal
+        visible={isDataCadastroPickerOpen}
+        title="Data Cadastro"
+        value={form.dataCadastro}
+        onSelect={(label) => setForm((current) => ({ ...current, dataCadastro: label }))}
+        onClose={() => setIsDataCadastroPickerOpen(false)}
+      />
+      <AdminDatePickerModal
+        visible={isDataPrimeiraVendaPickerOpen}
+        title="Primeira Venda"
+        value={form.dataPrimeiraVenda}
+        onSelect={(label) => setForm((current) => ({ ...current, dataPrimeiraVenda: label }))}
+        onClose={() => setIsDataPrimeiraVendaPickerOpen(false)}
       />
     </Modal>
   );
@@ -4017,8 +4696,24 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
   const [unitBeingEdited, setUnitBeingEdited] = useState<AdminUnidadeItem | null>(null);
   const [isSavingUnit, setIsSavingUnit] = useState(false);
   const [venderFor, setVenderFor] = useState<AdminUnidadeItem | null>(null);
+  const [isContabilidadesOpen, setIsContabilidadesOpen] = useState(false);
+  const [contabilidades, setContabilidades] = useState<AdminContabilidadeItem[]>([]);
 
   const showApiError = showAdminApiError;
+
+  const loadContabilidades = () => {
+    fetchAdminContabilidades()
+      .then((data) => setContabilidades(data.contabilidades))
+      .catch(() => {
+        // Silencioso: sem contabilidades carregadas, o seletor no form de
+        // unidade só fica vazio (opção "Sem contabilidade" continua
+        // funcionando), sem travar a tela.
+      });
+  };
+
+  useEffect(() => {
+    loadContabilidades();
+  }, []);
 
   const loadUnidades = () => {
     setIsLoading(true);
@@ -4096,6 +4791,20 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
       endereco_texto: values.enderecoTexto.trim() || null,
       ipiranga_habilitado: values.ipirangaHabilitado,
       is_active: values.isActive,
+      email: values.email.trim() || null,
+      telefone: values.telefone.trim() || null,
+      data_cadastro: adminBrDateToIso(values.dataCadastro),
+      data_primeira_venda: adminBrDateToIso(values.dataPrimeiraVenda),
+      contabilidade_id: values.contabilidadeId,
+      servicos: {
+        horario_funcionamento: values.horarioFuncionamento.trim() || null,
+        conveniencia: values.conveniencia,
+        troca_oleo: values.trocaOleo,
+        lava_jato: values.lavaJato,
+        estacionamento: values.estacionamento,
+        geladeira: values.geladeira,
+        geladeira_tipo: values.geladeira && values.geladeiraTipo ? values.geladeiraTipo : null,
+      },
     };
 
     setIsSavingUnit(true);
@@ -4162,6 +4871,18 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
       enderecoTexto: unidade.enderecoTexto ?? '',
       ipirangaHabilitado: unidade.ipirangaHabilitado,
       isActive: unidade.isActive,
+      email: unidade.email ?? '',
+      telefone: unidade.telefone ?? '',
+      dataCadastro: adminIsoDateToBrLabel(unidade.dataCadastro),
+      dataPrimeiraVenda: adminIsoDateToBrLabel(unidade.dataPrimeiraVenda),
+      contabilidadeId: unidade.contabilidadeId,
+      horarioFuncionamento: unidade.servicos?.horario_funcionamento ?? '',
+      conveniencia: Boolean(unidade.servicos?.conveniencia),
+      trocaOleo: Boolean(unidade.servicos?.troca_oleo),
+      lavaJato: Boolean(unidade.servicos?.lava_jato),
+      estacionamento: Boolean(unidade.servicos?.estacionamento),
+      geladeira: Boolean(unidade.servicos?.geladeira),
+      geladeiraTipo: unidade.servicos?.geladeira_tipo ?? '',
     });
     setIsUnitFormOpen(true);
   };
@@ -4186,7 +4907,14 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
 
         <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar por nome, CNPJ, IDQ, bandeira..." />
 
-        <View style={[styles.directorNotifHeaderRow, { justifyContent: 'flex-end' }]}>
+        <View style={[styles.directorNotifHeaderRow, { justifyContent: 'flex-end', gap: 8 }]}>
+          <Pressable
+            style={adminStyles.gearButton}
+            onPress={() => setIsContabilidadesOpen(true)}
+            hitSlop={6}
+          >
+            <Feather name="settings" size={16} color="#4C5470" />
+          </Pressable>
           <Pressable
             style={styles.directorNotifNewButton}
             onPress={() => {
@@ -4352,6 +5080,7 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
         visible={isUnitFormOpen}
         mode={unitFormMode}
         initialValues={unitFormInitial}
+        contabilidades={contabilidades}
         isSaving={isSavingUnit}
         onClose={() => setIsUnitFormOpen(false)}
         onSubmit={handleUnidadeSubmit}
@@ -4364,6 +5093,13 @@ export function AdminUnidadesScreen({ navigation }: ScreenProps<'AdminUnidades'>
         actorId={actorId}
         onClose={() => setVenderFor(null)}
         onSold={loadUnidades}
+      />
+
+      <AdminContabilidadesModal
+        visible={isContabilidadesOpen}
+        actorId={actorId}
+        onClose={() => setIsContabilidadesOpen(false)}
+        onChanged={loadContabilidades}
       />
     </SafeAreaView>
   );
@@ -6124,6 +6860,24 @@ const adminStyles = StyleSheet.create({
     fontStyle: 'italic',
     maxWidth: 120,
     textAlign: 'right',
+  },
+  gearButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D7DCE8',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contabRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF0F6',
   },
   venderWarningBox: {
     flexDirection: 'row',

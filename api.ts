@@ -872,6 +872,18 @@ export async function deleteAdminGrupo(id: string, actorId?: string | null): Pro
 export type AdminUnidadeBandeira = 'American Fuel' | 'Ipiranga' | 'Shell' | 'Vibra';
 export type AdminUnidadeTipo = 'Matriz' | 'Posto' | 'Loja' | 'Escritório';
 
+// Shape exato do jsonb empresas.servicos, confirmado pelo Lovable em
+// 29/07/2026 — geladeira_tipo só é relevante quando geladeira=true.
+export type AdminUnidadeServicos = {
+  horario_funcionamento?: string | null;
+  conveniencia?: boolean;
+  troca_oleo?: boolean;
+  geladeira?: boolean;
+  geladeira_tipo?: 'pista' | 'gelo' | null;
+  lava_jato?: boolean;
+  estacionamento?: boolean;
+};
+
 export type AdminUnidadeItem = {
   id: string;
   nomeFantasia: string | null;
@@ -893,6 +905,12 @@ export type AdminUnidadeItem = {
   enderecoTexto: string | null;
   proprietario: string | null;
   ipirangaHabilitado: boolean;
+  email: string | null;
+  telefone: string | null;
+  dataCadastro: string | null;
+  dataPrimeiraVenda: string | null;
+  contabilidadeId: string | null;
+  servicos: AdminUnidadeServicos;
   vendida: boolean;
   dataVenda: string | null;
   comprador: string | null;
@@ -928,6 +946,12 @@ export type AdminUnidadeWriteBody = {
   cep?: string | null;
   endereco_texto?: string | null;
   ipiranga_habilitado?: boolean;
+  email?: string | null;
+  telefone?: string | null;
+  data_cadastro?: string | null;
+  data_primeira_venda?: string | null;
+  contabilidade_id?: string | null;
+  servicos?: AdminUnidadeServicos;
 };
 
 export async function createAdminUnidade(
@@ -975,6 +999,76 @@ export async function venderAdminUnidade(
 ): Promise<AdminVenderUnidadeResultado> {
   const json = await api.post(withActorId(`/api/admin/unidades/${encodeURIComponent(id)}/vender`, actorId), body);
   return json.data as AdminVenderUnidadeResultado;
+}
+
+// --- Admin: Contabilidades (tabela própria public.contabilidades,
+// confirmada pelo Lovable em 29/07/2026 — empresas.contabilidade_id) ---
+
+export type AdminContabilidadeItem = {
+  id: string;
+  razaoSocial: string | null;
+  nomeFantasia: string | null;
+  apelido: string | null;
+  cnpj: string | null;
+  email: string | null;
+  telefone: string | null;
+  responsavel: string | null;
+  rua: string | null;
+  numero: string | null;
+  bairro: string | null;
+  cep: string | null;
+  cidade: string | null;
+  estado: string | null;
+  observacoes: string | null;
+  isActive: boolean;
+  unidadesVinculadas: number;
+};
+
+export type AdminContabilidadesDetalhe = { count: number; contabilidades: AdminContabilidadeItem[] };
+
+export async function fetchAdminContabilidades(q?: string): Promise<AdminContabilidadesDetalhe> {
+  const query = q ? `?q=${encodeURIComponent(q)}` : '';
+  const json = await api.get(`/api/admin/contabilidades${query}`);
+  return json.data as AdminContabilidadesDetalhe;
+}
+
+export type AdminContabilidadeWriteBody = {
+  razao_social?: string;
+  nome_fantasia?: string | null;
+  apelido?: string | null;
+  cnpj?: string | null;
+  email?: string | null;
+  telefone?: string | null;
+  responsavel?: string | null;
+  rua?: string | null;
+  numero?: string | null;
+  bairro?: string | null;
+  cep?: string | null;
+  cidade?: string | null;
+  estado?: string | null;
+  observacoes?: string | null;
+  is_active?: boolean;
+};
+
+export async function createAdminContabilidade(
+  body: AdminContabilidadeWriteBody,
+  actorId?: string | null
+): Promise<AdminContabilidadeItem> {
+  const json = await api.post(withActorId('/api/admin/contabilidades', actorId), body);
+  return json.data as AdminContabilidadeItem;
+}
+
+export async function updateAdminContabilidade(
+  id: string,
+  body: AdminContabilidadeWriteBody,
+  actorId?: string | null
+): Promise<AdminContabilidadeItem> {
+  const json = await api.patch(withActorId(`/api/admin/contabilidades/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdminContabilidadeItem;
+}
+
+export async function deleteAdminContabilidade(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/admin/contabilidades/${encodeURIComponent(id)}`, actorId));
 }
 
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
