@@ -1839,6 +1839,183 @@ export async function fetchAdminBuscaPfUso(opts?: {
   return json.data as AdminBuscaPfUso;
 }
 
+// --- Integrações: Jurídico — Datajud (CNJ). Endpoint /api/public/internal/
+// datajud confirmado pela Lovable em 03/08/2026 — API pública/gratuita do
+// CNJ, chamada pela própria Lovable (sem secret nosso, sem custo real).
+
+export type AdminDatajudStatus = {
+  baseUrl: string | null;
+  apiKeyMascarada: string | null;
+  configurado: boolean;
+};
+
+export async function fetchAdminDatajudStatus(actorId?: string | null): Promise<AdminDatajudStatus> {
+  const json = await api.get(withActorId('/api/admin/integracoes/juridico/datajud/status', actorId));
+  return (json.data ?? { baseUrl: null, apiKeyMascarada: null, configurado: false }) as AdminDatajudStatus;
+}
+
+export async function testAdminDatajudConexao(actorId?: string | null): Promise<Record<string, unknown>> {
+  const json = await api.post(withActorId('/api/admin/integracoes/juridico/datajud/testar', actorId), {});
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
+export type AdminDatajudConsultaResult = {
+  resultado: Record<string, unknown>;
+};
+
+export async function executarAdminDatajudConsulta(
+  body: {
+    tribunal: string;
+    service: string;
+    params: Record<string, string | number>;
+    cnpjAlvo?: string;
+  },
+  actorId?: string | null
+): Promise<AdminDatajudConsultaResult> {
+  const json = await api.post(withActorId('/api/admin/integracoes/juridico/datajud/consultar', actorId), body);
+  return { resultado: (json.data ?? {}) as Record<string, unknown> };
+}
+
+export type AdminDatajudHistoricoItem = {
+  id: string;
+  tribunal: string | null;
+  service: string | null;
+  params: unknown;
+  responseCode: number | string | null;
+  responseData: unknown;
+  createdBy: string | null;
+  createdAt: string | null;
+};
+
+export async function fetchAdminDatajudHistorico(opts?: {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  tribunal?: string;
+  service?: string;
+  actorId?: string | null;
+}): Promise<{ rows: AdminDatajudHistoricoItem[]; count: number; limit: number; offset: number }> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  if (opts?.offset) params.set('offset', String(opts.offset));
+  if (opts?.search) params.set('search', opts.search);
+  if (opts?.tribunal) params.set('tribunal', opts.tribunal);
+  if (opts?.service) params.set('service', opts.service);
+  const qs = params.toString();
+  const path = `/api/admin/integracoes/juridico/datajud/historico${qs ? `?${qs}` : ''}`;
+  const json = await api.get(withActorId(path, opts?.actorId));
+  return json.data as { rows: AdminDatajudHistoricoItem[]; count: number; limit: number; offset: number };
+}
+
+export type AdminDatajudUsoMes = {
+  mes: string | null;
+  total: number | null;
+  custoTotal: number | null;
+  porTribunal: Record<string, { count: number | null; custo: number | null }>;
+  porServico: Record<string, { count: number | null; custo: number | null }>;
+};
+
+export type AdminDatajudUso = {
+  meses: AdminDatajudUsoMes[];
+};
+
+export async function fetchAdminDatajudUso(opts?: {
+  months?: number;
+  actorId?: string | null;
+}): Promise<AdminDatajudUso> {
+  const params = new URLSearchParams();
+  if (opts?.months) params.set('months', String(opts.months));
+  const qs = params.toString();
+  const path = `/api/admin/integracoes/juridico/datajud/uso${qs ? `?${qs}` : ''}`;
+  const json = await api.get(withActorId(path, opts?.actorId));
+  return (json.data ?? { meses: [] }) as AdminDatajudUso;
+}
+
+// --- Integrações: Leva+ (fidelidade/cashback). Endpoint /api/public/internal/
+// leva-mais confirmado pela Lovable em 03/08/2026 — credenciais próprias
+// (mk_integracoes), dados sempre lidos ao vivo da API externa.
+
+export type AdminLevaMaisStatus = {
+  ativo: boolean;
+  apiUrl: string | null;
+  apiTokenMascarado: string | null;
+  ultimoStatus: string | null;
+  ultimaSincronizacao: string | null;
+  endpoints: string[];
+};
+
+export async function fetchAdminLevaMaisStatus(actorId?: string | null): Promise<AdminLevaMaisStatus> {
+  const json = await api.get(withActorId('/api/admin/integracoes/leva-mais/status', actorId));
+  return (json.data ?? {
+    ativo: false,
+    apiUrl: null,
+    apiTokenMascarado: null,
+    ultimoStatus: null,
+    ultimaSincronizacao: null,
+    endpoints: [],
+  }) as AdminLevaMaisStatus;
+}
+
+export async function testAdminLevaMaisConexao(actorId?: string | null): Promise<Record<string, unknown>> {
+  const json = await api.post(withActorId('/api/admin/integracoes/leva-mais/testar', actorId), {});
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
+export async function updateAdminLevaMaisConfig(
+  body: { ativo?: boolean; apiUrl?: string; apiToken?: string },
+  actorId?: string | null
+): Promise<void> {
+  await api.patch(withActorId('/api/admin/integracoes/leva-mais/config', actorId), body);
+}
+
+export async function fetchAdminLevaMaisLojas(actorId?: string | null): Promise<Record<string, unknown>> {
+  const json = await api.get(withActorId('/api/admin/integracoes/leva-mais/lojas', actorId));
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
+export async function fetchAdminLevaMaisFrentistas(actorId?: string | null): Promise<Record<string, unknown>> {
+  const json = await api.get(withActorId('/api/admin/integracoes/leva-mais/frentistas', actorId));
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
+export async function fetchAdminLevaMaisClientes(opts?: {
+  limit?: number;
+  page?: number;
+  actorId?: string | null;
+}): Promise<Record<string, unknown>> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  if (opts?.page) params.set('page', String(opts.page));
+  const qs = params.toString();
+  const path = `/api/admin/integracoes/leva-mais/clientes${qs ? `?${qs}` : ''}`;
+  const json = await api.get(withActorId(path, opts?.actorId));
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
+export async function fetchAdminLevaMaisMetricas(opts: {
+  startDate: string;
+  endDate: string;
+  storeId?: string;
+  actorId?: string | null;
+}): Promise<Record<string, unknown>> {
+  const params = new URLSearchParams();
+  params.set('startDate', opts.startDate);
+  params.set('endDate', opts.endDate);
+  if (opts.storeId) params.set('storeId', opts.storeId);
+  const path = `/api/admin/integracoes/leva-mais/metricas?${params.toString()}`;
+  const json = await api.get(withActorId(path, opts.actorId));
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
+export async function fetchAdminLevaMaisSaldo(
+  cpf: string,
+  actorId?: string | null
+): Promise<Record<string, unknown>> {
+  const path = `/api/admin/integracoes/leva-mais/saldo?cpf=${encodeURIComponent(cpf)}`;
+  const json = await api.get(withActorId(path, actorId));
+  return (json.data ?? {}) as Record<string, unknown>;
+}
+
 // --- Admin: Dashboard (2 RPCs Postgres expostas pelo Lovable via proxy
 // interno em 03/08/2026 — mesmo padrão x-internal-secret + x-actor-id.
 // Formato é o JSON cru das RPCs, sem transformação nenhuma no backend.

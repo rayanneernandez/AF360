@@ -528,6 +528,41 @@ function postBuscaPfAcao(acao, params = {}, body = {}, actorId) {
   return lovablePost('/api/public/internal/busca-pf', { acao, ...params }, body, actorId);
 }
 
+// --- Integrações: Jurídico — Datajud (CNJ). Endpoint confirmado pela Lovable
+// em 03/08/2026: /api/public/internal/datajud (headers x-internal-secret +
+// x-actor-id). "recurso" no GET pode ser: status, historico, uso. "acao" no
+// POST pode ser: testar (sem body), consultar (body { tribunal, service,
+// params: { numero_processo | classe | orgao, size }, cnpj_alvo? }). A
+// própria Lovable consulta a API pública do CNJ e loga em adm_datajud_consultas
+// — não chamamos o CNJ direto daqui.
+
+function getDatajud(params = {}, actorId) {
+  return lovableGet('/api/public/internal/datajud', params, actorId);
+}
+
+function postDatajudAcao(acao, params = {}, body = {}, actorId) {
+  return lovablePost('/api/public/internal/datajud', { acao, ...params }, body, actorId);
+}
+
+// --- Integrações: Leva+ (fidelidade/cashback) — endpoint confirmado pela
+// Lovable em 03/08/2026: /api/public/internal/leva-mais. Credenciais próprias
+// (não são secret do backend deles) ficam em mk_integracoes (plataforma=
+// 'fidelidade'), por isso tem PATCH de config aqui (igual ao wa-config).
+// "recurso" no GET pode ser: status, lojas, frentistas, clientes, metricas,
+// saldo. "acao" no POST pode ser: testar, transacao.
+
+function getLevaMais(params = {}, actorId) {
+  return lovableGet('/api/public/internal/leva-mais', params, actorId);
+}
+
+function postLevaMaisAcao(acao, params = {}, body = {}, actorId) {
+  return lovablePost('/api/public/internal/leva-mais', { acao, ...params }, body, actorId);
+}
+
+function patchLevaMaisConfig(body, actorId) {
+  return lovablePatch('/api/public/internal/leva-mais', {}, body, actorId);
+}
+
 // --- Integrações: Dashboard (2 RPCs Postgres SECURITY DEFINER, expostas pelo
 // Lovable em 03/08/2026 pelo mesmo proxy interno — antes exigiam JWT real do
 // usuário master via auth.uid(), agora tem versão _internal() só p/
@@ -617,6 +652,11 @@ module.exports = {
   postGmbAcao,
   getBuscaPf,
   postBuscaPfAcao,
+  getDatajud,
+  postDatajudAcao,
+  getLevaMais,
+  postLevaMaisAcao,
+  patchLevaMaisConfig,
   getDashboardPerformance,
   getDashboardKpis,
 };

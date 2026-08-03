@@ -62,6 +62,11 @@ const {
   postGmbAcao,
   getBuscaPf,
   postBuscaPfAcao,
+  getDatajud,
+  postDatajudAcao,
+  getLevaMais,
+  postLevaMaisAcao,
+  patchLevaMaisConfig,
   getDashboardPerformance,
   getDashboardKpis,
 } = require('../lovable');
@@ -1703,6 +1708,246 @@ router.post('/integracoes/busca-pf/consultar', async (req, res) => {
   } catch (err) {
     console.error('[admin/integracoes/busca-pf/consultar] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// --- Integrações: Jurídico — Datajud (CNJ). Endpoint /api/public/internal/
+// datajud confirmado pela Lovable em 03/08/2026 — a própria Lovable chama a
+// API pública do CNJ e loga em adm_datajud_consultas (custo sempre 0, é
+// gratuita). ---------------------------------------------------------------
+
+function mapDatajudStatusRow(raw = {}) {
+  return {
+    baseUrl: raw.base_url ?? raw.baseUrl ?? null,
+    apiKeyMascarada: raw.api_key_mascarada ?? raw.api_key ?? raw.apiKey ?? null,
+    configurado: raw.configurado ?? true,
+  };
+}
+
+function mapDatajudHistoricoRow(row = {}) {
+  return {
+    id: row.id,
+    tribunal: row.tribunal ?? null,
+    service: row.service ?? null,
+    params: row.params ?? null,
+    responseCode: row.response_code ?? null,
+    responseData: row.response_data ?? null,
+    createdBy: row.created_by ?? null,
+    createdAt: row.created_at ?? null,
+  };
+}
+
+// meses: [{ mes, total, custo_total: 0, por_tribunal, por_servico }]
+function mapDatajudUsoRow(raw = {}) {
+  const meses = Array.isArray(raw.meses)
+    ? raw.meses.map((m = {}) => ({
+        mes: m.mes ?? null,
+        total: m.total ?? null,
+        custoTotal: m.custo_total ?? 0,
+        porTribunal: mapBuscaPfPorServico(m.por_tribunal),
+        porServico: mapBuscaPfPorServico(m.por_servico),
+      }))
+    : [];
+  return { meses };
+}
+
+// GET /api/admin/integracoes/juridico/datajud/status?actorId=...
+router.get('/integracoes/juridico/datajud/status', async (req, res) => {
+  try {
+    const json = await getDatajud({ recurso: 'status' }, req.query.actorId);
+    const data = json?.data ?? json ?? {};
+    res.json({ ok: true, data: mapDatajudStatusRow(data) });
+  } catch (err) {
+    console.error('[admin/integracoes/juridico/datajud/status] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/integracoes/juridico/datajud/historico?actorId=&limit=&offset=&search=&tribunal=&service=
+router.get('/integracoes/juridico/datajud/historico', async (req, res) => {
+  try {
+    const { limit, offset, search, tribunal, service, actorId } = req.query;
+    const json = await getDatajud({ recurso: 'historico', limit, offset, search, tribunal, service }, actorId);
+    const data = json?.data ?? json ?? {};
+    res.json({
+      ok: true,
+      data: {
+        rows: (data.rows ?? []).map(mapDatajudHistoricoRow),
+        count: data.count ?? 0,
+        limit: data.limit ?? Number(limit) ?? 20,
+        offset: data.offset ?? Number(offset) ?? 0,
+      },
+    });
+  } catch (err) {
+    console.error('[admin/integracoes/juridico/datajud/historico] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/integracoes/juridico/datajud/uso?actorId=&months=
+router.get('/integracoes/juridico/datajud/uso', async (req, res) => {
+  try {
+    const { months, actorId } = req.query;
+    const json = await getDatajud({ recurso: 'uso', months }, actorId);
+    const data = json?.data ?? json ?? {};
+    res.json({ ok: true, data: mapDatajudUsoRow(data) });
+  } catch (err) {
+    console.error('[admin/integracoes/juridico/datajud/uso] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/juridico/datajud/testar?actorId=...
+router.post('/integracoes/juridico/datajud/testar', async (req, res) => {
+  try {
+    const json = await postDatajudAcao('testar', {}, {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/juridico/datajud/testar] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'test_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/juridico/datajud/consultar?actorId=... — body:
+// { tribunal, service, params: { numero_processo | classe | orgao, size }, cnpjAlvo? }
+router.post('/integracoes/juridico/datajud/consultar', async (req, res) => {
+  try {
+    const { tribunal, service, params, cnpjAlvo } = req.body ?? {};
+    const json = await postDatajudAcao(
+      'consultar',
+      {},
+      { tribunal, service, params, cnpj_alvo: cnpjAlvo },
+      req.query.actorId
+    );
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/juridico/datajud/consultar] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// --- Integrações: Leva+ (fidelidade/cashback). Endpoint /api/public/internal/
+// leva-mais confirmado pela Lovable em 03/08/2026 — credenciais próprias
+// (mk_integracoes, plataforma='fidelidade'), dados sempre lidos ao vivo da
+// API externa (limite 60 req/min por endpoint). ----------------------------
+
+function mapLevaMaisStatusRow(raw = {}) {
+  return {
+    ativo: !!raw.ativo,
+    apiUrl: raw.api_url ?? null,
+    apiTokenMascarado: raw.api_token_mascarado ?? raw.token_mascarado ?? null,
+    ultimoStatus: raw.ultimo_status ?? raw.status ?? null,
+    ultimaSincronizacao: raw.ultima_sincronizacao ?? null,
+    endpoints: raw.endpoints ?? [],
+  };
+}
+
+// GET /api/admin/integracoes/leva-mais/status?actorId=...
+router.get('/integracoes/leva-mais/status', async (req, res) => {
+  try {
+    const json = await getLevaMais({ recurso: 'status' }, req.query.actorId);
+    const data = json?.data ?? json ?? {};
+    res.json({ ok: true, data: mapLevaMaisStatusRow(data) });
+  } catch (err) {
+    console.error('[admin/integracoes/leva-mais/status] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/integracoes/leva-mais/lojas?actorId=...
+router.get('/integracoes/leva-mais/lojas', async (req, res) => {
+  try {
+    const json = await getLevaMais({ recurso: 'lojas' }, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/leva-mais/lojas] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/integracoes/leva-mais/frentistas?actorId=...
+router.get('/integracoes/leva-mais/frentistas', async (req, res) => {
+  try {
+    const json = await getLevaMais({ recurso: 'frentistas' }, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/leva-mais/frentistas] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/integracoes/leva-mais/clientes?actorId=&limit=&page=
+router.get('/integracoes/leva-mais/clientes', async (req, res) => {
+  try {
+    const { limit, page, actorId } = req.query;
+    const json = await getLevaMais({ recurso: 'clientes', limit, page }, actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/leva-mais/clientes] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/integracoes/leva-mais/metricas?actorId=&startDate=&endDate=&storeId=
+router.get('/integracoes/leva-mais/metricas', async (req, res) => {
+  try {
+    const { startDate, endDate, storeId, actorId } = req.query;
+    const json = await getLevaMais({ recurso: 'metricas', startDate, endDate, storeId }, actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/leva-mais/metricas] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/integracoes/leva-mais/saldo?actorId=&cpf=
+router.get('/integracoes/leva-mais/saldo', async (req, res) => {
+  try {
+    const { cpf, actorId } = req.query;
+    const json = await getLevaMais({ recurso: 'saldo', cpf }, actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/leva-mais/saldo] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/leva-mais/testar?actorId=...
+router.post('/integracoes/leva-mais/testar', async (req, res) => {
+  try {
+    const json = await postLevaMaisAcao('testar', {}, {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/leva-mais/testar] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'test_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/integracoes/leva-mais/transacao?actorId=... — passthrough
+// puro (payload ainda não confirmado com a Lovable; sem botão na UI ainda).
+router.post('/integracoes/leva-mais/transacao', async (req, res) => {
+  try {
+    const json = await postLevaMaisAcao('transacao', {}, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json ?? {} });
+  } catch (err) {
+    console.error('[admin/integracoes/leva-mais/transacao] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/integracoes/leva-mais/config?actorId=... — body: { ativo?, apiUrl?, apiToken? }
+router.patch('/integracoes/leva-mais/config', async (req, res) => {
+  try {
+    const { ativo, apiUrl, apiToken } = req.body ?? {};
+    const body = {};
+    if (typeof ativo !== 'undefined') body.ativo = ativo;
+    if (typeof apiUrl !== 'undefined') body.api_url = apiUrl;
+    if (typeof apiToken !== 'undefined') body.api_token = apiToken;
+    await patchLevaMaisConfig(body, req.query.actorId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin/integracoes/leva-mais/config] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
 
