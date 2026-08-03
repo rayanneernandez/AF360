@@ -398,7 +398,7 @@ function AdminUserDetailModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle} numberOfLines={1}>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>
                 {(user.fullName || '(sem nome)').toUpperCase()}
               </Text>
               <Text style={adminStyles.detailSubEmail} numberOfLines={1}>
@@ -569,7 +569,7 @@ function AdminResetSenhaModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>Redefinir senha</Text>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>Redefinir senha</Text>
               <Text style={adminStyles.detailSubEmail} numberOfLines={1}>
                 {userLabel}
               </Text>
@@ -669,7 +669,9 @@ function AdminUserFormModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>{mode === 'create' ? 'Novo Usuário' : 'Editar usuário'}</Text>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>
+                {mode === 'create' ? 'Novo Usuário' : 'Editar usuário'}
+              </Text>
               {mode === 'create' ? (
                 <Text style={adminStyles.detailSubEmail}>O e-mail deve terminar com @americanfuel.com.br.</Text>
               ) : null}
@@ -1812,7 +1814,7 @@ function AdminCargoDetailModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>{cargo.name}</Text>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>{cargo.name}</Text>
               <Text style={adminStyles.detailSubEmail}>Cargo • {(cargo.group || 'não informado').toLowerCase()}</Text>
             </View>
             <Pressable onPress={onClose} hitSlop={8}>
@@ -2291,7 +2293,7 @@ function AdminCargoFormModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>
                 {mode === 'create' ? 'Novo Cargo' : `Editar — ${initialValues.name}`}
               </Text>
               <Text style={adminStyles.detailSubEmail}>
@@ -2935,7 +2937,7 @@ function AdminGrupoDetailModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>{grupo.name}</Text>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>{grupo.name}</Text>
               <Text style={adminStyles.detailSubEmail}>Grupo • {grupo.slug}</Text>
             </View>
             <Pressable onPress={onClose} hitSlop={8}>
@@ -3037,7 +3039,7 @@ function AdminGrupoFormModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>
                 {mode === 'create' ? 'Novo Grupo' : `Editar — ${initialValues.name}`}
               </Text>
             </View>
@@ -3636,7 +3638,7 @@ function AdminUnidadeDetailModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>{adminUnidadeDisplayName(unidade)}</Text>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>{adminUnidadeDisplayName(unidade)}</Text>
               <Text style={adminStyles.detailSubEmail}>{unidade.razaoSocial || adminUnidadeDisplayName(unidade)}</Text>
               <View style={[adminStyles.roleModulesRow, { marginTop: 6, alignItems: 'center' }]}>
                 {unidade.bandeira ? (
@@ -4004,7 +4006,7 @@ function AdminContabilidadesModal({
             <>
               <View style={styles.requestModalHeader}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.requestModalTitle}>Contabilidades</Text>
+                  <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>Contabilidades</Text>
                   <Text style={adminStyles.detailSubEmail}>Cadastre os escritórios contábeis que atendem as unidades da rede.</Text>
                 </View>
                 <Pressable onPress={onClose} hitSlop={8}>
@@ -4108,7 +4110,7 @@ function AdminContabilidadesModal({
             <>
               <View style={styles.requestModalHeader}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.requestModalTitle}>
+                  <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>
                     {formMode === 'create' ? 'Nova Contabilidade' : `Editar — ${beingEdited ? adminContabilidadeDisplayName(beingEdited) : ''}`}
                   </Text>
                   <Text style={adminStyles.detailSubEmail}>Preencha os dados do escritório contábil.</Text>
@@ -4782,7 +4784,7 @@ function AdminUnidadeFormModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>
                 {mode === 'create' ? 'Nova Unidade' : `Editar — ${initialValues.razaoSocial}`}
               </Text>
             </View>
@@ -5280,7 +5282,7 @@ function AdminVenderUnidadeModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>Vender unidade</Text>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>Vender unidade</Text>
               <Text style={adminStyles.detailSubEmail} numberOfLines={1}>
                 {adminUnidadeDisplayName(unidade)}
               </Text>
@@ -5932,7 +5934,7 @@ function AdminModuloDetailModal({
                 <Feather name={icon} size={17} color={theme.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.requestModalTitle}>{modulo.name || '(sem nome)'}</Text>
+                <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>{modulo.name || '(sem nome)'}</Text>
                 <Text style={adminStyles.detailSubEmail}>{modulo.slug || '—'}</Text>
               </View>
             </View>
@@ -8256,7 +8258,7 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
           <View style={styles.requestModalCard}>
             <View style={styles.requestModalHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.requestModalTitle}>Vincular a empresa AF</Text>
+                <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>Vincular a empresa AF</Text>
                 <Text style={adminStyles.detailSubEmail} numberOfLines={1}>
                   {linkingLocation?.title ?? linkingLocation?.googleLocationName ?? '—'}
                 </Text>
@@ -8317,7 +8319,7 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
           <View style={styles.requestModalCard}>
             <View style={styles.requestModalHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.requestModalTitle}>Histórico</Text>
+                <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>Histórico</Text>
                 <Text style={adminStyles.detailSubEmail}>
                   {buscaPfHistoricoProvider === 'infosimples' ? 'Infosimples' : 'Fonte Data'}
                 </Text>
@@ -8606,7 +8608,7 @@ function AdminCargoDominioDetailModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>{item.cargo}</Text>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>{item.cargo}</Text>
               <Text style={adminStyles.detailSubEmail}>Domínio de e-mail por cargo</Text>
             </View>
             <Pressable onPress={onClose} hitSlop={8}>
@@ -8700,7 +8702,7 @@ function AdminCargoDominioEditModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle}>Editar — {item.cargo}</Text>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>Editar — {item.cargo}</Text>
               <Text style={adminStyles.detailSubEmail}>Domínio de e-mail por cargo</Text>
             </View>
             <Pressable onPress={onClose} hitSlop={8}>
@@ -9942,7 +9944,7 @@ function AdminLogDetailModal({
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestModalTitle} numberOfLines={1}>
+              <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>
                 Log • {log.action ?? '—'}
               </Text>
               <Text style={adminStyles.detailSubEmail}>{formatAdminDate(log.createdAt)}</Text>
