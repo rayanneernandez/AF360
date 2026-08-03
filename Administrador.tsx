@@ -8019,6 +8019,44 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                 <AdminEmptyState message="Nenhum posto sincronizado ainda. Toque em Sincronizar acima." />
               )}
             </View>
+
+            <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+              <Text style={adminStyles.sectionTitle}>Últimas sincronizações</Text>
+
+              {isLoadingGmb ? null : gmbError ? null : gmbData && gmbData.syncRuns.length > 0 ? (
+                <View style={adminStyles.fieldSpacing}>
+                  {gmbData.syncRuns.map((run, idx) => {
+                    const isSuccess = run.status === 'success' || run.status === 'ok' || run.status === 'concluido';
+                    const isError = run.status === 'error' || run.status === 'erro';
+                    return (
+                      <View key={`${run.startedAt ?? ''}-${idx}`} style={adminStyles.syncRunRow}>
+                        <Feather
+                          name={isSuccess ? 'check-circle' : isError ? 'alert-triangle' : 'refresh-cw'}
+                          size={15}
+                          color={isSuccess ? GREEN : isError ? '#C0392B' : '#94A0BD'}
+                        />
+                        <Text style={adminStyles.syncRunDate}>{formatAdminLogDateTime(run.startedAt)}</Text>
+                        <View style={adminStyles.syncRunPillsRow}>
+                          <View style={adminStyles.syncRunPill}>
+                            <Text style={adminStyles.syncRunPillText}>
+                              {run.locationsSincronizadas ?? 0} locations
+                            </Text>
+                          </View>
+                          <View style={adminStyles.syncRunPill}>
+                            <Text style={adminStyles.syncRunPillText}>{run.reviewsNovos ?? 0} novos</Text>
+                          </View>
+                          <View style={adminStyles.syncRunPill}>
+                            <Text style={adminStyles.syncRunPillText}>{run.reviewsAtualizados ?? 0} atualizados</Text>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <AdminEmptyState message="Nenhuma sincronização registrada ainda." />
+              )}
+            </View>
           </>
         ) : activeProvider === 'buscapf' ? (
           <>
@@ -10886,6 +10924,38 @@ const adminStyles = StyleSheet.create({
     color: BLUE,
     fontSize: 12.5,
     fontWeight: '700',
+  },
+  syncRunRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF1F7',
+    flexWrap: 'wrap',
+  },
+  syncRunDate: {
+    color: '#3A4160',
+    fontSize: 12.5,
+    minWidth: 150,
+  },
+  syncRunPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    flex: 1,
+  },
+  syncRunPill: {
+    borderWidth: 1,
+    borderColor: '#DDE2EE',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  syncRunPillText: {
+    color: '#3A4160',
+    fontSize: 11.5,
+    fontWeight: '600',
   },
   tokenEyeButton: {
     width: 44,
