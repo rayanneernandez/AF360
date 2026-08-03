@@ -141,11 +141,6 @@ import {
   fetchAdminLevaMaisStatus,
   testAdminLevaMaisConexao,
   updateAdminLevaMaisConfig,
-  fetchAdminLevaMaisLojas,
-  fetchAdminLevaMaisFrentistas,
-  fetchAdminLevaMaisClientes,
-  fetchAdminLevaMaisMetricas,
-  fetchAdminLevaMaisSaldo,
   fetchAdminDashboardPerformance,
   fetchAdminDashboardKpis,
   ApiError,
@@ -6592,34 +6587,39 @@ const ADMIN_JURIDICO_DATAJUD_SERVICES: AdminIntegrationService[] = [
 // Infosimples — TJRJ: mesma infra da Busca PF, serviço confirmado pela
 // Lovable em 03/08/2026. Pelo menos um identificador precisa ser informado
 // (validado em handleExecuteTjrj).
+const ADMIN_TJRJ_ORIGEM_OPTIONS = [
+  '1 — 1ª Instância',
+  '2 — Tribunal de Justiça (2ª Instância)',
+  '3 — Juizados Especiais',
+];
+
 const ADMIN_JURIDICO_TJRJ_SERVICE: AdminIntegrationService = {
   code: 'tribunal/tjrj/processo',
-  title: 'TJRJ — Consulta de processo',
-  description: 'Consulta processos no Tribunal de Justiça do Rio de Janeiro por CPF, CNPJ, OAB, nome do advogado ou número do processo.',
+  title: 'Consultar processo',
+  description: 'Informe ao menos um filtro de busca. Para localizar ações contra a Rede AF, use o CNPJ da empresa.',
   defaultExpanded: true,
   fields: [
-    { key: 'cpf', label: 'CPF (opcional)', mask: 'cpf', placeholder: '000.000.000-00' },
-    { key: 'cnpj', label: 'CNPJ (opcional)', mask: 'cnpj', placeholder: '00.000.000/0000-00' },
-    { key: 'oab', label: 'OAB (opcional)', placeholder: 'Ex.: 123456' },
-    { key: 'nome_advogado', label: 'Nome do advogado (opcional)' },
-    { key: 'numero_processo', label: 'Número do processo (opcional)', placeholder: '0000000-00.0000.0.00.0000' },
-    {
-      key: 'origem',
-      label: 'Origem',
-      options: ['1ª instância', '2ª instância'],
-      defaultValue: '1ª instância',
-    },
-    { key: 'comarca_regional', label: 'Comarca/Regional (opcional)' },
-    { key: 'competencia', label: 'Competência (opcional)' },
-    { key: 'ano_inicial', label: 'Ano inicial (opcional)', placeholder: 'Ex.: 2020' },
-    { key: 'ano_final', label: 'Ano final (opcional)', placeholder: 'Ex.: 2026' },
+    { key: 'cnpj', label: 'CNPJ', mask: 'cnpj', placeholder: '00.000.000/0000-00' },
+    { key: 'cpf', label: 'CPF', mask: 'cpf', placeholder: '000.000.000-00' },
+    { key: 'oab', label: 'OAB', placeholder: 'RJ123456' },
+    { key: 'nome_advogado', label: 'Nome do advogado' },
+    { key: 'numero_processo', label: 'Nº do processo', placeholder: '0000000-00.0000.0.00.0000' },
+    { key: 'origem', label: 'Origem', options: ADMIN_TJRJ_ORIGEM_OPTIONS, defaultValue: ADMIN_TJRJ_ORIGEM_OPTIONS[0] },
+    { key: 'comarca_regional', label: 'Comarca regional', placeholder: 'CAPITAL' },
+    { key: 'competencia', label: 'Competência', placeholder: 'Cível, Empresarial, Família...' },
+    { key: 'ano_inicial', label: 'Ano inicial', placeholder: 'Ex.: 2020' },
+    { key: 'ano_final', label: 'Ano final', placeholder: 'Ex.: 2026' },
   ],
 };
 
-const ADMIN_TJRJ_ORIGEM_CODES: Record<string, string> = {
-  '1ª instância': '1',
-  '2ª instância': '2',
-};
+// Código real esperado pela API é só o número antes do " — " (1, 2 ou 3).
+function admTjrjOrigemCode(label: string): string {
+  return label.split(' — ')[0]?.trim() ?? label;
+}
+
+// URL base oficial da API Leva+ (confirmada pela Lovable em 03/08/2026) —
+// mesmo padrão do web: só preenche como sugestão se o campo estiver vazio.
+const ADMIN_LEVAMAIS_DEFAULT_API_URL = 'https://auivszkscfcpczrkecoc.supabase.co/functions/v1';
 
 // ---------- Componente compartilhado (Busca PF + Jurídico): card de serviço
 // expansível com formulário local (sem persistência real ainda) e botão(ões)
@@ -7211,7 +7211,7 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
         const raw = values[field.key];
         if (!raw) return;
         if (field.key === 'origem') {
-          params.origem = ADMIN_TJRJ_ORIGEM_CODES[raw] ?? raw;
+          params.origem = admTjrjOrigemCode(raw);
         } else {
           params[field.key] = admUnmaskFieldValue(field.mask, raw);
         }
@@ -7251,15 +7251,7 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
   const [levaMaisApiTokenField, setLevaMaisApiTokenField] = useState('');
   const [levaMaisApiTokenEdited, setLevaMaisApiTokenEdited] = useState(false);
   const [isSavingLevaMaisConfig, setIsSavingLevaMaisConfig] = useState(false);
-  const [activeLevaMaisRecurso, setActiveLevaMaisRecurso] = useState<
-    'lojas' | 'frentistas' | 'clientes' | 'metricas' | 'saldo' | null
-  >(null);
-  const [levaMaisRecursoData, setLevaMaisRecursoData] = useState<Record<string, unknown> | null>(null);
-  const [isLoadingLevaMaisRecurso, setIsLoadingLevaMaisRecurso] = useState(false);
-  const [levaMaisRecursoError, setLevaMaisRecursoError] = useState<string | null>(null);
-  const [levaMaisSaldoCpf, setLevaMaisSaldoCpf] = useState('');
-  const [levaMaisMetricasStart, setLevaMaisMetricasStart] = useState('');
-  const [levaMaisMetricasEnd, setLevaMaisMetricasEnd] = useState('');
+  const [isLevaMaisTokenVisible, setIsLevaMaisTokenVisible] = useState(false);
 
   const loadLevaMaisStatus = useCallback(() => {
     setIsLoadingLevaMaisStatus(true);
@@ -7268,7 +7260,7 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
       .then((data) => {
         setLevaMaisStatus(data);
         setLevaMaisAtivoForm(data.ativo);
-        setLevaMaisApiUrlForm(data.apiUrl ?? '');
+        setLevaMaisApiUrlForm(data.apiUrl || ADMIN_LEVAMAIS_DEFAULT_API_URL);
       })
       .catch((err) => setLevaMaisStatusError(err instanceof Error ? err.message : 'Não foi possível carregar o status.'))
       .finally(() => setIsLoadingLevaMaisStatus(false));
@@ -7308,39 +7300,6 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
       .catch((err) => Alert.alert('Erro ao salvar', err instanceof Error ? err.message : 'Tente novamente.'))
       .finally(() => setIsSavingLevaMaisConfig(false));
   }, [actorId, levaMaisAtivoForm, levaMaisApiUrlForm, levaMaisApiTokenField, levaMaisApiTokenEdited, loadLevaMaisStatus]);
-
-  const handleLoadLevaMaisRecurso = useCallback(
-    (recurso: 'lojas' | 'frentistas' | 'clientes' | 'metricas' | 'saldo') => {
-      setActiveLevaMaisRecurso(recurso);
-      setLevaMaisRecursoData(null);
-      setLevaMaisRecursoError(null);
-      if (recurso === 'saldo' && !levaMaisSaldoCpf.trim()) {
-        setLevaMaisRecursoError('Informe um CPF pra consultar o saldo.');
-        return;
-      }
-      if (recurso === 'metricas' && (!levaMaisMetricasStart.trim() || !levaMaisMetricasEnd.trim())) {
-        setLevaMaisRecursoError('Informe o período (data inicial e final) pra consultar métricas.');
-        return;
-      }
-      setIsLoadingLevaMaisRecurso(true);
-      let promise: Promise<Record<string, unknown>>;
-      if (recurso === 'lojas') promise = fetchAdminLevaMaisLojas(actorId);
-      else if (recurso === 'frentistas') promise = fetchAdminLevaMaisFrentistas(actorId);
-      else if (recurso === 'clientes') promise = fetchAdminLevaMaisClientes({ limit: 20, actorId });
-      else if (recurso === 'metricas')
-        promise = fetchAdminLevaMaisMetricas({
-          startDate: levaMaisMetricasStart,
-          endDate: levaMaisMetricasEnd,
-          actorId,
-        });
-      else promise = fetchAdminLevaMaisSaldo(admOnlyDigits(levaMaisSaldoCpf), actorId);
-      promise
-        .then(setLevaMaisRecursoData)
-        .catch((err) => setLevaMaisRecursoError(err instanceof Error ? err.message : 'Não foi possível carregar.'))
-        .finally(() => setIsLoadingLevaMaisRecurso(false));
-    },
-    [actorId, levaMaisSaldoCpf, levaMaisMetricasStart, levaMaisMetricasEnd]
-  );
 
   // Google Meu Negócio (gmb_config/gmb_locations) — schema e endpoints
   // confirmados pela Lovable em 30/07/2026. Carrega só quando a aba é
@@ -8809,12 +8768,33 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                 <View style={adminStyles.sectionCard}>
                   <View style={adminStyles.integrationHeaderRow}>
                     <Text style={[adminStyles.sectionTitle, { flex: 1 }]}>Infosimples — TJRJ</Text>
+                    <AdminColorPill label="+ R$ 0,04 / chamada" bg="#E7F5EC" color="#1E8A4C" />
                   </View>
                   <Text style={adminStyles.integrationDescription}>
-                    Consulta de processos no Tribunal de Justiça do Rio de Janeiro. Usa o mesmo token Infosimples já
-                    configurado na aba Busca PF — o uso e custo mensal completo (junto com os serviços de CPF) fica
-                    lá, na aba Busca PF › Infosimples.
+                    Consulta processos no Tribunal de Justiça do Rio de Janeiro por CPF, CNPJ, OAB, nome do advogado
+                    ou nº do processo. Útil para localizar ações contra os CNPJs da Rede AF no TJRJ.
                   </Text>
+                </View>
+
+                <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+                  <View style={adminStyles.headerRowWrap}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={adminStyles.sectionTitle}>Conexão</Text>
+                      <Text style={adminStyles.integrationHint}>
+                        Usa o token Infosimples já configurado nos secrets do servidor.
+                      </Text>
+                    </View>
+                    <Pressable
+                      style={[adminStyles.pillButtonOutline, testingBuscaPfProvider === 'infosimples' ? { opacity: 0.6 } : null]}
+                      onPress={() => handleTestBuscaPf('infosimples')}
+                      disabled={testingBuscaPfProvider === 'infosimples'}
+                    >
+                      <Feather name="play" size={13} color="#15203E" />
+                      <Text style={adminStyles.outlineButtonText}>
+                        {testingBuscaPfProvider === 'infosimples' ? 'Testando...' : 'Testar conexão'}
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
 
                 <AdminIntegrationServiceCard
@@ -8843,66 +8823,85 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
         ) : activeProvider === 'levamais' ? (
           <>
             <View style={adminStyles.sectionCard}>
-              <Text style={adminStyles.sectionTitle}>Credenciais</Text>
-
-              {isLoadingLevaMaisStatus && !levaMaisStatus ? (
-                <ActivityIndicator color={NAVY} style={adminStyles.fieldSpacing} />
-              ) : levaMaisStatusError ? (
-                <View style={adminStyles.fieldSpacing}>
-                  <AdminEmptyState message={levaMaisStatusError} />
+              <View style={adminStyles.integrationHeaderRow}>
+                <View style={adminStyles.integrationHeaderLeft}>
+                  <View style={[styles.iconShell, { backgroundColor: '#FBE3EE' }]}>
+                    <Feather name="gift" size={17} color="#D6336C" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={adminStyles.sectionTitle}>Leva+ Fidelidade</Text>
+                    <Text style={adminStyles.integrationDescription}>
+                      Integração com a API da Rede Leva+ para métricas, transações, clientes e frentistas.
+                    </Text>
+                  </View>
                 </View>
+              </View>
+            </View>
+
+            <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+              {isLoadingLevaMaisStatus && !levaMaisStatus ? (
+                <ActivityIndicator color={NAVY} />
+              ) : levaMaisStatusError ? (
+                <AdminEmptyState message={levaMaisStatusError} />
               ) : (
                 <>
-                  <View style={[adminStyles.headerRowWrap, adminStyles.fieldSpacing]}>
-                    <Text style={adminStyles.fieldLabel}>ATIVO</Text>
-                    <Pressable
-                      style={[
-                        adminStyles.subProviderPill,
-                        levaMaisAtivoForm ? adminStyles.subProviderPillActive : null,
-                      ]}
-                      onPress={() => setLevaMaisAtivoForm((prev) => !prev)}
-                    >
-                      <Text
-                        style={[
-                          adminStyles.subProviderPillText,
-                          levaMaisAtivoForm ? adminStyles.subProviderPillTextActive : null,
-                        ]}
-                      >
-                        {levaMaisAtivoForm ? 'Ativo' : 'Inativo'}
+                  <View style={adminStyles.headerRowWrap}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={adminStyles.sectionTitle}>Status da integração</Text>
+                      <Text style={adminStyles.integrationHint}>
+                        Quando desligado, o módulo Marketing → Leva+ não busca dados.
                       </Text>
-                    </Pressable>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <AdminColorPill
+                        label={levaMaisAtivoForm ? 'Ativo' : 'Inativo'}
+                        bg="#FBE3EE"
+                        color="#D6336C"
+                      />
+                      <ToggleSwitch value={levaMaisAtivoForm} onValueChange={() => setLevaMaisAtivoForm((prev) => !prev)} />
+                    </View>
                   </View>
 
-                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API URL</Text>
+                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>BASE URL DA API</Text>
                   <TextInput
                     style={[styles.processTextInput, { marginTop: 6 }]}
                     value={levaMaisApiUrlForm}
                     onChangeText={setLevaMaisApiUrlForm}
-                    placeholder="https://..."
+                    placeholder={ADMIN_LEVAMAIS_DEFAULT_API_URL}
                     placeholderTextColor="#A7AEC2"
                     autoCapitalize="none"
                   />
+                  <Text style={adminStyles.integrationHint}>
+                    URL base oficial da API Leva+. Mantenha o padrão se não houver instrução diferente.
+                  </Text>
 
-                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API TOKEN</Text>
-                  <TextInput
-                    style={[styles.processTextInput, { marginTop: 6 }]}
-                    value={levaMaisApiTokenField}
-                    onChangeText={(text) => {
-                      setLevaMaisApiTokenField(text);
-                      setLevaMaisApiTokenEdited(true);
-                    }}
-                    placeholder={levaMaisStatus?.apiTokenMascarado ?? 'Token da rede no Leva+'}
-                    placeholderTextColor="#A7AEC2"
-                    autoCapitalize="none"
-                    secureTextEntry
-                  />
-
-                  {levaMaisStatus?.ultimaSincronizacao ? (
-                    <Text style={[adminStyles.integrationHint, adminStyles.fieldSpacing]}>
-                      Última sincronização: {formatAdminLogDateTime(levaMaisStatus.ultimaSincronizacao)}
-                      {levaMaisStatus.ultimoStatus ? ` · ${levaMaisStatus.ultimoStatus}` : ''}
-                    </Text>
-                  ) : null}
+                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>TOKEN DE API (BEARER)</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, alignItems: 'center' }}>
+                    <TextInput
+                      style={[styles.processTextInput, { flex: 1 }]}
+                      value={levaMaisApiTokenEdited ? levaMaisApiTokenField : levaMaisStatus?.apiTokenMascarado ?? ''}
+                      onChangeText={(text) => {
+                        setLevaMaisApiTokenField(text);
+                        setLevaMaisApiTokenEdited(true);
+                      }}
+                      placeholder="Cole o token gerado no Portal Admin Leva+"
+                      placeholderTextColor="#A7AEC2"
+                      autoCapitalize="none"
+                      secureTextEntry={!isLevaMaisTokenVisible}
+                      editable
+                    />
+                    <Pressable
+                      style={adminStyles.tokenEyeButton}
+                      onPress={() => setIsLevaMaisTokenVisible((prev) => !prev)}
+                      hitSlop={6}
+                    >
+                      <Feather name={isLevaMaisTokenVisible ? 'eye-off' : 'eye'} size={16} color="#677089" />
+                    </Pressable>
+                  </View>
+                  <Text style={adminStyles.integrationHint}>
+                    Gere em Portal Admin Leva+ → API → Tokens. Cada token fica amarrado à rede — a API retorna
+                    apenas dados da rede dona.
+                  </Text>
 
                   <View style={[adminStyles.pillButtonRow, adminStyles.fieldSpacing]}>
                     <Pressable
@@ -8910,7 +8909,6 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                       onPress={handleSaveLevaMaisConfig}
                       disabled={isSavingLevaMaisConfig}
                     >
-                      <Feather name="save" size={14} color="#FFFFFF" />
                       <Text style={adminStyles.primaryButtonGreenText}>
                         {isSavingLevaMaisConfig ? 'Salvando...' : 'Salvar'}
                       </Text>
@@ -8920,108 +8918,44 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                       onPress={handleTestLevaMais}
                       disabled={isTestingLevaMais}
                     >
-                      <Feather name="check-circle" size={14} color="#15203E" />
                       <Text style={adminStyles.outlineButtonText}>{isTestingLevaMais ? 'Testando...' : 'Testar conexão'}</Text>
                     </Pressable>
                   </View>
+
+                  {levaMaisStatus?.ultimoStatus || levaMaisStatus?.ultimaSincronizacao ? (
+                    <Text style={[adminStyles.integrationHint, adminStyles.fieldSpacing]}>
+                      {levaMaisStatus?.ultimoStatus ? `Último status: ${levaMaisStatus.ultimoStatus}` : ''}
+                      {levaMaisStatus?.ultimaSincronizacao
+                        ? `    Última checagem: ${formatAdminLogDateTime(levaMaisStatus.ultimaSincronizacao)}`
+                        : ''}
+                    </Text>
+                  ) : null}
                 </>
               )}
             </View>
 
             <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
-              <Text style={adminStyles.sectionTitle}>Recursos</Text>
-              <Text style={adminStyles.integrationDescription}>
-                Receita, ticket médio, taxa de retorno/recompra, pontos/cashback, ranking de lojas, produtividade de
-                frentistas, top clientes e saldo por CPF — dados sempre lidos ao vivo da API do Leva+. Ainda não
-                confirmei com a Lovable os nomes exatos dos campos de cada recurso, então por enquanto mostro o JSON
-                real da resposta (sem inventar nenhum campo) — quando tiver o shape certo, transformo em
-                tabelas/cards.
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Feather name="external-link" size={14} color="#677089" />
+                <Text style={adminStyles.sectionTitle}>O que esta integração libera</Text>
+              </View>
+              <View style={[adminStyles.fieldSpacing, { gap: 6 }]}>
+                <Text style={adminStyles.integrationBullet}>
+                  • Receita, ticket médio, taxa de retorno e recompra da rede inteira ou por posto.
+                </Text>
+                <Text style={adminStyles.integrationBullet}>
+                  • Pontos/cashback gerados e resgatados, ranking de lojas e produtividade de frentistas.
+                </Text>
+                <Text style={adminStyles.integrationBullet}>
+                  • Top clientes, série diária para gráficos e base de clientes paginada.
+                </Text>
+                <Text style={adminStyles.integrationBullet}>
+                  • Consulta de saldo individual por CPF e envio de transações externas.
+                </Text>
+              </View>
+              <Text style={[adminStyles.integrationHint, adminStyles.fieldSpacing]}>
+                Limite de 60 requisições/min por endpoint. Dados serão exibidos em Marketing → Leva+ (em construção).
               </Text>
-
-              <View style={[adminStyles.pillButtonRow, adminStyles.fieldSpacing]}>
-                <Pressable style={adminStyles.pillButtonOutline} onPress={() => handleLoadLevaMaisRecurso('lojas')}>
-                  <Text style={adminStyles.outlineButtonText}>Ranking de lojas</Text>
-                </Pressable>
-                <Pressable style={adminStyles.pillButtonOutline} onPress={() => handleLoadLevaMaisRecurso('frentistas')}>
-                  <Text style={adminStyles.outlineButtonText}>Frentistas</Text>
-                </Pressable>
-                <Pressable style={adminStyles.pillButtonOutline} onPress={() => handleLoadLevaMaisRecurso('clientes')}>
-                  <Text style={adminStyles.outlineButtonText}>Top clientes</Text>
-                </Pressable>
-              </View>
-
-              <View style={[adminStyles.fieldSpacing, { flexDirection: 'row', flexWrap: 'wrap', gap: 12 }]}>
-                <View style={{ minWidth: 130, flexGrow: 1 }}>
-                  <Text style={adminStyles.fieldLabel}>PERÍODO INICIAL</Text>
-                  <TextInput
-                    style={[styles.processTextInput, { marginTop: 6 }]}
-                    value={levaMaisMetricasStart}
-                    onChangeText={setLevaMaisMetricasStart}
-                    placeholder="AAAA-MM-DD"
-                    placeholderTextColor="#A7AEC2"
-                  />
-                </View>
-                <View style={{ minWidth: 130, flexGrow: 1 }}>
-                  <Text style={adminStyles.fieldLabel}>PERÍODO FINAL</Text>
-                  <TextInput
-                    style={[styles.processTextInput, { marginTop: 6 }]}
-                    value={levaMaisMetricasEnd}
-                    onChangeText={setLevaMaisMetricasEnd}
-                    placeholder="AAAA-MM-DD"
-                    placeholderTextColor="#A7AEC2"
-                  />
-                </View>
-              </View>
-              <Pressable
-                style={[adminStyles.pillButtonOutline, adminStyles.fieldSpacing, { alignSelf: 'flex-start' }]}
-                onPress={() => handleLoadLevaMaisRecurso('metricas')}
-              >
-                <Text style={adminStyles.outlineButtonText}>Consultar métricas</Text>
-              </Pressable>
-
-              <View style={[adminStyles.fieldSpacing, { flexDirection: 'row', gap: 8, alignItems: 'flex-end' }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={adminStyles.fieldLabel}>SALDO POR CPF</Text>
-                  <TextInput
-                    style={[styles.processTextInput, { marginTop: 6 }]}
-                    value={levaMaisSaldoCpf}
-                    onChangeText={(text) => setLevaMaisSaldoCpf(admApplyFieldMask('cpf', text))}
-                    placeholder="000.000.000-00"
-                    placeholderTextColor="#A7AEC2"
-                    keyboardType="numeric"
-                    maxLength={admFieldMaskMaxLength('cpf')}
-                  />
-                </View>
-                <Pressable style={adminStyles.pillButtonPrimary} onPress={() => handleLoadLevaMaisRecurso('saldo')}>
-                  <Text style={adminStyles.primaryButtonGreenText}>Consultar</Text>
-                </Pressable>
-              </View>
-
-              {isLoadingLevaMaisRecurso ? (
-                <ActivityIndicator color={NAVY} style={adminStyles.fieldSpacing} />
-              ) : levaMaisRecursoError ? (
-                <View style={adminStyles.fieldSpacing}>
-                  <AdminEmptyState message={levaMaisRecursoError} />
-                </View>
-              ) : levaMaisRecursoData && activeLevaMaisRecurso ? (
-                <View style={adminStyles.fieldSpacing}>
-                  <View style={adminStyles.headerRowWrap}>
-                    <Text style={adminStyles.fieldLabel}>RESULTADO — {activeLevaMaisRecurso.toUpperCase()}</Text>
-                    <Pressable
-                      style={adminStyles.pillButtonOutline}
-                      onPress={() => copyToClipboard(JSON.stringify(levaMaisRecursoData, null, 2), () => {})}
-                    >
-                      <Feather name="copy" size={13} color="#15203E" />
-                      <Text style={adminStyles.outlineButtonText}>Copiar JSON</Text>
-                    </Pressable>
-                  </View>
-                  <ScrollView style={[adminStyles.rawJsonBox, { marginTop: 8 }]} nestedScrollEnabled>
-                    <Text style={adminStyles.rawJsonText} selectable>
-                      {JSON.stringify(levaMaisRecursoData, null, 2)}
-                    </Text>
-                  </ScrollView>
-                </View>
-              ) : null}
             </View>
           </>
         ) : (
