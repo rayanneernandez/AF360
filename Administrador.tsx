@@ -810,6 +810,7 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
   const [kpisError, setKpisError] = useState<string | null>(null);
   const [selectedMes, setSelectedMes] = useState<number | null>(null);
   const [selectedAno, setSelectedAno] = useState<number | null>(null);
+  const [selectedChartMonth, setSelectedChartMonth] = useState<string | null>(null);
 
   // Performance: carrega na entrada e faz polling a cada 10s (igual ao site
   // — badge "AO VIVO · atualiza a cada 10s").
@@ -851,6 +852,7 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
           setKpis(data);
           setSelectedMes(data.periodo?.mes ?? null);
           setSelectedAno(data.periodo?.ano ?? null);
+          setSelectedChartMonth(null);
         })
         .catch((err) => {
           setKpisError(err instanceof Error ? err.message : 'Não foi possível carregar os indicadores do mês.');
@@ -925,6 +927,24 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
           <Text style={adminStyles.heroTitle}>Dashboard</Text>
           <Text style={adminStyles.heroSubtitle}>Visão geral da plataforma · {monthLabel}</Text>
         </LinearGradient>
+
+        <View style={adminStyles.monthNavRow}>
+          <Pressable
+            style={[adminStyles.paginationArrowButton, monthNavDisabled ? adminStyles.paginationArrowDisabled : null]}
+            disabled={monthNavDisabled}
+            onPress={handlePrevMonth}
+          >
+            <Feather name="chevron-left" size={16} color={monthNavDisabled ? '#C7CCDA' : '#4C5470'} />
+          </Pressable>
+          <Text style={adminStyles.monthNavLabel}>{monthLabel.toUpperCase()}</Text>
+          <Pressable
+            style={[adminStyles.paginationArrowButton, monthNavDisabled ? adminStyles.paginationArrowDisabled : null]}
+            disabled={monthNavDisabled}
+            onPress={handleNextMonth}
+          >
+            <Feather name="chevron-right" size={16} color={monthNavDisabled ? '#C7CCDA' : '#4C5470'} />
+          </Pressable>
+        </View>
 
         {isLoadingPerf && !perf ? (
           <AdminEmptyState message="Carregando métricas da plataforma..." />
@@ -1120,27 +1140,7 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
               </View>
             </View>
 
-            <View style={[adminStyles.headerRowWrap, { marginTop: 4 }]}>
-              <View style={adminStyles.headerRowTitleWrap}>
-                <Text style={adminStyles.sectionLabel}>NO MÊS — {monthLabel.toUpperCase()}</Text>
-              </View>
-              <View style={adminStyles.pillButtonRow}>
-                <Pressable
-                  style={[adminStyles.paginationArrowButton, monthNavDisabled ? adminStyles.paginationArrowDisabled : null]}
-                  disabled={monthNavDisabled}
-                  onPress={handlePrevMonth}
-                >
-                  <Feather name="chevron-left" size={16} color={monthNavDisabled ? '#C7CCDA' : '#4C5470'} />
-                </Pressable>
-                <Pressable
-                  style={[adminStyles.paginationArrowButton, monthNavDisabled ? adminStyles.paginationArrowDisabled : null]}
-                  disabled={monthNavDisabled}
-                  onPress={handleNextMonth}
-                >
-                  <Feather name="chevron-right" size={16} color={monthNavDisabled ? '#C7CCDA' : '#4C5470'} />
-                </Pressable>
-              </View>
-            </View>
+            <Text style={adminStyles.sectionLabel}>NO MÊS — {monthLabel.toUpperCase()}</Text>
             <View style={styles.grid}>
               {[
                 { id: 'm1', value: kpis.mes.novos_colaboradores, label: 'Novos colaboradores' },
@@ -1164,7 +1164,21 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
               ) : (
                 <View style={adminStyles.monthBarChartRow}>
                   {kpis.serie_novos_colaboradores.map((item) => (
-                    <View key={item.mes} style={adminStyles.monthBarGroup}>
+                    <Pressable
+                      key={item.mes}
+                      style={adminStyles.monthBarGroup}
+                      onPress={() =>
+                        setSelectedChartMonth((current) => (current === item.mes ? null : item.mes))
+                      }
+                    >
+                      {selectedChartMonth === item.mes ? (
+                        <View style={adminStyles.monthBarTooltip}>
+                          <Text style={adminStyles.monthBarTooltipMonth}>{item.mes}</Text>
+                          <Text style={adminStyles.monthBarTooltipValue}>
+                            novos : <Text style={adminStyles.monthBarTooltipValueNumber}>{admFormatInt(item.novos)}</Text>
+                          </Text>
+                        </View>
+                      ) : null}
                       <View
                         style={[
                           adminStyles.monthBar,
@@ -1172,7 +1186,7 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
                         ]}
                       />
                       <Text style={adminStyles.monthBarLabel}>{admShortMonthFromKey(item.mes)}</Text>
-                    </View>
+                    </Pressable>
                   ))}
                 </View>
               )}
@@ -9889,6 +9903,7 @@ const adminStyles = StyleSheet.create({
   monthBarGroup: {
     alignItems: 'center',
     gap: 6,
+    position: 'relative',
   },
   monthBar: {
     width: 20,
@@ -9900,6 +9915,39 @@ const adminStyles = StyleSheet.create({
     color: '#9AA1B5',
     fontSize: 10,
     fontWeight: '600',
+  },
+  monthBarTooltip: {
+    position: 'absolute',
+    bottom: 104,
+    left: '50%',
+    transform: [{ translateX: -55 }],
+    width: 110,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E4E7F0',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+    zIndex: 10,
+  },
+  monthBarTooltipMonth: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: NAVY,
+    marginBottom: 2,
+  },
+  monthBarTooltipValue: {
+    fontSize: 11,
+    color: '#5E667D',
+  },
+  monthBarTooltipValueNumber: {
+    fontWeight: '700',
+    color: BLUE,
   },
   rankRow: {
     flexDirection: 'row',
@@ -10447,6 +10495,19 @@ const adminStyles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
     marginBottom: 14,
+  },
+  monthNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    marginTop: 14,
+  },
+  monthNavLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: NAVY,
+    letterSpacing: 0.4,
   },
   headerRowTitleWrap: {
     flex: 1,
