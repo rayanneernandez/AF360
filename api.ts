@@ -1097,6 +1097,97 @@ export async function deleteAdminContabilidade(id: string, actorId?: string | nu
   await api.delete(withActorId(`/api/admin/contabilidades/${encodeURIComponent(id)}`, actorId));
 }
 
+// --- Contabilidades: Responsáveis (tabela contabilidade_responsaveis,
+// confirmada pela Lovable em 04/08/2026). "acesso" é derivado do profile_id
+// do lado deles (liberado/sem_acesso) — não é o mesmo que "ativo". Liberar
+// acesso cria/reseta o login real no Portal do Contador. ---
+
+export type AdminContabilidadeResponsavelAcesso = 'liberado' | 'sem_acesso';
+
+export type AdminContabilidadeResponsavelItem = {
+  id: string;
+  contabilidadeId: string | null;
+  profileId: string | null;
+  nome: string | null;
+  email: string | null;
+  telefone: string | null;
+  ativo: boolean;
+  acesso: AdminContabilidadeResponsavelAcesso;
+  ultimoAcessoEm: string | null;
+  createdAt: string | null;
+};
+
+export type AdminContabilidadeResponsaveisDetalhe = {
+  count: number;
+  limit: number | null;
+  offset: number | null;
+  responsaveis: AdminContabilidadeResponsavelItem[];
+};
+
+export async function fetchAdminContabilidadeResponsaveis(opts: {
+  contabilidadeId: string;
+  q?: string;
+  ativo?: boolean;
+  limit?: number;
+  offset?: number;
+  actorId?: string | null;
+}): Promise<AdminContabilidadeResponsaveisDetalhe> {
+  const params = new URLSearchParams();
+  params.set('contabilidade_id', opts.contabilidadeId);
+  if (opts.q) params.set('q', opts.q);
+  if (opts.ativo !== undefined) params.set('ativo', String(opts.ativo));
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.offset) params.set('offset', String(opts.offset));
+  const path = `/api/admin/contabilidades/responsaveis?${params.toString()}`;
+  const json = await api.get(withActorId(path, opts.actorId));
+  return json.data as AdminContabilidadeResponsaveisDetalhe;
+}
+
+export type AdminContabilidadeResponsavelWriteBody = {
+  contabilidade_id?: string;
+  nome?: string;
+  email?: string;
+  telefone?: string | null;
+  ativo?: boolean;
+};
+
+export async function createAdminContabilidadeResponsavel(
+  body: AdminContabilidadeResponsavelWriteBody,
+  actorId?: string | null
+): Promise<AdminContabilidadeResponsavelItem> {
+  const json = await api.post(withActorId('/api/admin/contabilidades/responsaveis', actorId), body);
+  return json.data as AdminContabilidadeResponsavelItem;
+}
+
+export async function updateAdminContabilidadeResponsavel(
+  id: string,
+  body: AdminContabilidadeResponsavelWriteBody,
+  actorId?: string | null
+): Promise<AdminContabilidadeResponsavelItem> {
+  const json = await api.patch(
+    withActorId(`/api/admin/contabilidades/responsaveis/${encodeURIComponent(id)}`, actorId),
+    body
+  );
+  return json.data as AdminContabilidadeResponsavelItem;
+}
+
+export async function deleteAdminContabilidadeResponsavel(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/admin/contabilidades/responsaveis/${encodeURIComponent(id)}`, actorId));
+}
+
+export type AdminLiberarAcessoResultado = { email: string | null; senha: string | null; profileId: string | null };
+
+export async function liberarAcessoAdminContabilidadeResponsavel(
+  id: string,
+  actorId?: string | null
+): Promise<AdminLiberarAcessoResultado> {
+  const json = await api.post(
+    withActorId(`/api/admin/contabilidades/responsaveis/${encodeURIComponent(id)}/liberar-acesso`, actorId),
+    {}
+  );
+  return json.data as AdminLiberarAcessoResultado;
+}
+
 // --- Admin: Domínios permitidos de login (tabela adm_dominios_permitidos,
 // confirmada pelo Lovable em 30/07/2026) ---
 

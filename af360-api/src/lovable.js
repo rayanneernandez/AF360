@@ -322,6 +322,42 @@ function deleteAdminContabilidade(id, actorId) {
   return lovableDelete('/api/public/internal/admin-contabilidades', { id }, actorId);
 }
 
+// --- Contabilidades: Responsáveis (tabela contabilidade_responsaveis,
+// confirmada pelo Lovable em 04/08/2026 — cada responsável pode ganhar login
+// real no Portal do Contador via "liberar-acesso"). Mesmo padrão
+// x-internal-secret + x-actor-id (actor valida is_master nos writes). ---
+
+function getAdminContabilidadeResponsaveis({ contabilidade_id, q, ativo, limit, offset } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/admin-contabilidade-responsaveis',
+    { contabilidade_id, q, ativo, limit, offset },
+    actorId
+  );
+}
+
+function postAdminContabilidadeResponsavel(body, actorId) {
+  return lovablePost('/api/public/internal/admin-contabilidade-responsaveis', {}, body, actorId);
+}
+
+function patchAdminContabilidadeResponsavel(id, body, actorId) {
+  return lovablePatch('/api/public/internal/admin-contabilidade-responsaveis', { id }, body, actorId);
+}
+
+function deleteAdminContabilidadeResponsavel(id, actorId) {
+  return lovableDelete('/api/public/internal/admin-contabilidade-responsaveis', { id }, actorId);
+}
+
+// Cria/reseta o login do responsável no Portal do Contador (senha inicial
+// fixa "AF360@contador", com troca obrigatória do lado deles).
+function postAdminContabilidadeResponsavelLiberarAcesso(id, actorId) {
+  return lovablePost(
+    '/api/public/internal/admin-contabilidade-responsaveis',
+    { id, action: 'liberar-acesso' },
+    {},
+    actorId
+  );
+}
+
 // --- Módulos (tabela própria public.modules, leitura já existente via
 // fetchAllRows; escrita — toggle de is_active e edição de campos — confirmada
 // pelo Lovable em 30/07/2026). ---
@@ -546,6 +582,11 @@ module.exports = {
   postAdminContabilidade,
   patchAdminContabilidade,
   deleteAdminContabilidade,
+  getAdminContabilidadeResponsaveis,
+  postAdminContabilidadeResponsavel,
+  patchAdminContabilidadeResponsavel,
+  deleteAdminContabilidadeResponsavel,
+  postAdminContabilidadeResponsavelLiberarAcesso,
   getAdminModulos,
   patchAdminModulo,
   getAdminDominios,

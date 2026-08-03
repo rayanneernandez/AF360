@@ -28,6 +28,11 @@ const {
   postAdminContabilidade,
   patchAdminContabilidade,
   deleteAdminContabilidade,
+  getAdminContabilidadeResponsaveis,
+  postAdminContabilidadeResponsavel,
+  patchAdminContabilidadeResponsavel,
+  deleteAdminContabilidadeResponsavel,
+  postAdminContabilidadeResponsavelLiberarAcesso,
   patchAdminModulo,
   getAdminDominios,
   postAdminDominio,
@@ -775,6 +780,99 @@ router.delete('/contabilidades/:id', async (req, res) => {
     console.error('[admin/contabilidades/:id DELETE] erro:', err.message);
     const status = err.lovableStatus === 409 ? 409 : writeErrorStatus(err);
     res.status(status).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Contabilidades: Responsáveis (tabela contabilidade_responsaveis,
+// confirmada pela Lovable em 04/08/2026). "Acesso" vem pronto do lado deles
+// (liberado/sem_acesso, derivado de profile_id) — não recalculamos aqui.
+// "Liberar acesso" cria/reseta o login real no Portal do Contador (senha
+// inicial fixa, com troca obrigatória do lado deles).
+// ---------------------------------------------------------------------------
+
+function mapContabilidadeResponsavelRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    contabilidadeId: row.contabilidade_id ?? null,
+    profileId: row.profile_id ?? null,
+    nome: row.nome ?? null,
+    email: row.email ?? null,
+    telefone: row.telefone ?? null,
+    ativo: row.ativo !== false,
+    acesso: row.acesso ?? (row.profile_id ? 'liberado' : 'sem_acesso'),
+    ultimoAcessoEm: row.ultimo_acesso_em ?? null,
+    createdAt: row.created_at ?? null,
+  };
+}
+
+// GET /api/admin/contabilidades/responsaveis?contabilidade_id=&q=&ativo=&limit=&offset=&actorId=
+router.get('/contabilidades/responsaveis', async (req, res) => {
+  try {
+    const { contabilidade_id, q, ativo, limit, offset, actorId } = req.query;
+    const json = await getAdminContabilidadeResponsaveis({ contabilidade_id, q, ativo, limit, offset }, actorId);
+    const responsaveis = (json?.data ?? []).map(mapContabilidadeResponsavelRow);
+    res.json({
+      ok: true,
+      data: {
+        count: json?.count ?? responsaveis.length,
+        limit: json?.limit ?? null,
+        offset: json?.offset ?? null,
+        responsaveis,
+      },
+    });
+  } catch (err) {
+    console.error('[admin/contabilidades/responsaveis] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/contabilidades/responsaveis?actorId=... — body:
+// { contabilidade_id, nome, email, telefone, ativo }
+router.post('/contabilidades/responsaveis', async (req, res) => {
+  try {
+    const json = await postAdminContabilidadeResponsavel(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapContabilidadeResponsavelRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/contabilidades/responsaveis POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/admin/contabilidades/responsaveis/:id?actorId=...
+router.patch('/contabilidades/responsaveis/:id', async (req, res) => {
+  try {
+    const json = await patchAdminContabilidadeResponsavel(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapContabilidadeResponsavelRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[admin/contabilidades/responsaveis/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/admin/contabilidades/responsaveis/:id?actorId=...
+router.delete('/contabilidades/responsaveis/:id', async (req, res) => {
+  try {
+    await deleteAdminContabilidadeResponsavel(req.params.id, req.query.actorId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin/contabilidades/responsaveis/:id DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/admin/contabilidades/responsaveis/:id/liberar-acesso?actorId=...
+// — cria/reseta o login real no Portal do Contador. Retorna a senha inicial
+// (uma vez só) pra quem liberou poder passar pro responsável.
+router.post('/contabilidades/responsaveis/:id/liberar-acesso', async (req, res) => {
+  try {
+    const json = await postAdminContabilidadeResponsavelLiberarAcesso(req.params.id, req.query.actorId);
+    const data = json?.data ?? json ?? {};
+    res.json({ ok: true, data: { email: data.email ?? null, senha: data.senha ?? null, profileId: data.profile_id ?? null } });
+  } catch (err) {
+    console.error('[admin/contabilidades/responsaveis/:id/liberar-acesso] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'liberar_acesso_failed', message: err.message });
   }
 });
 

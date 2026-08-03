@@ -93,6 +93,11 @@ import {
   createAdminContabilidade,
   updateAdminContabilidade,
   deleteAdminContabilidade,
+  fetchAdminContabilidadeResponsaveis,
+  createAdminContabilidadeResponsavel,
+  updateAdminContabilidadeResponsavel,
+  deleteAdminContabilidadeResponsavel,
+  liberarAcessoAdminContabilidadeResponsavel,
   fetchRhColaboradores,
   fetchAdminDominios,
   createAdminDominio,
@@ -165,6 +170,7 @@ import {
   type AdminUnidadeTipo,
   type AdminUnidadeServicos,
   type AdminContabilidadeItem,
+  type AdminContabilidadeResponsavelItem,
   type RhUnidadeItem,
   type RhColaboradorRaw,
 } from './api';
@@ -3888,6 +3894,7 @@ function AdminContabilidadesModal({
   const [form, setForm] = useState<AdminContabilidadeFormValues>(emptyAdminContabilidadeForm());
   const [beingEdited, setBeingEdited] = useState<AdminContabilidadeItem | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [respContabilidade, setRespContabilidade] = useState<AdminContabilidadeItem | null>(null);
 
   const load = () => {
     setIsLoading(true);
@@ -3990,6 +3997,7 @@ function AdminContabilidadesModal({
   };
 
   return (
+    <>
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.requestModalBackdrop}>
         <View style={styles.requestModalCard}>
@@ -4052,6 +4060,9 @@ function AdminContabilidadesModal({
                           {item.isActive ? 'Ativa' : 'Inativa'}
                         </Text>
                       </View>
+                      <Pressable hitSlop={8} style={{ padding: 4 }} onPress={() => setRespContabilidade(item)}>
+                        <Feather name="users" size={16} color="#4C5470" />
+                      </Pressable>
                       <Pressable
                         hitSlop={8}
                         style={{ padding: 4 }}
@@ -4278,6 +4289,339 @@ function AdminContabilidadesModal({
                   <ToggleSwitch
                     value={form.isActive}
                     onValueChange={() => setForm((current) => ({ ...current, isActive: !current.isActive }))}
+                  />
+                </View>
+              </ScrollView>
+
+              <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+                <Pressable
+                  style={[adminStyles.ghostButton, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                  onPress={() => setView('list')}
+                >
+                  <Feather name="arrow-left" size={13} color="#5E667D" />
+                  <Text style={adminStyles.ghostButtonText}>Voltar</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.secondaryButton, adminStyles.secondaryButtonCompact, isSaving ? { opacity: 0.6 } : null]}
+                  disabled={isSaving}
+                  onPress={handleSubmit}
+                >
+                  <Feather name="save" size={13} color="#2E468F" />
+                  <Text style={styles.secondaryButtonText}>{isSaving ? 'Salvando...' : 'Salvar'}</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+
+    <AdminContabilidadeResponsaveisModal
+      visible={respContabilidade !== null}
+      contabilidade={respContabilidade}
+      actorId={actorId}
+      onClose={() => setRespContabilidade(null)}
+    />
+    </>
+  );
+}
+
+// ---------- Modal "Responsáveis" de uma Contabilidade (tabela
+// contabilidade_responsaveis, confirmada pela Lovable em 04/08/2026) ----------
+
+type AdminContabilidadeResponsavelFormValues = {
+  nome: string;
+  email: string;
+  telefone: string;
+  ativo: boolean;
+};
+
+function emptyAdminContabilidadeResponsavelForm(): AdminContabilidadeResponsavelFormValues {
+  return { nome: '', email: '', telefone: '', ativo: true };
+}
+
+function AdminContabilidadeResponsaveisModal({
+  visible,
+  contabilidade,
+  actorId,
+  onClose,
+}: {
+  visible: boolean;
+  contabilidade: AdminContabilidadeItem | null;
+  actorId?: string | null;
+  onClose: () => void;
+}) {
+  const [view, setView] = useState<'list' | 'form'>('list');
+  const [responsaveis, setResponsaveis] = useState<AdminContabilidadeResponsavelItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
+  const [form, setForm] = useState<AdminContabilidadeResponsavelFormValues>(emptyAdminContabilidadeResponsavelForm());
+  const [beingEdited, setBeingEdited] = useState<AdminContabilidadeResponsavelItem | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [liberandoId, setLiberandoId] = useState<string | null>(null);
+
+  const load = () => {
+    if (!contabilidade) return Promise.resolve();
+    setIsLoading(true);
+    setErrorMessage(null);
+    return fetchAdminContabilidadeResponsaveis({ contabilidadeId: contabilidade.id, actorId })
+      .then((data) => setResponsaveis(data.responsaveis))
+      .catch((err) =>
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os responsáveis.')
+      )
+      .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    if (visible && contabilidade) {
+      setView('list');
+      load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, contabilidade?.id]);
+
+  const handleSubmit = () => {
+    if (!contabilidade) return;
+    if (!form.nome.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe o nome do responsável.');
+      return;
+    }
+    if (!form.email.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe o e-mail do responsável.');
+      return;
+    }
+    const body = {
+      contabilidade_id: contabilidade.id,
+      nome: form.nome.trim(),
+      email: form.email.trim(),
+      telefone: form.telefone.trim() || null,
+      ativo: form.ativo,
+    };
+
+    setIsSaving(true);
+    const request =
+      formMode === 'create'
+        ? createAdminContabilidadeResponsavel(body, actorId)
+        : updateAdminContabilidadeResponsavel(beingEdited!.id, body, actorId);
+
+    request
+      .then(() => {
+        setView('list');
+        load();
+      })
+      .catch((err) =>
+        showAdminApiError(
+          err,
+          formMode === 'create' ? 'Não foi possível criar o responsável.' : 'Não foi possível salvar o responsável.'
+        )
+      )
+      .finally(() => setIsSaving(false));
+  };
+
+  const handleExcluir = (item: AdminContabilidadeResponsavelItem) => {
+    Alert.alert('Excluir responsável', `Tem certeza que quer excluir "${item.nome ?? item.email}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdminContabilidadeResponsavel(item.id, actorId)
+            .then(() => load())
+            .catch((err) => showAdminApiError(err, 'Não foi possível excluir o responsável.'));
+        },
+      },
+    ]);
+  };
+
+  const handleLiberarAcesso = (item: AdminContabilidadeResponsavelItem) => {
+    Alert.alert(
+      item.acesso === 'liberado' ? 'Redefinir acesso' : 'Liberar acesso',
+      `Isso cria/redefine a senha de acesso de "${item.nome ?? item.email}" ao Portal do Contador com uma senha inicial (o contador será obrigado a trocar no primeiro acesso). Continuar?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Confirmar',
+          onPress: () => {
+            setLiberandoId(item.id);
+            liberarAcessoAdminContabilidadeResponsavel(item.id, actorId)
+              .then((resultado) => {
+                Alert.alert(
+                  'Acesso liberado',
+                  `E-mail: ${resultado.email ?? item.email}\nSenha inicial: ${resultado.senha ?? '—'}\n\nPasse essas credenciais para o responsável. Ele será obrigado a trocar a senha no primeiro acesso.`
+                );
+                load();
+              })
+              .catch((err) => showAdminApiError(err, 'Não foi possível liberar o acesso.'))
+              .finally(() => setLiberandoId(null));
+          },
+        },
+      ]
+    );
+  };
+
+  const displayName = contabilidade ? contabilidade.nomeFantasia || contabilidade.razaoSocial || '(sem nome)' : '';
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          {view === 'list' ? (
+            <>
+              <View style={styles.requestModalHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.requestModalTitle}>Responsáveis — {displayName}</Text>
+                  <Text style={adminStyles.detailSubEmail}>
+                    Cada responsável acessa o Portal do Contador com o e-mail cadastrado aqui.
+                  </Text>
+                </View>
+                <Pressable onPress={onClose} hitSlop={8}>
+                  <Feather name="x" size={20} color="#677089" />
+                </Pressable>
+              </View>
+
+              <View style={[styles.directorNotifHeaderRow, { justifyContent: 'flex-end' }]}>
+                <Pressable
+                  style={styles.directorNotifNewButton}
+                  onPress={() => {
+                    setFormMode('create');
+                    setBeingEdited(null);
+                    setForm(emptyAdminContabilidadeResponsavelForm());
+                    setView('form');
+                  }}
+                >
+                  <Feather name="plus" size={15} color="#FFFFFF" />
+                  <Text style={styles.directorNotifNewButtonText}>Novo responsável</Text>
+                </Pressable>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {isLoading ? (
+                  <AdminEmptyState message="Carregando responsáveis..." />
+                ) : errorMessage ? (
+                  <AdminEmptyState message={errorMessage} />
+                ) : responsaveis.length === 0 ? (
+                  <AdminEmptyState message="Nenhum responsável cadastrado." />
+                ) : (
+                  responsaveis.map((item) => (
+                    <View key={item.id} style={adminStyles.contabRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={adminStyles.listName} numberOfLines={1}>
+                          {item.nome || '(sem nome)'}
+                          {!item.ativo ? ' · inativo' : ''}
+                        </Text>
+                        <Text style={adminStyles.listMeta} numberOfLines={1}>
+                          {item.email || 'sem e-mail'}
+                          {item.telefone ? ` • ${item.telefone}` : ''}
+                          {' • Último acesso: '}
+                          {formatAdminLogDateTime(item.ultimoAcessoEm)}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          adminStyles.detailBadgeBase,
+                          { backgroundColor: item.acesso === 'liberado' ? GREEN_BG : GRAY_BG, marginRight: 6 },
+                        ]}
+                      >
+                        <Text
+                          style={[adminStyles.detailBadgeText, { color: item.acesso === 'liberado' ? GREEN : GRAY }]}
+                        >
+                          {item.acesso === 'liberado' ? 'Liberado' : 'Sem acesso'}
+                        </Text>
+                      </View>
+                      <Pressable
+                        hitSlop={8}
+                        style={{ padding: 4, opacity: liberandoId === item.id ? 0.5 : 1 }}
+                        disabled={liberandoId === item.id}
+                        onPress={() => handleLiberarAcesso(item)}
+                      >
+                        <Feather name="key" size={16} color="#4C5470" />
+                      </Pressable>
+                      <Pressable
+                        hitSlop={8}
+                        style={{ padding: 4 }}
+                        onPress={() => {
+                          setFormMode('edit');
+                          setBeingEdited(item);
+                          setForm({
+                            nome: item.nome ?? '',
+                            email: item.email ?? '',
+                            telefone: item.telefone ?? '',
+                            ativo: item.ativo,
+                          });
+                          setView('form');
+                        }}
+                      >
+                        <Feather name="edit-2" size={16} color="#4C5470" />
+                      </Pressable>
+                      <Pressable hitSlop={8} style={{ padding: 4 }} onPress={() => handleExcluir(item)}>
+                        <Feather name="trash-2" size={16} color={RED} />
+                      </Pressable>
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+
+              <View style={[adminStyles.detailFooterRow, styles.spacingTop]}>
+                <Pressable style={adminStyles.ghostButton} onPress={onClose}>
+                  <Text style={adminStyles.ghostButtonText}>Fechar</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.requestModalHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.requestModalTitle}>
+                    {formMode === 'create' ? 'Novo responsável' : `Editar — ${beingEdited?.nome ?? ''}`}
+                  </Text>
+                  <Text style={adminStyles.detailSubEmail}>Responsáveis — {displayName}</Text>
+                </View>
+                <Pressable onPress={onClose} hitSlop={8}>
+                  <Feather name="x" size={20} color="#677089" />
+                </Pressable>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={adminStyles.formRow}>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Nome</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.nome}
+                      onChangeText={(text) => setForm((current) => ({ ...current, nome: text }))}
+                      placeholder="Nome do responsável"
+                      placeholderTextColor="#A7AEC2"
+                    />
+                  </View>
+                  <View style={adminStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>E-mail</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={form.email}
+                      onChangeText={(text) => setForm((current) => ({ ...current, email: text }))}
+                      placeholder="email@exemplo.com"
+                      placeholderTextColor="#A7AEC2"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                    />
+                  </View>
+                </View>
+
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Telefone</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={form.telefone}
+                  onChangeText={(text) => setForm((current) => ({ ...current, telefone: text }))}
+                  placeholder="Opcional"
+                  placeholderTextColor="#A7AEC2"
+                />
+
+                <View style={[adminStyles.cargoModuleToggleRow, styles.spacingTop]}>
+                  <Text style={adminStyles.cargoModuleToggleLabel}>Ativo</Text>
+                  <ToggleSwitch
+                    value={form.ativo}
+                    onValueChange={() => setForm((current) => ({ ...current, ativo: !current.ativo }))}
                   />
                 </View>
               </ScrollView>
