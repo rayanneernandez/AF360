@@ -1581,24 +1581,40 @@ function mapBuscaPfStatusRow(raw = {}) {
   };
 }
 
-function mapBuscaPfUsoRow(raw = {}) {
-  const porServicoRaw = raw.por_servico ?? {};
+function mapBuscaPfPorServico(porServicoRaw = {}) {
   const porServico = {};
-  Object.entries(porServicoRaw).forEach(([key, val]) => {
+  Object.entries(porServicoRaw ?? {}).forEach(([key, val]) => {
     porServico[key] = {
       count: (val && (val.count ?? val.total)) ?? null,
       custo: (val && (val.custo ?? val.custo_total)) ?? null,
     };
   });
+  return porServico;
+}
+
+// Confirmado pela Lovable em 03/08/2026: recurso=uso já vem quebrado por mês —
+// { provedor, months, franquia_minima_mensal, meses: [{ mes, total, billable,
+// custo_base, custo_adicional, custo_total, custo_total_com_franquia,
+// franquia_aplicada, por_servico }] }, do mês mais recente pro mais antigo.
+// custo_total_com_franquia é sempre por mês (franquia de R$100 aplicada mês a
+// mês) — pra total do período é só somar os meses do array.
+function mapBuscaPfUsoRow(raw = {}) {
+  const meses = Array.isArray(raw.meses)
+    ? raw.meses.map((m = {}) => ({
+        mes: m.mes ?? null,
+        total: m.total ?? null,
+        billable: m.billable ?? null,
+        custoBase: m.custo_base ?? null,
+        custoAdicional: m.custo_adicional ?? null,
+        custoTotal: m.custo_total ?? null,
+        custoTotalComFranquia: m.custo_total_com_franquia ?? null,
+        franquiaAplicada: !!m.franquia_aplicada,
+        porServico: mapBuscaPfPorServico(m.por_servico),
+      }))
+    : [];
   return {
-    total: raw.total ?? null,
-    billable: raw.billable ?? null,
-    custoBase: raw.custo_base ?? null,
-    custoAdicional: raw.custo_adicional ?? null,
-    custoTotal: raw.custo_total ?? null,
-    custoTotalComFranquia: raw.custo_total_com_franquia ?? null,
-    balanceRemaining: raw.balance_remaining ?? null,
-    porServico,
+    franquiaMinimaMensal: raw.franquia_minima_mensal ?? null,
+    meses,
   };
 }
 

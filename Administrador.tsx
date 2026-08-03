@@ -6366,6 +6366,18 @@ function admShortMonthFromKey(key: string): string {
   return ADMIN_MONTH_SHORT[(m - 1 + 12) % 12] ?? key;
 }
 
+// "mes" do recurso=uso vem como "2026-08" — converte pro rótulo exibido nos
+// cards de Uso e custo mensal ("Agosto de 2026"), igual ao web.
+function admBuscaPfMesLabel(mesKey: string | null | undefined): string {
+  if (!mesKey) return '—';
+  const [anoStr, mesStr] = mesKey.split('-');
+  const ano = parseInt(anoStr, 10);
+  const mes = parseInt(mesStr, 10);
+  if (Number.isNaN(ano) || Number.isNaN(mes)) return mesKey;
+  const name = ADMIN_MONTH_NAMES[(mes - 1 + 12) % 12] ?? '';
+  return `${name} de ${ano}`;
+}
+
 // ---------- Busca PF (Infosimples/Fonte Data) — estrutura da tela igual ao
 // web (screenshots de 30/07/2026). Backend real confirmado pela Lovable em
 // 30/07/2026: endpoint único /api/public/internal/busca-pf (recurso=status/
@@ -6750,7 +6762,6 @@ function AdminBuscaPfProviderPanel({
   onRefreshUso: () => void;
 }) {
   const providerStatus = status?.credenciais?.[provedor];
-  const porServicoEntries = Object.entries(uso?.porServico ?? {});
 
   return (
     <>
@@ -6843,7 +6854,13 @@ function AdminBuscaPfProviderPanel({
         <View style={adminStyles.headerRowWrap}>
           <View style={adminStyles.headerRowTitleWrap}>
             <Text style={adminStyles.sectionTitle}>Uso e custo mensal</Text>
-            <AdminColorPill label="Últimos 3 meses" bg={BLUE_BG} color={BLUE} />
+            {uso?.franquiaMinimaMensal != null ? (
+              <AdminColorPill
+                label={`Franquia mínima ${admFormatBRL(uso.franquiaMinimaMensal)}/mês`}
+                bg={BLUE_BG}
+                color={BLUE}
+              />
+            ) : null}
           </View>
           <Pressable
             style={[adminStyles.pillButtonOutline, isLoadingUso ? { opacity: 0.6 } : null]}
@@ -6859,41 +6876,68 @@ function AdminBuscaPfProviderPanel({
           <ActivityIndicator color={NAVY} />
         ) : usoError ? (
           <AdminEmptyState message={usoError} />
-        ) : uso ? (
+        ) : uso && uso.meses.length > 0 ? (
           <>
-            <View style={adminStyles.staticField}>
-              <Text style={adminStyles.staticFieldText}>Consultas no período</Text>
-              <Text style={adminStyles.gmbLinkText}>{uso.total ?? 0}</Text>
-            </View>
-            <View style={[adminStyles.staticField, adminStyles.fieldSpacing]}>
-              <Text style={adminStyles.staticFieldText}>
-                {uso.custoTotalComFranquia != null ? 'Custo total (com franquia)' : 'Custo total'}
-              </Text>
-              <Text style={adminStyles.gmbLinkText}>
-                {admFormatBRL(uso.custoTotalComFranquia ?? uso.custoTotal)}
-              </Text>
-            </View>
-            {uso.balanceRemaining != null ? (
-              <View style={[adminStyles.staticField, adminStyles.fieldSpacing]}>
-                <Text style={adminStyles.staticFieldText}>Saldo restante</Text>
-                <Text style={adminStyles.gmbLinkText}>{admFormatBRL(uso.balanceRemaining)}</Text>
-              </View>
-            ) : null}
-            {porServicoEntries.length > 0 ? (
-              <View style={adminStyles.fieldSpacing}>
-                <Text style={adminStyles.fieldLabel}>POR SERVIÇO</Text>
-                {porServicoEntries.map(([svc, info]) => (
-                  <View key={svc} style={[adminStyles.staticField, { marginTop: 6 }]}>
-                    <Text style={adminStyles.staticFieldText} numberOfLines={1}>
-                      {svc}
-                    </Text>
-                    <Text style={adminStyles.gmbLinkText}>
-                      {info.count ?? 0} · {admFormatBRL(info.custo)}
-                    </Text>
+            {uso.meses.map((m) => {
+              const porServicoEntries = Object.entries(m.porServico ?? {});
+              return (
+                <View key={m.mes ?? Math.random()} style={[adminStyles.usoMesCard, adminStyles.fieldSpacing]}>
+                  <View style={adminStyles.headerRowWrap}>
+                    <View>
+                      <Text style={adminStyles.usoMesTitle}>{admBuscaPfMesLabel(m.mes)}</Text>
+                      <Text style={adminStyles.integrationHint}>
+                        {m.total ?? 0} consulta{m.total === 1 ? '' : 's'}
+                        {m.billable != null ? ` · ${m.billable} cobrável${m.billable === 1 ? '' : 'is'}` : ''}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={adminStyles.usoMesTotal}>{admFormatBRL(m.custoTotalComFranquia ?? m.custoTotal)}</Text>
+                      {m.franquiaAplicada ? (
+                        <Text style={adminStyles.usoMesFranquiaHint}>
+                          Real: {admFormatBRL(m.custoTotal)} (franquia)
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
-                ))}
-              </View>
-            ) : null}
+
+                  <View style={[adminStyles.usoMesFieldsRow, adminStyles.fieldSpacing]}>
+                    <View style={adminStyles.usoMesFieldBox}>
+                      <Text style={adminStyles.fieldLabel}>PREÇO BASE (FAIXAS)</Text>
+                      <Text style={adminStyles.staticFieldText}>{admFormatBRL(m.custoBase)}</Text>
+                    </View>
+                    <View style={adminStyles.usoMesFieldBox}>
+                      <Text style={adminStyles.fieldLabel}>PREÇO ADICIONAL</Text>
+                      <Text style={adminStyles.staticFieldText}>{admFormatBRL(m.custoAdicional)}</Text>
+                    </View>
+                    <View style={adminStyles.usoMesFieldBox}>
+                      <Text style={adminStyles.fieldLabel}>TOTAL APURADO</Text>
+                      <Text style={adminStyles.staticFieldText}>{admFormatBRL(m.custoTotal)}</Text>
+                    </View>
+                  </View>
+
+                  {porServicoEntries.length > 0 ? (
+                    <View style={adminStyles.fieldSpacing}>
+                      <Text style={adminStyles.fieldLabel}>POR SERVIÇO</Text>
+                      {porServicoEntries.map(([svc, info]) => (
+                        <View key={svc} style={[adminStyles.staticField, { marginTop: 6 }]}>
+                          <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                            {svc}
+                          </Text>
+                          <Text style={adminStyles.gmbLinkText}>
+                            {info.count ?? 0} chamada{info.count === 1 ? '' : 's'}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+            <Text style={adminStyles.usoCalculoHint}>
+              Cálculo: preço base por faixa de volume mensal + preço adicional por serviço. Se o total do mês ficar
+              abaixo {uso.franquiaMinimaMensal != null ? `de ${admFormatBRL(uso.franquiaMinimaMensal)}` : 'da franquia'}, é
+              cobrada a franquia mínima.
+            </Text>
           </>
         ) : (
           <AdminEmptyState message="Nenhuma consulta registrada neste período." />
@@ -11052,6 +11096,46 @@ const adminStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingVertical: 10,
+  },
+  usoMesCard: {
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 12,
+    padding: 12,
+  },
+  usoMesTitle: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  usoMesTotal: {
+    color: '#15203E',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  usoMesFranquiaHint: {
+    color: '#C07A1E',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  usoMesFieldsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  usoMesFieldBox: {
+    flexGrow: 1,
+    minWidth: 120,
+    borderWidth: 1,
+    borderColor: '#EEF1F7',
+    borderRadius: 10,
+    padding: 8,
+  },
+  usoCalculoHint: {
+    color: '#8A93AB',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
   },
   historicoJsonButton: {
     flexDirection: 'row',

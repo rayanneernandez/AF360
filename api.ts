@@ -1805,15 +1805,24 @@ export async function fetchAdminBuscaPfHistorico(opts?: {
   return json.data as { rows: AdminBuscaPfHistoricoItem[]; count: number; limit: number; offset: number };
 }
 
-export type AdminBuscaPfUso = {
+// Shape confirmado pela Lovable em 03/08/2026: já vem quebrado por mês (do mais
+// recente pro mais antigo). custoTotalComFranquia é por mês (franquia de
+// R$100 aplicada mês a mês) — pra total do período é só somar os meses.
+export type AdminBuscaPfUsoMes = {
+  mes: string | null;
   total: number | null;
   billable: number | null;
   custoBase: number | null;
   custoAdicional: number | null;
   custoTotal: number | null;
   custoTotalComFranquia: number | null;
-  balanceRemaining: number | null;
+  franquiaAplicada: boolean;
   porServico: Record<string, { count: number | null; custo: number | null }>;
+};
+
+export type AdminBuscaPfUso = {
+  franquiaMinimaMensal: number | null;
+  meses: AdminBuscaPfUsoMes[];
 };
 
 export async function fetchAdminBuscaPfUso(opts?: {
