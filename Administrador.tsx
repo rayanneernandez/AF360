@@ -133,6 +133,19 @@ import {
   executarAdminBuscaPfConsulta,
   fetchAdminBuscaPfHistorico,
   fetchAdminBuscaPfUso,
+  fetchAdminDatajudStatus,
+  testAdminDatajudConexao,
+  executarAdminDatajudConsulta,
+  fetchAdminDatajudHistorico,
+  fetchAdminDatajudUso,
+  fetchAdminLevaMaisStatus,
+  testAdminLevaMaisConexao,
+  updateAdminLevaMaisConfig,
+  fetchAdminLevaMaisLojas,
+  fetchAdminLevaMaisFrentistas,
+  fetchAdminLevaMaisClientes,
+  fetchAdminLevaMaisMetricas,
+  fetchAdminLevaMaisSaldo,
   fetchAdminDashboardPerformance,
   fetchAdminDashboardKpis,
   ApiError,
@@ -159,6 +172,10 @@ import {
   type AdminBuscaPfStatus,
   type AdminBuscaPfHistoricoItem,
   type AdminBuscaPfUso,
+  type AdminDatajudStatus,
+  type AdminDatajudHistoricoItem,
+  type AdminDatajudUso,
+  type AdminLevaMaisStatus,
   type AdminUsuarioItem,
   type AdminCargoItem,
   type AdminGrupoItem,
@@ -6526,6 +6543,13 @@ type AdminJuridicoSubProvider = 'datajud' | 'infosimples_tjrj';
 
 const ADMIN_DATAJUD_TRIBUNAL_OPTIONS = ['TJRJ — Rio de Janeiro', 'TRT 1ª (RJ)'];
 
+// Alias do tribunal na URL pública do CNJ (api_publica_{alias}), confirmado
+// pela Lovable em 03/08/2026.
+const ADMIN_DATAJUD_TRIBUNAL_ALIAS: Record<string, string> = {
+  'TJRJ — Rio de Janeiro': 'tjrj',
+  'TRT 1ª (RJ)': 'trt1',
+};
+
 const ADMIN_JURIDICO_DATAJUD_SERVICES: AdminIntegrationService[] = [
   {
     code: 'processo-por-numero',
@@ -6536,6 +6560,7 @@ const ADMIN_JURIDICO_DATAJUD_SERVICES: AdminIntegrationService[] = [
     fields: [
       { key: 'tribunal', label: 'Tribunal', required: true, options: ADMIN_DATAJUD_TRIBUNAL_OPTIONS, defaultValue: 'TJRJ — Rio de Janeiro' },
       { key: 'numeroProcesso', label: 'Número do processo (CNJ)', required: true, placeholder: '0000000-00.0000.0.00.0000' },
+      { key: 'cnpjAlvo', label: 'CNPJ da Rede AF (opcional, p/ vincular)', mask: 'cnpj', placeholder: '00.000.000/0000-00' },
     ],
   },
   {
@@ -6563,6 +6588,38 @@ const ADMIN_JURIDICO_DATAJUD_SERVICES: AdminIntegrationService[] = [
     ],
   },
 ];
+
+// Infosimples — TJRJ: mesma infra da Busca PF, serviço confirmado pela
+// Lovable em 03/08/2026. Pelo menos um identificador precisa ser informado
+// (validado em handleExecuteTjrj).
+const ADMIN_JURIDICO_TJRJ_SERVICE: AdminIntegrationService = {
+  code: 'tribunal/tjrj/processo',
+  title: 'TJRJ — Consulta de processo',
+  description: 'Consulta processos no Tribunal de Justiça do Rio de Janeiro por CPF, CNPJ, OAB, nome do advogado ou número do processo.',
+  defaultExpanded: true,
+  fields: [
+    { key: 'cpf', label: 'CPF (opcional)', mask: 'cpf', placeholder: '000.000.000-00' },
+    { key: 'cnpj', label: 'CNPJ (opcional)', mask: 'cnpj', placeholder: '00.000.000/0000-00' },
+    { key: 'oab', label: 'OAB (opcional)', placeholder: 'Ex.: 123456' },
+    { key: 'nome_advogado', label: 'Nome do advogado (opcional)' },
+    { key: 'numero_processo', label: 'Número do processo (opcional)', placeholder: '0000000-00.0000.0.00.0000' },
+    {
+      key: 'origem',
+      label: 'Origem',
+      options: ['1ª instância', '2ª instância'],
+      defaultValue: '1ª instância',
+    },
+    { key: 'comarca_regional', label: 'Comarca/Regional (opcional)' },
+    { key: 'competencia', label: 'Competência (opcional)' },
+    { key: 'ano_inicial', label: 'Ano inicial (opcional)', placeholder: 'Ex.: 2020' },
+    { key: 'ano_final', label: 'Ano final (opcional)', placeholder: 'Ex.: 2026' },
+  ],
+};
+
+const ADMIN_TJRJ_ORIGEM_CODES: Record<string, string> = {
+  '1ª instância': '1',
+  '2ª instância': '2',
+};
 
 // ---------- Componente compartilhado (Busca PF + Jurídico): card de serviço
 // expansível com formulário local (sem persistência real ainda) e botão(ões)
@@ -7009,10 +7066,176 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
   const [expandedBuscaPfServices, setExpandedBuscaPfServices] = useState<Record<string, boolean>>({});
   const [buscaPfFieldValues, setBuscaPfFieldValues] = useState<Record<string, string>>({});
 
-  // Jurídico (Datajud CNJ + Infosimples — TJRJ) — mesma lógica.
+  // Jurídico (Datajud CNJ + Infosimples — TJRJ) — mesma lógica. Endpoint real
+  // /api/public/internal/datajud confirmado pela Lovable em 03/08/2026 (API
+  // pública/gratuita do CNJ, chamada por eles — sem secret nosso).
   const [activeJuridicoSubProvider, setActiveJuridicoSubProvider] = useState<AdminJuridicoSubProvider>('datajud');
   const [expandedJuridicoServices, setExpandedJuridicoServices] = useState<Record<string, boolean>>({});
   const [juridicoFieldValues, setJuridicoFieldValues] = useState<Record<string, string>>({});
+  const [datajudStatus, setDatajudStatus] = useState<AdminDatajudStatus | null>(null);
+  const [isLoadingDatajudStatus, setIsLoadingDatajudStatus] = useState(false);
+  const [datajudStatusError, setDatajudStatusError] = useState<string | null>(null);
+  const [isTestingDatajud, setIsTestingDatajud] = useState(false);
+  const [executingDatajudServiceCode, setExecutingDatajudServiceCode] = useState<string | null>(null);
+  const [datajudResults, setDatajudResults] = useState<Record<string, AdminBuscaPfResultDisplay>>({});
+  const [datajudUso, setDatajudUso] = useState<AdminDatajudUso | null>(null);
+  const [isLoadingDatajudUso, setIsLoadingDatajudUso] = useState(false);
+  const [datajudUsoError, setDatajudUsoError] = useState<string | null>(null);
+  const [isDatajudHistoricoOpen, setIsDatajudHistoricoOpen] = useState(false);
+  const [datajudHistoricoRows, setDatajudHistoricoRows] = useState<AdminDatajudHistoricoItem[] | null>(null);
+  const [isLoadingDatajudHistorico, setIsLoadingDatajudHistorico] = useState(false);
+  const [datajudHistoricoError, setDatajudHistoricoError] = useState<string | null>(null);
+  const [expandedDatajudHistoricoId, setExpandedDatajudHistoricoId] = useState<string | null>(null);
+
+  // Infosimples — TJRJ: mesma infra da Busca PF (provedor='infosimples'),
+  // só com o serviço tribunal/tjrj/processo confirmado pela Lovable.
+  const [tjrjExpandedServices, setTjrjExpandedServices] = useState<Record<string, boolean>>({});
+  const [tjrjFieldValues, setTjrjFieldValues] = useState<Record<string, string>>({});
+  const [executingTjrjServiceCode, setExecutingTjrjServiceCode] = useState<string | null>(null);
+  const [tjrjResults, setTjrjResults] = useState<Record<string, AdminBuscaPfResultDisplay>>({});
+
+  const loadDatajudStatus = useCallback(() => {
+    setIsLoadingDatajudStatus(true);
+    setDatajudStatusError(null);
+    fetchAdminDatajudStatus(actorId)
+      .then(setDatajudStatus)
+      .catch((err) => setDatajudStatusError(err instanceof Error ? err.message : 'Não foi possível carregar o status.'))
+      .finally(() => setIsLoadingDatajudStatus(false));
+  }, [actorId]);
+
+  const loadDatajudUso = useCallback(() => {
+    setIsLoadingDatajudUso(true);
+    setDatajudUsoError(null);
+    fetchAdminDatajudUso({ months: 3, actorId })
+      .then(setDatajudUso)
+      .catch((err) => setDatajudUsoError(err instanceof Error ? err.message : 'Não foi possível carregar o uso.'))
+      .finally(() => setIsLoadingDatajudUso(false));
+  }, [actorId]);
+
+  useEffect(() => {
+    if (activeProvider === 'juridico' && activeJuridicoSubProvider === 'datajud' && !datajudStatus && !isLoadingDatajudStatus && !datajudStatusError) {
+      loadDatajudStatus();
+    }
+  }, [activeProvider, activeJuridicoSubProvider, datajudStatus, isLoadingDatajudStatus, datajudStatusError, loadDatajudStatus]);
+
+  useEffect(() => {
+    if (activeProvider === 'juridico' && activeJuridicoSubProvider === 'datajud' && !datajudUso && !isLoadingDatajudUso && !datajudUsoError) {
+      loadDatajudUso();
+    }
+  }, [activeProvider, activeJuridicoSubProvider, datajudUso, isLoadingDatajudUso, datajudUsoError, loadDatajudUso]);
+
+  const handleTestDatajud = useCallback(() => {
+    setIsTestingDatajud(true);
+    testAdminDatajudConexao(actorId)
+      .then((result) => {
+        const r = result as Record<string, unknown>;
+        Alert.alert('Conexão testada', typeof r.message === 'string' ? r.message : 'OK.');
+      })
+      .catch((err) => Alert.alert('Erro ao testar conexão', err instanceof Error ? err.message : 'Tente novamente.'))
+      .finally(() => setIsTestingDatajud(false));
+  }, [actorId]);
+
+  const handleExecuteDatajud = useCallback(
+    (service: AdminIntegrationService, values: Record<string, string>) => {
+      const tribunalLabel = values.tribunal;
+      const tribunal = tribunalLabel ? ADMIN_DATAJUD_TRIBUNAL_ALIAS[tribunalLabel] : undefined;
+      if (!tribunal) {
+        Alert.alert('Selecione o tribunal', 'Escolha um tribunal antes de executar a consulta.');
+        return;
+      }
+      const params: Record<string, string | number> = {};
+      if (service.code === 'processo-por-numero') {
+        params.numero_processo = admOnlyDigits(values.numeroProcesso ?? '');
+      } else if (service.code === 'processos-por-classe') {
+        params.classe = values.codigoClasse ?? '';
+        params.size = Number(values.limite ?? '10') || 10;
+      } else if (service.code === 'ultimos-do-orgao-julgador') {
+        params.orgao = values.codigoOrgaoJulgador ?? '';
+        params.size = Number(values.limite ?? '10') || 10;
+      }
+      const missing = service.fields.filter((f) => f.required && !values[f.key]);
+      if (missing.length > 0) {
+        Alert.alert('Preencha os campos obrigatórios', missing.map((f) => f.label).join(', '));
+        return;
+      }
+      setExecutingDatajudServiceCode(service.code);
+      const cnpjAlvo = values.cnpjAlvo ? admOnlyDigits(values.cnpjAlvo) : undefined;
+      executarAdminDatajudConsulta({ tribunal, service: service.code, params, cnpjAlvo }, actorId)
+        .then((res) => {
+          const resultado = res.resultado ?? {};
+          const hits = (resultado as any)?.hits?.hits ?? (resultado as any)?.hits ?? [];
+          const total = Array.isArray(hits) ? hits.length : ((resultado as any)?.hits?.total?.value ?? 0);
+          const raw = JSON.stringify(resultado, null, 2);
+          setDatajudResults((prev) => ({
+            ...prev,
+            [service.code]: { ok: true, message: `${total} resultado(s) encontrado(s).`, raw },
+          }));
+          loadDatajudUso();
+        })
+        .catch((err) => {
+          const message = err instanceof Error ? err.message : 'Tente novamente.';
+          setDatajudResults((prev) => ({ ...prev, [service.code]: { ok: false, message } }));
+        })
+        .finally(() => setExecutingDatajudServiceCode(null));
+    },
+    [actorId, loadDatajudUso]
+  );
+
+  const openDatajudHistorico = useCallback(() => {
+    setIsDatajudHistoricoOpen(true);
+    setExpandedDatajudHistoricoId(null);
+    setIsLoadingDatajudHistorico(true);
+    setDatajudHistoricoError(null);
+    fetchAdminDatajudHistorico({ limit: 20, actorId })
+      .then((res) => setDatajudHistoricoRows(res.rows))
+      .catch((err) =>
+        setDatajudHistoricoError(err instanceof Error ? err.message : 'Não foi possível carregar o histórico.')
+      )
+      .finally(() => setIsLoadingDatajudHistorico(false));
+  }, [actorId]);
+
+  const handleExecuteTjrj = useCallback(
+    (values: Record<string, string>) => {
+      const hasIdentifier =
+        values.cpf || values.cnpj || values.oab || values.nome_advogado || values.numero_processo;
+      if (!hasIdentifier) {
+        Alert.alert(
+          'Informe pelo menos um identificador',
+          'Preencha CPF, CNPJ, OAB, nome do advogado ou número do processo.'
+        );
+        return;
+      }
+      const params: Record<string, string> = {};
+      const service = ADMIN_JURIDICO_TJRJ_SERVICE;
+      service.fields.forEach((field) => {
+        const raw = values[field.key];
+        if (!raw) return;
+        if (field.key === 'origem') {
+          params.origem = ADMIN_TJRJ_ORIGEM_CODES[raw] ?? raw;
+        } else {
+          params[field.key] = admUnmaskFieldValue(field.mask, raw);
+        }
+      });
+      setExecutingTjrjServiceCode(service.code);
+      executarAdminBuscaPfConsulta({ provedor: 'infosimples', service: service.code, params }, actorId)
+        .then((res) => {
+          const resultado = (res.resultado ?? {}) as Record<string, unknown>;
+          const code = resultado.code as number | string | undefined;
+          const ok = Number(code) === 200;
+          const message = String(
+            resultado.code_message ?? resultado.message ?? (ok ? 'Consulta realizada com sucesso.' : 'Falha na consulta.')
+          );
+          const raw = JSON.stringify(resultado, null, 2);
+          setTjrjResults((prev) => ({ ...prev, [service.code]: { ok, code, message, raw } }));
+        })
+        .catch((err) => {
+          const message = err instanceof Error ? err.message : 'Tente novamente.';
+          setTjrjResults((prev) => ({ ...prev, [service.code]: { ok: false, message } }));
+        })
+        .finally(() => setExecutingTjrjServiceCode(null));
+    },
+    [actorId]
+  );
 
   // Google Meu Negócio (gmb_config/gmb_locations) — schema e endpoints
   // confirmados pela Lovable em 30/07/2026. Carrega só quando a aba é
@@ -8318,40 +8541,35 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                   <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>ENDPOINT BASE</Text>
                   <View style={adminStyles.staticField}>
                     <Text style={adminStyles.staticFieldText} numberOfLines={1}>
-                      api-publica.datajud.cnj.jus.br
+                      {datajudStatus?.baseUrl ?? 'api-publica.datajud.cnj.jus.br'}
                     </Text>
                   </View>
 
                   <View style={adminStyles.pillButtonRow}>
                     <Pressable
-                      style={adminStyles.pillButtonPrimary}
-                      onPress={() =>
-                        Alert.alert(
-                          'Ainda não disponível',
-                          'Preciso criar a rota proxy no af360-api para a API pública do Datajud antes de ligar este botão.'
-                        )
-                      }
+                      style={[adminStyles.pillButtonPrimary, isTestingDatajud ? { opacity: 0.6 } : null]}
+                      onPress={handleTestDatajud}
+                      disabled={isTestingDatajud}
                     >
                       <Feather name="check-circle" size={14} color="#FFFFFF" />
-                      <Text style={adminStyles.primaryButtonGreenText}>Testar conexão (TST)</Text>
+                      <Text style={adminStyles.primaryButtonGreenText}>
+                        {isTestingDatajud ? 'Testando...' : 'Testar conexão (TST)'}
+                      </Text>
                     </Pressable>
                     <Pressable
                       style={adminStyles.pillButtonOutline}
-                      onPress={() =>
-                        Alert.alert('Ainda não disponível', 'Vou abrir a documentação do Datajud direto no app numa próxima rodada.')
-                      }
+                      onPress={() => Linking.openURL('https://datajud-wiki.cnj.jus.br/')}
                     >
                       <Text style={adminStyles.outlineButtonText}>Documentação Datajud</Text>
                     </Pressable>
-                    <Pressable
-                      style={adminStyles.pillButtonOutline}
-                      onPress={() =>
-                        Alert.alert('Ainda não disponível', 'Vou abrir o termo de uso do Datajud direto no app numa próxima rodada.')
-                      }
-                    >
-                      <Text style={adminStyles.outlineButtonText}>Termo de uso</Text>
-                    </Pressable>
                   </View>
+
+                  {datajudStatusError ? (
+                    <View style={[adminStyles.integrationInfoBox, adminStyles.fieldSpacing, { backgroundColor: '#FBEAEA' }]}>
+                      <Feather name="alert-triangle" size={15} color="#C0392B" />
+                      <Text style={[adminStyles.integrationInfoText, { color: '#8A2E24' }]}>{datajudStatusError}</Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 <View style={adminStyles.headerRowWrap}>
@@ -8359,15 +8577,7 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                     <Text style={adminStyles.sectionTitle}>Consultas disponíveis</Text>
                     <AdminColorPill label="3 serviços" bg={BLUE_BG} color={BLUE} />
                   </View>
-                  <Pressable
-                    style={adminStyles.pillButtonOutline}
-                    onPress={() =>
-                      Alert.alert(
-                        'Ainda não disponível',
-                        'Vou registrar o histórico de consultas do Datajud quando a rota proxy existir.'
-                      )
-                    }
-                  >
+                  <Pressable style={adminStyles.pillButtonOutline} onPress={openDatajudHistorico}>
                     <Feather name="clock" size={14} color="#15203E" />
                     <Text style={adminStyles.outlineButtonText}>Histórico</Text>
                   </Pressable>
@@ -8406,17 +8616,28 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                         .map(([k, v]) => [k.slice(service.code.length + 2), v])
                     )}
                     onChangeField={(fieldKey, value) =>
-                      setJuridicoFieldValues((prev) => ({ ...prev, [`${service.code}::${fieldKey}`]: value }))
+                      setJuridicoFieldValues((prev) => ({
+                        ...prev,
+                        [`${service.code}::${fieldKey}`]: fieldKey === 'cnpjAlvo' ? admApplyFieldMask('cnpj', value) : value,
+                      }))
                     }
                     onExecute={() =>
-                      Alert.alert(
-                        'Ainda não disponível',
-                        'Preciso criar a rota proxy no af360-api para a API pública do Datajud antes de ligar este botão.'
+                      handleExecuteDatajud(
+                        service,
+                        Object.fromEntries(
+                          Object.entries(juridicoFieldValues)
+                            .filter(([k]) => k.startsWith(`${service.code}::`))
+                            .map(([k, v]) => [k.slice(service.code.length + 2), v])
+                        )
                       )
                     }
-                    onExtraAction={() =>
-                      Alert.alert('Ainda não disponível', 'Vou abrir a tabela de classes processuais do CNJ direto no app numa próxima rodada.')
+                    onExtraAction={
+                      service.extraActionLabel
+                        ? () => Linking.openURL('https://datajud-wiki.cnj.jus.br/tabelas-processuais-unificadas')
+                        : undefined
                     }
+                    isExecuting={executingDatajudServiceCode === service.code}
+                    result={datajudResults[service.code]}
                   />
                 ))}
 
@@ -8424,25 +8645,94 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                   <View style={adminStyles.headerRowWrap}>
                     <View style={adminStyles.headerRowTitleWrap}>
                       <Text style={adminStyles.sectionTitle}>Uso mensal</Text>
+                      <AdminColorPill label="Gratuita — só volume" bg="#E7F5EC" color="#1E8A4C" />
                     </View>
                     <Pressable
-                      style={adminStyles.pillButtonOutline}
-                      onPress={() =>
-                        Alert.alert('Ainda não disponível', 'Vou registrar o uso mensal do Datajud quando a rota proxy existir.')
-                      }
+                      style={[adminStyles.pillButtonOutline, isLoadingDatajudUso ? { opacity: 0.6 } : null]}
+                      onPress={loadDatajudUso}
+                      disabled={isLoadingDatajudUso}
                     >
                       <Feather name="refresh-cw" size={14} color="#15203E" />
-                      <Text style={adminStyles.outlineButtonText}>Atualizar</Text>
+                      <Text style={adminStyles.outlineButtonText}>{isLoadingDatajudUso ? 'Atualizando...' : 'Atualizar'}</Text>
                     </Pressable>
                   </View>
-                  <AdminEmptyState message="Nenhuma consulta registrada ainda. A API do Datajud é gratuita; aqui registramos o volume por tribunal/serviço para acompanhamento interno." />
+
+                  {isLoadingDatajudUso && !datajudUso ? (
+                    <ActivityIndicator color={NAVY} />
+                  ) : datajudUsoError ? (
+                    <AdminEmptyState message={datajudUsoError} />
+                  ) : datajudUso && datajudUso.meses.length > 0 ? (
+                    datajudUso.meses.map((m) => {
+                      const porTribunalEntries = Object.entries(m.porTribunal ?? {});
+                      const porServicoEntries = Object.entries(m.porServico ?? {});
+                      return (
+                        <View key={m.mes ?? Math.random()} style={[adminStyles.usoMesCard, adminStyles.fieldSpacing]}>
+                          <Text style={adminStyles.usoMesTitle}>{admBuscaPfMesLabel(m.mes)}</Text>
+                          <Text style={adminStyles.integrationHint}>{m.total ?? 0} consulta{m.total === 1 ? '' : 's'} · gratuita</Text>
+                          {porTribunalEntries.length > 0 ? (
+                            <View style={adminStyles.fieldSpacing}>
+                              <Text style={adminStyles.fieldLabel}>POR TRIBUNAL</Text>
+                              {porTribunalEntries.map(([trib, info]) => (
+                                <View key={trib} style={[adminStyles.staticField, { marginTop: 6 }]}>
+                                  <Text style={adminStyles.staticFieldText} numberOfLines={1}>{trib}</Text>
+                                  <Text style={adminStyles.gmbLinkText}>{info.count ?? 0}</Text>
+                                </View>
+                              ))}
+                            </View>
+                          ) : null}
+                          {porServicoEntries.length > 0 ? (
+                            <View style={adminStyles.fieldSpacing}>
+                              <Text style={adminStyles.fieldLabel}>POR SERVIÇO</Text>
+                              {porServicoEntries.map(([svc, info]) => (
+                                <View key={svc} style={[adminStyles.staticField, { marginTop: 6 }]}>
+                                  <Text style={adminStyles.staticFieldText} numberOfLines={1}>{svc}</Text>
+                                  <Text style={adminStyles.gmbLinkText}>{info.count ?? 0}</Text>
+                                </View>
+                              ))}
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })
+                  ) : (
+                    <AdminEmptyState message="Nenhuma consulta registrada ainda. A API do Datajud é gratuita; aqui registramos o volume por tribunal/serviço para acompanhamento interno." />
+                  )}
                 </View>
               </>
             ) : (
-              <View style={adminStyles.sectionCard}>
-                <Text style={adminStyles.sectionTitle}>Infosimples — TJRJ</Text>
-                <AdminEmptyState message="Ainda sem referência de tela para este sub-provedor — vou montar quando tiver o mesmo nível de detalhe do Datajud." />
-              </View>
+              <>
+                <View style={adminStyles.sectionCard}>
+                  <View style={adminStyles.integrationHeaderRow}>
+                    <Text style={[adminStyles.sectionTitle, { flex: 1 }]}>Infosimples — TJRJ</Text>
+                  </View>
+                  <Text style={adminStyles.integrationDescription}>
+                    Consulta de processos no Tribunal de Justiça do Rio de Janeiro. Usa o mesmo token Infosimples já
+                    configurado na aba Busca PF — o uso e custo mensal completo (junto com os serviços de CPF) fica
+                    lá, na aba Busca PF › Infosimples.
+                  </Text>
+                </View>
+
+                <AdminIntegrationServiceCard
+                  service={ADMIN_JURIDICO_TJRJ_SERVICE}
+                  expanded={tjrjExpandedServices[ADMIN_JURIDICO_TJRJ_SERVICE.code] ?? true}
+                  onToggleExpand={() =>
+                    setTjrjExpandedServices((prev) => ({
+                      ...prev,
+                      [ADMIN_JURIDICO_TJRJ_SERVICE.code]: !(prev[ADMIN_JURIDICO_TJRJ_SERVICE.code] ?? true),
+                    }))
+                  }
+                  values={tjrjFieldValues}
+                  onChangeField={(fieldKey, value) =>
+                    setTjrjFieldValues((prev) => ({
+                      ...prev,
+                      [fieldKey]: fieldKey === 'cpf' || fieldKey === 'cnpj' ? admApplyFieldMask(fieldKey, value) : value,
+                    }))
+                  }
+                  onExecute={() => handleExecuteTjrj(tjrjFieldValues)}
+                  isExecuting={executingTjrjServiceCode === ADMIN_JURIDICO_TJRJ_SERVICE.code}
+                  result={tjrjResults[ADMIN_JURIDICO_TJRJ_SERVICE.code]}
+                />
+              </>
             )}
           </>
         ) : (
@@ -8597,6 +8887,79 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                         <Pressable
                           style={adminStyles.historicoJsonButton}
                           onPress={() => handleCopyBuscaPfHistoricoJson(row)}
+                          hitSlop={6}
+                        >
+                          <Feather name="copy" size={13} color="#15203E" />
+                          <Text style={adminStyles.outlineButtonText}>JSON</Text>
+                        </Pressable>
+                        <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#677089" />
+                      </Pressable>
+
+                      {isExpanded ? (
+                        <ScrollView style={[adminStyles.rawJsonBox, { marginTop: 8, marginBottom: 10 }]} nestedScrollEnabled>
+                          <Text style={adminStyles.rawJsonText} selectable>
+                            {JSON.stringify(row.responseData ?? {}, null, 2)}
+                          </Text>
+                        </ScrollView>
+                      ) : null}
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={isDatajudHistoricoOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setIsDatajudHistoricoOpen(false)}
+      >
+        <View style={styles.requestModalBackdrop}>
+          <View style={styles.requestModalCard}>
+            <View style={styles.requestModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>Histórico</Text>
+                <Text style={adminStyles.detailSubEmail}>Datajud — CNJ</Text>
+              </View>
+              <Pressable onPress={() => setIsDatajudHistoricoOpen(false)} hitSlop={8}>
+                <Feather name="x" size={20} color="#677089" />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420, marginTop: 12 }}>
+              {isLoadingDatajudHistorico ? (
+                <ActivityIndicator color={NAVY} style={{ marginTop: 12 }} />
+              ) : datajudHistoricoError ? (
+                <AdminEmptyState message={datajudHistoricoError} />
+              ) : !datajudHistoricoRows || datajudHistoricoRows.length === 0 ? (
+                <AdminEmptyState message="Nenhuma consulta registrada ainda." />
+              ) : (
+                datajudHistoricoRows.map((row) => {
+                  const isExpanded = expandedDatajudHistoricoId === row.id;
+                  const isOk = row.responseCode == null || Number(row.responseCode) < 400;
+                  return (
+                    <View key={row.id} style={adminStyles.historicoRowWrap}>
+                      <Pressable
+                        style={adminStyles.historicoRow}
+                        onPress={() => setExpandedDatajudHistoricoId(isExpanded ? null : row.id)}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                            {formatAdminLogDateTime(row.createdAt)} · {row.tribunal ?? '—'}
+                          </Text>
+                          <Text style={adminStyles.integrationHint}>{row.service ?? '—'}</Text>
+                        </View>
+                        <AdminColorPill
+                          label={row.responseCode != null ? String(row.responseCode) : 'OK'}
+                          bg={isOk ? '#E7F5EC' : '#FBEAEA'}
+                          color={isOk ? '#1E8A4C' : '#C0392B'}
+                        />
+                        <Pressable
+                          style={adminStyles.historicoJsonButton}
+                          onPress={() => copyToClipboard(JSON.stringify(row.responseData ?? {}, null, 2), () => {})}
                           hitSlop={6}
                         >
                           <Feather name="copy" size={13} color="#15203E" />
