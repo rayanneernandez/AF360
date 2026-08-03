@@ -59,8 +59,10 @@ import {
   updateRhBeneficios,
   fetchRhHistoricoContratacoes,
   createRhHistoricoContratacao,
+  fetchAdminUsuarios,
   ApiError,
   type RhColaboradorRaw,
+  type AdminUsuarioItem,
   type RhStats,
   type RhUnidadeItem,
   type RhTurnoverData,
@@ -135,6 +137,9 @@ export type Employee = {
   tamanhoCalca?: string;
   tamanhoCalcado?: string;
   demissaoLabel?: string;
+  // Vínculo com o login do portal (rh_colaboradores.profile_id, liberado
+  // pela Lovable em 03/08/2026). null/'' = sem login vinculado ainda.
+  profileId?: string | null;
 };
 
 type TransferStatus = 'pendente' | 'aprovada' | 'efetivada';
@@ -448,6 +453,7 @@ function mapRhColaboradorToEmployee(row: RhColaboradorRaw, empresaNomeById: Map<
     tamanhoCalca: row.tamanho_calca ?? '',
     tamanhoCalcado: row.tamanho_calcado ?? '',
     demissaoLabel: row.data_demissao ? formatDateOnlyBR(row.data_demissao) : '',
+    profileId: (row.profile_id as string | null | undefined) ?? null,
   };
 }
 
@@ -3148,10 +3154,12 @@ type QuickActionKey =
   | 'integracao'
   | 'treinamentos'
   | 'transferencias'
-  | 'desligamento';
+  | 'desligamento'
+  | 'acessoLogin';
 
 const rhQuickActions: Array<{ key: QuickActionKey; label: string; icon: keyof typeof Feather.glyphMap }> = [
   { key: 'dadosPessoais', label: 'Dados Pessoais', icon: 'check-circle' },
+  { key: 'acessoLogin', label: 'Acesso ao Portal', icon: 'link' },
   { key: 'documentos', label: 'Documentos', icon: 'file-text' },
   { key: 'ponto', label: 'Ponto', icon: 'clock' },
   { key: 'afastamentos', label: 'Afastamentos', icon: 'shield' },
@@ -6973,6 +6981,141 @@ function DesligamentoModal({
   );
 }
 
+// Vincula/desvincula o colaborador a um login existente (rh_colaboradores.
+// profile_id) — liberado pela Lovable em 03/08/2026, mesmo endpoint que já
+// usamos pra Dados Pessoais (PATCH /api/rh/colaboradores/:id). Sem isso, o
+// colaborador nunca vê dado real no app dele (fica "sem vínculo no RH").
+function VincularLoginModal({
+  visible,
+  employee,
+  onClose,
+  onLinked,
+}: {
+  visible: boolean;
+  employee: Employee;
+  onClose: () => void;
+  onLinked: (profileId: string | null) => void;
+}) {
+  const [usuarios, setUsuarios] = useState<AdminUsuarioItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchAdminUsuarios()
+      .then((detalhe) => setUsuarios(detalhe.usuarios))
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os logins.'))
+      .finally(() => setIsLoading(false));
+  }, [visible]);
+
+  const filtered = usuarios.filter((usuario) => {
+    const term = search.trim().toLowerCase();
+    if (!term) return true;
+    return (usuario.fullName ?? '').toLowerCase().includes(term) || usuario.email.toLowerCase().includes(term);
+  });
+
+  const handleLink = (usuario: AdminUsuarioItem) => {
+    setSavingId(usuario.id);
+    updateRhColaborador(employee.id, { profile_id: usuario.id })
+      .then(() => {
+        Alert.alert('Vinculado', `Login de ${usuario.email} vinculado a este colaborador.`);
+        onLinked(usuario.id);
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível vincular este login.'))
+      .finally(() => setSavingId(null));
+  };
+
+  const handleUnlink = () => {
+    setSavingId('__unlink__');
+    updateRhColaborador(employee.id, { profile_id: null })
+      .then(() => {
+        Alert.alert('Desvinculado', 'O login foi desvinculado deste colaborador.');
+        onLinked(null);
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível desvincular.'))
+      .finally(() => setSavingId(null));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Acesso ao Portal</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          {employee.profileId ? (
+            <View style={[rhStyles.portalAccessCard, styles.spacingTop]}>
+              <Text style={rhStyles.portalAccessTitle}>Login vinculado</Text>
+              <Text style={rhStyles.portalAccessSubtitle}>
+                Este colaborador já tem um login do portal vinculado (profile_id: {employee.profileId}).
+              </Text>
+              <Pressable style={rhStyles.dangerButton} onPress={handleUnlink} disabled={savingId === '__unlink__'}>
+                <Feather name="link-2" size={14} color="#FFFFFF" />
+                <Text style={rhStyles.dangerButtonText}>
+                  {savingId === '__unlink__' ? 'Desvinculando...' : 'Desvincular'}
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>
+              Sem login vinculado ainda — escolha um usuário do Admin &gt; Usuários para liberar o app deste
+              colaborador.
+            </Text>
+          )}
+
+          <TextInput
+            style={[styles.processTextInput, styles.spacingTop]}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Buscar por nome ou e-mail..."
+            placeholderTextColor="#A7AEC2"
+            autoCapitalize="none"
+          />
+
+          <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {isLoading ? (
+              <Text style={styles.conversaEmptyText}>Carregando usuários...</Text>
+            ) : errorMessage ? (
+              <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+            ) : filtered.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Nenhum usuário encontrado.</Text>
+            ) : (
+              filtered.map((usuario) => (
+                <Pressable
+                  key={usuario.id}
+                  style={styles.templateOptionRow}
+                  onPress={() => handleLink(usuario)}
+                  disabled={savingId === usuario.id}
+                >
+                  <View style={styles.templateOptionLeft}>
+                    <Text style={styles.templateOptionText}>{usuario.fullName || usuario.email}</Text>
+                    <Text style={rhStyles.employeeMetaRowText}>{usuario.email}</Text>
+                  </View>
+                  {savingId === usuario.id ? (
+                    <Text style={rhStyles.employeeMetaRowText}>Vinculando...</Text>
+                  ) : (
+                    <Feather name="chevron-right" size={16} color="#B9C0D3" />
+                  )}
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'RHColaboradorDetalhe'>) {
   const { employeeId, employeeInicial } = route.params;
   // employeeInicial vem da lista real (RHColaboradoresScreen); colocamos ele
@@ -7035,6 +7178,10 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
   const handleSaveFromDesligamento = (updated: Employee) => {
     setEmployees((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     setActiveQuickAction(null);
+  };
+
+  const handleLinkedProfile = (profileId: string | null) => {
+    setEmployees((current) => current.map((item) => (item.id === employee.id ? { ...item, profileId } : item)));
   };
 
   return (
@@ -7151,6 +7298,12 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
         onClose={() => setActiveQuickAction(null)}
         cargoOptions={cargoOptions}
         setorOptions={setorOptions}
+      />
+      <VincularLoginModal
+        visible={activeQuickAction === 'acessoLogin'}
+        employee={employee}
+        onClose={() => setActiveQuickAction(null)}
+        onLinked={handleLinkedProfile}
       />
       <DocumentosModal
         visible={activeQuickAction === 'documentos'}

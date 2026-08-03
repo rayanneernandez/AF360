@@ -754,6 +754,230 @@ export async function fetchColaboradorContracheques(colaboradorId: string): Prom
   return json.data as ColaboradorContrachequesDetalhe;
 }
 
+// --- Colaborador (self-service): Reembolsos (rh_reembolsos — endpoint
+// confirmado pela Lovable em 03/08/2026). Enum de status: rascunho | enviado
+// | aprovado | pago | recusado — aprovado_por/aprovado_em e pago_em são
+// preenchidos do lado deles a partir do x-actor-id, não mandamos na mão. ---
+
+export type ColaboradorReembolsoItem = {
+  id: string;
+  colaborador_id: string;
+  descricao: string;
+  categoria: string | null;
+  data_despesa: string | null;
+  valor: number;
+  status: 'rascunho' | 'enviado' | 'aprovado' | 'pago' | 'recusado';
+  comprovante_url: string | null;
+  aprovado_por: string | null;
+  aprovado_em: string | null;
+  pago_em: string | null;
+  observacoes: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchColaboradorReembolsos(colaboradorId: string): Promise<ColaboradorReembolsoItem[]> {
+  const json = await api.get(`/api/rh/reembolsos?colaboradorId=${encodeURIComponent(colaboradorId)}`);
+  return (json.data as ColaboradorReembolsoItem[]) ?? [];
+}
+
+export async function createColaboradorReembolso(body: {
+  colaborador_id: string;
+  descricao: string;
+  categoria?: string;
+  data_despesa?: string;
+  valor: number;
+  comprovante_url?: string;
+  observacoes?: string;
+}): Promise<ColaboradorReembolsoItem> {
+  const json = await api.post('/api/rh/reembolsos', body);
+  return json.data as ColaboradorReembolsoItem;
+}
+
+export async function updateRhReembolso(
+  id: string,
+  body: Record<string, unknown>,
+  actorId?: string | null
+): Promise<ColaboradorReembolsoItem> {
+  const json = await api.patch(withActorId(`/api/rh/reembolsos/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as ColaboradorReembolsoItem;
+}
+
+export async function deleteRhReembolso(id: string): Promise<void> {
+  await api.delete(`/api/rh/reembolsos/${encodeURIComponent(id)}`);
+}
+
+// --- Férias: escrita (leitura já existe em GET /api/rh/dashboard/ferias e
+// GET /api/rh/colaboradores/:id/ferias). Enum rh_ferias_status: programada |
+// em_andamento | concluida | cancelada — não há "aprovada/recusada"
+// explícito ainda (recusar = marcar cancelada). ---
+
+export async function updateRhFeriasStatus(
+  id: string,
+  status: 'programada' | 'em_andamento' | 'concluida' | 'cancelada'
+): Promise<Record<string, unknown>> {
+  const json = await api.patch(`/api/rh/ferias/${encodeURIComponent(id)}`, { status });
+  return json.data;
+}
+
+// --- Colaborador (self-service): Minhas Solicitações — criação/resposta
+// (leitura da lista simples já existe em fetchColaboradorSolicitacoes acima).
+// Enums confirmados pela Lovable em 03/08/2026: setor = rh|dp|documentos|
+// outros; assunto = rh_ferias|rh_beneficios|rh_atestado|rh_turno|
+// rh_reclamacao|rh_outros|dp_holerite|dp_vt|dp_vr|dp_adiantamento|
+// dp_rescisao|dp_outros|doc_atestado|doc_residencia|doc_rgcpf|doc_ctps|
+// doc_diploma|doc_outros|out_sugestao|out_elogio|out_reclamacao|out_duvida. ---
+
+export async function createColaboradorSolicitacao(body: {
+  colaborador_id: string;
+  setor: 'rh' | 'dp' | 'documentos' | 'outros';
+  assunto: string;
+  titulo?: string;
+  mensagem: string;
+}): Promise<Record<string, unknown>> {
+  const json = await api.post('/api/rh/solicitacoes', body);
+  return json.data;
+}
+
+export async function postSolicitacaoMensagem(
+  id: string,
+  body: { mensagem: string; e_interna?: boolean }
+): Promise<Record<string, unknown>> {
+  const json = await api.post(`/api/rh/solicitacoes/${encodeURIComponent(id)}/mensagens`, body);
+  return json.data;
+}
+
+export async function updateRhSolicitacao(
+  id: string,
+  body: Record<string, unknown>,
+  actorId?: string | null
+): Promise<Record<string, unknown>> {
+  const json = await api.patch(withActorId(`/api/rh/solicitacoes/${encodeURIComponent(id)}`, actorId), body);
+  return json.data;
+}
+
+// --- Uniformes/EPI (tabelas rh_op_* — endpoint confirmado pela Lovable em
+// 03/08/2026). Usado tanto por "Meus Uniformes" (colaborador) quanto por
+// "Aprovações da Equipe" (liderança). rh_op_pedidos.status: pendente_ciencia
+// | em_aprovacao | aguardando_gerente | aguardando_gestao | aprovado |
+// pendente_entrega | entregue | recusado | cancelado. ---
+
+export type RhUniformeItemCatalogo = {
+  id: string;
+  nome: string;
+  unidade: string | null;
+  [key: string]: unknown;
+};
+
+export type RhUniformeKitItem = {
+  item_id: string;
+  item?: RhUniformeItemCatalogo;
+  [key: string]: unknown;
+};
+
+export type RhUniformeEntrega = {
+  id: string;
+  item_id: string;
+  tamanho: string | null;
+  quantidade: number;
+  entregue_em: string | null;
+  valido_ate: string | null;
+  devolvido: boolean | null;
+  [key: string]: unknown;
+};
+
+export type RhUniformePedidoItem = {
+  item_id: string;
+  tamanho: string | null;
+  quantidade: number;
+  estado_devolucao: string | null;
+  valor_cobrar: number | null;
+  [key: string]: unknown;
+};
+
+export type RhUniformePedido = {
+  id: string;
+  colaborador_id: string;
+  tipo: string | null;
+  status: string;
+  aprovacao_nivel: string | null;
+  justificativa: string | null;
+  aprovador_id: string | null;
+  aprovado_em: string | null;
+  motivo_recusa: string | null;
+  ciencia_em: string | null;
+  entregue_em: string | null;
+  entregue_por: string | null;
+  itens?: RhUniformePedidoItem[];
+  [key: string]: unknown;
+};
+
+export async function fetchRhUniformesKit(cargoId: string): Promise<RhUniformeKitItem[]> {
+  const json = await api.get(`/api/rh/uniformes?recurso=kit&cargoId=${encodeURIComponent(cargoId)}`);
+  return (json.data as RhUniformeKitItem[]) ?? [];
+}
+
+export async function fetchRhUniformesEntregas(colaboradorId: string): Promise<RhUniformeEntrega[]> {
+  const json = await api.get(
+    `/api/rh/uniformes?recurso=entregas&colaboradorId=${encodeURIComponent(colaboradorId)}&devolvido=false`
+  );
+  return (json.data as RhUniformeEntrega[]) ?? [];
+}
+
+export async function fetchRhUniformesPedidos(
+  params: { colaboradorId?: string; status?: string } = {}
+): Promise<RhUniformePedido[]> {
+  const search = new URLSearchParams();
+  search.set('recurso', 'pedidos');
+  if (params.colaboradorId) search.set('colaboradorId', params.colaboradorId);
+  if (params.status) search.set('status', params.status);
+  const json = await api.get(`/api/rh/uniformes?${search.toString()}`);
+  return (json.data as RhUniformePedido[]) ?? [];
+}
+
+export async function fetchRhUniformesItens(): Promise<RhUniformeItemCatalogo[]> {
+  const json = await api.get('/api/rh/uniformes?recurso=itens');
+  return (json.data as RhUniformeItemCatalogo[]) ?? [];
+}
+
+export async function criarPedidoUniforme(body: {
+  colaborador_id: string;
+  tipo: string;
+  justificativa?: string;
+  itens: Array<{ item_id: string; tamanho: string; quantidade: number }>;
+}): Promise<RhUniformePedido> {
+  const json = await api.post('/api/rh/uniformes/pedidos', body);
+  return json.data as RhUniformePedido;
+}
+
+export async function aprovarPedidoUniforme(id: string, actorId?: string | null): Promise<RhUniformePedido> {
+  const json = await api.patch(withActorId(`/api/rh/uniformes/pedidos/${encodeURIComponent(id)}/aprovar`, actorId), {});
+  return json.data as RhUniformePedido;
+}
+
+export async function recusarPedidoUniforme(
+  id: string,
+  motivoRecusa: string,
+  actorId?: string | null
+): Promise<RhUniformePedido> {
+  const json = await api.patch(
+    withActorId(`/api/rh/uniformes/pedidos/${encodeURIComponent(id)}/recusar`, actorId),
+    { motivo_recusa: motivoRecusa }
+  );
+  return json.data as RhUniformePedido;
+}
+
+export async function registrarEntregaUniforme(body: {
+  pedido_id: string;
+  colaborador_id: string;
+  item_id: string;
+  tamanho: string;
+  quantidade: number;
+  valido_ate?: string;
+}): Promise<RhUniformeEntrega> {
+  const json = await api.post('/api/rh/uniformes/entregas', body);
+  return json.data as RhUniformeEntrega;
+}
+
 // --- Admin: Cargos (roles) ---
 
 export type AdminCargoItem = {

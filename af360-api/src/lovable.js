@@ -581,6 +581,117 @@ function getDashboardKpis({ mes, ano, actorId } = {}) {
   return lovableGet('/api/public/internal/dashboard-kpis', { mes, ano }, actorId);
 }
 
+// --- Colaborador: Reembolsos (tabela rh_reembolsos, endpoint confirmado pela
+// Lovable em 03/08/2026). Enum rh_reembolso_status: rascunho | enviado |
+// aprovado | pago | recusado. PATCH com status=aprovado/recusado preenche
+// aprovado_por/aprovado_em automaticamente (a partir do x-actor-id); status=
+// pago preenche pago_em. ---
+
+function getRhReembolsos({ colaboradorId, status, limit, offset } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-reembolsos',
+    { colaborador_id: colaboradorId, status, limit, offset },
+    actorId
+  );
+}
+
+function postRhReembolso(body, actorId) {
+  return lovablePost('/api/public/internal/rh-reembolsos', {}, body, actorId);
+}
+
+function patchRhReembolso(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-reembolsos', { id }, body, actorId);
+}
+
+function deleteRhReembolso(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-reembolsos', { id }, actorId);
+}
+
+// --- Férias: escrita (tabela rh_ferias já tinha leitura via /table; agora a
+// Lovable confirmou endpoint dedicado com POST/PATCH em 03/08/2026). Enum
+// rh_ferias_status: programada | em_andamento | concluida | cancelada — não
+// existe "aprovada/recusada" explícito (recusar = cancelada). ---
+
+function getRhFerias({ colaboradorId, status } = {}, actorId) {
+  return lovableGet('/api/public/internal/rh-ferias', { colaborador_id: colaboradorId, status }, actorId);
+}
+
+function postRhFerias(body, actorId) {
+  return lovablePost('/api/public/internal/rh-ferias', {}, body, actorId);
+}
+
+function patchRhFerias(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-ferias', { id }, body, actorId);
+}
+
+// --- Colaborador: Solicitações — escrita (tabelas rh_solicitacoes,
+// rh_solicitacao_mensagens, rh_solicitacao_anexos; endpoint confirmado pela
+// Lovable em 03/08/2026). GET sem id = lista; GET com id = detalhe (thread +
+// anexos embutidos); GET com id + recurso=mensagens|anexos = só aquele
+// sub-recurso. POST sem acao = cria solicitação (protocolo é gerado por
+// trigger deles). POST com acao=mensagem/anexo = responde/anexa numa
+// solicitação existente. PATCH = muda status/atribuido_a. ---
+
+function getRhSolicitacoes({ colaboradorId, status, setor, id, recurso } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-solicitacoes',
+    { colaborador_id: colaboradorId, status, setor, id, recurso },
+    actorId
+  );
+}
+
+function postRhSolicitacao(body, actorId) {
+  return lovablePost('/api/public/internal/rh-solicitacoes', {}, body, actorId);
+}
+
+function postRhSolicitacaoMensagem(id, body, actorId) {
+  return lovablePost('/api/public/internal/rh-solicitacoes', { id, acao: 'mensagem' }, body, actorId);
+}
+
+function postRhSolicitacaoAnexo(id, body, actorId) {
+  return lovablePost('/api/public/internal/rh-solicitacoes', { id, acao: 'anexo' }, body, actorId);
+}
+
+function patchRhSolicitacao(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-solicitacoes', { id }, body, actorId);
+}
+
+// --- Colaborador/Liderança: Uniformes e EPI (tabelas rh_op_* — categorias,
+// itens, tamanhos, kit por cargo, pedidos, itens do pedido, entregas,
+// movimentações, cobranças, termos; endpoint confirmado pela Lovable em
+// 03/08/2026). "recurso" no GET pode ser: kit, entregas, pedidos, itens.
+// Aprovar/recusar usa PATCH ?id=&acao=; registrar entrega fecha o pedido
+// como entregue. ---
+
+function getRhUniformes({ recurso, cargoId, colaboradorId, devolvido, status } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-uniformes',
+    { recurso, cargo_id: cargoId, colaborador_id: colaboradorId, devolvido, status },
+    actorId
+  );
+}
+
+function postRhUniformePedido(body, actorId) {
+  return lovablePost('/api/public/internal/rh-uniformes', { acao: 'pedido' }, body, actorId);
+}
+
+function patchRhUniformePedidoAprovar(id, actorId) {
+  return lovablePatch('/api/public/internal/rh-uniformes', { id, acao: 'aprovar' }, {}, actorId);
+}
+
+function patchRhUniformePedidoRecusar(id, motivoRecusa, actorId) {
+  return lovablePatch(
+    '/api/public/internal/rh-uniformes',
+    { id, acao: 'recusar' },
+    { motivo_recusa: motivoRecusa },
+    actorId
+  );
+}
+
+function postRhUniformeEntrega(body, actorId) {
+  return lovablePost('/api/public/internal/rh-uniformes', { acao: 'entrega' }, body, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -659,4 +770,21 @@ module.exports = {
   patchLevaMaisConfig,
   getDashboardPerformance,
   getDashboardKpis,
+  getRhReembolsos,
+  postRhReembolso,
+  patchRhReembolso,
+  deleteRhReembolso,
+  getRhFerias,
+  postRhFerias,
+  patchRhFerias,
+  getRhSolicitacoes,
+  postRhSolicitacao,
+  postRhSolicitacaoMensagem,
+  postRhSolicitacaoAnexo,
+  patchRhSolicitacao,
+  getRhUniformes,
+  postRhUniformePedido,
+  patchRhUniformePedidoAprovar,
+  patchRhUniformePedidoRecusar,
+  postRhUniformeEntrega,
 };

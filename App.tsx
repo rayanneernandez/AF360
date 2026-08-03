@@ -87,6 +87,19 @@ import {
   fetchColaboradorContracheques,
   fetchRhColaboradorDetalhe,
   type RhColaboradorRaw,
+  fetchColaboradorReembolsos,
+  createColaboradorReembolso,
+  type ColaboradorReembolsoItem,
+  createColaboradorSolicitacao,
+  fetchRhUniformesEntregas,
+  fetchRhUniformesPedidos,
+  fetchRhUniformesItens,
+  criarPedidoUniforme,
+  aprovarPedidoUniforme,
+  recusarPedidoUniforme,
+  type RhUniformeEntrega,
+  type RhUniformePedido,
+  type RhUniformeItemCatalogo,
   ApiError,
   type ConversaResumo,
   type ConversaMensagem,
@@ -744,6 +757,17 @@ const requestCategoryOptions: RequestCategoryOption[] = [
   { id: 'vacation', label: 'Férias', color: '#5E6DB4', emoji: '☀️' },
   { id: 'others', label: 'Outros', color: '#8992A8' },
 ];
+
+// Cada categoria da UI mapeia pra (setor, assunto) reais de rh_solicitacoes
+// (enums confirmados pela Lovable em 03/08/2026).
+const REQUEST_CATEGORY_TO_SOLICITACAO: Record<string, { setor: 'rh' | 'dp' | 'documentos' | 'outros'; assunto: string }> = {
+  'medical-certificate': { setor: 'rh', assunto: 'rh_atestado' },
+  benefits: { setor: 'rh', assunto: 'rh_beneficios' },
+  documents: { setor: 'documentos', assunto: 'doc_outros' },
+  'payslip-questions': { setor: 'dp', assunto: 'dp_holerite' },
+  vacation: { setor: 'rh', assunto: 'rh_ferias' },
+  others: { setor: 'outros', assunto: 'out_duvida' },
+};
 const uniforms: UniformItem[] = [
   { id: 'uniform-1', title: 'Camisa polo American Fuel', subtitle: 'Tam. M · 2 unidades' },
   { id: 'uniform-2', title: 'Calça operacional', subtitle: 'Tam. 42 · 2 unidades' },
@@ -5009,8 +5033,198 @@ function BenefitsScreen({ navigation }: ScreenProps<'Benefits'>) {
   );
 }
 
+// rh_op_pedidos.status — endpoint rh-uniformes confirmado pela Lovable em
+// 03/08/2026.
+const UNIFORME_PEDIDO_STATUS_META: Record<string, { label: string; color: string; tint: string }> = {
+  pendente_ciencia: { label: 'Pendente de ciência', color: '#5E6DB4', tint: '#E9EEFF' },
+  em_aprovacao: { label: 'Em aprovação', color: '#B5841A', tint: '#FCF3DA' },
+  aguardando_gerente: { label: 'Aguardando gerente', color: '#B5841A', tint: '#FCF3DA' },
+  aguardando_gestao: { label: 'Aguardando gestão', color: '#B5841A', tint: '#FCF3DA' },
+  aprovado: { label: 'Aprovado', color: '#2B9862', tint: '#E2F4EA' },
+  pendente_entrega: { label: 'Aguardando entrega', color: '#2B9862', tint: '#E2F4EA' },
+  entregue: { label: 'Entregue', color: '#2B9862', tint: '#E2F4EA' },
+  recusado: { label: 'Recusado', color: '#C23B4B', tint: '#FBE3E7' },
+  cancelado: { label: 'Cancelado', color: '#8992A8', tint: '#EDEFF4' },
+};
+
+function NewUniformePedidoModal({
+  visible,
+  colaboradorId,
+  itens,
+  onClose,
+  onCreated,
+}: {
+  visible: boolean;
+  colaboradorId: string;
+  itens: RhUniformeItemCatalogo[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [tipo, setTipo] = useState('');
+  const [justificativa, setJustificativa] = useState('');
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [tamanho, setTamanho] = useState('');
+  const [quantidade, setQuantidade] = useState('1');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setTipo('');
+      setJustificativa('');
+      setSelectedItemId(null);
+      setTamanho('');
+      setQuantidade('1');
+    }
+  }, [visible]);
+
+  const handleSubmit = () => {
+    if (!tipo.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe o tipo do pedido (ex.: reposição, dano, novo colaborador).');
+      return;
+    }
+    if (!selectedItemId) {
+      Alert.alert('Campo obrigatório', 'Escolha o item.');
+      return;
+    }
+    const quantidadeNum = Number(quantidade.replace(/\D/g, '')) || 1;
+
+    setIsSaving(true);
+    criarPedidoUniforme({
+      colaborador_id: colaboradorId,
+      tipo: tipo.trim(),
+      justificativa: justificativa.trim() || undefined,
+      itens: [{ item_id: selectedItemId, tamanho: tamanho.trim(), quantidade: quantidadeNum }],
+    })
+      .then(() => {
+        onCreated();
+        onClose();
+      })
+      .catch((err) => {
+        Alert.alert('Não foi possível enviar', err instanceof Error ? err.message : 'Tente novamente.');
+      })
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Solicitar uniforme/EPI</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <Text style={styles.requestFieldLabel}>Item</Text>
+            {itens.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Nenhum item disponível no catálogo ainda.</Text>
+            ) : (
+              itens.map((item) => {
+                const isSelected = item.id === selectedItemId;
+                return (
+                  <Pressable
+                    key={item.id}
+                    style={[styles.requestSelectBox, isSelected ? styles.requestCategoryOptionSelected : null]}
+                    onPress={() => setSelectedItemId(item.id)}
+                  >
+                    <Text style={styles.requestSelectText}>{item.nome}</Text>
+                    {isSelected ? <Feather name="check" size={16} color="#2B9862" /> : null}
+                  </Pressable>
+                );
+              })
+            )}
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Tamanho</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={tamanho}
+              onChangeText={setTamanho}
+              placeholder="Ex.: M, 42..."
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Quantidade</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={quantidade}
+              onChangeText={setQuantidade}
+              keyboardType="number-pad"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Tipo do pedido</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={tipo}
+              onChangeText={setTipo}
+              placeholder="Ex.: reposição, dano, novo colaborador..."
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Justificativa (opcional)</Text>
+            <TextInput
+              style={styles.requestDescriptionInput}
+              value={justificativa}
+              onChangeText={setJustificativa}
+              multiline
+              textAlignVertical="top"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Pressable
+              style={[styles.primaryButton, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Enviando...' : 'Enviar pedido'}</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function UniformsScreen({ navigation }: ScreenProps<'Uniforms'>) {
-  const { receivedUniformIds, markUniformAsReceived } = useContext(UniformReceiptContext);
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const [entregas, setEntregas] = useState<RhUniformeEntrega[]>([]);
+  const [pedidos, setPedidos] = useState<RhUniformePedido[]>([]);
+  const [itensCatalogo, setItensCatalogo] = useState<RhUniformeItemCatalogo[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isNewPedidoModalOpen, setIsNewPedidoModalOpen] = useState(false);
+
+  const loadUniformes = useCallback(() => {
+    if (!colaboradorId) {
+      setEntregas([]);
+      setPedidos([]);
+      setErrorMessage(null);
+      return;
+    }
+    setIsLoading(true);
+    setErrorMessage(null);
+    Promise.all([
+      fetchRhUniformesEntregas(colaboradorId),
+      fetchRhUniformesPedidos({ colaboradorId }),
+      fetchRhUniformesItens(),
+    ])
+      .then(([entregasData, pedidosData, itensData]) => {
+        setEntregas(entregasData);
+        setPedidos(pedidosData);
+        setItensCatalogo(itensData);
+      })
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar seus uniformes.');
+      })
+      .finally(() => setIsLoading(false));
+  }, [colaboradorId]);
+
+  useEffect(() => {
+    loadUniformes();
+  }, [loadUniformes]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -5024,47 +5238,281 @@ function UniformsScreen({ navigation }: ScreenProps<'Uniforms'>) {
           <Text style={styles.pageTitle}>Meus Uniformes</Text>
         </View>
 
-        <View style={styles.uniformNoticeCard}>
-          <Feather name="info" size={16} color="#B7791F" style={styles.uniformNoticeIcon} />
-          <Text style={styles.uniformNoticeText}>
-            Ao marcar os itens abaixo, você confirma o recebimento dos uniformes.{' '}
-            <Text style={styles.uniformNoticeTextBold}>
-              Uma vez marcado, não será possível desmarcar.
-            </Text>
+        {colaboradorId ? (
+          <Pressable
+            style={[styles.requestsOpenButton, styles.spacingTop]}
+            onPress={() => setIsNewPedidoModalOpen(true)}
+          >
+            <Feather name="plus" size={16} color="#FFFFFF" />
+            <Text style={styles.requestsOpenButtonText}>Solicitar uniforme/EPI</Text>
+          </Pressable>
+        ) : null}
+
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seus uniformes.
           </Text>
-        </View>
-
-        {uniforms.map((item) => {
-          const isReceived = Boolean(receivedUniformIds[item.id]);
-
-          return (
-            <View key={item.id} style={styles.uniformCard}>
-              <View style={styles.uniformLeft}>
-                <View style={[styles.iconShell, styles.iconAccentGray]}>
-                  <Feather name="shopping-bag" size={18} color="#5E667D" />
+        ) : isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : (
+          <>
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>ITENS ENTREGUES</Text>
+            {entregas.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Nenhum item entregue ainda.</Text>
+            ) : (
+              entregas.map((item) => (
+                <View key={item.id} style={styles.uniformCard}>
+                  <View style={styles.uniformLeft}>
+                    <View style={[styles.iconShell, styles.iconAccentGray]}>
+                      <Feather name="shopping-bag" size={18} color="#5E667D" />
+                    </View>
+                    <View style={styles.uniformTextBlock}>
+                      <Text style={styles.uniformTitle}>Tam. {item.tamanho ?? '—'}</Text>
+                      <Text style={styles.uniformSubtitle}>
+                        {item.quantidade} unidade{item.quantidade > 1 ? 's' : ''} · entregue em{' '}
+                        {formatDateOnlyBR(item.entregue_em)}
+                      </Text>
+                    </View>
+                  </View>
+                  <Feather name="check-circle" size={18} color="#2B9862" />
                 </View>
-                <View style={styles.uniformTextBlock}>
-                  <Text style={styles.uniformTitle}>{item.title}</Text>
-                  <Text style={styles.uniformSubtitle}>{item.subtitle}</Text>
-                </View>
-              </View>
+              ))
+            )}
 
-              <Pressable
-                style={[styles.uniformCheckbox, isReceived ? styles.uniformCheckboxChecked : null]}
-                onPress={() => markUniformAsReceived(item.id)}
-                disabled={isReceived}
-              >
-                {isReceived ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
-              </Pressable>
-            </View>
-          );
-        })}
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>MEUS PEDIDOS</Text>
+            {pedidos.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Nenhum pedido registrado ainda.</Text>
+            ) : (
+              pedidos.map((pedido) => {
+                const meta = UNIFORME_PEDIDO_STATUS_META[pedido.status] ?? {
+                  label: pedido.status,
+                  color: '#5E6DB4',
+                  tint: '#E9EEFF',
+                };
+                return (
+                  <View key={pedido.id} style={styles.requestCard}>
+                    <View style={styles.requestTopRow}>
+                      <Text style={styles.requestTicketNumber}>{pedido.tipo ?? 'Pedido'}</Text>
+                      <View style={[styles.statusPill, { backgroundColor: meta.tint }]}>
+                        <Text style={[styles.statusPillText, { color: meta.color }]}>{meta.label}</Text>
+                      </View>
+                    </View>
+                    {pedido.justificativa ? (
+                      <Text style={styles.requestMeta}>{pedido.justificativa}</Text>
+                    ) : null}
+                    {pedido.motivo_recusa ? (
+                      <Text style={[styles.requestMeta, { color: '#C23B4B' }]}>
+                        Motivo da recusa: {pedido.motivo_recusa}
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })
+            )}
+          </>
+        )}
       </ScrollView>
+
+      {colaboradorId ? (
+        <NewUniformePedidoModal
+          visible={isNewPedidoModalOpen}
+          colaboradorId={colaboradorId}
+          itens={itensCatalogo}
+          onClose={() => setIsNewPedidoModalOpen(false)}
+          onCreated={loadUniformes}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
 
+// rh_reembolsos — endpoint confirmado pela Lovable em 03/08/2026. Enum de
+// status: rascunho | enviado | aprovado | pago | recusado.
+const REEMBOLSO_STATUS_META: Record<string, { label: string; color: string; tint: string }> = {
+  rascunho: { label: 'Rascunho', color: '#5E6DB4', tint: '#E9EEFF' },
+  enviado: { label: 'Em análise', color: '#B5841A', tint: '#FCF3DA' },
+  aprovado: { label: 'Aprovado', color: '#2B9862', tint: '#E2F4EA' },
+  pago: { label: 'Pago', color: '#2B9862', tint: '#E2F4EA' },
+  recusado: { label: 'Recusado', color: '#C23B4B', tint: '#FBE3E7' },
+};
+
+function formatBRL(value: number): string {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+// Máscara progressiva de moeda (mesmo padrão usado no RH: dígitos entram da
+// direita pra esquerda nos centavos).
+function formatCurrencyInputApp(text: string): string {
+  const digits = text.replace(/\D/g, '');
+  if (!digits) return '';
+  const cents = digits.padStart(3, '0');
+  const intPart = cents.slice(0, -2).replace(/^0+(?=\d)/, '');
+  const decimalPart = cents.slice(-2);
+  const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${withThousands},${decimalPart}`;
+}
+
+function parseCurrencyInputApp(text: string): number {
+  const normalized = text.replace(/\./g, '').replace(',', '.');
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function brDateLabelToIsoApp(label: string): string | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(label.trim());
+  if (!match) return null;
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
+
+function NewReimbursementModal({
+  visible,
+  colaboradorId,
+  onClose,
+  onCreated,
+}: {
+  visible: boolean;
+  colaboradorId: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [descricao, setDescricao] = useState('');
+  const [categoria, setCategoria] = useState('');
+  const [dataDespesa, setDataDespesa] = useState('');
+  const [valorInput, setValorInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setDescricao('');
+      setCategoria('');
+      setDataDespesa('');
+      setValorInput('');
+    }
+  }, [visible]);
+
+  const handleSubmit = () => {
+    if (!descricao.trim()) {
+      Alert.alert('Campo obrigatório', 'Descreva a despesa.');
+      return;
+    }
+    const valor = parseCurrencyInputApp(valorInput);
+    if (!valor) {
+      Alert.alert('Valor inválido', 'Informe o valor da despesa.');
+      return;
+    }
+    setIsSaving(true);
+    createColaboradorReembolso({
+      colaborador_id: colaboradorId,
+      descricao: descricao.trim(),
+      categoria: categoria.trim() || undefined,
+      data_despesa: brDateLabelToIsoApp(dataDespesa) ?? undefined,
+      valor,
+    })
+      .then(() => {
+        onCreated();
+        onClose();
+      })
+      .catch((err) => {
+        Alert.alert('Não foi possível enviar', err instanceof Error ? err.message : 'Tente novamente.');
+      })
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Nova despesa</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <Text style={styles.requestFieldLabel}>Descrição</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={descricao}
+              onChangeText={setDescricao}
+              placeholder="Ex.: Combustível - visita técnica"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Categoria (opcional)</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={categoria}
+              onChangeText={setCategoria}
+              placeholder="Ex.: Transporte, Alimentação..."
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Data da despesa</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={dataDespesa}
+              onChangeText={setDataDespesa}
+              placeholder="dd/mm/aaaa"
+              placeholderTextColor="#A7AEC2"
+              keyboardType="number-pad"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Valor</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={valorInput}
+              onChangeText={(text) => setValorInput(formatCurrencyInputApp(text))}
+              placeholder="0,00"
+              placeholderTextColor="#A7AEC2"
+              keyboardType="number-pad"
+            />
+
+            <Pressable
+              style={[styles.primaryButton, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Enviando...' : 'Enviar'}</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ReimbursementScreen({ navigation }: ScreenProps<'Reimbursement'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const [items, setItems] = useState<ColaboradorReembolsoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+
+  const loadReembolsos = useCallback(() => {
+    if (!colaboradorId) {
+      setItems([]);
+      setErrorMessage(null);
+      return;
+    }
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchColaboradorReembolsos(colaboradorId)
+      .then(setItems)
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar seus reembolsos.');
+      })
+      .finally(() => setIsLoading(false));
+  }, [colaboradorId]);
+
+  useEffect(() => {
+    loadReembolsos();
+  }, [loadReembolsos]);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -5078,22 +5526,60 @@ function ReimbursementScreen({ navigation }: ScreenProps<'Reimbursement'>) {
           <Text style={styles.pageSubtitle}>Solicitações de despesas</Text>
         </View>
 
-        {reimbursements.map((item) => (
-          <View key={item.id} style={styles.reimbursementCard}>
-            <View style={styles.reimbursementTopRow}>
-              <Text style={styles.reimbursementTitle}>{item.title}</Text>
-              <Text style={styles.reimbursementAmount}>{item.amount}</Text>
-            </View>
+        {colaboradorId ? (
+          <Pressable
+            style={[styles.requestsOpenButton, styles.spacingTop]}
+            onPress={() => setIsNewModalOpen(true)}
+          >
+            <Feather name="plus" size={16} color="#FFFFFF" />
+            <Text style={styles.requestsOpenButtonText}>Nova despesa</Text>
+          </Pressable>
+        ) : null}
 
-            <View style={styles.reimbursementBottomRow}>
-              <Text style={styles.reimbursementDate}>{item.date}</Text>
-              <View style={[styles.statusPill, { backgroundColor: item.statusTint }]}>
-                <Text style={[styles.statusPillText, { color: item.statusColor }]}>{item.status}</Text>
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seus reembolsos.
+          </Text>
+        ) : isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando reembolsos...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : items.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhuma despesa lançada ainda.</Text>
+        ) : (
+          items.map((item) => {
+            const meta = REEMBOLSO_STATUS_META[item.status] ?? {
+              label: item.status,
+              color: '#5E6DB4',
+              tint: '#E9EEFF',
+            };
+            return (
+              <View key={item.id} style={styles.reimbursementCard}>
+                <View style={styles.reimbursementTopRow}>
+                  <Text style={styles.reimbursementTitle}>{item.descricao}</Text>
+                  <Text style={styles.reimbursementAmount}>{formatBRL(item.valor)}</Text>
+                </View>
+
+                <View style={styles.reimbursementBottomRow}>
+                  <Text style={styles.reimbursementDate}>{formatDateOnlyBR(item.data_despesa)}</Text>
+                  <View style={[styles.statusPill, { backgroundColor: meta.tint }]}>
+                    <Text style={[styles.statusPillText, { color: meta.color }]}>{meta.label}</Text>
+                  </View>
+                </View>
               </View>
-            </View>
-          </View>
-        ))}
+            );
+          })
+        )}
       </ScrollView>
+
+      {colaboradorId ? (
+        <NewReimbursementModal
+          visible={isNewModalOpen}
+          colaboradorId={colaboradorId}
+          onClose={() => setIsNewModalOpen(false)}
+          onCreated={loadReembolsos}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -5315,13 +5801,109 @@ function PayslipsScreen({ navigation }: ScreenProps<'Payslips'>) {
   );
 }
 
+// Pedidos de uniforme/EPI pendentes de aprovação (rh_op_pedidos — endpoint
+// confirmado pela Lovable em 03/08/2026). Hoje buscamos por status
+// (pendente_ciencia/em_aprovacao/aguardando_gerente/aguardando_gestao) em
+// toda a rede — o endpoint ainda não filtra por "quem sou eu como
+// aprovador" (isso depende de gestor_direto_id/gestor_geral_id em
+// rh_colaboradores), então esta tela mostra os pendentes reais, mas ainda
+// não restritos só ao time de quem está logado.
+const APROVACAO_PEDIDO_STATUS_PENDENTE = 'pendente_ciencia,em_aprovacao,aguardando_gerente,aguardando_gestao';
+
+function RecusarPedidoModal({
+  visible,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onConfirm: (motivo: string) => void;
+}) {
+  const [motivo, setMotivo] = useState('');
+
+  useEffect(() => {
+    if (visible) setMotivo('');
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Recusar pedido</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+          <Text style={styles.requestFieldLabel}>Motivo da recusa</Text>
+          <TextInput
+            style={styles.requestDescriptionInput}
+            value={motivo}
+            onChangeText={setMotivo}
+            multiline
+            textAlignVertical="top"
+            placeholder="Explique por que este pedido está sendo recusado..."
+            placeholderTextColor="#A7AEC2"
+          />
+          <Pressable
+            style={[styles.approvalRejectButton, styles.spacingTop]}
+            onPress={() => {
+              if (!motivo.trim()) {
+                Alert.alert('Campo obrigatório', 'Informe o motivo da recusa.');
+                return;
+              }
+              onConfirm(motivo.trim());
+            }}
+          >
+            <Text style={styles.approvalRejectButtonText}>Confirmar recusa</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ApprovalsScreen({ navigation }: ScreenProps<'Approvals'>) {
-  const [decisions, setDecisions] = useState<Record<string, 'approved' | 'rejected'>>({});
+  const { identity } = useContext(AuthIdentityContext);
+  const [pedidos, setPedidos] = useState<RhUniformePedido[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
 
-  const pendingCount = approvals.filter((item) => !decisions[item.id]).length;
+  const loadPedidos = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhUniformesPedidos({ status: APROVACAO_PEDIDO_STATUS_PENDENTE })
+      .then(setPedidos)
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as aprovações.');
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
 
-  const decideApproval = (id: string, decision: 'approved' | 'rejected') => {
-    setDecisions((current) => ({ ...current, [id]: decision }));
+  useEffect(() => {
+    loadPedidos();
+  }, [loadPedidos]);
+
+  const handleApprove = (pedido: RhUniformePedido) => {
+    setProcessingId(pedido.id);
+    aprovarPedidoUniforme(pedido.id, identity?.profileId)
+      .then(() => loadPedidos())
+      .catch((err) => Alert.alert('Não foi possível aprovar', err instanceof Error ? err.message : 'Tente novamente.'))
+      .finally(() => setProcessingId(null));
+  };
+
+  const handleReject = (motivo: string) => {
+    if (!rejectingId) return;
+    setProcessingId(rejectingId);
+    recusarPedidoUniforme(rejectingId, motivo, identity?.profileId)
+      .then(() => {
+        setRejectingId(null);
+        loadPedidos();
+      })
+      .catch((err) => Alert.alert('Não foi possível recusar', err instanceof Error ? err.message : 'Tente novamente.'))
+      .finally(() => setProcessingId(null));
   };
 
   return (
@@ -5334,73 +5916,60 @@ function ApprovalsScreen({ navigation }: ScreenProps<'Approvals'>) {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.pageHeader}>
           <Text style={styles.pageTitle}>Aprovações da Equipe</Text>
-          <Text style={styles.approvalsPendingSubtitle}>{pendingCount} pendentes</Text>
+          <Text style={styles.approvalsPendingSubtitle}>{pedidos.length} pendentes</Text>
         </View>
 
-        {approvals.map((item) => {
-          const decision = decisions[item.id];
-
-          return (
+        {isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando aprovações...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : pedidos.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhum pedido de uniforme/EPI pendente de aprovação.</Text>
+        ) : (
+          pedidos.map((item) => (
             <View key={item.id} style={styles.approvalCard}>
               <View style={styles.approvalTopRow}>
-                <View style={styles.approvalAvatar}>
-                  <Text style={styles.approvalAvatarText}>{item.initials}</Text>
-                </View>
-
                 <View style={styles.approvalTextBlock}>
-                  <Text style={styles.approvalName}>{item.name}</Text>
-                  <Text style={styles.approvalDescription}>{item.description}</Text>
+                  <Text style={styles.approvalName}>{item.tipo ?? 'Pedido de uniforme/EPI'}</Text>
+                  <Text style={styles.approvalDescription}>{item.justificativa || 'Sem justificativa informada.'}</Text>
                 </View>
 
-                <View style={[styles.approvalTag, { backgroundColor: item.tagTint }]}>
-                  <Text style={[styles.approvalTagText, { color: item.tagColor }]}>{item.tagLabel}</Text>
+                <View style={[styles.approvalTag, { backgroundColor: '#E9EEFF' }]}>
+                  <Text style={[styles.approvalTagText, { color: '#5E6DB4' }]}>
+                    {UNIFORME_PEDIDO_STATUS_META[item.status]?.label ?? item.status}
+                  </Text>
                 </View>
               </View>
 
-              {decision ? (
-                <View
-                  style={[
-                    styles.approvalDecisionBadge,
-                    decision === 'approved'
-                      ? styles.approvalDecisionBadgeApproved
-                      : styles.approvalDecisionBadgeRejected,
-                  ]}
+              <View style={styles.approvalActionsRow}>
+                <Pressable
+                  style={styles.approvalApproveButton}
+                  onPress={() => handleApprove(item)}
+                  disabled={processingId === item.id}
                 >
-                  <Feather
-                    name={decision === 'approved' ? 'check-circle' : 'x-circle'}
-                    size={15}
-                    color={decision === 'approved' ? '#1D9B5A' : '#C81E3A'}
-                  />
-                  <Text
-                    style={[
-                      styles.approvalDecisionBadgeText,
-                      { color: decision === 'approved' ? '#1D9B5A' : '#C81E3A' },
-                    ]}
-                  >
-                    {decision === 'approved' ? 'Aprovado' : 'Recusado'}
+                  <Text style={styles.approvalApproveButtonText}>
+                    {processingId === item.id ? 'Aprovando...' : 'Aprovar'}
                   </Text>
-                </View>
-              ) : (
-                <View style={styles.approvalActionsRow}>
-                  <Pressable
-                    style={styles.approvalApproveButton}
-                    onPress={() => decideApproval(item.id, 'approved')}
-                  >
-                    <Text style={styles.approvalApproveButtonText}>Aprovar</Text>
-                  </Pressable>
+                </Pressable>
 
-                  <Pressable
-                    style={styles.approvalRejectButton}
-                    onPress={() => decideApproval(item.id, 'rejected')}
-                  >
-                    <Text style={styles.approvalRejectButtonText}>Recusar</Text>
-                  </Pressable>
-                </View>
-              )}
+                <Pressable
+                  style={styles.approvalRejectButton}
+                  onPress={() => setRejectingId(item.id)}
+                  disabled={processingId === item.id}
+                >
+                  <Text style={styles.approvalRejectButtonText}>Recusar</Text>
+                </Pressable>
+              </View>
             </View>
-          );
-        })}
+          ))
+        )}
       </ScrollView>
+
+      <RecusarPedidoModal
+        visible={rejectingId !== null}
+        onClose={() => setRejectingId(null)}
+        onConfirm={handleReject}
+      />
     </SafeAreaView>
   );
 }
@@ -5532,52 +6101,46 @@ function RequestsScreen({ navigation }: ScreenProps<'Requests'>) {
   const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState(false);
   const [description, setDescription] = useState('');
   const [attachments, setAttachments] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedCategory =
     requestCategoryOptions.find((option) => option.id === selectedCategoryId) ??
     requestCategoryOptions[requestCategoryOptions.length - 1];
 
-  useEffect(() => {
+  const loadSolicitacoes = useCallback(() => {
     if (!colaboradorId) {
       setTickets([]);
       setErrorMessage(null);
       return;
     }
 
-    let isActive = true;
     setIsLoading(true);
     setErrorMessage(null);
 
     fetchColaboradorSolicitacoes(colaboradorId)
       .then((data) => {
-        if (isActive) {
-          setTickets(
-            data.items.map((item) => ({
-              id: item.id,
-              ticketNumber: item.protocolo ? `#${item.protocolo}` : `#${item.id}`,
-              title: item.titulo,
-              openedDate: item.openedDateLabel,
-              department: item.department,
-              status: item.status.label,
-              statusColor: item.status.color,
-              statusTint: item.status.tint,
-            }))
-          );
-        }
+        setTickets(
+          data.items.map((item) => ({
+            id: item.id,
+            ticketNumber: item.protocolo ? `#${item.protocolo}` : `#${item.id}`,
+            title: item.titulo,
+            openedDate: item.openedDateLabel,
+            department: item.department,
+            status: item.status.label,
+            statusColor: item.status.color,
+            statusTint: item.status.tint,
+          }))
+        );
       })
       .catch((err) => {
-        if (isActive) {
-          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar suas solicitações.');
-        }
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar suas solicitações.');
       })
-      .finally(() => {
-        if (isActive) setIsLoading(false);
-      });
-
-    return () => {
-      isActive = false;
-    };
+      .finally(() => setIsLoading(false));
   }, [colaboradorId]);
+
+  useEffect(() => {
+    loadSolicitacoes();
+  }, [loadSolicitacoes]);
 
   const openModal = () => {
     setSelectedCategoryId(requestCategoryOptions[requestCategoryOptions.length - 1].id);
@@ -5616,23 +6179,42 @@ function RequestsScreen({ navigation }: ScreenProps<'Requests'>) {
   };
 
   const handleSubmitRequest = () => {
-    const today = new Date();
-    const openedDate = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+    if (!colaboradorId) return;
+    if (!description.trim()) {
+      Alert.alert('Campo obrigatório', 'Descreva sua solicitação.');
+      return;
+    }
 
-    const newTicket: RequestTicketItem = {
-      id: `ticket-${nextTicketNumber}`,
-      ticketNumber: `#${nextTicketNumber}`,
-      title: selectedCategory.label,
-      openedDate,
-      department: 'RH',
-      status: 'Aberto',
-      statusColor: '#5E6DB4',
-      statusTint: '#E9EEFF',
+    const mapping = REQUEST_CATEGORY_TO_SOLICITACAO[selectedCategory.id] ?? {
+      setor: 'outros' as const,
+      assunto: 'out_duvida',
     };
 
-    setTickets((current) => [newTicket, ...current]);
-    setNextTicketNumber((current) => current + 1);
-    closeModal();
+    setIsSubmitting(true);
+    createColaboradorSolicitacao({
+      colaborador_id: colaboradorId,
+      setor: mapping.setor,
+      assunto: mapping.assunto,
+      titulo: selectedCategory.label,
+      mensagem: description.trim(),
+    })
+      .then(() => {
+        if (attachments.length > 0) {
+          // Upload de anexo ainda não está ligado (não existe endpoint de
+          // storage confirmado) — a solicitação em si foi criada de verdade,
+          // só os anexos não acompanham por enquanto.
+          Alert.alert(
+            'Solicitação enviada',
+            'As fotos selecionadas ainda não podem ser anexadas automaticamente — envie-as num chamado à parte, se necessário.'
+          );
+        }
+        closeModal();
+        loadSolicitacoes();
+      })
+      .catch((err) => {
+        Alert.alert('Não foi possível enviar', err instanceof Error ? err.message : 'Tente novamente.');
+      })
+      .finally(() => setIsSubmitting(false));
   };
 
   return (
@@ -5791,8 +6373,14 @@ function RequestsScreen({ navigation }: ScreenProps<'Requests'>) {
                 ) : null}
               </View>
 
-              <Pressable style={styles.requestSubmitButton} onPress={handleSubmitRequest}>
-                <Text style={styles.requestSubmitButtonText}>Enviar Solicitação</Text>
+              <Pressable
+                style={[styles.requestSubmitButton, isSubmitting ? { opacity: 0.6 } : null]}
+                onPress={handleSubmitRequest}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.requestSubmitButtonText}>
+                  {isSubmitting ? 'Enviando...' : 'Enviar Solicitação'}
+                </Text>
               </Pressable>
             </ScrollView>
           </View>
