@@ -1942,10 +1942,20 @@ export type AdminLevaMaisStatus = {
   ultimoStatus: string | null;
   ultimaSincronizacao: string | null;
   endpoints: string[];
+  // Só vem preenchido quando opts.reveal=true (exige actorId master) — ver
+  // fetchAdminLevaMaisStatus.
+  apiToken?: string | null;
 };
 
-export async function fetchAdminLevaMaisStatus(actorId?: string | null): Promise<AdminLevaMaisStatus> {
-  const json = await api.get(withActorId('/api/admin/integracoes/leva-mais/status', actorId));
+export async function fetchAdminLevaMaisStatus(
+  opts?: { reveal?: boolean; actorId?: string | null } | string | null
+): Promise<AdminLevaMaisStatus> {
+  // Aceita a assinatura antiga (actorId direto) e a nova (objeto com reveal).
+  const normalized = typeof opts === 'object' && opts !== null ? opts : { actorId: opts };
+  const path = normalized.reveal
+    ? '/api/admin/integracoes/leva-mais/status?reveal=1'
+    : '/api/admin/integracoes/leva-mais/status';
+  const json = await api.get(withActorId(path, normalized.actorId));
   return (json.data ?? {
     ativo: false,
     apiUrl: null,

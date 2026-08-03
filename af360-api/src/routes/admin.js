@@ -1842,12 +1842,21 @@ function mapLevaMaisStatusRow(raw = {}) {
   };
 }
 
-// GET /api/admin/integracoes/leva-mais/status?actorId=...
+// GET /api/admin/integracoes/leva-mais/status?actorId=&reveal=1 — reveal=1
+// pede o mesmo tratamento do wa-config (exige actorId master, devolve
+// api_token completo em claro). Ainda não confirmado/publicado pela Lovable
+// especificamente pro leva-mais — se não estiver implementado do lado deles,
+// isso só volta sem o campo "apiToken" (sem quebrar nada).
 router.get('/integracoes/leva-mais/status', async (req, res) => {
   try {
-    const json = await getLevaMais({ recurso: 'status' }, req.query.actorId);
-    const data = json?.data ?? json ?? {};
-    res.json({ ok: true, data: mapLevaMaisStatusRow(data) });
+    const reveal = req.query.reveal === '1' || req.query.reveal === 'true';
+    const json = await getLevaMais({ recurso: 'status', reveal: reveal ? 1 : undefined }, req.query.actorId);
+    const row = json?.data ?? json ?? {};
+    const data = mapLevaMaisStatusRow(row);
+    if (reveal) {
+      data.apiToken = row.api_token ?? null;
+    }
+    res.json({ ok: true, data });
   } catch (err) {
     console.error('[admin/integracoes/leva-mais/status] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });

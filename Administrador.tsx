@@ -7252,6 +7252,10 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
   const [levaMaisApiTokenEdited, setLevaMaisApiTokenEdited] = useState(false);
   const [isSavingLevaMaisConfig, setIsSavingLevaMaisConfig] = useState(false);
   const [isLevaMaisTokenVisible, setIsLevaMaisTokenVisible] = useState(false);
+  const [revealedLevaMaisToken, setRevealedLevaMaisToken] = useState<string | null>(null);
+  const [isRevealingLevaMaisToken, setIsRevealingLevaMaisToken] = useState(false);
+  const [levaMaisRevealError, setLevaMaisRevealError] = useState<string | null>(null);
+  const [justCopiedLevaMaisToken, setJustCopiedLevaMaisToken] = useState(false);
 
   const loadLevaMaisStatus = useCallback(() => {
     setIsLoadingLevaMaisStatus(true);
@@ -7300,6 +7304,56 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
       .catch((err) => Alert.alert('Erro ao salvar', err instanceof Error ? err.message : 'Tente novamente.'))
       .finally(() => setIsSavingLevaMaisConfig(false));
   }, [actorId, levaMaisAtivoForm, levaMaisApiUrlForm, levaMaisApiTokenField, levaMaisApiTokenEdited, loadLevaMaisStatus]);
+
+  // Reveal completo do token (mesmo padrão do wa-config: ?reveal=1, exige
+  // actorId master). Ainda não confirmado/publicado pela Lovable
+  // especificamente pro leva-mais — se não vier o campo apiToken, avisa em
+  // vez de fingir que revelou.
+  const ensureRevealedLevaMais = useCallback(async (): Promise<string | null> => {
+    if (revealedLevaMaisToken) return revealedLevaMaisToken;
+    setIsRevealingLevaMaisToken(true);
+    setLevaMaisRevealError(null);
+    try {
+      const data = await fetchAdminLevaMaisStatus({ reveal: true, actorId });
+      if (!data.apiToken) {
+        setLevaMaisRevealError(
+          'O backend ainda não devolve o token completo pro Leva+ (precisa confirmar reveal=1 com a Lovable, igual foi feito pro WhatsApp).'
+        );
+        return null;
+      }
+      setRevealedLevaMaisToken(data.apiToken);
+      return data.apiToken;
+    } catch (err) {
+      setLevaMaisRevealError(
+        err instanceof Error ? err.message : 'Não foi possível revelar (só usuários master podem ver).'
+      );
+      return null;
+    } finally {
+      setIsRevealingLevaMaisToken(false);
+    }
+  }, [actorId, revealedLevaMaisToken]);
+
+  const handleToggleLevaMaisTokenVisible = useCallback(() => {
+    if (isLevaMaisTokenVisible) {
+      setIsLevaMaisTokenVisible(false);
+      return;
+    }
+    ensureRevealedLevaMais().then((token) => {
+      if (token) setIsLevaMaisTokenVisible(true);
+      else if (levaMaisRevealError) Alert.alert('Não foi possível revelar', levaMaisRevealError);
+    });
+  }, [isLevaMaisTokenVisible, ensureRevealedLevaMais, levaMaisRevealError]);
+
+  const handleCopyLevaMaisToken = useCallback(() => {
+    if (levaMaisApiTokenEdited) {
+      copyToClipboard(levaMaisApiTokenField, () => flashCopied(setJustCopiedLevaMaisToken));
+      return;
+    }
+    ensureRevealedLevaMais().then((token) => {
+      if (token) copyToClipboard(token, () => flashCopied(setJustCopiedLevaMaisToken));
+      else if (levaMaisRevealError) Alert.alert('Não foi possível copiar', levaMaisRevealError);
+    });
+  }, [levaMaisApiTokenEdited, levaMaisApiTokenField, ensureRevealedLevaMais, levaMaisRevealError]);
 
   // Google Meu Negócio (gmb_config/gmb_locations) — schema e endpoints
   // confirmados pela Lovable em 30/07/2026. Carrega só quando a aba é
@@ -8879,24 +8933,46 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, alignItems: 'center' }}>
                     <TextInput
                       style={[styles.processTextInput, { flex: 1 }]}
-                      value={levaMaisApiTokenEdited ? levaMaisApiTokenField : levaMaisStatus?.apiTokenMascarado ?? ''}
+                      value={
+                        levaMaisApiTokenEdited
+                          ? levaMaisApiTokenField
+                          : isLevaMaisTokenVisible && revealedLevaMaisToken
+                          ? revealedLevaMaisToken
+                          : levaMaisStatus?.apiTokenMascarado ?? ''
+                      }
                       onChangeText={(text) => {
                         setLevaMaisApiTokenField(text);
                         setLevaMaisApiTokenEdited(true);
+                        setIsLevaMaisTokenVisible(false);
                       }}
                       placeholder="Cole o token gerado no Portal Admin Leva+"
                       placeholderTextColor="#A7AEC2"
                       autoCapitalize="none"
-                      secureTextEntry={!isLevaMaisTokenVisible}
                       editable
                     />
-                    <Pressable
-                      style={adminStyles.tokenEyeButton}
-                      onPress={() => setIsLevaMaisTokenVisible((prev) => !prev)}
-                      hitSlop={6}
-                    >
-                      <Feather name={isLevaMaisTokenVisible ? 'eye-off' : 'eye'} size={16} color="#677089" />
-                    </Pressable>
+                    {levaMaisStatus?.apiTokenMascarado && !levaMaisApiTokenEdited ? (
+                      <Pressable
+                        style={adminStyles.tokenEyeButton}
+                        onPress={handleToggleLevaMaisTokenVisible}
+                        hitSlop={6}
+                        disabled={isRevealingLevaMaisToken}
+                      >
+                        <Feather
+                          name={isLevaMaisTokenVisible ? 'eye-off' : 'eye'}
+                          size={16}
+                          color={isRevealingLevaMaisToken ? '#C7CCDA' : '#677089'}
+                        />
+                      </Pressable>
+                    ) : null}
+                    {levaMaisStatus?.apiTokenMascarado || levaMaisApiTokenEdited ? (
+                      <Pressable style={adminStyles.tokenEyeButton} onPress={handleCopyLevaMaisToken} hitSlop={6}>
+                        <Feather
+                          name={justCopiedLevaMaisToken ? 'check' : 'copy'}
+                          size={16}
+                          color={justCopiedLevaMaisToken ? GREEN : '#677089'}
+                        />
+                      </Pressable>
+                    ) : null}
                   </View>
                   <Text style={adminStyles.integrationHint}>
                     Gere em Portal Admin Leva+ → API → Tokens. Cada token fica amarrado à rede — a API retorna
