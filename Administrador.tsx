@@ -1245,13 +1245,43 @@ export function AdminProfileScreen({ navigation }: ScreenProps<'AdminProfile'>) 
   const { theme } = useContext(AdminThemeContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
 
-  // MOCK: base numérica ("56 postos · 1.930 colaboradores") tirada do mockup.
+  // Base real (postos/colaboradores) — mesmos endpoints já usados em
+  // AdminUnidadesScreen/AdminDashboardScreen, não fabricamos o total.
+  const [totalPostos, setTotalPostos] = useState<number | null>(null);
+  const [totalColaboradores, setTotalColaboradores] = useState<number | null>(null);
+  const [baseError, setBaseError] = useState(false);
+
+  useEffect(() => {
+    let isActive = true;
+    Promise.all([
+      fetchAdminUnidades(),
+      fetchAdminDashboardKpis({ actorId: identity?.profileId }),
+    ])
+      .then(([unidadesDetalhe, kpis]) => {
+        if (!isActive) return;
+        setTotalPostos(unidadesDetalhe.count);
+        setTotalColaboradores(kpis.snapshot.colaboradores_total);
+      })
+      .catch(() => {
+        if (isActive) setBaseError(true);
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [identity?.profileId]);
+
+  const baseLabel = baseError
+    ? 'Não foi possível carregar'
+    : totalPostos !== null && totalColaboradores !== null
+    ? `${admFormatInt(totalPostos)} postos · ${admFormatInt(totalColaboradores)} colaboradores`
+    : 'Carregando...';
+
   const adminProfileFields = [
     { label: 'Perfil', value: 'Administrador' },
     { label: 'Acesso', value: 'Total (todos os módulos)' },
-    { label: 'E-mail', value: adminUser.email },
+    { label: 'E-mail', value: identity?.email || adminUser.email },
     { label: 'Ambiente', value: 'AF 360 · v1.4.0' },
-    { label: 'Base', value: '56 postos · 1.930 colaboradores' },
+    { label: 'Base', value: baseLabel },
   ];
 
   return (
