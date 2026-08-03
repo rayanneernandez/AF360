@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,6 +9,7 @@ import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { Feather } from '@expo/vector-icons';
 import {
   Alert,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -75,6 +76,9 @@ import {
   type RhExperienciaDetalhe,
   type RhBeneficiosColaborador,
   type RhHistoricoContratacaoItem,
+  fetchRhComunicados,
+  createRhComunicado,
+  type RhComunicadoItem,
 } from './api';
 
 // ---------- Types ----------
@@ -7493,25 +7497,53 @@ type AnnouncementFormValues = {
   audienceLabel: string;
 };
 
-const emptyAnnouncementForm: AnnouncementFormValues = {
-  category: 'RH',
-  title: '',
-  description: '',
-  audienceLabel: 'Todos os postos',
+// rh_comunicados não tem coluna de categoria (RH/SST/DP era só do mock) —
+// por isso o formulário e a lista abaixo não usam mais esse chip; só título,
+// descrição, link de anexo (não temos upload de arquivo ainda, só link) e
+// "enviar para" (fixo em "todos" por enquanto — segmentar por empresa/grupo/
+// colaborador específico fica pra uma próxima rodada).
+type AnnouncementFormValues = {
+  titulo: string;
+  conteudo: string;
+  anexoUrl: string;
 };
+
+const emptyAnnouncementForm: AnnouncementFormValues = {
+  titulo: '',
+  conteudo: '',
+  anexoUrl: '',
+};
+
+function comunicadoPublicoLabelRh(publico: string): string {
+  if (publico === 'empresa') return 'Empresa';
+  if (publico === 'grupo') return 'Grupo';
+  if (publico === 'colaborador') return 'Um colaborador';
+  return 'Todos';
+}
+
+function formatComunicadoDateRh(raw: string | null): string {
+  if (!raw) return '—';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
 
 function AnnouncementFormModal({
   visible,
   onClose,
-  onSave,
+  onCreated,
 }: {
   visible: boolean;
   onClose: () => void;
-  onSave: (announcement: AnnouncementItem) => void;
+  onCreated: () => void;
 }) {
+  const { identity } = useContext(AuthIdentityContext);
   const [form, setForm] = useState<AnnouncementFormValues>(emptyAnnouncementForm);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const categories: AnnouncementCategory[] = ['RH', 'SST', 'DP'];
+  useEffect(() => {
+    if (visible) setForm(emptyAnnouncementForm);
+  }, [visible]);
 
   const handleClose = () => {
     setForm(emptyAnnouncementForm);
@@ -7519,20 +7551,30 @@ function AnnouncementFormModal({
   };
 
   const handleSubmit = () => {
-    if (!form.title.trim() || !form.description.trim()) {
+    if (!form.titulo.trim() || !form.conteudo.trim()) {
       Alert.alert('Campos obrigatórios', 'Preencha o título e a descrição do comunicado.');
       return;
     }
 
-    onSave({
-      id: `ann-${Date.now()}`,
-      category: form.category,
-      timeLabel: 'agora',
-      title: form.title.trim(),
-      description: form.description.trim(),
-      audienceLabel: `Enviado a ${form.audienceLabel}`,
-    });
-    setForm(emptyAnnouncementForm);
+    setIsSaving(true);
+    createRhComunicado(
+      {
+        titulo: form.titulo.trim(),
+        conteudo: form.conteudo.trim(),
+        publico: 'todos',
+        empresa_id: identity?.empresaId ?? undefined,
+        anexo_url: form.anexoUrl.trim() || undefined,
+      },
+      identity?.profileId
+    )
+      .then(() => {
+        onCreated();
+        handleClose();
+      })
+      .catch((err) => {
+        Alert.alert('Não foi possível enviar', err instanceof Error ? err.message : 'Tente novamente.');
+      })
+      .finally(() => setIsSaving(false));
   };
 
   return (
@@ -7547,31 +7589,11 @@ function AnnouncementFormModal({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Text style={styles.requestFieldLabel}>Categoria</Text>
-            <View style={rhStyles.categoryRow}>
-              {categories.map((category) => {
-                const isSelected = form.category === category;
-                return (
-                  <Pressable
-                    key={category}
-                    style={[rhStyles.categoryChip, isSelected ? rhStyles.categoryChipActive : null]}
-                    onPress={() => setForm((current) => ({ ...current, category }))}
-                  >
-                    <Text
-                      style={[rhStyles.categoryChipText, isSelected ? rhStyles.categoryChipTextActive : null]}
-                    >
-                      {category}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Título *</Text>
+            <Text style={styles.requestFieldLabel}>Título *</Text>
             <TextInput
               style={styles.processTextInput}
-              value={form.title}
-              onChangeText={(text) => setForm((current) => ({ ...current, title: text }))}
+              value={form.titulo}
+              onChangeText={(text) => setForm((current) => ({ ...current, titulo: text }))}
               placeholder="Ex.: Nova tabela de reajuste 2026"
               placeholderTextColor="#A7AEC2"
             />
@@ -7579,25 +7601,35 @@ function AnnouncementFormModal({
             <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição *</Text>
             <TextInput
               style={[styles.processTextInput, styles.processDocumentationArea]}
-              value={form.description}
-              onChangeText={(text) => setForm((current) => ({ ...current, description: text }))}
+              value={form.conteudo}
+              onChangeText={(text) => setForm((current) => ({ ...current, conteudo: text }))}
               placeholder="Detalhe o comunicado..."
               placeholderTextColor="#A7AEC2"
               multiline
               textAlignVertical="top"
             />
 
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Enviar para</Text>
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Link da imagem/anexo (opcional)</Text>
             <TextInput
               style={styles.processTextInput}
-              value={form.audienceLabel}
-              onChangeText={(text) => setForm((current) => ({ ...current, audienceLabel: text }))}
-              placeholder="Ex.: Todos os postos"
+              value={form.anexoUrl}
+              onChangeText={(text) => setForm((current) => ({ ...current, anexoUrl: text }))}
+              placeholder="https://..."
               placeholderTextColor="#A7AEC2"
+              autoCapitalize="none"
+              keyboardType="url"
             />
+            <Text style={rhStyles.announcementMeta}>
+              Ainda não temos upload de arquivo por aqui — cole o link de uma imagem ou PDF já hospedado em algum
+              lugar (Drive, etc.).
+            </Text>
 
-            <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={handleSubmit}>
-              <Text style={styles.primaryButtonText}>Enviar comunicado</Text>
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Enviando...' : 'Enviar comunicado'}</Text>
             </Pressable>
           </ScrollView>
         </View>
@@ -7607,13 +7639,26 @@ function AnnouncementFormModal({
 }
 
 export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>) {
-  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>(rhAnnouncements);
+  const { identity } = useContext(AuthIdentityContext);
+  const [comunicados, setComunicados] = useState<RhComunicadoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
 
-  const handleSave = (announcement: AnnouncementItem) => {
-    setAnnouncements((current) => [announcement, ...current]);
-    setIsFormOpen(false);
-  };
+  const loadComunicados = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhComunicados({ empresaId: identity?.empresaId ?? undefined })
+      .then(setComunicados)
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os comunicados.');
+      })
+      .finally(() => setIsLoading(false));
+  }, [identity?.empresaId]);
+
+  useEffect(() => {
+    loadComunicados();
+  }, [loadComunicados]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -7634,25 +7679,36 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
           <Text style={styles.primaryButtonText}>Novo comunicado</Text>
         </Pressable>
 
-        {announcements.map((item) => {
-          const meta = rhAnnouncementMeta[item.category];
-          return (
+        {isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando comunicados...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : comunicados.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhum comunicado enviado ainda.</Text>
+        ) : (
+          comunicados.map((item) => (
             <View key={item.id} style={rhStyles.announcementCard}>
               <View style={rhStyles.announcementTopRow}>
-                <View style={[rhStyles.announcementBadge, { backgroundColor: meta.tint }]}>
-                  <Text style={[rhStyles.announcementBadgeText, { color: meta.color }]}>{item.category}</Text>
+                <View style={[rhStyles.announcementBadge, { backgroundColor: '#E9EEFF' }]}>
+                  <Text style={[rhStyles.announcementBadgeText, { color: '#3457D5' }]}>
+                    {comunicadoPublicoLabelRh(item.publico)}
+                  </Text>
                 </View>
-                <Text style={rhStyles.announcementTime}>{item.timeLabel}</Text>
+                <Text style={rhStyles.announcementTime}>{formatComunicadoDateRh(item.publicar_em)}</Text>
               </View>
-              <Text style={rhStyles.announcementTitle}>{item.title}</Text>
-              <Text style={rhStyles.announcementDesc}>{item.description}</Text>
-              <Text style={rhStyles.announcementMeta}>{item.audienceLabel}</Text>
+              <Text style={rhStyles.announcementTitle}>{item.titulo}</Text>
+              <Text style={rhStyles.announcementDesc}>{item.conteudo}</Text>
+              {item.anexo_url ? (
+                <Pressable onPress={() => Linking.openURL(item.anexo_url as string)}>
+                  <Text style={[rhStyles.announcementMeta, { color: '#3457D5' }]}>Ver anexo</Text>
+                </Pressable>
+              ) : null}
             </View>
-          );
-        })}
+          ))
+        )}
       </ScrollView>
 
-      <AnnouncementFormModal visible={isFormOpen} onClose={() => setIsFormOpen(false)} onSave={handleSave} />
+      <AnnouncementFormModal visible={isFormOpen} onClose={() => setIsFormOpen(false)} onCreated={loadComunicados} />
     </SafeAreaView>
   );
 }

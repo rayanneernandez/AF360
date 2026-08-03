@@ -1134,6 +1134,150 @@ export async function fetchRhTreinamentoQuestoes(
   return fetchRhTreinamentosRecurso<RhTreinamentoQuestao>('questoes', { treinamentoId, incluirGabarito });
 }
 
+export async function fetchRhTreinamentoDetalhe(treinamentoId: string): Promise<RhTreinamentoCatalogo | null> {
+  const items = await fetchRhTreinamentosRecurso<RhTreinamentoCatalogo>('treinamentos', { treinamentoId });
+  return items[0] ?? null;
+}
+
+export async function fetchRhTreinamentoInscricoes(params: {
+  colaboradorId?: string;
+  treinamentoId?: string;
+  status?: string;
+} = {}): Promise<Record<string, unknown>[]> {
+  return fetchRhTreinamentosRecurso<Record<string, unknown>>('inscricoes', params);
+}
+
+// --- Treinamentos: escrita (respostas/prova/inscrições) — endpoint
+// confirmado pela Lovable em 03/08/2026. Preferir postRhTreinamentoProva
+// (fluxo completo) — ela já grava as respostas corrigidas no servidor e
+// atualiza a inscrição; postRhTreinamentoResposta fica pra registrar uma
+// resposta isolada, se algum fluxo precisar disso separadamente. ---
+
+export type RhTreinamentoProvaResultado = {
+  acertos: number;
+  total: number;
+  nota: number;
+  prova_min_acerto: number;
+  aprovado: boolean;
+  tentativa: number;
+  [key: string]: unknown;
+};
+
+export async function postRhTreinamentoResposta(
+  body: { inscricao_id: string; questao_id: string; resposta: string; tempo_ms?: number; tentativa?: number },
+  actorId?: string | null
+): Promise<Record<string, unknown>> {
+  const json = await api.post(withActorId('/api/rh/treinamentos-conteudo/respostas', actorId), body);
+  return json.data;
+}
+
+export async function submeterProvaTreinamento(
+  body: {
+    inscricao_id: string;
+    respostas: Array<{ questao_id: string; resposta: string; tempo_ms?: number }>;
+    tempo_gasto_min?: number;
+  },
+  actorId?: string | null
+): Promise<{ inscricao: Record<string, unknown>; resultado: RhTreinamentoProvaResultado }> {
+  const json = await api.post(withActorId('/api/rh/treinamentos-conteudo/prova', actorId), body);
+  return { inscricao: json.data, resultado: json.resultado as RhTreinamentoProvaResultado };
+}
+
+export async function updateRhTreinamentoInscricao(
+  id: string,
+  body: Record<string, unknown>,
+  actorId?: string | null
+): Promise<Record<string, unknown>> {
+  const json = await api.patch(
+    withActorId(`/api/rh/treinamentos-conteudo/inscricoes/${encodeURIComponent(id)}`, actorId),
+    body
+  );
+  return json.data;
+}
+
+// --- Comunicados: escrita real (rh_comunicados) — endpoint dedicado
+// confirmado pela Lovable em 03/08/2026. A leitura simples do colaborador
+// (dashboard/lista) continua vindo de /api/rh/dashboard/comunicados; este
+// bloco é usado pelo painel do RH pra criar/editar/excluir comunicado de
+// verdade, e por qualquer tela que precise marcar "lido". ---
+
+export type RhComunicadoItem = {
+  id: string;
+  titulo: string;
+  conteudo: string;
+  publico: 'todos' | 'empresa' | 'grupo' | 'colaborador';
+  empresa_id: string | null;
+  grupo_id: string | null;
+  colaborador_id: string | null;
+  publicar_em: string | null;
+  expira_em: string | null;
+  anexo_url: string | null;
+  created_at?: string;
+  [key: string]: unknown;
+};
+
+export async function fetchRhComunicados(params: {
+  empresaId?: string | null;
+  grupoId?: string | null;
+  colaboradorId?: string | null;
+  publico?: string;
+  vigentes?: boolean;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<RhComunicadoItem[]> {
+  const search = new URLSearchParams();
+  if (params.empresaId) search.set('empresaId', params.empresaId);
+  if (params.grupoId) search.set('grupoId', params.grupoId);
+  if (params.colaboradorId) search.set('colaboradorId', params.colaboradorId);
+  if (params.publico) search.set('publico', params.publico);
+  if (params.vigentes !== undefined) search.set('vigentes', params.vigentes ? '1' : '0');
+  if (params.limit) search.set('limit', String(params.limit));
+  if (params.offset) search.set('offset', String(params.offset));
+  const json = await api.get(`/api/rh/comunicados?${search.toString()}`);
+  return (json.data as RhComunicadoItem[]) ?? [];
+}
+
+export async function createRhComunicado(
+  body: {
+    titulo: string;
+    conteudo: string;
+    publico?: 'todos' | 'empresa' | 'grupo' | 'colaborador';
+    empresa_id?: string;
+    grupo_id?: string;
+    colaborador_id?: string;
+    publicar_em?: string;
+    expira_em?: string;
+    anexo_url?: string;
+  },
+  actorId?: string | null
+): Promise<RhComunicadoItem> {
+  const json = await api.post(withActorId('/api/rh/comunicados', actorId), body);
+  return json.data as RhComunicadoItem;
+}
+
+export async function updateRhComunicado(
+  id: string,
+  body: Record<string, unknown>,
+  actorId?: string | null
+): Promise<RhComunicadoItem> {
+  const json = await api.patch(withActorId(`/api/rh/comunicados/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhComunicadoItem;
+}
+
+export async function deleteRhComunicado(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/comunicados/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function marcarComunicadoLido(
+  comunicadoId: string,
+  colaboradorId: string,
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId(`/api/rh/comunicados/${encodeURIComponent(comunicadoId)}/lido`, actorId), {
+    colaborador_id: colaboradorId,
+  });
+}
+
 // --- Admin: Cargos (roles) ---
 
 export type AdminCargoItem = {

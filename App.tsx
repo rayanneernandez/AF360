@@ -121,8 +121,14 @@ import {
   type RhCalendarioEvento,
   fetchRhTreinamentoAulas,
   fetchRhTreinamentoQuestoes,
+  fetchRhTreinamentoDetalhe,
   type RhTreinamentoAula,
   type RhTreinamentoQuestao,
+  type RhTreinamentoCatalogo,
+  submeterProvaTreinamento,
+  updateRhTreinamentoInscricao,
+  fetchRhTreinamentoInscricoes,
+  marcarComunicadoLido,
 } from './api';
 
 export type RootStackParamList = {
@@ -6472,6 +6478,16 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
     fetchColaboradorComunicados(colaboradorId)
       .then((data) => {
         if (isActive) setItems(data.items);
+        // Marca como lido (rh_comunicado_leituras) os itens que ainda
+        // estavam sem leitura — é o que faz o contador "Comunicados" do
+        // Dashboard parar de contar algo que a pessoa já viu aqui. Envio em
+        // segundo plano; se falhar, não bloqueia a tela (só o contador do
+        // Dashboard continua igual até uma próxima tentativa).
+        data.items
+          .filter((item) => !item.lido)
+          .forEach((item) => {
+            marcarComunicadoLido(item.id, colaboradorId).catch(() => {});
+          });
       })
       .catch((err) => {
         if (isActive) {

@@ -730,13 +730,70 @@ function deleteRhCalendario(id, actorId) {
   return lovableDelete('/api/public/internal/rh-calendario', { id }, actorId);
 }
 
+// --- Comunicados (rh_comunicados; endpoint dedicado /api/public/internal/
+// rh-comunicados confirmado pela Lovable em 03/08/2026, mesmo padrão "recurso"
+// dos outros — recurso=comunicados|leituras). anexo_url aceita imagem ou PDF.
+// recurso=leituras faz upsert por comunicado_id+colaborador_id (marcar
+// "lido"). ---
+
+function getRhComunicados(
+  { empresaId, grupoId, colaboradorId, publico, vigentes, limit, offset } = {},
+  actorId
+) {
+  return lovableGet(
+    '/api/public/internal/rh-comunicados',
+    {
+      recurso: 'comunicados',
+      empresa_id: empresaId,
+      grupo_id: grupoId,
+      colaborador_id: colaboradorId,
+      publico,
+      vigentes: vigentes ? 1 : undefined,
+      limit,
+      offset,
+    },
+    actorId
+  );
+}
+
+function postRhComunicado(body, actorId) {
+  return lovablePost('/api/public/internal/rh-comunicados', { recurso: 'comunicados' }, body, actorId);
+}
+
+function patchRhComunicado(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-comunicados', { recurso: 'comunicados', id }, body, actorId);
+}
+
+function deleteRhComunicado(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-comunicados', { recurso: 'comunicados', id }, actorId);
+}
+
+function postRhComunicadoLeitura(comunicadoId, colaboradorId, actorId) {
+  return lovablePost(
+    '/api/public/internal/rh-comunicados',
+    { recurso: 'leituras' },
+    { comunicado_id: comunicadoId, colaborador_id: colaboradorId },
+    actorId
+  );
+}
+
 // --- Treinamentos: conteúdo real (rh_treinamentos, rh_treinamento_aulas,
 // rh_treinamento_questoes, rh_treinamento_inscricoes, rh_treinamento_
 // respostas; GET confirmado pela Lovable em 03/08/2026 via "recurso"). Sem
 // incluir_gabarito=1 o GET de questoes NÃO traz correta/explicacao — use
-// incluir_gabarito só no painel do RH, nunca pro colaborador. Escrita
-// (responder prova, atualizar inscrição) ainda não confirmada — não expor
-// ação de "enviar prova" até a Lovable liberar isso. ---
+// incluir_gabarito só no painel do RH, nunca pro colaborador.
+//
+// Escrita confirmada em 03/08/2026:
+// - POST recurso=respostas: registra 1 resposta ({inscricao_id, questao_id,
+//   resposta, tempo_ms, tentativa?}); acertou é calculado no servidor.
+// - POST recurso=prova (fluxo completo, preferir este): {inscricao_id,
+//   respostas:[{questao_id,resposta,tempo_ms}], tempo_gasto_min?}; incrementa
+//   tentativas, grava respostas corrigidas, calcula nota e já atualiza a
+//   inscrição (concluido+concluido_em se aprovado, senão continua
+//   em_andamento). Retorna {data: inscricao, resultado: {acertos, total,
+//   nota, prova_min_acerto, aprovado, tentativa}}.
+// - PATCH recurso=inscricoes&id=: pra progresso de aula (status, iniciado_em,
+//   tempo_gasto_min, certificado_url). ---
 
 function getRhTreinamentos(
   { recurso, treinamentoId, colaboradorId, inscricaoId, status, ativo, incluirGabarito } = {},
@@ -755,6 +812,18 @@ function getRhTreinamentos(
     },
     actorId
   );
+}
+
+function postRhTreinamentoResposta(body, actorId) {
+  return lovablePost('/api/public/internal/rh-treinamentos', { recurso: 'respostas' }, body, actorId);
+}
+
+function postRhTreinamentoProva(body, actorId) {
+  return lovablePost('/api/public/internal/rh-treinamentos', { recurso: 'prova' }, body, actorId);
+}
+
+function patchRhTreinamentoInscricao(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-treinamentos', { recurso: 'inscricoes', id }, body, actorId);
 }
 
 module.exports = {
@@ -856,5 +925,13 @@ module.exports = {
   postRhCalendario,
   patchRhCalendario,
   deleteRhCalendario,
+  getRhComunicados,
+  postRhComunicado,
+  patchRhComunicado,
+  deleteRhComunicado,
+  postRhComunicadoLeitura,
   getRhTreinamentos,
+  postRhTreinamentoResposta,
+  postRhTreinamentoProva,
+  patchRhTreinamentoInscricao,
 };
