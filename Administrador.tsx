@@ -4482,7 +4482,9 @@ function AdminContabilidadeResponsaveisModal({
             <>
               <View style={styles.requestModalHeader}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.requestModalTitle}>Responsáveis — {displayName}</Text>
+                  <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>
+                    Responsáveis — {displayName}
+                  </Text>
                   <Text style={adminStyles.detailSubEmail}>
                     Cada responsável acessa o Portal do Contador com o e-mail cadastrado aqui.
                   </Text>
@@ -4584,7 +4586,7 @@ function AdminContabilidadeResponsaveisModal({
             <>
               <View style={styles.requestModalHeader}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.requestModalTitle}>
+                  <Text style={[styles.requestModalTitle, { flex: 0 }]} numberOfLines={1}>
                     {formMode === 'create' ? 'Novo responsável' : `Editar — ${beingEdited?.nome ?? ''}`}
                   </Text>
                   <Text style={adminStyles.detailSubEmail}>Responsáveis — {displayName}</Text>
