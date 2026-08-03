@@ -22,6 +22,7 @@ import { Feather } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -6293,6 +6294,24 @@ function admFieldMaskMaxLength(mask: AdminFieldMask | undefined): number | undef
   return undefined;
 }
 
+// Converte o valor mascarado (exibido no campo) pro formato bruto que as APIs
+// reais esperam — CPF/CNPJ só dígitos, data em ISO (AAAA-MM-DD). Sem isso, a
+// Infosimples devolve "Parâmetro(s) inválido(s)" pro cpf/birthdate mesmo com
+// os nomes de campo certos (o site manda assim, confirmado comparando o JSON
+// de resposta real dos dois lados em 04/08/2026).
+function admUnmaskFieldValue(mask: AdminFieldMask | undefined, value: string): string {
+  if (!mask) return value;
+  if (mask === 'cpf' || mask === 'cnpj') return admOnlyDigits(value);
+  if (mask === 'date') {
+    const parts = value.split('/');
+    if (parts.length !== 3) return value;
+    const [dd, mm, yyyy] = parts;
+    if (dd?.length !== 2 || mm?.length !== 2 || yyyy?.length !== 4) return value;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return value;
+}
+
 function admFormatBRL(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return '—';
   return `R$ ${value.toFixed(2).replace('.', ',')}`;
@@ -6376,6 +6395,20 @@ type AdminIntegrationService = {
   fields: AdminIntegrationServiceField[];
   defaultExpanded?: boolean;
   extraActionLabel?: string;
+  // Link de documentação do provedor pra esse serviço específico (botão
+  // "Documentação" ao lado de "Executar consulta", igual ao site).
+  docsUrl?: string;
+};
+
+// Resultado de uma consulta real (Busca PF) — code/codeMessage vêm direto do
+// JSON da Infosimples/Fonte Data (code 200 = sucesso; qualquer outro código,
+// mesmo com HTTP 200, é erro de negócio — ex: parâmetro inválido). raw guarda
+// o JSON completo formatado pro "Ver JSON completo", igual ao site.
+type AdminBuscaPfResultDisplay = {
+  ok: boolean;
+  code?: number | string;
+  message: string;
+  raw?: string;
 };
 
 // Nomes de campo (chave) já batem com os parâmetros REAIS da API, confirmados
@@ -6390,6 +6423,7 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
       { key: 'cpf', label: 'CPF', required: true, mask: 'cpf', placeholder: '000.000.000-00' },
       { key: 'birthdate', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
     ],
+    docsUrl: 'https://api.infosimples.com/consultas/receita-federal/cpf',
   },
   {
     code: 'antecedentes-criminais/pf/emit',
@@ -6403,6 +6437,7 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
       { key: 'nome_pai', label: 'Nome do pai (opcional)' },
       { key: 'uf_nascimento', label: 'UF de nascimento (opcional)', placeholder: 'Ex: SP' },
     ],
+    docsUrl: 'https://api.infosimples.com/consultas/antecedentes-criminais/pf/emit',
   },
   {
     code: 'tribunal/trf2/certidao',
@@ -6419,6 +6454,7 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
       { key: 'birthdate', label: 'Data de nascimento (PF)', mask: 'date', placeholder: 'DD/MM/AAAA' },
       { key: 'cnpj', label: 'CNPJ (PJ)', mask: 'cnpj', placeholder: '00.000.000/0000-00' },
     ],
+    docsUrl: 'https://api.infosimples.com/consultas/tribunal/trf2/certidao',
   },
   {
     code: 'cnis/pre-inscricao',
@@ -6430,6 +6466,7 @@ const ADMIN_BUSCAPF_INFOSIMPLES_SERVICES: AdminIntegrationService[] = [
       { key: 'birthdate', label: 'Data de nascimento', required: true, mask: 'date', placeholder: 'DD/MM/AAAA' },
       { key: 'nome_mae', label: 'Nome da mãe', required: true },
     ],
+    docsUrl: 'https://api.infosimples.com/consultas/cnis/pre-inscricao',
   },
 ];
 
@@ -6537,8 +6574,9 @@ function AdminIntegrationServiceCard({
   onExecute: () => void;
   onExtraAction?: () => void;
   isExecuting?: boolean;
-  result?: { ok: boolean; message: string };
+  result?: AdminBuscaPfResultDisplay;
 }) {
+  const [showRawJson, setShowRawJson] = useState(false);
   return (
     <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
       <Pressable style={adminStyles.serviceCardHeaderRow} onPress={onToggleExpand} hitSlop={4}>
@@ -6556,7 +6594,7 @@ function AdminIntegrationServiceCard({
             {service.fields.map((field) => {
               const currentValue = values[field.key] ?? field.defaultValue ?? '';
               return (
-                <View key={field.key} style={{ minWidth: 160, flexGrow: 1 }}>
+                <View key={field.key} style={{ minWidth: 140, flexBasis: '45%', flexGrow: 1 }}>
                   <Text style={adminStyles.fieldLabel}>
                     {field.label}
                     {field.required ? <Text style={{ color: '#D93A3A' }}> *</Text> : null}
@@ -6610,20 +6648,54 @@ function AdminIntegrationServiceCard({
                 <Text style={adminStyles.outlineButtonText}>{service.extraActionLabel}</Text>
               </Pressable>
             ) : null}
+            {service.docsUrl ? (
+              <Pressable
+                style={adminStyles.pillButtonOutline}
+                onPress={() => Linking.openURL(service.docsUrl as string)}
+              >
+                <Feather name="book-open" size={13} color="#15203E" />
+                <Text style={adminStyles.outlineButtonText}>Documentação</Text>
+              </Pressable>
+            ) : null}
           </View>
 
           {result ? (
-            <View
-              style={[
-                adminStyles.integrationInfoBox,
-                adminStyles.fieldSpacing,
-                { backgroundColor: result.ok ? '#E7F5EC' : '#FBEAEA' },
-              ]}
-            >
-              <Feather name={result.ok ? 'check-circle' : 'alert-triangle'} size={15} color={result.ok ? GREEN : '#C0392B'} />
-              <Text style={[adminStyles.integrationInfoText, { color: result.ok ? '#1E5B36' : '#8A2E24' }]}>
-                {result.message}
-              </Text>
+            <View style={adminStyles.fieldSpacing}>
+              <View
+                style={[
+                  adminStyles.integrationInfoBox,
+                  { backgroundColor: result.ok ? '#E7F5EC' : '#FBEAEA' },
+                ]}
+              >
+                <Feather name={result.ok ? 'check-circle' : 'alert-triangle'} size={15} color={result.ok ? GREEN : '#C0392B'} />
+                <Text style={[adminStyles.integrationInfoText, { color: result.ok ? '#1E5B36' : '#8A2E24' }]}>
+                  {result.code !== undefined ? `${result.code} — ${result.message}` : result.message}
+                </Text>
+              </View>
+
+              {result.raw ? (
+                <>
+                  <Pressable
+                    style={[adminStyles.pillButtonOutline, adminStyles.fieldSpacing, { alignSelf: 'flex-start' }]}
+                    onPress={() => setShowRawJson((prev) => !prev)}
+                  >
+                    <Feather name={showRawJson ? 'chevron-up' : 'chevron-down'} size={13} color="#15203E" />
+                    <Text style={adminStyles.outlineButtonText}>
+                      {showRawJson ? 'Ocultar JSON completo' : 'Ver JSON completo'}
+                    </Text>
+                  </Pressable>
+                  {showRawJson ? (
+                    <ScrollView
+                      style={[adminStyles.rawJsonBox, adminStyles.fieldSpacing]}
+                      nestedScrollEnabled
+                    >
+                      <Text style={adminStyles.rawJsonText} selectable>
+                        {result.raw}
+                      </Text>
+                    </ScrollView>
+                  ) : null}
+                </>
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -6670,7 +6742,7 @@ function AdminBuscaPfProviderPanel({
   onChangeField: (serviceCode: string, fieldKey: string, value: string) => void;
   onExecute: (service: AdminIntegrationService) => void;
   executingServiceCode: string | null;
-  results: Record<string, { ok: boolean; message: string }>;
+  results: Record<string, AdminBuscaPfResultDisplay>;
   onOpenHistorico: () => void;
   uso: AdminBuscaPfUso | undefined;
   isLoadingUso: boolean | undefined;
@@ -6707,7 +6779,15 @@ function AdminBuscaPfProviderPanel({
               />
             </View>
 
-            <View style={adminStyles.pillButtonRow}>
+            {provedor === 'infosimples' ? (
+              <View style={[adminStyles.staticField, adminStyles.fieldSpacing]}>
+                <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                  Endpoint base: api.infosimples.com/api/v2
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={[adminStyles.pillButtonRow, adminStyles.fieldSpacing]}>
               <Pressable
                 style={[adminStyles.pillButtonOutline, isTesting ? { opacity: 0.6 } : null]}
                 onPress={onTestConnection}
@@ -6716,6 +6796,15 @@ function AdminBuscaPfProviderPanel({
                 <Feather name="check-circle" size={14} color="#15203E" />
                 <Text style={adminStyles.outlineButtonText}>{isTesting ? 'Testando...' : 'Testar conexão'}</Text>
               </Pressable>
+              {provedor === 'infosimples' ? (
+                <Pressable
+                  style={adminStyles.pillButtonOutline}
+                  onPress={() => Linking.openURL('https://api.infosimples.com')}
+                >
+                  <Feather name="book-open" size={13} color="#15203E" />
+                  <Text style={adminStyles.outlineButtonText}>Documentação Infosimples</Text>
+                </Pressable>
+              ) : null}
             </View>
           </>
         )}
@@ -6979,7 +7068,7 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
   const [buscaPfStatusError, setBuscaPfStatusError] = useState<string | null>(null);
   const [testingBuscaPfProvider, setTestingBuscaPfProvider] = useState<AdminBuscaPfProvider | null>(null);
   const [executingBuscaPfServiceCode, setExecutingBuscaPfServiceCode] = useState<string | null>(null);
-  const [buscaPfResults, setBuscaPfResults] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const [buscaPfResults, setBuscaPfResults] = useState<Record<string, AdminBuscaPfResultDisplay>>({});
   const [buscaPfHistoricoProvider, setBuscaPfHistoricoProvider] = useState<AdminBuscaPfProvider | null>(null);
   const [buscaPfHistoricoRows, setBuscaPfHistoricoRows] = useState<AdminBuscaPfHistoricoItem[] | null>(null);
   const [isLoadingBuscaPfHistorico, setIsLoadingBuscaPfHistorico] = useState(false);
@@ -7054,7 +7143,10 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
       service.fields.forEach((field) => {
         const raw = values[field.key];
         if (!raw) return;
-        params[field.key] = field.key === 'tipo_certidao' ? ADMIN_TRF2_TIPO_CERTIDAO_CODES[raw] ?? raw : raw;
+        params[field.key] =
+          field.key === 'tipo_certidao'
+            ? ADMIN_TRF2_TIPO_CERTIDAO_CODES[raw] ?? raw
+            : admUnmaskFieldValue(field.mask, raw);
       });
       const missing = service.fields.filter((f) => f.required && !params[f.key]);
       if (missing.length > 0) {
@@ -7065,8 +7157,15 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
       executarAdminBuscaPfConsulta({ provedor, service: service.code, params }, actorId)
         .then((res) => {
           const resultado = (res.resultado ?? {}) as Record<string, unknown>;
-          const message = String(resultado.code_message ?? resultado.message ?? 'Consulta realizada com sucesso.');
-          setBuscaPfResults((prev) => ({ ...prev, [service.code]: { ok: true, message } }));
+          // A Infosimples/Fonte Data devolvem HTTP 200 mesmo em erro de negócio
+          // (ex: parâmetro inválido) — o code real dentro do JSON é que manda.
+          const code = resultado.code as number | string | undefined;
+          const ok = Number(code) === 200;
+          const message = String(
+            resultado.code_message ?? resultado.message ?? (ok ? 'Consulta realizada com sucesso.' : 'Falha na consulta.')
+          );
+          const raw = JSON.stringify(resultado, null, 2);
+          setBuscaPfResults((prev) => ({ ...prev, [service.code]: { ok, code, message, raw } }));
         })
         .catch((err) => {
           const message = err instanceof Error ? err.message : 'Tente novamente.';
@@ -10728,6 +10827,18 @@ const adminStyles = StyleSheet.create({
     color: '#3A4160',
     fontSize: 12,
     lineHeight: 18,
+  },
+  rawJsonBox: {
+    maxHeight: 260,
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    padding: 12,
+  },
+  rawJsonText: {
+    color: '#E2E8F0',
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   integrationBullet: {
     color: '#4C5470',
