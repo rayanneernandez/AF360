@@ -3870,11 +3870,17 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
     setIsLoading(true);
     setErrorMessage(null);
 
+    const labelCall = <T,>(label: string, promise: Promise<T>): Promise<T> =>
+      promise.catch((err) => {
+        const base = err instanceof Error ? err.message : String(err);
+        throw new Error(`[${label} · treinamentoId=${courseId}] ${base}`);
+      });
+
     Promise.all([
-      fetchRhTreinamentoDetalhe(courseId),
-      fetchRhTreinamentoAulas(courseId),
-      fetchRhTreinamentoQuestoes(courseId),
-      fetchRhTreinamentoInscricoes({ colaboradorId, treinamentoId: courseId }),
+      labelCall('treinamento', fetchRhTreinamentoDetalhe(courseId)),
+      labelCall('aulas', fetchRhTreinamentoAulas(courseId)),
+      labelCall('questoes', fetchRhTreinamentoQuestoes(courseId)),
+      labelCall('inscricoes', fetchRhTreinamentoInscricoes({ colaboradorId, treinamentoId: courseId })),
     ])
       .then(([treinamentoData, aulasData, questoesData, inscricoesData]) => {
         if (!isActive) return;
@@ -4261,10 +4267,16 @@ function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) 
     setIsLoading(true);
     setErrorMessage(null);
 
+    const labelExamCall = <T,>(label: string, promise: Promise<T>): Promise<T> =>
+      promise.catch((err) => {
+        const base = err instanceof Error ? err.message : String(err);
+        throw new Error(`[${label} · treinamentoId=${courseId}] ${base}`);
+      });
+
     Promise.all([
-      fetchRhTreinamentoDetalhe(courseId),
-      fetchRhTreinamentoQuestoes(courseId, false),
-      fetchRhTreinamentoInscricoes({ colaboradorId, treinamentoId: courseId }),
+      labelExamCall('treinamento', fetchRhTreinamentoDetalhe(courseId)),
+      labelExamCall('questoes', fetchRhTreinamentoQuestoes(courseId, false)),
+      labelExamCall('inscricoes', fetchRhTreinamentoInscricoes({ colaboradorId, treinamentoId: courseId })),
     ])
       .then(([treinamentoData, questoesData, inscricoesData]) => {
         setTreinamento(treinamentoData);
