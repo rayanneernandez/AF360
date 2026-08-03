@@ -4311,15 +4311,15 @@ function AdminContabilidadesModal({
               </View>
             </>
           )}
-
-          <AdminContabilidadeResponsaveisModal
-            visible={respContabilidade !== null}
-            contabilidade={respContabilidade}
-            actorId={actorId}
-            onClose={() => setRespContabilidade(null)}
-            inline
-          />
         </View>
+
+        <AdminContabilidadeResponsaveisModal
+          visible={respContabilidade !== null}
+          contabilidade={respContabilidade}
+          actorId={actorId}
+          onClose={() => setRespContabilidade(null)}
+          inline
+        />
       </View>
     </Modal>
   );
