@@ -210,6 +210,15 @@ export async function fetchRhStats(): Promise<RhStats> {
   return json.data as RhStats;
 }
 
+// GET /api/rh/colaboradores/:id -> registro completo de UM colaborador.
+// Usado tanto pelo lado RH quanto pelo self-service do colaborador (Meu
+// Perfil) — o endpoint não tem restrição própria de papel, e o colaborador
+// só busca o próprio id (identity.colaboradorId vindo do login).
+export async function fetchRhColaboradorDetalhe(id: string): Promise<RhColaboradorRaw> {
+  const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(id)}`);
+  return json.data as RhColaboradorRaw;
+}
+
 // PATCH real em rh_colaboradores (dados pessoais/contrato/bancário/uniforme)
 // — endpoint confirmado pelo Lovable em 29/07/2026, aceita null pra limpar um
 // campo. Body: chaves cruas da tabela (mesmos nomes de RhColaboradorRaw).

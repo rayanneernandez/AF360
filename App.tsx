@@ -85,6 +85,8 @@ import {
   fetchColaboradorBeneficios,
   fetchColaboradorNotificacoes,
   fetchColaboradorContracheques,
+  fetchRhColaboradorDetalhe,
+  type RhColaboradorRaw,
   ApiError,
   type ConversaResumo,
   type ConversaMensagem,
@@ -926,6 +928,23 @@ const ColaboradorNotificationsContext = createContext<{
   items: ColaboradorNotificacaoItem[];
 }>({
   items: [],
+});
+
+// Registro real do colaborador logado (rh_colaboradores, via
+// GET /api/rh/colaboradores/:id) — busca única, feita aqui no topo e
+// compartilhada por qualquer tela/menu que precise do nome/cargo/unidade
+// reais (SideMenu, Dashboard, Meu Perfil), em vez de cada tela refazer a
+// mesma chamada. Fica null quando identity.colaboradorId é null (usuário sem
+// vínculo no RH) — nesse caso as telas mostram o estado vazio, nunca dado
+// fabricado.
+const ColaboradorPerfilContext = createContext<{
+  perfil: RhColaboradorRaw | null;
+  isLoading: boolean;
+  errorMessage: string | null;
+}>({
+  perfil: null,
+  isLoading: false,
+  errorMessage: null,
 });
 
 const SecurityPreferencesContext = createContext<{
@@ -2777,9 +2796,49 @@ export default function App() {
     };
   }, [identity?.colaboradorId]);
 
+  const [colaboradorPerfil, setColaboradorPerfil] = useState<RhColaboradorRaw | null>(null);
+  const [isLoadingColaboradorPerfil, setIsLoadingColaboradorPerfil] = useState(false);
+  const [colaboradorPerfilError, setColaboradorPerfilError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const colaboradorId = identity?.colaboradorId ?? null;
+    if (!colaboradorId) {
+      setColaboradorPerfil(null);
+      setColaboradorPerfilError(null);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoadingColaboradorPerfil(true);
+    setColaboradorPerfilError(null);
+
+    fetchRhColaboradorDetalhe(colaboradorId)
+      .then((data) => {
+        if (isActive) setColaboradorPerfil(data);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setColaboradorPerfil(null);
+          setColaboradorPerfilError(
+            err instanceof Error ? err.message : 'Não foi possível carregar seus dados cadastrais.'
+          );
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoadingColaboradorPerfil(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [identity?.colaboradorId]);
+
   return (
     <SafeAreaProvider>
       <AuthIdentityContext.Provider value={{ identity, setIdentity }}>
+      <ColaboradorPerfilContext.Provider
+        value={{ perfil: colaboradorPerfil, isLoading: isLoadingColaboradorPerfil, errorMessage: colaboradorPerfilError }}
+      >
       <AdminThemeContext.Provider
         value={{ theme: adminTheme, temas: adminThemePresets, isLoading: isLoadingAdminTemas, applyTheme: applyAdminTheme }}
       >
@@ -2930,6 +2989,7 @@ export default function App() {
       </UserRoleContext.Provider>
       </ColaboradorNotificationsContext.Provider>
       </AdminThemeContext.Provider>
+      </ColaboradorPerfilContext.Provider>
       </AuthIdentityContext.Provider>
     </SafeAreaProvider>
   );
@@ -3530,6 +3590,10 @@ function TwoFactorVerificationScreen({ navigation }: ScreenProps<'TwoFactorVerif
 function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
   const { identity } = useContext(AuthIdentityContext);
   const colaboradorId = identity?.colaboradorId ?? null;
+  // Nome real de quem logou (profiles.full_name, via login) — nunca o mock
+  // "Bruno Lima". Se o login ainda não resolveu nome nenhum, mostra a
+  // saudação sem nome em vez de inventar um.
+  const greetingFirstName = identity?.fullName ? getFirstName(identity.fullName) : null;
   const [homeData, setHomeData] = useState<ColaboradorHomeData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -3618,7 +3682,7 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
             style={styles.panelWatermarkLogo}
             resizeMode="contain"
           />
-          <Text style={styles.panelGreeting}>Bom dia, {currentUserFirstName}</Text>
+          <Text style={styles.panelGreeting}>{greetingFirstName ? `Bom dia, ${greetingFirstName}` : 'Bom dia'}</Text>
           <Text style={styles.panelTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.92}>
             Colaborador
           </Text>
@@ -5845,15 +5909,131 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
   );
 }
 
+// Dado real do colaborador logado (rh_colaboradores, via ColaboradorPerfilContext)
+// — nunca mais o mock "Bruno Lima". '—' representa coluna real vazia no
+// banco, não dado fabricado. Compartilhado por ProfileScreen/ProfileSectionScreen.
+function profileFieldValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return String(value);
+}
+
+function formatDateOnlyBR(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (!match) return raw;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
+function buildColaboradorProfileSummary(row: RhColaboradorRaw | null): ProfileField[] {
+  const f = profileFieldValue;
+  return [
+    { label: 'Matrícula', value: f(row?.matricula) },
+    { label: 'Cargo', value: f(row?.cargo) },
+    { label: 'Unidade', value: f(row?.posto_trabalho) },
+    { label: 'Admissão', value: formatDateOnlyBR(row?.data_admissao) },
+    { label: 'E-mail', value: f(row?.email_corporativo ?? row?.email_pessoal) },
+    { label: 'Telefone', value: f(row?.telefone ?? row?.celular) },
+  ];
+}
+
+function buildColaboradorProfileSections(
+  row: RhColaboradorRaw | null,
+  identity: AuthIdentity | null
+): ProfileSection[] {
+  const f = profileFieldValue;
+  const footerNote = 'Para alterar dados cadastrais, abra um chamado para o RH.';
+  return [
+    {
+      id: 'personal',
+      label: 'Pessoal',
+      fields: [
+        { label: 'Nome completo', value: f(row?.nome_completo ?? identity?.fullName) },
+        { label: 'Nome social', value: f(row?.['nome_social']) },
+        { label: 'CPF', value: f(row?.cpf) },
+        { label: 'RG', value: f(row?.rg) },
+        { label: 'Nascimento', value: formatDateOnlyBR(row?.data_nascimento) },
+        { label: 'Estado civil', value: f(row?.estado_civil) },
+        { label: 'Sexo', value: f(row?.sexo) },
+        { label: 'Telefone', value: f(row?.telefone ?? row?.celular) },
+        { label: 'WhatsApp', value: f(row?.whatsapp) },
+        { label: 'E-mail', value: f(row?.email_corporativo ?? identity?.email ?? row?.email_pessoal) },
+        { label: 'E-mail pessoal', value: f(row?.email_pessoal) },
+      ],
+      footerNote,
+    },
+    {
+      id: 'professional',
+      label: 'Profissional',
+      fields: [
+        { label: 'Matrícula', value: f(row?.matricula) },
+        { label: 'Cargo', value: f(row?.cargo) },
+        { label: 'Setor', value: f(row?.setor) },
+        { label: 'Posto de trabalho', value: f(row?.posto_trabalho) },
+        { label: 'Tipo de contrato', value: f(row?.['tipo_contrato']) },
+        { label: 'Admissão', value: formatDateOnlyBR(row?.data_admissao) },
+        { label: 'Status', value: f(row?.status) },
+      ],
+      footerNote,
+    },
+    {
+      id: 'address',
+      label: 'Endereço',
+      fields: [
+        { label: 'CEP', value: f(row?.endereco_cep) },
+        { label: 'Logradouro', value: f(row?.endereco_logradouro) },
+        { label: 'Número', value: f(row?.endereco_numero) },
+        { label: 'Complemento', value: f(row?.endereco_complemento) },
+        { label: 'Bairro', value: f(row?.endereco_bairro) },
+        { label: 'Cidade', value: f(row?.endereco_cidade) },
+        { label: 'UF', value: f(row?.endereco_estado) },
+      ],
+      footerNote,
+    },
+    {
+      id: 'documents',
+      label: 'Documentos',
+      fields: [
+        { label: 'Nome da mãe', value: f(row?.nome_mae) },
+        { label: 'Nome do pai', value: f(row?.nome_pai) },
+        { label: 'Nacionalidade', value: f(row?.nacionalidade) },
+        { label: 'Naturalidade', value: f(row?.naturalidade) },
+      ],
+      cardNote:
+        'Documentos digitalizados (RG, CPF, CTPS, comprovantes) podem ser enviados pelo menu Solicitações -> Envio de Documentos.',
+      footerNote,
+    },
+    {
+      id: 'banking',
+      label: 'Bancário',
+      fields: [
+        { label: 'Banco', value: f(row?.banco) },
+        { label: 'Agência', value: f(row?.agencia) },
+        { label: 'Conta', value: f(row?.conta) },
+        { label: 'Chave PIX', value: f(row?.pix) },
+      ],
+      footerNote,
+    },
+  ];
+}
+
 function ProfileScreen({ navigation }: ScreenProps<'Profile'>) {
   const { identity } = useContext(AuthIdentityContext);
+  const { perfil, isLoading, errorMessage } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
+  const colaboradorId = identity?.colaboradorId ?? null;
+
+  const displayName = perfil?.nome_completo || identity?.fullName || '—';
+  const displayRoleAndUnit =
+    [perfil?.cargo, perfil?.posto_trabalho].filter((part): part is string => Boolean(part)).join(' · ') || '—';
+  const initials = getInitials(perfil?.nome_completo || identity?.fullName || 'Colaborador');
+  const summaryFields = buildColaboradorProfileSummary(perfil);
 
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.topBarContainer}>
-        <TopBar initials={currentUserInitials} />
+        <TopBar initials={initials} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -5862,28 +6042,39 @@ function ProfileScreen({ navigation }: ScreenProps<'Profile'>) {
           <View style={styles.profileSummaryWaveOne} />
           <View style={styles.profileSummaryWaveTwo} />
           <View style={styles.profileSummaryBadge}>
-            <Text style={styles.profileSummaryBadgeText}>{currentUserInitials}</Text>
+            <Text style={styles.profileSummaryBadgeText}>{initials}</Text>
           </View>
           <View style={styles.profileSummaryTextBlock}>
-            <Text style={styles.profileSummaryName}>{currentUser.fullName}</Text>
-            <Text style={styles.profileSummaryRole}>{currentUser.roleAndUnit}</Text>
+            <Text style={styles.profileSummaryName}>{displayName}</Text>
+            <Text style={styles.profileSummaryRole}>{displayRoleAndUnit}</Text>
           </View>
         </LinearGradient>
 
-        <View style={styles.profileSummaryCard}>
-          {profileSummaryFields.map((item, index) => (
-            <View
-              key={item.label}
-              style={[
-                styles.profileFieldRow,
-                index < profileSummaryFields.length - 1 ? styles.profileFieldBorder : null,
-              ]}
-            >
-              <Text style={styles.profileFieldLabel}>{item.label}</Text>
-              <Text style={styles.profileFieldValue}>{item.value}</Text>
-            </View>
-          ))}
-        </View>
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seu perfil
+            completo.
+          </Text>
+        ) : isLoading && !perfil ? (
+          <Text style={styles.conversaEmptyText}>Carregando seu perfil...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : (
+          <View style={styles.profileSummaryCard}>
+            {summaryFields.map((item, index) => (
+              <View
+                key={item.label}
+                style={[
+                  styles.profileFieldRow,
+                  index < summaryFields.length - 1 ? styles.profileFieldBorder : null,
+                ]}
+              >
+                <Text style={styles.profileFieldLabel}>{item.label}</Text>
+                <Text style={styles.profileFieldValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={styles.profileMenuCard}>
           {profileMenuItems.map((item, index) => (
@@ -5931,7 +6122,11 @@ function ProfileScreen({ navigation }: ScreenProps<'Profile'>) {
 }
 
 function ProfileSectionScreen({ navigation, route }: ScreenProps<'ProfileSection'>) {
-  const selectedSection = profileSections.find((section) => section.id === route.params.sectionId);
+  const { identity } = useContext(AuthIdentityContext);
+  const { perfil, isLoading, errorMessage } = useContext(ColaboradorPerfilContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const sections = buildColaboradorProfileSections(perfil, identity);
+  const selectedSection = sections.find((section) => section.id === route.params.sectionId);
 
   if (!selectedSection) {
     return null;
@@ -5941,7 +6136,10 @@ function ProfileSectionScreen({ navigation, route }: ScreenProps<'ProfileSection
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.topBarContainer}>
-        <TopBar initials={currentUserInitials} onAvatarPress={() => navigation.navigate('Profile')} />
+        <TopBar
+          initials={getInitials(perfil?.nome_completo || identity?.fullName || 'Colaborador')}
+          onAvatarPress={() => navigation.navigate('Profile')}
+        />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -5956,24 +6154,34 @@ function ProfileSectionScreen({ navigation, route }: ScreenProps<'ProfileSection
           <Text style={styles.profileDetailSubtitle}>Suas informações cadastrais</Text>
         </View>
 
-        <View style={styles.profileCard}>
-          {selectedSection.fields.map((item, index) => (
-            <View
-              key={item.label}
-              style={[
-                styles.profileDetailRow,
-                index < selectedSection.fields.length - 1 ? styles.profileFieldBorder : null,
-              ]}
-            >
-              <Text style={styles.profileDetailLabel}>{item.label}</Text>
-              <Text style={styles.profileDetailValue}>{item.value}</Text>
-            </View>
-          ))}
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar estes dados.
+          </Text>
+        ) : isLoading && !perfil ? (
+          <Text style={styles.conversaEmptyText}>Carregando...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : (
+          <View style={styles.profileCard}>
+            {selectedSection.fields.map((item, index) => (
+              <View
+                key={item.label}
+                style={[
+                  styles.profileDetailRow,
+                  index < selectedSection.fields.length - 1 ? styles.profileFieldBorder : null,
+                ]}
+              >
+                <Text style={styles.profileDetailLabel}>{item.label}</Text>
+                <Text style={styles.profileDetailValue}>{item.value}</Text>
+              </View>
+            ))}
 
-          {selectedSection.cardNote ? (
-            <Text style={styles.profileCardNote}>{selectedSection.cardNote}</Text>
-          ) : null}
-        </View>
+            {selectedSection.cardNote ? (
+              <Text style={styles.profileCardNote}>{selectedSection.cardNote}</Text>
+            ) : null}
+          </View>
+        )}
 
         <Text style={styles.profileFooterNote}>{selectedSection.footerNote ?? profileFooterNote}</Text>
       </ScrollView>
@@ -9742,6 +9950,7 @@ export function SideMenuOverlay({
   const isRH = variant === 'rh';
   const isAdmin = variant === 'administrador';
   const { identity } = useContext(AuthIdentityContext);
+  const { perfil: colaboradorPerfil, isLoading: isLoadingColaboradorPerfil } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
   const sections = isDirector
     ? directorSideMenuSections
@@ -9750,20 +9959,23 @@ export function SideMenuOverlay({
     : isAdmin
     ? adminSideMenuSections
     : sideMenuSections;
+  // Colaborador: nome/cargo reais (rh_colaboradores, via ColaboradorPerfilContext) —
+  // nunca o mock "Bruno Lima". Sem vínculo no RH, avisa em vez de fabricar cargo.
   const headerName = isDirector
     ? directorUser.fullName
     : isRH
     ? rhUser.fullName
     : isAdmin
     ? adminUser.fullName
-    : currentUser.fullName;
+    : colaboradorPerfil?.nome_completo || identity?.fullName || '—';
   const headerRole = isDirector
     ? directorUser.role
     : isRH
     ? rhUser.role
     : isAdmin
     ? adminUser.role
-    : currentUser.role;
+    : (colaboradorPerfil?.cargo as string | undefined) ||
+      (isLoadingColaboradorPerfil ? 'Carregando…' : identity?.colaboradorId ? '—' : 'Sem vínculo no RH');
   const headerGradientColors: [string, string] = isDirector
     ? ['#7A1230', '#B21B3E']
     : isRH
