@@ -3997,7 +3997,6 @@ function AdminContabilidadesModal({
   };
 
   return (
-    <>
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.requestModalBackdrop}>
         <View style={styles.requestModalCard}>
@@ -4312,22 +4311,25 @@ function AdminContabilidadesModal({
               </View>
             </>
           )}
+
+          <AdminContabilidadeResponsaveisModal
+            visible={respContabilidade !== null}
+            contabilidade={respContabilidade}
+            actorId={actorId}
+            onClose={() => setRespContabilidade(null)}
+            inline
+          />
         </View>
       </View>
     </Modal>
-
-    <AdminContabilidadeResponsaveisModal
-      visible={respContabilidade !== null}
-      contabilidade={respContabilidade}
-      actorId={actorId}
-      onClose={() => setRespContabilidade(null)}
-    />
-    </>
   );
 }
 
 // ---------- Modal "Responsáveis" de uma Contabilidade (tabela
-// contabilidade_responsaveis, confirmada pela Lovable em 04/08/2026) ----------
+// contabilidade_responsaveis, confirmada pela Lovable em 04/08/2026). Sempre
+// aberto de DENTRO do AdminContabilidadesModal já visível — por isso aceita
+// inline (overlay absoluto, sem <Modal> nativo próprio), evitando o bug de
+// modal-em-modal já visto e corrigido em outras telas deste arquivo. ----------
 
 type AdminContabilidadeResponsavelFormValues = {
   nome: string;
@@ -4345,11 +4347,18 @@ function AdminContabilidadeResponsaveisModal({
   contabilidade,
   actorId,
   onClose,
+  inline,
 }: {
   visible: boolean;
   contabilidade: AdminContabilidadeItem | null;
   actorId?: string | null;
   onClose: () => void;
+  // inline=true: renderiza como overlay absoluto dentro do <Modal> pai
+  // (AdminContabilidadesModal) já visível, em vez de abrir um <Modal> nativo
+  // próprio — evita o bug de modal-em-modal já visto e corrigido em
+  // Notificações (dois <Modal> nativos empilhados podem não repassar toque
+  // em alguns aparelhos, e o modal de fora pode parar de reabrir).
+  inline?: boolean;
 }) {
   const [view, setView] = useState<'list' | 'form'>('list');
   const [responsaveis, setResponsaveis] = useState<AdminContabilidadeResponsavelItem[]>([]);
@@ -4462,9 +4471,12 @@ function AdminContabilidadeResponsaveisModal({
 
   const displayName = contabilidade ? contabilidade.nomeFantasia || contabilidade.razaoSocial || '(sem nome)' : '';
 
-  return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={styles.requestModalBackdrop}>
+  if (inline && !visible) {
+    return null;
+  }
+
+  const content = (
+    <View style={styles.requestModalBackdrop}>
         <View style={styles.requestModalCard}>
           {view === 'list' ? (
             <>
@@ -4646,7 +4658,16 @@ function AdminContabilidadeResponsaveisModal({
             </>
           )}
         </View>
-      </View>
+    </View>
+  );
+
+  if (inline) {
+    return <View style={adminStyles.inlinePickerLayer}>{content}</View>;
+  }
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      {content}
     </Modal>
   );
 }
