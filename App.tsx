@@ -5307,6 +5307,23 @@ function UniformsScreen({ navigation }: ScreenProps<'Uniforms'>) {
                         Motivo da recusa: {pedido.motivo_recusa}
                       </Text>
                     ) : null}
+                    {pedido.status === 'recusado' || pedido.status === 'cancelado' ? null : (
+                      <View style={styles.uniformRecebidoRow}>
+                        <Feather
+                          name={pedido.status === 'entregue' ? 'check-circle' : 'circle'}
+                          size={14}
+                          color={pedido.status === 'entregue' ? '#2B9862' : '#A7AEC2'}
+                        />
+                        <Text
+                          style={[
+                            styles.uniformRecebidoText,
+                            pedido.status === 'entregue' ? { color: '#2B9862' } : null,
+                          ]}
+                        >
+                          {pedido.status === 'entregue' ? 'Recebido' : 'Ainda não recebido'}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 );
               })
@@ -5367,15 +5384,13 @@ function brDateLabelToIsoApp(label: string): string | null {
   return `${year}-${month}-${day}`;
 }
 
-function NewReimbursementModal({
-  visible,
+// Formulário de nova despesa — inline (sempre visível no topo da tela),
+// mesmo layout usado no site: card de formulário primeiro, lista embaixo.
+function NewReimbursementForm({
   colaboradorId,
-  onClose,
   onCreated,
 }: {
-  visible: boolean;
   colaboradorId: string;
-  onClose: () => void;
   onCreated: () => void;
 }) {
   const [descricao, setDescricao] = useState('');
@@ -5383,15 +5398,6 @@ function NewReimbursementModal({
   const [dataDespesa, setDataDespesa] = useState('');
   const [valorInput, setValorInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    if (visible) {
-      setDescricao('');
-      setCategoria('');
-      setDataDespesa('');
-      setValorInput('');
-    }
-  }, [visible]);
 
   const handleSubmit = () => {
     if (!descricao.trim()) {
@@ -5412,8 +5418,11 @@ function NewReimbursementModal({
       valor,
     })
       .then(() => {
+        setDescricao('');
+        setCategoria('');
+        setDataDespesa('');
+        setValorInput('');
         onCreated();
-        onClose();
       })
       .catch((err) => {
         Alert.alert('Não foi possível enviar', err instanceof Error ? err.message : 'Tente novamente.');
@@ -5422,66 +5431,55 @@ function NewReimbursementModal({
   };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={styles.requestModalBackdrop}>
-        <View style={styles.requestModalCard}>
-          <View style={styles.requestModalHeader}>
-            <Text style={styles.requestModalTitle}>Nova despesa</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
-              <Feather name="x" size={20} color="#677089" />
-            </Pressable>
-          </View>
+    <View style={[styles.reimbursementCard, styles.spacingTop]}>
+      <Text style={styles.requestModalTitle}>Nova solicitação</Text>
 
-          <ScrollView keyboardShouldPersistTaps="handled">
-            <Text style={styles.requestFieldLabel}>Descrição</Text>
-            <TextInput
-              style={styles.processTextInput}
-              value={descricao}
-              onChangeText={setDescricao}
-              placeholder="Ex.: Combustível - visita técnica"
-              placeholderTextColor="#A7AEC2"
-            />
+      <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição</Text>
+      <TextInput
+        style={styles.processTextInput}
+        value={descricao}
+        onChangeText={setDescricao}
+        placeholder="Ex.: Combustível - visita técnica"
+        placeholderTextColor="#A7AEC2"
+      />
 
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Categoria (opcional)</Text>
-            <TextInput
-              style={styles.processTextInput}
-              value={categoria}
-              onChangeText={setCategoria}
-              placeholder="Ex.: Transporte, Alimentação..."
-              placeholderTextColor="#A7AEC2"
-            />
+      <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Categoria (opcional)</Text>
+      <TextInput
+        style={styles.processTextInput}
+        value={categoria}
+        onChangeText={setCategoria}
+        placeholder="Ex.: Transporte, Alimentação..."
+        placeholderTextColor="#A7AEC2"
+      />
 
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Data da despesa</Text>
-            <TextInput
-              style={styles.processTextInput}
-              value={dataDespesa}
-              onChangeText={setDataDespesa}
-              placeholder="dd/mm/aaaa"
-              placeholderTextColor="#A7AEC2"
-              keyboardType="number-pad"
-            />
+      <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Data da despesa</Text>
+      <TextInput
+        style={styles.processTextInput}
+        value={dataDespesa}
+        onChangeText={setDataDespesa}
+        placeholder="dd/mm/aaaa"
+        placeholderTextColor="#A7AEC2"
+        keyboardType="number-pad"
+      />
 
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Valor</Text>
-            <TextInput
-              style={styles.processTextInput}
-              value={valorInput}
-              onChangeText={(text) => setValorInput(formatCurrencyInputApp(text))}
-              placeholder="0,00"
-              placeholderTextColor="#A7AEC2"
-              keyboardType="number-pad"
-            />
+      <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Valor</Text>
+      <TextInput
+        style={styles.processTextInput}
+        value={valorInput}
+        onChangeText={(text) => setValorInput(formatCurrencyInputApp(text))}
+        placeholder="0,00"
+        placeholderTextColor="#A7AEC2"
+        keyboardType="number-pad"
+      />
 
-            <Pressable
-              style={[styles.primaryButton, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
-              onPress={handleSubmit}
-              disabled={isSaving}
-            >
-              <Text style={styles.primaryButtonText}>{isSaving ? 'Enviando...' : 'Enviar'}</Text>
-            </Pressable>
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
+      <Pressable
+        style={[styles.primaryButton, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+        onPress={handleSubmit}
+        disabled={isSaving}
+      >
+        <Text style={styles.primaryButtonText}>{isSaving ? 'Enviando...' : 'Enviar'}</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -5491,7 +5489,6 @@ function ReimbursementScreen({ navigation }: ScreenProps<'Reimbursement'>) {
   const [items, setItems] = useState<ColaboradorReembolsoItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
 
   const loadReembolsos = useCallback(() => {
     if (!colaboradorId) {
@@ -5526,21 +5523,19 @@ function ReimbursementScreen({ navigation }: ScreenProps<'Reimbursement'>) {
           <Text style={styles.pageSubtitle}>Solicitações de despesas</Text>
         </View>
 
-        {colaboradorId ? (
-          <Pressable
-            style={[styles.requestsOpenButton, styles.spacingTop]}
-            onPress={() => setIsNewModalOpen(true)}
-          >
-            <Feather name="plus" size={16} color="#FFFFFF" />
-            <Text style={styles.requestsOpenButtonText}>Nova despesa</Text>
-          </Pressable>
-        ) : null}
-
         {!colaboradorId ? (
           <Text style={styles.conversaEmptyText}>
             Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seus reembolsos.
           </Text>
-        ) : isLoading ? (
+        ) : (
+          <NewReimbursementForm colaboradorId={colaboradorId} onCreated={loadReembolsos} />
+        )}
+
+        {colaboradorId ? (
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Minhas solicitações</Text>
+        ) : null}
+
+        {!colaboradorId ? null : isLoading ? (
           <Text style={styles.conversaEmptyText}>Carregando reembolsos...</Text>
         ) : errorMessage ? (
           <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
@@ -5571,15 +5566,6 @@ function ReimbursementScreen({ navigation }: ScreenProps<'Reimbursement'>) {
           })
         )}
       </ScrollView>
-
-      {colaboradorId ? (
-        <NewReimbursementModal
-          visible={isNewModalOpen}
-          colaboradorId={colaboradorId}
-          onClose={() => setIsNewModalOpen(false)}
-          onCreated={loadReembolsos}
-        />
-      ) : null}
     </SafeAreaView>
   );
 }
@@ -12981,6 +12967,17 @@ export const styles = StyleSheet.create({
   uniformCheckboxChecked: {
     borderColor: '#18955A',
     backgroundColor: '#18955A',
+  },
+  uniformRecebidoRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  uniformRecebidoText: {
+    color: '#7C8397',
+    fontSize: 12,
+    fontWeight: '600',
   },
   reimbursementCard: {
     backgroundColor: '#FFFFFF',
