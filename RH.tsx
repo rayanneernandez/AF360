@@ -7490,13 +7490,6 @@ export function RHTransferenciasScreen({ navigation }: ScreenProps<'RHTransferen
 
 // ---------- Comunicados ----------
 
-type AnnouncementFormValues = {
-  category: AnnouncementCategory;
-  title: string;
-  description: string;
-  audienceLabel: string;
-};
-
 // rh_comunicados não tem coluna de categoria (RH/SST/DP era só do mock) —
 // por isso o formulário e a lista abaixo não usam mais esse chip; só título,
 // descrição, link de anexo (não temos upload de arquivo ainda, só link) e
