@@ -492,6 +492,24 @@ function postBuscaPfAcao(acao, params = {}, body = {}, actorId) {
   return lovablePost('/api/public/internal/busca-pf', { acao, ...params }, body, actorId);
 }
 
+// --- Integrações: Dashboard (2 RPCs Postgres SECURITY DEFINER, expostas pelo
+// Lovable em 03/08/2026 pelo mesmo proxy interno — antes exigiam JWT real do
+// usuário master via auth.uid(), agora tem versão _internal() só p/
+// service_role). GET dashboard-performance sem params, chamado a cada 10s
+// pelo app (mesmos campos que o site usa: db, conexoes, cache, top_tabelas,
+// sessoes, volumes). GET dashboard-kpis?mes=&ano= (sem params = mês atual em
+// America/Sao_Paulo; aceita 1-12 e 2000-2100) — snapshot, mes,
+// serie_novos_colaboradores (sempre relativa a hoje, ignora mês selecionado),
+// top_unidades (top 5) e db_size_bytes.
+
+function getDashboardPerformance(actorId) {
+  return lovableGet('/api/public/internal/dashboard-performance', {}, actorId);
+}
+
+function getDashboardKpis({ mes, ano, actorId } = {}) {
+  return lovableGet('/api/public/internal/dashboard-kpis', { mes, ano }, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -558,4 +576,6 @@ module.exports = {
   postGmbAcao,
   getBuscaPf,
   postBuscaPfAcao,
+  getDashboardPerformance,
+  getDashboardKpis,
 };

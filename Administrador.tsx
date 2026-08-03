@@ -127,7 +127,11 @@ import {
   executarAdminBuscaPfConsulta,
   fetchAdminBuscaPfHistorico,
   fetchAdminBuscaPfUso,
+  fetchAdminDashboardPerformance,
+  fetchAdminDashboardKpis,
   ApiError,
+  type AdminDashboardPerformance,
+  type AdminDashboardKpis,
   type AdminDominioItem,
   type AdminCargoDominioItem,
   type AdminCargoDominioProvider,
@@ -781,102 +785,124 @@ function AdminUserFormModal({
 // ============================================================================
 // 1. Dashboard
 // ============================================================================
-// MOCK: números tirados do mockup real enviado pela Rayanne (snapshot de
-// banco/plataforma). Substituir por endpoints reais quando existirem.
-
-type PlatformMetric = {
-  id: string;
-  icon: FeatherIconName;
-  label: string;
-  value: string;
-  meta: string;
-  accentColor?: string;
-  accentBg?: string;
-};
-
-const adminPlatformMetricsMock: PlatformMetric[] = [
-  { id: 'db-size', icon: 'database', label: 'Banco de dados', value: '1.1 GB', meta: 'Tamanho total' },
-  { id: 'connections', icon: 'wifi', label: 'Conexões', value: '14/60', meta: '23% do limite' },
-  { id: 'queries', icon: 'activity', label: 'Queries ativas', value: '2', meta: '10 ociosas · 13 aguard.' },
-  {
-    id: 'cache-hit',
-    icon: 'check-circle',
-    label: 'Cache hit ratio',
-    value: '99.0%',
-    meta: 'Bom',
-    accentColor: GREEN,
-    accentBg: GREEN_BG,
-  },
-  { id: 'tps', icon: 'zap', label: 'Transações/s', value: '0.6', meta: '3.470.368 commits' },
-  { id: 'online', icon: 'users', label: 'Online agora', value: '0', meta: '0 na última hora' },
-];
-
-type BigTable = { id: string; name: string; sizeLabel: string; rowsLabel: string; sizeMb: number };
-
-const adminBiggestTablesMock: BigTable[] = [
-  { id: 't1', name: 'leg_pedido', sizeLabel: '227.3 MB', rowsLabel: '322.040 linhas', sizeMb: 227.3 },
-  { id: 't2', name: 'leg_itemped', sizeLabel: '163.0 MB', rowsLabel: '256.053 linhas', sizeMb: 163.0 },
-  { id: 't3', name: 'leg_abastecimentos', sizeLabel: '140.0 MB', rowsLabel: '276.693 linhas', sizeMb: 140.0 },
-  { id: 't4', name: 'q_resumo_dia', sizeLabel: '85.2 MB', rowsLabel: '308.759 linhas', sizeMb: 85.2 },
-  { id: 't5', name: 'q_estoque_mes', sizeLabel: '14.9 MB', rowsLabel: '77.819 linhas', sizeMb: 14.9 },
-  { id: 't6', name: 'q_tanque_dia', sizeLabel: '7.7 MB', rowsLabel: '25.752 linhas', sizeMb: 7.7 },
-  { id: 't7', name: 'q_compra_itens', sizeLabel: '4.5 MB', rowsLabel: '25.080 linhas', sizeMb: 4.5 },
-  // Itens 8 e 9: não vieram no mockup — completados de forma plausível
-  // (tamanho decrescente, nomenclatura seguindo o mesmo padrão das demais).
-  { id: 't8', name: 'leg_vendas_resumo', sizeLabel: '3.1 MB', rowsLabel: '18.200 linhas', sizeMb: 3.1 },
-  { id: 't9', name: 'notif_entregas', sizeLabel: '2.4 MB', rowsLabel: '12.400 linhas', sizeMb: 2.4 },
-  { id: 't10', name: 'rh_colaboradores', sizeLabel: '2.0 MB', rowsLabel: '1.930 linhas', sizeMb: 2.0 },
-];
-
-type HealthPair = { id: string; label: string; value: string; alert?: boolean };
-
-const adminDbHealthMock: HealthPair[] = [
-  { id: 'h1', label: 'Idle in transaction', value: '0' },
-  { id: 'h2', label: 'Deadlocks (acumulado)', value: '0' },
-  { id: 'h3', label: 'Rollbacks', value: '247.157' },
-  { id: 'h4', label: 'Arquivos temp', value: '41.817', alert: true },
-  { id: 'h5', label: 'Bytes temp', value: '113.7 GB' },
-  { id: 'h6', label: 'Profiles', value: '515' },
-  { id: 'h7', label: 'Colaboradores', value: '1.930' },
-  { id: 'h8', label: 'Notif. entregas', value: '0' },
-  { id: 'h9', label: 'Audit log', value: '5' },
-];
-
-const adminSnapshotMock = [
-  { id: 's1', value: '968', label: 'Colaboradores ativos', meta: '1930 no total' },
-  { id: 's2', value: '482', label: 'Usuários ativos', meta: '515 cadastrados' },
-  { id: 's3', value: '0%', label: 'Aderência (30 dias)', meta: '1 logaram em 30d' },
-  { id: 's4', value: '489', label: 'Sem acesso', meta: 'Sem login' },
-];
-
-const adminMonthMock = [
-  { id: 'm1', value: '0', label: 'Novos colaboradores' },
-  { id: 'm2', value: '1', label: 'Logins no mês' },
-  { id: 'm3', value: '0', label: 'Notificações enviadas' },
-  { id: 'm4', value: '0', label: 'Solicitações RH' },
-];
-
-const adminNewEmployeesChartMock = [
-  { label: 'Fev', value: 4 },
-  { label: 'Mar', value: 5 },
-  { label: 'Abr', value: 4 },
-  { label: 'Mai', value: 5 },
-  { label: 'Jun', value: 24 },
-  { label: 'Jul', value: 1 },
-];
-
-const adminTopUnidadesMock = [
-  { id: 'u1', name: 'Posto Monalisa', value: 43 },
-  { id: 'u2', name: 'Petromasa Irajá', value: 39 },
-  { id: 'u3', name: 'Posto de Abastecimento e Serviços V. M...', value: 36 },
-  { id: 'u4', name: 'Centro Automotivo Central do Brasil', value: 30 },
-  { id: 'u5', name: 'Auto Posto Mem de Sá Ltda', value: 30 },
-];
+// Dados 100% reais desde 03/08/2026: adm_plataforma_performance_internal()
+// (Performance da plataforma, Maiores tabelas e Saúde do banco — app faz
+// polling a cada 10s, igual ao site) e adm_dashboard_kpis_internal(mes,ano)
+// (Snapshot atual, No mês, gráfico de 6 meses e Top unidades — navegação por
+// mês/ano). As duas RPCs foram expostas pelo Lovable no proxy interno
+// (/api/public/internal/dashboard-performance e /dashboard-kpis), mesmo
+// padrão x-internal-secret + x-actor-id dos demais módulos. Ressalvas
+// confirmadas por eles: a série de 6 meses é sempre relativa a hoje (ignora o
+// mês/ano selecionado) e Top unidades vem fixo em 5 (métrica: nº de
+// colaboradores ativos por unidade).
 
 export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard'>) {
   const { theme } = useContext(AdminThemeContext);
-  const maxTableSize = Math.max(...adminBiggestTablesMock.map((item) => item.sizeMb));
-  const maxMonthValue = Math.max(1, ...adminNewEmployeesChartMock.map((item) => item.value));
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+
+  const [perf, setPerf] = useState<AdminDashboardPerformance | null>(null);
+  const [isLoadingPerf, setIsLoadingPerf] = useState(true);
+  const [perfError, setPerfError] = useState<string | null>(null);
+
+  const [kpis, setKpis] = useState<AdminDashboardKpis | null>(null);
+  const [isLoadingKpis, setIsLoadingKpis] = useState(true);
+  const [kpisError, setKpisError] = useState<string | null>(null);
+  const [selectedMes, setSelectedMes] = useState<number | null>(null);
+  const [selectedAno, setSelectedAno] = useState<number | null>(null);
+
+  // Performance: carrega na entrada e faz polling a cada 10s (igual ao site
+  // — badge "AO VIVO · atualiza a cada 10s").
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadPerf() {
+      try {
+        const data = await fetchAdminDashboardPerformance(actorId);
+        if (isActive) {
+          setPerf(data);
+          setPerfError(null);
+        }
+      } catch (err) {
+        if (isActive) {
+          setPerfError(err instanceof Error ? err.message : 'Não foi possível carregar as métricas da plataforma.');
+        }
+      } finally {
+        if (isActive) setIsLoadingPerf(false);
+      }
+    }
+
+    loadPerf();
+    const intervalId = setInterval(loadPerf, 10000);
+
+    return () => {
+      isActive = false;
+      clearInterval(intervalId);
+    };
+  }, [actorId]);
+
+  // KPIs: carrega o mês atual na entrada; setas ◀ ▶ reenviam mes/ano.
+  const loadKpis = useCallback(
+    (mes?: number, ano?: number) => {
+      setIsLoadingKpis(true);
+      setKpisError(null);
+      fetchAdminDashboardKpis({ mes, ano, actorId })
+        .then((data) => {
+          setKpis(data);
+          setSelectedMes(data.periodo?.mes ?? null);
+          setSelectedAno(data.periodo?.ano ?? null);
+        })
+        .catch((err) => {
+          setKpisError(err instanceof Error ? err.message : 'Não foi possível carregar os indicadores do mês.');
+        })
+        .finally(() => {
+          setIsLoadingKpis(false);
+        });
+    },
+    [actorId]
+  );
+
+  useEffect(() => {
+    loadKpis();
+  }, [loadKpis]);
+
+  function handlePrevMonth() {
+    if (selectedMes == null || selectedAno == null) return;
+    let mes = selectedMes - 1;
+    let ano = selectedAno;
+    if (mes < 1) {
+      mes = 12;
+      ano -= 1;
+    }
+    loadKpis(mes, ano);
+  }
+
+  function handleNextMonth() {
+    if (selectedMes == null || selectedAno == null) return;
+    let mes = selectedMes + 1;
+    let ano = selectedAno;
+    if (mes > 12) {
+      mes = 1;
+      ano += 1;
+    }
+    loadKpis(mes, ano);
+  }
+
+  const monthNavDisabled = selectedMes == null || selectedAno == null || isLoadingKpis;
+  const monthLabel = admMonthLabel(selectedMes, selectedAno);
+
+  const conexoesPercent =
+    perf && perf.db.max_connections > 0 ? (perf.conexoes.total / perf.db.max_connections) * 100 : null;
+  const tps =
+    perf && perf.cache.segundos_desde_reset > 0
+      ? (perf.cache.commits + perf.cache.rollbacks) / perf.cache.segundos_desde_reset
+      : null;
+  const cacheHitOk = perf ? perf.cache.hit_ratio >= 90 : false;
+
+  const maxTableSize = perf?.top_tabelas?.length ? Math.max(...perf.top_tabelas.map((t) => t.bytes)) : 1;
+  const maxMonthValue = kpis?.serie_novos_colaboradores?.length
+    ? Math.max(1, ...kpis.serie_novos_colaboradores.map((s) => s.novos))
+    : 1;
   const chartHeight = 90;
 
   return (
@@ -897,130 +923,279 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
             <Text style={adminStyles.liveBadgeText}>AO VIVO · atualiza a cada 10s</Text>
           </View>
           <Text style={adminStyles.heroTitle}>Dashboard</Text>
-          <Text style={adminStyles.heroSubtitle}>Visão geral da plataforma · Julho / 2026</Text>
+          <Text style={adminStyles.heroSubtitle}>Visão geral da plataforma · {monthLabel}</Text>
         </LinearGradient>
 
-        <Text style={adminStyles.sectionLabel}>PERFORMANCE DA PLATAFORMA</Text>
-        <View style={styles.grid}>
-          {adminPlatformMetricsMock.map((metric) => (
-            <View key={metric.id} style={styles.gridItem}>
-              <View style={styles.dashboardCard}>
-                <View
-                  style={[
-                    styles.iconShell,
-                    { backgroundColor: metric.accentBg ?? theme.primaryBg },
-                  ]}
-                >
-                  <Feather name={metric.icon} size={18} color={metric.accentColor ?? theme.primary} />
+        {isLoadingPerf && !perf ? (
+          <AdminEmptyState message="Carregando métricas da plataforma..." />
+        ) : perfError && !perf ? (
+          <AdminEmptyState message={perfError} />
+        ) : perf ? (
+          <>
+            <Text style={adminStyles.sectionLabel}>PERFORMANCE DA PLATAFORMA</Text>
+            <View style={styles.grid}>
+              <View style={styles.gridItem}>
+                <View style={styles.dashboardCard}>
+                  <View style={[styles.iconShell, { backgroundColor: theme.primaryBg }]}>
+                    <Feather name="database" size={18} color={theme.primary} />
+                  </View>
+                  <Text style={styles.dashboardCardValue}>{admFormatBytes(perf.db.bytes)}</Text>
+                  <Text style={styles.dashboardCardLabel}>Banco de dados</Text>
+                  <Text style={adminStyles.metricMeta}>Tamanho total</Text>
                 </View>
-                <Text style={styles.dashboardCardValue}>{metric.value}</Text>
-                <Text style={styles.dashboardCardLabel}>{metric.label}</Text>
-                <Text style={adminStyles.metricMeta}>{metric.meta}</Text>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={styles.dashboardCard}>
+                  <View style={[styles.iconShell, { backgroundColor: theme.primaryBg }]}>
+                    <Feather name="wifi" size={18} color={theme.primary} />
+                  </View>
+                  <Text style={styles.dashboardCardValue}>
+                    {perf.conexoes.total}/{perf.db.max_connections}
+                  </Text>
+                  <Text style={styles.dashboardCardLabel}>Conexões</Text>
+                  <Text style={adminStyles.metricMeta}>{admFormatPercent(conexoesPercent, 0)} do limite</Text>
+                </View>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={styles.dashboardCard}>
+                  <View style={[styles.iconShell, { backgroundColor: theme.primaryBg }]}>
+                    <Feather name="activity" size={18} color={theme.primary} />
+                  </View>
+                  <Text style={styles.dashboardCardValue}>{admFormatInt(perf.conexoes.ativas)}</Text>
+                  <Text style={styles.dashboardCardLabel}>Queries ativas</Text>
+                  <Text style={adminStyles.metricMeta}>
+                    {admFormatInt(perf.conexoes.ociosas)} ociosas · {admFormatInt(perf.conexoes.aguardando)} aguard.
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={styles.dashboardCard}>
+                  <View
+                    style={[styles.iconShell, { backgroundColor: cacheHitOk ? GREEN_BG : theme.primaryBg }]}
+                  >
+                    <Feather name="check-circle" size={18} color={cacheHitOk ? GREEN : theme.primary} />
+                  </View>
+                  <Text style={styles.dashboardCardValue}>{admFormatPercent(perf.cache.hit_ratio, 1)}</Text>
+                  <Text style={styles.dashboardCardLabel}>Cache hit ratio</Text>
+                  <Text style={adminStyles.metricMeta}>{cacheHitOk ? 'Bom' : 'Atenção'}</Text>
+                </View>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={styles.dashboardCard}>
+                  <View style={[styles.iconShell, { backgroundColor: theme.primaryBg }]}>
+                    <Feather name="zap" size={18} color={theme.primary} />
+                  </View>
+                  <Text style={styles.dashboardCardValue}>{tps != null ? tps.toFixed(1) : '—'}</Text>
+                  <Text style={styles.dashboardCardLabel}>Transações/s</Text>
+                  <Text style={adminStyles.metricMeta}>{admFormatInt(perf.cache.commits)} commits</Text>
+                </View>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={styles.dashboardCard}>
+                  <View style={[styles.iconShell, { backgroundColor: theme.primaryBg }]}>
+                    <Feather name="users" size={18} color={theme.primary} />
+                  </View>
+                  <Text style={styles.dashboardCardValue}>{admFormatInt(perf.sessoes.online_5min)}</Text>
+                  <Text style={styles.dashboardCardLabel}>Online agora</Text>
+                  <Text style={adminStyles.metricMeta}>{admFormatInt(perf.sessoes.online_1h)} na última hora</Text>
+                </View>
               </View>
             </View>
-          ))}
-        </View>
 
-        <View style={adminStyles.sectionCard}>
-          <Text style={adminStyles.sectionTitle}>Maiores tabelas (top 10)</Text>
-          {adminBiggestTablesMock.map((table, index) => (
-            <View
-              key={table.id}
-              style={[adminStyles.tableRow, index === adminBiggestTablesMock.length - 1 ? { marginBottom: 0 } : null]}
-            >
-              <View style={adminStyles.tableRowHeader}>
-                <Text style={adminStyles.tableRank}>{index + 1}</Text>
-                <Text style={adminStyles.tableName} numberOfLines={1}>
-                  {table.name}
-                </Text>
-                <Text style={adminStyles.tableMeta}>
-                  {table.sizeLabel} · {table.rowsLabel}
-                </Text>
-              </View>
-              <View style={adminStyles.tableProgressTrack}>
+            <View style={adminStyles.sectionCard}>
+              <Text style={adminStyles.sectionTitle}>Maiores tabelas (top 10)</Text>
+              {perf.top_tabelas.length === 0 ? (
+                <AdminEmptyState message="Nenhuma tabela retornada." />
+              ) : (
+                perf.top_tabelas.map((table, index) => (
+                  <View
+                    key={table.tabela}
+                    style={[
+                      adminStyles.tableRow,
+                      index === perf.top_tabelas.length - 1 ? { marginBottom: 0 } : null,
+                    ]}
+                  >
+                    <View style={adminStyles.tableRowHeader}>
+                      <Text style={adminStyles.tableRank}>{index + 1}</Text>
+                      <Text style={adminStyles.tableName} numberOfLines={1}>
+                        {table.tabela}
+                      </Text>
+                      <Text style={adminStyles.tableMeta}>
+                        {admFormatBytes(table.bytes)} · {admFormatInt(table.linhas)} linhas
+                      </Text>
+                    </View>
+                    <View style={adminStyles.tableProgressTrack}>
+                      <View
+                        style={[
+                          adminStyles.tableProgressFill,
+                          { width: `${Math.max(3, (table.bytes / maxTableSize) * 100)}%`, backgroundColor: theme.primary },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+
+            <View style={adminStyles.sectionCard}>
+              <Text style={adminStyles.sectionTitle}>Saúde do banco</Text>
+              {[
+                { id: 'h1', label: 'Idle in transaction', value: admFormatInt(perf.conexoes.idle_tx) },
+                { id: 'h2', label: 'Deadlocks (acumulado)', value: admFormatInt(perf.cache.deadlocks) },
+                { id: 'h3', label: 'Rollbacks', value: admFormatInt(perf.cache.rollbacks) },
+                {
+                  id: 'h4',
+                  label: 'Arquivos temp',
+                  value: admFormatInt(perf.cache.temp_files),
+                  alert: perf.cache.temp_files > 0,
+                },
+                { id: 'h5', label: 'Bytes temp', value: admFormatBytes(perf.cache.temp_bytes) },
+                { id: 'h6', label: 'Profiles', value: admFormatInt(perf.volumes.profiles) },
+                { id: 'h7', label: 'Colaboradores', value: admFormatInt(perf.volumes.colaboradores) },
+                { id: 'h8', label: 'Notif. entregas', value: admFormatInt(perf.volumes.notificacoes) },
+                { id: 'h9', label: 'Audit log', value: admFormatInt(perf.volumes.audit_log) },
+              ].map((item, index, arr) => (
                 <View
-                  style={[
-                    adminStyles.tableProgressFill,
-                    { width: `${Math.max(3, (table.sizeMb / maxTableSize) * 100)}%`, backgroundColor: theme.primary },
-                  ]}
-                />
+                  key={item.id}
+                  style={[adminStyles.healthRow, index === arr.length - 1 ? { borderBottomWidth: 0 } : null]}
+                >
+                  <Text style={adminStyles.healthLabel}>{item.label}</Text>
+                  <Text style={[adminStyles.healthValue, item.alert ? adminStyles.healthValueAlert : null]}>
+                    {item.value}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
+
+        {isLoadingKpis && !kpis ? (
+          <AdminEmptyState message="Carregando indicadores do mês..." />
+        ) : kpisError && !kpis ? (
+          <AdminEmptyState message={kpisError} />
+        ) : kpis ? (
+          <>
+            <Text style={adminStyles.sectionLabel}>SNAPSHOT ATUAL</Text>
+            <View style={styles.grid}>
+              <View style={styles.gridItem}>
+                <View style={adminStyles.statCard}>
+                  <Text style={adminStyles.statCardValue}>{admFormatInt(kpis.snapshot.colaboradores_ativos)}</Text>
+                  <Text style={adminStyles.statCardLabel}>Colaboradores ativos</Text>
+                  <Text style={adminStyles.metricMeta}>
+                    {admFormatInt(kpis.snapshot.colaboradores_total)} no total
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={adminStyles.statCard}>
+                  <Text style={adminStyles.statCardValue}>{admFormatInt(kpis.snapshot.usuarios_ativos)}</Text>
+                  <Text style={adminStyles.statCardLabel}>Usuários ativos</Text>
+                  <Text style={adminStyles.metricMeta}>{admFormatInt(kpis.snapshot.usuarios_total)} cadastrados</Text>
+                </View>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={adminStyles.statCard}>
+                  <Text style={adminStyles.statCardValue}>
+                    {admFormatPercent(
+                      kpis.snapshot.usuarios_ativos > 0
+                        ? (kpis.snapshot.logaram_30d / kpis.snapshot.usuarios_ativos) * 100
+                        : 0,
+                      0
+                    )}
+                  </Text>
+                  <Text style={adminStyles.statCardLabel}>Aderência (30 dias)</Text>
+                  <Text style={adminStyles.metricMeta}>
+                    {admFormatInt(kpis.snapshot.logaram_30d)} logaram em 30d
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={adminStyles.statCard}>
+                  <Text style={adminStyles.statCardValue}>
+                    {admFormatInt(kpis.snapshot.colaboradores_sem_login)}
+                  </Text>
+                  <Text style={adminStyles.statCardLabel}>Sem acesso</Text>
+                  <Text style={adminStyles.metricMeta}>Sem login</Text>
+                </View>
               </View>
             </View>
-          ))}
-        </View>
 
-        <View style={adminStyles.sectionCard}>
-          <Text style={adminStyles.sectionTitle}>Saúde do banco</Text>
-          {adminDbHealthMock.map((item, index) => (
-            <View
-              key={item.id}
-              style={[
-                adminStyles.healthRow,
-                index === adminDbHealthMock.length - 1 ? { borderBottomWidth: 0 } : null,
-              ]}
-            >
-              <Text style={adminStyles.healthLabel}>{item.label}</Text>
-              <Text style={[adminStyles.healthValue, item.alert ? adminStyles.healthValueAlert : null]}>
-                {item.value}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        <Text style={adminStyles.sectionLabel}>SNAPSHOT ATUAL</Text>
-        <View style={styles.grid}>
-          {adminSnapshotMock.map((item) => (
-            <View key={item.id} style={styles.gridItem}>
-              <View style={adminStyles.statCard}>
-                <Text style={adminStyles.statCardValue}>{item.value}</Text>
-                <Text style={adminStyles.statCardLabel}>{item.label}</Text>
-                <Text style={adminStyles.metricMeta}>{item.meta}</Text>
+            <View style={[adminStyles.headerRowWrap, { marginTop: 4 }]}>
+              <View style={adminStyles.headerRowTitleWrap}>
+                <Text style={adminStyles.sectionLabel}>NO MÊS — {monthLabel.toUpperCase()}</Text>
+              </View>
+              <View style={adminStyles.pillButtonRow}>
+                <Pressable
+                  style={[adminStyles.paginationArrowButton, monthNavDisabled ? adminStyles.paginationArrowDisabled : null]}
+                  disabled={monthNavDisabled}
+                  onPress={handlePrevMonth}
+                >
+                  <Feather name="chevron-left" size={16} color={monthNavDisabled ? '#C7CCDA' : '#4C5470'} />
+                </Pressable>
+                <Pressable
+                  style={[adminStyles.paginationArrowButton, monthNavDisabled ? adminStyles.paginationArrowDisabled : null]}
+                  disabled={monthNavDisabled}
+                  onPress={handleNextMonth}
+                >
+                  <Feather name="chevron-right" size={16} color={monthNavDisabled ? '#C7CCDA' : '#4C5470'} />
+                </Pressable>
               </View>
             </View>
-          ))}
-        </View>
-
-        <Text style={adminStyles.sectionLabel}>NO MÊS — JULHO / 2026</Text>
-        <View style={styles.grid}>
-          {adminMonthMock.map((item) => (
-            <View key={item.id} style={styles.gridItem}>
-              <View style={adminStyles.statCard}>
-                <Text style={adminStyles.statCardValue}>{item.value}</Text>
-                <Text style={adminStyles.statCardLabel}>{item.label}</Text>
-              </View>
+            <View style={styles.grid}>
+              {[
+                { id: 'm1', value: kpis.mes.novos_colaboradores, label: 'Novos colaboradores' },
+                { id: 'm2', value: kpis.mes.logins_no_mes, label: 'Logins no mês' },
+                { id: 'm3', value: kpis.mes.notificacoes, label: 'Notificações enviadas' },
+                { id: 'm4', value: kpis.mes.solicitacoes, label: 'Solicitações RH' },
+              ].map((item) => (
+                <View key={item.id} style={styles.gridItem}>
+                  <View style={adminStyles.statCard}>
+                    <Text style={adminStyles.statCardValue}>{admFormatInt(item.value)}</Text>
+                    <Text style={adminStyles.statCardLabel}>{item.label}</Text>
+                  </View>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
 
-        <View style={adminStyles.sectionCard}>
-          <Text style={adminStyles.sectionTitle}>Novos colaboradores — últimos 6 meses</Text>
-          <View style={adminStyles.monthBarChartRow}>
-            {adminNewEmployeesChartMock.map((item) => (
-              <View key={item.label} style={adminStyles.monthBarGroup}>
-                <View
-                  style={[
-                    adminStyles.monthBar,
-                    { height: Math.max(4, (item.value / maxMonthValue) * chartHeight), backgroundColor: theme.primary },
-                  ]}
-                />
-                <Text style={adminStyles.monthBarLabel}>{item.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={[adminStyles.sectionCard, adminStyles.lastSectionCard]}>
-          <Text style={adminStyles.sectionTitle}>Top unidades</Text>
-          {adminTopUnidadesMock.map((item, index) => (
-            <View key={item.id} style={adminStyles.rankRow}>
-              <Text style={adminStyles.rankNumber}>{index + 1}</Text>
-              <Text style={adminStyles.rankName} numberOfLines={1}>
-                {item.name}
-              </Text>
-              <Text style={adminStyles.rankValue}>{item.value}</Text>
+            <View style={adminStyles.sectionCard}>
+              <Text style={adminStyles.sectionTitle}>Novos colaboradores — últimos 6 meses</Text>
+              {kpis.serie_novos_colaboradores.length === 0 ? (
+                <AdminEmptyState message="Sem dados no período." />
+              ) : (
+                <View style={adminStyles.monthBarChartRow}>
+                  {kpis.serie_novos_colaboradores.map((item) => (
+                    <View key={item.mes} style={adminStyles.monthBarGroup}>
+                      <View
+                        style={[
+                          adminStyles.monthBar,
+                          { height: Math.max(4, (item.novos / maxMonthValue) * chartHeight), backgroundColor: theme.primary },
+                        ]}
+                      />
+                      <Text style={adminStyles.monthBarLabel}>{admShortMonthFromKey(item.mes)}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
-          ))}
-        </View>
+
+            <View style={[adminStyles.sectionCard, adminStyles.lastSectionCard]}>
+              <Text style={adminStyles.sectionTitle}>Top unidades</Text>
+              {kpis.top_unidades.length === 0 ? (
+                <AdminEmptyState message="Nenhuma unidade retornada." />
+              ) : (
+                kpis.top_unidades.map((item, index) => (
+                  <View key={item.unidade} style={adminStyles.rankRow}>
+                    <Text style={adminStyles.rankNumber}>{index + 1}</Text>
+                    <Text style={adminStyles.rankName} numberOfLines={1}>
+                      {item.unidade}
+                    </Text>
+                    <Text style={adminStyles.rankValue}>{admFormatInt(item.qtd)}</Text>
+                  </View>
+                ))
+              )}
+            </View>
+          </>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -5727,6 +5902,55 @@ function admFieldMaskMaxLength(mask: AdminFieldMask | undefined): number | undef
 function admFormatBRL(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return '—';
   return `R$ ${value.toFixed(2).replace('.', ',')}`;
+}
+
+// ---------- Dashboard: helpers de formatação (dados reais via
+// adm_plataforma_performance_internal/adm_dashboard_kpis_internal,
+// confirmados pelo Lovable em 03/08/2026) ----------
+
+function admFormatInt(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return '—';
+  const isNegative = value < 0;
+  const digits = String(Math.round(Math.abs(value))).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return isNegative ? `-${digits}` : digits;
+}
+
+function admFormatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || Number.isNaN(bytes)) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = Math.abs(bytes);
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function admFormatPercent(value: number | null | undefined, decimals = 1): string {
+  if (value == null || Number.isNaN(value)) return '—';
+  return `${value.toFixed(decimals)}%`;
+}
+
+const ADMIN_MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+const ADMIN_MONTH_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+function admMonthLabel(mes: number | null | undefined, ano: number | null | undefined): string {
+  if (!mes || !ano) return '—';
+  const name = ADMIN_MONTH_NAMES[(mes - 1 + 12) % 12] ?? '';
+  return `${name} / ${ano}`;
+}
+
+// serie_novos_colaboradores vem como "2026-03" (sempre relativa a hoje,
+// ignora o mês selecionado — confirmado pelo Lovable).
+function admShortMonthFromKey(key: string): string {
+  const mesPart = key.split('-')[1];
+  const m = mesPart ? parseInt(mesPart, 10) : NaN;
+  if (Number.isNaN(m)) return key;
+  return ADMIN_MONTH_SHORT[(m - 1 + 12) % 12] ?? key;
 }
 
 // ---------- Busca PF (Infosimples/Fonte Data) — estrutura da tela igual ao

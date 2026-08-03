@@ -57,6 +57,8 @@ const {
   postGmbAcao,
   getBuscaPf,
   postBuscaPfAcao,
+  getDashboardPerformance,
+  getDashboardKpis,
 } = require('../lovable');
 const { normalizeModuleName } = require('../permissions');
 
@@ -1586,6 +1588,38 @@ router.post('/integracoes/busca-pf/consultar', async (req, res) => {
     res.json({ ok: true, data: json?.data ?? json ?? {} });
   } catch (err) {
     console.error('[admin/integracoes/busca-pf/consultar] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// --- Dashboard (2 RPCs Postgres expostas pelo Lovable via proxy interno em
+// 03/08/2026 — mesmo padrão x-internal-secret + x-actor-id dos demais.
+// Corpo é o JSON cru das RPCs, sem transformação nenhuma. ---
+
+// GET /api/admin/dashboard/performance?actorId=... — sem params, chamado a
+// cada 10s pelo app (mesmos campos que o site usa).
+router.get('/dashboard/performance', async (req, res) => {
+  try {
+    const json = await getDashboardPerformance(req.query.actorId);
+    const data = json?.data ?? json ?? {};
+    res.json({ ok: true, data });
+  } catch (err) {
+    console.error('[admin/dashboard/performance] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// GET /api/admin/dashboard/kpis?actorId=&mes=&ano= — sem mes/ano = mês atual
+// (America/Sao_Paulo). serie_novos_colaboradores é sempre relativa a hoje
+// (ignora mes/ano) e top_unidades vem só com as 5 primeiras.
+router.get('/dashboard/kpis', async (req, res) => {
+  try {
+    const { mes, ano, actorId } = req.query;
+    const json = await getDashboardKpis({ mes, ano, actorId });
+    const data = json?.data ?? json ?? {};
+    res.json({ ok: true, data });
+  } catch (err) {
+    console.error('[admin/dashboard/kpis] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'query_failed', message: err.message });
   }
 });

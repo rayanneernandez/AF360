@@ -1739,6 +1739,78 @@ export async function fetchAdminBuscaPfUso(opts?: {
   return json.data as AdminBuscaPfUso;
 }
 
+// --- Admin: Dashboard (2 RPCs Postgres expostas pelo Lovable via proxy
+// interno em 03/08/2026 — mesmo padrão x-internal-secret + x-actor-id.
+// Formato é o JSON cru das RPCs, sem transformação nenhuma no backend.
+
+export type AdminDashboardPerformance = {
+  now: string;
+  db: { bytes: number; max_connections: number };
+  conexoes: { total: number; ativas: number; ociosas: number; idle_tx: number; aguardando: number };
+  cache: {
+    hit_ratio: number;
+    commits: number;
+    rollbacks: number;
+    deadlocks: number;
+    temp_files: number;
+    temp_bytes: number;
+    segundos_desde_reset: number;
+  };
+  top_tabelas: Array<{ tabela: string; bytes: number; linhas: number }>;
+  sessoes: { online_5min: number; online_1h: number; online_24h: number };
+  volumes: {
+    profiles: number;
+    colaboradores: number;
+    solicitacoes: number;
+    notificacoes: number;
+    audit_log: number;
+  };
+};
+
+export async function fetchAdminDashboardPerformance(
+  actorId?: string | null
+): Promise<AdminDashboardPerformance> {
+  const json = await api.get(withActorId('/api/admin/dashboard/performance', actorId));
+  return json.data as AdminDashboardPerformance;
+}
+
+export type AdminDashboardKpis = {
+  periodo: { mes: number; ano: number };
+  snapshot: {
+    colaboradores_ativos: number;
+    colaboradores_total: number;
+    usuarios_ativos: number;
+    usuarios_total: number;
+    colaboradores_sem_login: number;
+    logaram_30d: number;
+  };
+  mes: {
+    novos_colaboradores: number;
+    solicitacoes: number;
+    logins_no_mes: number;
+    notificacoes: number;
+  };
+  // Sempre relativa a "hoje" — ignora o mês/ano selecionado (confirmado pelo Lovable).
+  serie_novos_colaboradores: Array<{ mes: string; novos: number }>;
+  // Top 5 (não é configurável) — métrica: nº de colaboradores ativos por unidade.
+  top_unidades: Array<{ unidade: string; qtd: number }>;
+  db_size_bytes: number;
+};
+
+export async function fetchAdminDashboardKpis(opts?: {
+  mes?: number;
+  ano?: number;
+  actorId?: string | null;
+}): Promise<AdminDashboardKpis> {
+  const params = new URLSearchParams();
+  if (opts?.mes) params.set('mes', String(opts.mes));
+  if (opts?.ano) params.set('ano', String(opts.ano));
+  const qs = params.toString();
+  const path = `/api/admin/dashboard/kpis${qs ? `?${qs}` : ''}`;
+  const json = await api.get(withActorId(path, opts?.actorId));
+  return json.data as AdminDashboardKpis;
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {
