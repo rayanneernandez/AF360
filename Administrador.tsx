@@ -1311,6 +1311,8 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
   const [editingUser, setEditingUser] = useState<AdminUsuarioItem | null>(null);
   const [isSavingForm, setIsSavingForm] = useState(false);
   const [resetSenhaUser, setResetSenhaUser] = useState<AdminUsuarioItem | null>(null);
+  const [statusFiltro, setStatusFiltro] = useState<'Ativos' | 'Inativos' | 'Todos'>('Ativos');
+  const [isStatusPickerOpen, setIsStatusPickerOpen] = useState(false);
 
   const loadUsuarios = () => {
     setIsLoading(true);
@@ -1378,15 +1380,18 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return usuarios;
-    return usuarios.filter(
-      (user) =>
+    return usuarios.filter((user) => {
+      if (statusFiltro === 'Ativos' && !user.isActive) return false;
+      if (statusFiltro === 'Inativos' && user.isActive) return false;
+      if (!query) return true;
+      return (
         (user.fullName ?? '').toLowerCase().includes(query) ||
         user.email.toLowerCase().includes(query) ||
         (user.cargo ?? '').toLowerCase().includes(query) ||
         (user.unidade ?? '').toLowerCase().includes(query)
-    );
-  }, [usuarios, search]);
+      );
+    });
+  }, [usuarios, search, statusFiltro]);
 
   const ativosCount = usuarios.filter((u) => u.isActive).length;
 
@@ -1519,11 +1524,8 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
         <AdminSearchRow value={search} onChangeText={setSearch} placeholder="Buscar por nome, e-mail ou unidade..." />
 
         <View style={styles.directorNotifHeaderRow}>
-          <Pressable
-            style={adminStyles.filterPill}
-            onPress={() => Alert.alert('Filtro', 'Filtros avançados em breve.')}
-          >
-            <Text style={adminStyles.filterPillText}>Ativos</Text>
+          <Pressable style={adminStyles.filterPill} onPress={() => setIsStatusPickerOpen(true)}>
+            <Text style={adminStyles.filterPillText}>{statusFiltro}</Text>
             <Feather name="chevron-down" size={14} color="#5E667D" />
           </Pressable>
           <Pressable style={styles.directorNotifNewButton} onPress={openCreate}>
@@ -1610,6 +1612,15 @@ export function AdminUsuariosScreen({ navigation }: ScreenProps<'AdminUsuarios'>
         userLabel={resetSenhaUser?.fullName || resetSenhaUser?.email || ''}
         onClose={() => setResetSenhaUser(null)}
         onConfirm={handleRedefinirSenha}
+      />
+
+      <AdminSimplePickerModal
+        visible={isStatusPickerOpen}
+        title="Filtrar por status"
+        options={['Ativos', 'Inativos', 'Todos']}
+        selectedValue={statusFiltro}
+        onSelect={(value) => setStatusFiltro(value as 'Ativos' | 'Inativos' | 'Todos')}
+        onClose={() => setIsStatusPickerOpen(false)}
       />
     </SafeAreaView>
   );
