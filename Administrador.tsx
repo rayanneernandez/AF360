@@ -7237,6 +7237,111 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
     [actorId]
   );
 
+  // Leva+ (fidelidade/cashback) — endpoint /api/public/internal/leva-mais
+  // confirmado pela Lovable em 03/08/2026. Não temos ainda o shape exato de
+  // lojas/frentistas/clientes/métricas/saldo (só a lista do que a API
+  // entrega), então mostramos o JSON real de cada recurso — nada fabricado —
+  // até confirmar os campos certos pra montar tabelas/cards bonitinhos.
+  const [levaMaisStatus, setLevaMaisStatus] = useState<AdminLevaMaisStatus | null>(null);
+  const [isLoadingLevaMaisStatus, setIsLoadingLevaMaisStatus] = useState(false);
+  const [levaMaisStatusError, setLevaMaisStatusError] = useState<string | null>(null);
+  const [isTestingLevaMais, setIsTestingLevaMais] = useState(false);
+  const [levaMaisAtivoForm, setLevaMaisAtivoForm] = useState(false);
+  const [levaMaisApiUrlForm, setLevaMaisApiUrlForm] = useState('');
+  const [levaMaisApiTokenField, setLevaMaisApiTokenField] = useState('');
+  const [levaMaisApiTokenEdited, setLevaMaisApiTokenEdited] = useState(false);
+  const [isSavingLevaMaisConfig, setIsSavingLevaMaisConfig] = useState(false);
+  const [activeLevaMaisRecurso, setActiveLevaMaisRecurso] = useState<
+    'lojas' | 'frentistas' | 'clientes' | 'metricas' | 'saldo' | null
+  >(null);
+  const [levaMaisRecursoData, setLevaMaisRecursoData] = useState<Record<string, unknown> | null>(null);
+  const [isLoadingLevaMaisRecurso, setIsLoadingLevaMaisRecurso] = useState(false);
+  const [levaMaisRecursoError, setLevaMaisRecursoError] = useState<string | null>(null);
+  const [levaMaisSaldoCpf, setLevaMaisSaldoCpf] = useState('');
+  const [levaMaisMetricasStart, setLevaMaisMetricasStart] = useState('');
+  const [levaMaisMetricasEnd, setLevaMaisMetricasEnd] = useState('');
+
+  const loadLevaMaisStatus = useCallback(() => {
+    setIsLoadingLevaMaisStatus(true);
+    setLevaMaisStatusError(null);
+    fetchAdminLevaMaisStatus(actorId)
+      .then((data) => {
+        setLevaMaisStatus(data);
+        setLevaMaisAtivoForm(data.ativo);
+        setLevaMaisApiUrlForm(data.apiUrl ?? '');
+      })
+      .catch((err) => setLevaMaisStatusError(err instanceof Error ? err.message : 'Não foi possível carregar o status.'))
+      .finally(() => setIsLoadingLevaMaisStatus(false));
+  }, [actorId]);
+
+  useEffect(() => {
+    if (activeProvider === 'levamais' && !levaMaisStatus && !isLoadingLevaMaisStatus && !levaMaisStatusError) {
+      loadLevaMaisStatus();
+    }
+  }, [activeProvider, levaMaisStatus, isLoadingLevaMaisStatus, levaMaisStatusError, loadLevaMaisStatus]);
+
+  const handleTestLevaMais = useCallback(() => {
+    setIsTestingLevaMais(true);
+    testAdminLevaMaisConexao(actorId)
+      .then((result) => {
+        const r = result as Record<string, unknown>;
+        Alert.alert('Conexão testada', typeof r.message === 'string' ? r.message : 'OK.');
+      })
+      .catch((err) => Alert.alert('Erro ao testar conexão', err instanceof Error ? err.message : 'Tente novamente.'))
+      .finally(() => setIsTestingLevaMais(false));
+  }, [actorId]);
+
+  const handleSaveLevaMaisConfig = useCallback(() => {
+    setIsSavingLevaMaisConfig(true);
+    const body: { ativo?: boolean; apiUrl?: string; apiToken?: string } = {
+      ativo: levaMaisAtivoForm,
+      apiUrl: levaMaisApiUrlForm.trim(),
+    };
+    if (levaMaisApiTokenEdited) body.apiToken = levaMaisApiTokenField;
+    updateAdminLevaMaisConfig(body, actorId)
+      .then(() => {
+        Alert.alert('Salvo', 'Credenciais do Leva+ atualizadas.');
+        setLevaMaisApiTokenField('');
+        setLevaMaisApiTokenEdited(false);
+        loadLevaMaisStatus();
+      })
+      .catch((err) => Alert.alert('Erro ao salvar', err instanceof Error ? err.message : 'Tente novamente.'))
+      .finally(() => setIsSavingLevaMaisConfig(false));
+  }, [actorId, levaMaisAtivoForm, levaMaisApiUrlForm, levaMaisApiTokenField, levaMaisApiTokenEdited, loadLevaMaisStatus]);
+
+  const handleLoadLevaMaisRecurso = useCallback(
+    (recurso: 'lojas' | 'frentistas' | 'clientes' | 'metricas' | 'saldo') => {
+      setActiveLevaMaisRecurso(recurso);
+      setLevaMaisRecursoData(null);
+      setLevaMaisRecursoError(null);
+      if (recurso === 'saldo' && !levaMaisSaldoCpf.trim()) {
+        setLevaMaisRecursoError('Informe um CPF pra consultar o saldo.');
+        return;
+      }
+      if (recurso === 'metricas' && (!levaMaisMetricasStart.trim() || !levaMaisMetricasEnd.trim())) {
+        setLevaMaisRecursoError('Informe o período (data inicial e final) pra consultar métricas.');
+        return;
+      }
+      setIsLoadingLevaMaisRecurso(true);
+      let promise: Promise<Record<string, unknown>>;
+      if (recurso === 'lojas') promise = fetchAdminLevaMaisLojas(actorId);
+      else if (recurso === 'frentistas') promise = fetchAdminLevaMaisFrentistas(actorId);
+      else if (recurso === 'clientes') promise = fetchAdminLevaMaisClientes({ limit: 20, actorId });
+      else if (recurso === 'metricas')
+        promise = fetchAdminLevaMaisMetricas({
+          startDate: levaMaisMetricasStart,
+          endDate: levaMaisMetricasEnd,
+          actorId,
+        });
+      else promise = fetchAdminLevaMaisSaldo(admOnlyDigits(levaMaisSaldoCpf), actorId);
+      promise
+        .then(setLevaMaisRecursoData)
+        .catch((err) => setLevaMaisRecursoError(err instanceof Error ? err.message : 'Não foi possível carregar.'))
+        .finally(() => setIsLoadingLevaMaisRecurso(false));
+    },
+    [actorId, levaMaisSaldoCpf, levaMaisMetricasStart, levaMaisMetricasEnd]
+  );
+
   // Google Meu Negócio (gmb_config/gmb_locations) — schema e endpoints
   // confirmados pela Lovable em 30/07/2026. Carrega só quando a aba é
   // aberta (lazy), igual ao padrão do reveal do WhatsApp.
@@ -8734,6 +8839,190 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
                 />
               </>
             )}
+          </>
+        ) : activeProvider === 'levamais' ? (
+          <>
+            <View style={adminStyles.sectionCard}>
+              <Text style={adminStyles.sectionTitle}>Credenciais</Text>
+
+              {isLoadingLevaMaisStatus && !levaMaisStatus ? (
+                <ActivityIndicator color={NAVY} style={adminStyles.fieldSpacing} />
+              ) : levaMaisStatusError ? (
+                <View style={adminStyles.fieldSpacing}>
+                  <AdminEmptyState message={levaMaisStatusError} />
+                </View>
+              ) : (
+                <>
+                  <View style={[adminStyles.headerRowWrap, adminStyles.fieldSpacing]}>
+                    <Text style={adminStyles.fieldLabel}>ATIVO</Text>
+                    <Pressable
+                      style={[
+                        adminStyles.subProviderPill,
+                        levaMaisAtivoForm ? adminStyles.subProviderPillActive : null,
+                      ]}
+                      onPress={() => setLevaMaisAtivoForm((prev) => !prev)}
+                    >
+                      <Text
+                        style={[
+                          adminStyles.subProviderPillText,
+                          levaMaisAtivoForm ? adminStyles.subProviderPillTextActive : null,
+                        ]}
+                      >
+                        {levaMaisAtivoForm ? 'Ativo' : 'Inativo'}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API URL</Text>
+                  <TextInput
+                    style={[styles.processTextInput, { marginTop: 6 }]}
+                    value={levaMaisApiUrlForm}
+                    onChangeText={setLevaMaisApiUrlForm}
+                    placeholder="https://..."
+                    placeholderTextColor="#A7AEC2"
+                    autoCapitalize="none"
+                  />
+
+                  <Text style={[adminStyles.fieldLabel, adminStyles.fieldSpacing]}>API TOKEN</Text>
+                  <TextInput
+                    style={[styles.processTextInput, { marginTop: 6 }]}
+                    value={levaMaisApiTokenField}
+                    onChangeText={(text) => {
+                      setLevaMaisApiTokenField(text);
+                      setLevaMaisApiTokenEdited(true);
+                    }}
+                    placeholder={levaMaisStatus?.apiTokenMascarado ?? 'Token da rede no Leva+'}
+                    placeholderTextColor="#A7AEC2"
+                    autoCapitalize="none"
+                    secureTextEntry
+                  />
+
+                  {levaMaisStatus?.ultimaSincronizacao ? (
+                    <Text style={[adminStyles.integrationHint, adminStyles.fieldSpacing]}>
+                      Última sincronização: {formatAdminLogDateTime(levaMaisStatus.ultimaSincronizacao)}
+                      {levaMaisStatus.ultimoStatus ? ` · ${levaMaisStatus.ultimoStatus}` : ''}
+                    </Text>
+                  ) : null}
+
+                  <View style={[adminStyles.pillButtonRow, adminStyles.fieldSpacing]}>
+                    <Pressable
+                      style={[adminStyles.pillButtonPrimary, isSavingLevaMaisConfig ? { opacity: 0.6 } : null]}
+                      onPress={handleSaveLevaMaisConfig}
+                      disabled={isSavingLevaMaisConfig}
+                    >
+                      <Feather name="save" size={14} color="#FFFFFF" />
+                      <Text style={adminStyles.primaryButtonGreenText}>
+                        {isSavingLevaMaisConfig ? 'Salvando...' : 'Salvar'}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[adminStyles.pillButtonOutline, isTestingLevaMais ? { opacity: 0.6 } : null]}
+                      onPress={handleTestLevaMais}
+                      disabled={isTestingLevaMais}
+                    >
+                      <Feather name="check-circle" size={14} color="#15203E" />
+                      <Text style={adminStyles.outlineButtonText}>{isTestingLevaMais ? 'Testando...' : 'Testar conexão'}</Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </View>
+
+            <View style={[adminStyles.sectionCard, adminStyles.fieldSpacing]}>
+              <Text style={adminStyles.sectionTitle}>Recursos</Text>
+              <Text style={adminStyles.integrationDescription}>
+                Receita, ticket médio, taxa de retorno/recompra, pontos/cashback, ranking de lojas, produtividade de
+                frentistas, top clientes e saldo por CPF — dados sempre lidos ao vivo da API do Leva+. Ainda não
+                confirmei com a Lovable os nomes exatos dos campos de cada recurso, então por enquanto mostro o JSON
+                real da resposta (sem inventar nenhum campo) — quando tiver o shape certo, transformo em
+                tabelas/cards.
+              </Text>
+
+              <View style={[adminStyles.pillButtonRow, adminStyles.fieldSpacing]}>
+                <Pressable style={adminStyles.pillButtonOutline} onPress={() => handleLoadLevaMaisRecurso('lojas')}>
+                  <Text style={adminStyles.outlineButtonText}>Ranking de lojas</Text>
+                </Pressable>
+                <Pressable style={adminStyles.pillButtonOutline} onPress={() => handleLoadLevaMaisRecurso('frentistas')}>
+                  <Text style={adminStyles.outlineButtonText}>Frentistas</Text>
+                </Pressable>
+                <Pressable style={adminStyles.pillButtonOutline} onPress={() => handleLoadLevaMaisRecurso('clientes')}>
+                  <Text style={adminStyles.outlineButtonText}>Top clientes</Text>
+                </Pressable>
+              </View>
+
+              <View style={[adminStyles.fieldSpacing, { flexDirection: 'row', flexWrap: 'wrap', gap: 12 }]}>
+                <View style={{ minWidth: 130, flexGrow: 1 }}>
+                  <Text style={adminStyles.fieldLabel}>PERÍODO INICIAL</Text>
+                  <TextInput
+                    style={[styles.processTextInput, { marginTop: 6 }]}
+                    value={levaMaisMetricasStart}
+                    onChangeText={setLevaMaisMetricasStart}
+                    placeholder="AAAA-MM-DD"
+                    placeholderTextColor="#A7AEC2"
+                  />
+                </View>
+                <View style={{ minWidth: 130, flexGrow: 1 }}>
+                  <Text style={adminStyles.fieldLabel}>PERÍODO FINAL</Text>
+                  <TextInput
+                    style={[styles.processTextInput, { marginTop: 6 }]}
+                    value={levaMaisMetricasEnd}
+                    onChangeText={setLevaMaisMetricasEnd}
+                    placeholder="AAAA-MM-DD"
+                    placeholderTextColor="#A7AEC2"
+                  />
+                </View>
+              </View>
+              <Pressable
+                style={[adminStyles.pillButtonOutline, adminStyles.fieldSpacing, { alignSelf: 'flex-start' }]}
+                onPress={() => handleLoadLevaMaisRecurso('metricas')}
+              >
+                <Text style={adminStyles.outlineButtonText}>Consultar métricas</Text>
+              </Pressable>
+
+              <View style={[adminStyles.fieldSpacing, { flexDirection: 'row', gap: 8, alignItems: 'flex-end' }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={adminStyles.fieldLabel}>SALDO POR CPF</Text>
+                  <TextInput
+                    style={[styles.processTextInput, { marginTop: 6 }]}
+                    value={levaMaisSaldoCpf}
+                    onChangeText={(text) => setLevaMaisSaldoCpf(admApplyFieldMask('cpf', text))}
+                    placeholder="000.000.000-00"
+                    placeholderTextColor="#A7AEC2"
+                    keyboardType="numeric"
+                    maxLength={admFieldMaskMaxLength('cpf')}
+                  />
+                </View>
+                <Pressable style={adminStyles.pillButtonPrimary} onPress={() => handleLoadLevaMaisRecurso('saldo')}>
+                  <Text style={adminStyles.primaryButtonGreenText}>Consultar</Text>
+                </Pressable>
+              </View>
+
+              {isLoadingLevaMaisRecurso ? (
+                <ActivityIndicator color={NAVY} style={adminStyles.fieldSpacing} />
+              ) : levaMaisRecursoError ? (
+                <View style={adminStyles.fieldSpacing}>
+                  <AdminEmptyState message={levaMaisRecursoError} />
+                </View>
+              ) : levaMaisRecursoData && activeLevaMaisRecurso ? (
+                <View style={adminStyles.fieldSpacing}>
+                  <View style={adminStyles.headerRowWrap}>
+                    <Text style={adminStyles.fieldLabel}>RESULTADO — {activeLevaMaisRecurso.toUpperCase()}</Text>
+                    <Pressable
+                      style={adminStyles.pillButtonOutline}
+                      onPress={() => copyToClipboard(JSON.stringify(levaMaisRecursoData, null, 2), () => {})}
+                    >
+                      <Feather name="copy" size={13} color="#15203E" />
+                      <Text style={adminStyles.outlineButtonText}>Copiar JSON</Text>
+                    </Pressable>
+                  </View>
+                  <ScrollView style={[adminStyles.rawJsonBox, { marginTop: 8 }]} nestedScrollEnabled>
+                    <Text style={adminStyles.rawJsonText} selectable>
+                      {JSON.stringify(levaMaisRecursoData, null, 2)}
+                    </Text>
+                  </ScrollView>
+                </View>
+              ) : null}
+            </View>
           </>
         ) : (
           <AdminEmptyState message={`Em breve. A integração ${activeProviderMeta.label} ainda está em desenvolvimento.`} />
