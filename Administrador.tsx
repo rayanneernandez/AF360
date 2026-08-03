@@ -6843,6 +6843,7 @@ function AdminBuscaPfProviderPanel({
         <View style={adminStyles.headerRowWrap}>
           <View style={adminStyles.headerRowTitleWrap}>
             <Text style={adminStyles.sectionTitle}>Uso e custo mensal</Text>
+            <AdminColorPill label="Últimos 3 meses" bg={BLUE_BG} color={BLUE} />
           </View>
           <Pressable
             style={[adminStyles.pillButtonOutline, isLoadingUso ? { opacity: 0.6 } : null]}
@@ -7073,6 +7074,8 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
   const [buscaPfHistoricoRows, setBuscaPfHistoricoRows] = useState<AdminBuscaPfHistoricoItem[] | null>(null);
   const [isLoadingBuscaPfHistorico, setIsLoadingBuscaPfHistorico] = useState(false);
   const [buscaPfHistoricoError, setBuscaPfHistoricoError] = useState<string | null>(null);
+  const [buscaPfHistoricoSearch, setBuscaPfHistoricoSearch] = useState('');
+  const [expandedHistoricoId, setExpandedHistoricoId] = useState<string | null>(null);
   const [buscaPfUso, setBuscaPfUso] = useState<Partial<Record<AdminBuscaPfProvider, AdminBuscaPfUso>>>({});
   const [isLoadingBuscaPfUso, setIsLoadingBuscaPfUso] = useState<Partial<Record<AdminBuscaPfProvider, boolean>>>({});
   const [buscaPfUsoError, setBuscaPfUsoError] = useState<Partial<Record<AdminBuscaPfProvider, string | undefined>>>({});
@@ -7096,7 +7099,11 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
     (provedor: AdminBuscaPfProvider) => {
       setIsLoadingBuscaPfUso((prev) => ({ ...prev, [provedor]: true }));
       setBuscaPfUsoError((prev) => ({ ...prev, [provedor]: undefined }));
-      fetchAdminBuscaPfUso({ provedor, months: 1, actorId })
+      // 3 meses pra sempre ter algo pra mostrar mesmo em dias com pouco volume
+      // (o card do web também soma vários meses, só que em cards separados por
+      // mês — aqui é 1 card com o agregado; layout por mês fica pendente de
+      // confirmação da Lovable sobre o shape exato do agregado multi-mês).
+      fetchAdminBuscaPfUso({ provedor, months: 3, actorId })
         .then((data) => setBuscaPfUso((prev) => ({ ...prev, [provedor]: data })))
         .catch((err) =>
           setBuscaPfUsoError((prev) => ({
@@ -7166,6 +7173,11 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
           );
           const raw = JSON.stringify(resultado, null, 2);
           setBuscaPfResults((prev) => ({ ...prev, [service.code]: { ok, code, message, raw } }));
+          // Toda consulta real (sucesso ou erro de negócio) é cobrada e entra no
+          // histórico — sem isso o card "Uso e custo mensal" ficava com o valor
+          // cacheado da primeira carga (guard em loadBuscaPfUso só busca uma vez
+          // por provedor) e nunca refletia as consultas feitas na sessão.
+          loadBuscaPfUso(provedor);
         })
         .catch((err) => {
           const message = err instanceof Error ? err.message : 'Tente novamente.';
@@ -7173,13 +7185,15 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
         })
         .finally(() => setExecutingBuscaPfServiceCode(null));
     },
-    [actorId]
+    [actorId, loadBuscaPfUso]
   );
 
   const openBuscaPfHistorico = useCallback(
     (provedor: AdminBuscaPfProvider) => {
       setBuscaPfHistoricoProvider(provedor);
       setBuscaPfHistoricoRows(null);
+      setBuscaPfHistoricoSearch('');
+      setExpandedHistoricoId(null);
       setIsLoadingBuscaPfHistorico(true);
       setBuscaPfHistoricoError(null);
       fetchAdminBuscaPfHistorico({ provedor, limit: 20, actorId })
@@ -7191,6 +7205,28 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
     },
     [actorId]
   );
+
+  const handleSearchBuscaPfHistorico = useCallback(() => {
+    if (!buscaPfHistoricoProvider) return;
+    setExpandedHistoricoId(null);
+    setIsLoadingBuscaPfHistorico(true);
+    setBuscaPfHistoricoError(null);
+    fetchAdminBuscaPfHistorico({
+      provedor: buscaPfHistoricoProvider,
+      limit: 20,
+      search: buscaPfHistoricoSearch.trim() || undefined,
+      actorId,
+    })
+      .then((res) => setBuscaPfHistoricoRows(res.rows))
+      .catch((err) =>
+        setBuscaPfHistoricoError(err instanceof Error ? err.message : 'Não foi possível carregar o histórico.')
+      )
+      .finally(() => setIsLoadingBuscaPfHistorico(false));
+  }, [actorId, buscaPfHistoricoProvider, buscaPfHistoricoSearch]);
+
+  const handleCopyBuscaPfHistoricoJson = useCallback((row: AdminBuscaPfHistoricoItem) => {
+    copyToClipboard(JSON.stringify(row.responseData ?? {}, null, 2), () => {});
+  }, []);
 
   const applyConfig = useCallback((config: AdminWaConfig) => {
     setWaConfig(config);
@@ -8466,7 +8502,22 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
               </Pressable>
             </View>
 
-            <ScrollView style={{ maxHeight: 400, marginTop: 12 }}>
+            <View style={[adminStyles.historicoSearchRow, adminStyles.fieldSpacing]}>
+              <TextInput
+                style={[styles.processTextInput, { flex: 1 }]}
+                value={buscaPfHistoricoSearch}
+                onChangeText={setBuscaPfHistoricoSearch}
+                placeholder="Buscar por CPF ou nome..."
+                placeholderTextColor="#A7AEC2"
+                onSubmitEditing={handleSearchBuscaPfHistorico}
+                returnKeyType="search"
+              />
+              <Pressable style={adminStyles.pillButtonPrimary} onPress={handleSearchBuscaPfHistorico}>
+                <Text style={adminStyles.primaryButtonGreenText}>Buscar</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420 }}>
               {isLoadingBuscaPfHistorico ? (
                 <ActivityIndicator color={NAVY} style={{ marginTop: 12 }} />
               ) : buscaPfHistoricoError ? (
@@ -8474,24 +8525,52 @@ export function AdminIntegracoesScreen({ navigation }: ScreenProps<'AdminIntegra
               ) : !buscaPfHistoricoRows || buscaPfHistoricoRows.length === 0 ? (
                 <AdminEmptyState message="Nenhuma consulta registrada ainda." />
               ) : (
-                buscaPfHistoricoRows.map((row) => (
-                  <View key={row.id} style={[adminStyles.staticField, { marginBottom: 8 }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={adminStyles.staticFieldText} numberOfLines={1}>
-                        {row.service ?? '—'} {row.nome ? `— ${row.nome}` : row.cpf ? `— ${row.cpf}` : ''}
-                      </Text>
-                      <Text style={adminStyles.integrationHint}>
-                        {formatAdminLogDateTime(row.createdAt)}
-                        {row.costBrl != null ? ` · ${admFormatBRL(row.costBrl)}` : ''}
-                      </Text>
+                buscaPfHistoricoRows.map((row) => {
+                  const isExpanded = expandedHistoricoId === row.id;
+                  const isOk = row.responseCode === 200;
+                  return (
+                    <View key={row.id} style={adminStyles.historicoRowWrap}>
+                      <Pressable
+                        style={adminStyles.historicoRow}
+                        onPress={() => setExpandedHistoricoId(isExpanded ? null : row.id)}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={adminStyles.staticFieldText} numberOfLines={1}>
+                            {formatAdminLogDateTime(row.createdAt)}
+                            {row.cpf ? ` · ${row.cpf}` : ''}
+                            {row.nome ? ` · ${row.nome}` : ''}
+                          </Text>
+                          <Text style={adminStyles.integrationHint}>
+                            {row.service ?? '—'}
+                            {row.costBrl != null ? ` · ${admFormatBRL(row.costBrl)}` : ''}
+                          </Text>
+                        </View>
+                        <AdminColorPill
+                          label={row.responseCode != null ? String(row.responseCode) : '—'}
+                          bg={isOk ? '#E7F5EC' : '#FBEAEA'}
+                          color={isOk ? '#1E8A4C' : '#C0392B'}
+                        />
+                        <Pressable
+                          style={adminStyles.historicoJsonButton}
+                          onPress={() => handleCopyBuscaPfHistoricoJson(row)}
+                          hitSlop={6}
+                        >
+                          <Feather name="copy" size={13} color="#15203E" />
+                          <Text style={adminStyles.outlineButtonText}>JSON</Text>
+                        </Pressable>
+                        <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#677089" />
+                      </Pressable>
+
+                      {isExpanded ? (
+                        <ScrollView style={[adminStyles.rawJsonBox, { marginTop: 8, marginBottom: 10 }]} nestedScrollEnabled>
+                          <Text style={adminStyles.rawJsonText} selectable>
+                            {JSON.stringify(row.responseData ?? {}, null, 2)}
+                          </Text>
+                        </ScrollView>
+                      ) : null}
                     </View>
-                    <AdminColorPill
-                      label={row.responseCode != null ? String(row.responseCode) : '—'}
-                      bg={row.responseCode === 200 ? '#E7F5EC' : '#F4F1E8'}
-                      color={row.responseCode === 200 ? '#1E8A4C' : '#8A6D1E'}
-                    />
-                  </View>
-                ))
+                  );
+                })
               )}
             </ScrollView>
           </View>
@@ -10956,6 +11035,33 @@ const adminStyles = StyleSheet.create({
     color: '#3A4160',
     fontSize: 11.5,
     fontWeight: '600',
+  },
+  historicoSearchRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  historicoRowWrap: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF1F7',
+    paddingBottom: 8,
+    marginBottom: 4,
+  },
+  historicoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+  },
+  historicoJsonButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#DDE2EE',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
   },
   tokenEyeButton: {
     width: 44,
