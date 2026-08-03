@@ -692,6 +692,71 @@ function postRhUniformeEntrega(body, actorId) {
   return lovablePost('/api/public/internal/rh-uniformes', { acao: 'entrega' }, body, actorId);
 }
 
+// --- Calendário (rh_calendario_eventos; endpoint confirmado pela Lovable em
+// 03/08/2026, CRUD completo). Sem colaborador_id = evento global (aparece pra
+// todo mundo da empresa). GET por padrão já traz colaborador + globais
+// (incluir_globais=1); ordenado por inicio_em asc. Enum rh_calendario_tipo:
+// feriado | folga | escala | treinamento | reuniao | evento | outros. ---
+
+function getRhCalendario(
+  { colaboradorId, empresaId, tipo, de, ate, incluirGlobais, limit, offset } = {},
+  actorId
+) {
+  return lovableGet(
+    '/api/public/internal/rh-calendario',
+    {
+      colaborador_id: colaboradorId,
+      empresa_id: empresaId,
+      tipo,
+      de,
+      ate,
+      incluir_globais: incluirGlobais === undefined ? undefined : incluirGlobais ? 1 : 0,
+      limit,
+      offset,
+    },
+    actorId
+  );
+}
+
+function postRhCalendario(body, actorId) {
+  return lovablePost('/api/public/internal/rh-calendario', {}, body, actorId);
+}
+
+function patchRhCalendario(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-calendario', { id }, body, actorId);
+}
+
+function deleteRhCalendario(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-calendario', { id }, actorId);
+}
+
+// --- Treinamentos: conteúdo real (rh_treinamentos, rh_treinamento_aulas,
+// rh_treinamento_questoes, rh_treinamento_inscricoes, rh_treinamento_
+// respostas; GET confirmado pela Lovable em 03/08/2026 via "recurso"). Sem
+// incluir_gabarito=1 o GET de questoes NÃO traz correta/explicacao — use
+// incluir_gabarito só no painel do RH, nunca pro colaborador. Escrita
+// (responder prova, atualizar inscrição) ainda não confirmada — não expor
+// ação de "enviar prova" até a Lovable liberar isso. ---
+
+function getRhTreinamentos(
+  { recurso, treinamentoId, colaboradorId, inscricaoId, status, ativo, incluirGabarito } = {},
+  actorId
+) {
+  return lovableGet(
+    '/api/public/internal/rh-treinamentos',
+    {
+      recurso,
+      treinamento_id: treinamentoId,
+      colaborador_id: colaboradorId,
+      inscricao_id: inscricaoId,
+      status,
+      ativo,
+      incluir_gabarito: incluirGabarito ? 1 : undefined,
+    },
+    actorId
+  );
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -787,4 +852,9 @@ module.exports = {
   patchRhUniformePedidoAprovar,
   patchRhUniformePedidoRecusar,
   postRhUniformeEntrega,
+  getRhCalendario,
+  postRhCalendario,
+  patchRhCalendario,
+  deleteRhCalendario,
+  getRhTreinamentos,
 };

@@ -117,6 +117,12 @@ import {
   type AdminTemaItem,
   fetchAdminTemas,
   updateAdminTema,
+  fetchRhCalendarioEventos,
+  type RhCalendarioEvento,
+  fetchRhTreinamentoAulas,
+  fetchRhTreinamentoQuestoes,
+  type RhTreinamentoAula,
+  type RhTreinamentoQuestao,
 } from './api';
 
 export type RootStackParamList = {
@@ -3621,6 +3627,7 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
   const [homeData, setHomeData] = useState<ColaboradorHomeData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [proximosEventosCount, setProximosEventosCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (!colaboradorId) {
@@ -3654,6 +3661,29 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
     };
   }, [colaboradorId]);
 
+  // rh_calendario_eventos (endpoint liberado pela Lovable em 03/08/2026) — o
+  // card "Próximos eventos" mostra a contagem de eventos futuros do
+  // colaborador + globais, em vez do "Em breve" fixo.
+  useEffect(() => {
+    if (!colaboradorId) {
+      setProximosEventosCount(null);
+      return;
+    }
+
+    let isActive = true;
+    fetchRhCalendarioEventos({ colaboradorId, de: new Date().toISOString(), incluirGlobais: true, limit: 50 })
+      .then((eventos) => {
+        if (isActive) setProximosEventosCount(eventos.length);
+      })
+      .catch(() => {
+        if (isActive) setProximosEventosCount(null);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [colaboradorId]);
+
   const homeCards: DashboardCardProps[] = [
     {
       icon: 'megaphone-outline',
@@ -3667,11 +3697,7 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
       iconColor: '#5F6DB3',
       tintColor: '#EDF1FF',
       label: 'Próximos eventos',
-      // O backend sempre retorna eventosProximos = null porque ainda não existe
-      // tabela de eventos no Supabase do Lovable. Mostramos "Em breve" em vez de
-      // fabricar um número — resolver isso de verdade fica para uma tarefa futura
-      // (criar a tabela de eventos e o cálculo correspondente na af360-api).
-      value: 'Em breve',
+      value: proximosEventosCount === null ? '—' : String(proximosEventosCount),
     },
     {
       icon: 'briefcase-outline',
@@ -4617,16 +4643,23 @@ function TrainingExamResultScreen({ navigation, route }: ScreenProps<'TrainingEx
 }
 
 function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
   const today = new Date();
   const [currentMonthIndex, setCurrentMonthIndex] = useState(today.getMonth());
   const [viewMode, setViewMode] = useState<'list' | 'month'>('month');
   const [holidayEventsByMonth, setHolidayEventsByMonth] = useState<Record<number, CalendarEvent[]>>(
     {}
   );
+  const [realEventsByMonth, setRealEventsByMonth] = useState<Record<number, CalendarEvent[]>>({});
   const currentMonth = calendarMonths[currentMonthIndex];
   const mergedEvents = useMemo(
-    () => mergeCalendarEvents(currentMonth.events, holidayEventsByMonth[currentMonth.monthIndex] ?? []),
-    [currentMonth, holidayEventsByMonth]
+    () =>
+      mergeCalendarEvents(
+        holidayEventsByMonth[currentMonth.monthIndex] ?? [],
+        realEventsByMonth[currentMonth.monthIndex] ?? []
+      ),
+    [currentMonth, holidayEventsByMonth, realEventsByMonth]
   );
   const calendarWeeks = getCalendarWeeks(currentMonth.year, currentMonth.monthIndex);
   const selectedDay =
@@ -4674,6 +4707,36 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
       isMounted = false;
     };
   }, []);
+
+  // rh_calendario_eventos (real, endpoint liberado pela Lovable em
+  // 03/08/2026) — busca o ano inteiro do colaborador logado + eventos
+  // globais da empresa, uma vez, e distribui por mês pro merge com feriados.
+  useEffect(() => {
+    if (!colaboradorId) {
+      setRealEventsByMonth({});
+      return;
+    }
+
+    let isMounted = true;
+
+    fetchRhCalendarioEventos({
+      colaboradorId,
+      de: `${calendarYear}-01-01`,
+      ate: `${calendarYear}-12-31`,
+      incluirGlobais: true,
+      limit: 500,
+    })
+      .then((eventos) => {
+        if (isMounted) setRealEventsByMonth(buildRealCalendarEvents(eventos));
+      })
+      .catch(() => {
+        if (isMounted) setRealEventsByMonth({});
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [colaboradorId]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -10949,14 +11012,60 @@ export function getCalendarWeeks(year: number, monthIndex: number) {
   );
 }
 
-function mergeCalendarEvents(baseEvents: CalendarEvent[], holidayEvents: CalendarEvent[]) {
+function mergeCalendarEvents(...eventLists: CalendarEvent[][]) {
   const mergedMap = new Map<string, CalendarEvent>();
 
-  [...baseEvents, ...holidayEvents].forEach((event) => {
+  eventLists.flat().forEach((event) => {
     mergedMap.set(`${event.day}-${event.title}`, event);
   });
 
   return Array.from(mergedMap.values()).sort((left, right) => left.day - right.day);
+}
+
+// rh_calendario_eventos (real, endpoint liberado pela Lovable em 03/08/2026)
+// convertido pro formato local CalendarEvent — mesma cor/estilo usados pra
+// eventos do mock, agrupado por mês pra reaproveitar o merge com feriados.
+const CALENDARIO_TIPO_META: Record<string, { tag: string; tagColor: string; tagTint: string; dateColor: string; dateTint: string }> = {
+  feriado: { tag: 'Feriado', tagColor: '#C23B4B', tagTint: '#FBE3E7', dateColor: '#C23B4B', dateTint: '#FBE3E7' },
+  folga: { tag: 'Folga', tagColor: '#2B9862', tagTint: '#E2F4EA', dateColor: '#2B9862', dateTint: '#E2F4EA' },
+  escala: { tag: 'Escala', tagColor: '#5E6DB4', tagTint: '#E9EEFF', dateColor: '#5E6DB4', dateTint: '#E9EEFF' },
+  treinamento: { tag: 'Treinamento', tagColor: '#2D9E6A', tagTint: '#E4F5EE', dateColor: '#2D9E6A', dateTint: '#E4F5EE' },
+  reuniao: { tag: 'Reunião', tagColor: '#B18316', tagTint: '#FCF4DE', dateColor: '#B18316', dateTint: '#FCF4DE' },
+  evento: { tag: 'Evento', tagColor: '#5F6DB3', tagTint: '#EDF1FF', dateColor: '#5F6DB3', dateTint: '#EDF1FF' },
+  outros: { tag: 'Outros', tagColor: '#7C8397', tagTint: '#EEF0F6', dateColor: '#7C8397', dateTint: '#EEF0F6' },
+};
+
+const CALENDARIO_MONTH_SHORT = [
+  'jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez',
+];
+
+function buildRealCalendarEvents(eventos: RhCalendarioEvento[]) {
+  return eventos.reduce<Record<number, CalendarEvent[]>>((acc, evento) => {
+    const inicio = new Date(evento.inicio_em);
+    if (Number.isNaN(inicio.getTime())) return acc;
+
+    const monthIndex = inicio.getMonth();
+    const meta = CALENDARIO_TIPO_META[evento.tipo] ?? CALENDARIO_TIPO_META.outros;
+
+    if (!acc[monthIndex]) acc[monthIndex] = [];
+
+    acc[monthIndex].push({
+      id: `rh-${evento.id}`,
+      day: inicio.getDate(),
+      monthShort: CALENDARIO_MONTH_SHORT[monthIndex],
+      title: evento.titulo,
+      time: evento.dia_inteiro
+        ? 'Dia inteiro'
+        : inicio.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      tag: meta.tag,
+      tagColor: meta.tagColor,
+      tagTint: meta.tagTint,
+      dateTint: meta.dateTint,
+      dateColor: meta.dateColor,
+    });
+
+    return acc;
+  }, {});
 }
 
 function buildHolidayEvents(holidays: BrazilHolidayApiItem[]) {

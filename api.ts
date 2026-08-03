@@ -978,6 +978,162 @@ export async function registrarEntregaUniforme(body: {
   return json.data as RhUniformeEntrega;
 }
 
+// --- Calendário (rh_calendario_eventos; endpoint confirmado pela Lovable em
+// 03/08/2026, CRUD completo). Sem colaborador_id = evento global (aparece pra
+// todo mundo da empresa). Por padrão o GET já traz colaborador + globais
+// (incluirGlobais), ordenado por inicio_em asc — bom pra "Próximos eventos"
+// (de=hoje, limit=3). Enum rh_calendario_tipo: feriado | folga | escala |
+// treinamento | reuniao | evento | outros. ---
+
+export type RhCalendarioEvento = {
+  id: string;
+  titulo: string;
+  tipo: 'feriado' | 'folga' | 'escala' | 'treinamento' | 'reuniao' | 'evento' | 'outros';
+  inicio_em: string;
+  fim_em: string | null;
+  dia_inteiro: boolean | null;
+  descricao: string | null;
+  empresa_id: string | null;
+  colaborador_id: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRhCalendarioEventos(params: {
+  colaboradorId?: string | null;
+  empresaId?: string | null;
+  tipo?: string;
+  de?: string;
+  ate?: string;
+  incluirGlobais?: boolean;
+  limit?: number;
+} = {}): Promise<RhCalendarioEvento[]> {
+  const search = new URLSearchParams();
+  if (params.colaboradorId) search.set('colaboradorId', params.colaboradorId);
+  if (params.empresaId) search.set('empresaId', params.empresaId);
+  if (params.tipo) search.set('tipo', params.tipo);
+  if (params.de) search.set('de', params.de);
+  if (params.ate) search.set('ate', params.ate);
+  if (params.incluirGlobais !== undefined) search.set('incluirGlobais', params.incluirGlobais ? '1' : '0');
+  if (params.limit) search.set('limit', String(params.limit));
+  const json = await api.get(`/api/rh/calendario?${search.toString()}`);
+  return (json.data as RhCalendarioEvento[]) ?? [];
+}
+
+export async function createRhCalendarioEvento(
+  body: {
+    titulo: string;
+    tipo: string;
+    inicio_em: string;
+    fim_em?: string;
+    dia_inteiro?: boolean;
+    descricao?: string;
+    empresa_id?: string;
+    colaborador_id?: string;
+  },
+  actorId?: string | null
+): Promise<RhCalendarioEvento> {
+  const json = await api.post(withActorId('/api/rh/calendario', actorId), body);
+  return json.data as RhCalendarioEvento;
+}
+
+export async function updateRhCalendarioEvento(
+  id: string,
+  body: Record<string, unknown>,
+  actorId?: string | null
+): Promise<RhCalendarioEvento> {
+  const json = await api.patch(withActorId(`/api/rh/calendario/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhCalendarioEvento;
+}
+
+export async function deleteRhCalendarioEvento(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/calendario/${encodeURIComponent(id)}`, actorId));
+}
+
+// --- Treinamentos: conteúdo real (rh_treinamentos, rh_treinamento_aulas,
+// rh_treinamento_questoes, rh_treinamento_inscricoes, rh_treinamento_
+// respostas) — GET confirmado pela Lovable em 03/08/2026. Somente leitura por
+// enquanto: a Lovable ainda não confirmou endpoint de escrita (responder
+// prova / atualizar inscrição), então não existe função de criar/atualizar
+// aqui — não fabricar isso na UI enquanto não vier confirmação. O gabarito
+// (correta/explicacao) só deve ser pedido a partir do painel do RH, nunca do
+// app do colaborador. ---
+
+export type RhTreinamentoCatalogo = {
+  id: string;
+  titulo: string;
+  subtitulo: string | null;
+  descricao: string | null;
+  categoria: string | null;
+  capa_url: string | null;
+  video_url: string | null;
+  conteudo_url: string | null;
+  tipo: string | null;
+  obrigatorio: boolean | null;
+  ativo: boolean | null;
+  carga_horaria_min: number | null;
+  prova_min_acerto: number | null;
+  prova_tempo_limite_min: number | null;
+  [key: string]: unknown;
+};
+
+export type RhTreinamentoAula = {
+  id: string;
+  treinamento_id: string;
+  ordem: number;
+  titulo: string;
+  descricao: string | null;
+  duracao_min: number | null;
+  video_url: string | null;
+  video_storage_path: string | null;
+  [key: string]: unknown;
+};
+
+export type RhTreinamentoQuestao = {
+  id: string;
+  treinamento_id: string;
+  ordem: number;
+  enunciado: string;
+  alternativas: Array<{ chave: string; texto: string }>;
+  correta?: string;
+  explicacao?: string | null;
+  [key: string]: unknown;
+};
+
+async function fetchRhTreinamentosRecurso<T>(
+  recurso: 'treinamentos' | 'aulas' | 'questoes' | 'inscricoes' | 'respostas',
+  params: {
+    treinamentoId?: string;
+    colaboradorId?: string;
+    inscricaoId?: string;
+    status?: string;
+    ativo?: boolean;
+    incluirGabarito?: boolean;
+  } = {}
+): Promise<T[]> {
+  const search = new URLSearchParams();
+  search.set('recurso', recurso);
+  if (params.treinamentoId) search.set('treinamentoId', params.treinamentoId);
+  if (params.colaboradorId) search.set('colaboradorId', params.colaboradorId);
+  if (params.inscricaoId) search.set('inscricaoId', params.inscricaoId);
+  if (params.status) search.set('status', params.status);
+  if (params.ativo !== undefined) search.set('ativo', params.ativo ? 'true' : 'false');
+  if (params.incluirGabarito) search.set('incluirGabarito', '1');
+  const json = await api.get(`/api/rh/treinamentos-conteudo?${search.toString()}`);
+  return (json.data as T[]) ?? [];
+}
+
+export async function fetchRhTreinamentoAulas(treinamentoId: string): Promise<RhTreinamentoAula[]> {
+  return fetchRhTreinamentosRecurso<RhTreinamentoAula>('aulas', { treinamentoId });
+}
+
+// incluirGabarito NUNCA deve ser passado true a partir do app do colaborador.
+export async function fetchRhTreinamentoQuestoes(
+  treinamentoId: string,
+  incluirGabarito = false
+): Promise<RhTreinamentoQuestao[]> {
+  return fetchRhTreinamentosRecurso<RhTreinamentoQuestao>('questoes', { treinamentoId, incluirGabarito });
+}
+
 // --- Admin: Cargos (roles) ---
 
 export type AdminCargoItem = {

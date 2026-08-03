@@ -18,6 +18,8 @@ const rhReembolsosRoutes = require('./routes/rhReembolsos');
 const rhFeriasRoutes = require('./routes/rhFerias');
 const rhSolicitacoesRoutes = require('./routes/rhSolicitacoes');
 const rhUniformesRoutes = require('./routes/rhUniformes');
+const rhCalendarioRoutes = require('./routes/rhCalendario');
+const rhTreinamentosConteudoRoutes = require('./routes/rhTreinamentosConteudo');
 
 const app = express();
 
@@ -46,6 +48,8 @@ app.use('/api/rh/reembolsos', rhReembolsosRoutes);
 app.use('/api/rh/ferias', rhFeriasRoutes);
 app.use('/api/rh/solicitacoes', rhSolicitacoesRoutes);
 app.use('/api/rh/uniformes', rhUniformesRoutes);
+app.use('/api/rh/calendario', rhCalendarioRoutes);
+app.use('/api/rh/treinamentos-conteudo', rhTreinamentosConteudoRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'af360-api', message: 'Veja /api/health' });
