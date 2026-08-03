@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useEventListener } from 'expo';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as ScreenOrientation from 'expo-screen-orientation';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import * as ImagePicker from 'expo-image-picker';
 import * as ScreenCapture from 'expo-screen-capture';
 import {
@@ -284,35 +285,6 @@ type ApprovalItem = {
   tagTint: string;
 };
 
-type TrainingLesson = {
-  id: string;
-  title: string;
-  description: string;
-  durationSeconds: number;
-};
-
-type TrainingQuestion = {
-  id: string;
-  prompt: string;
-  options: string[];
-  correctOptionIndex: number;
-};
-
-type TrainingCourse = {
-  id: string;
-  title: string;
-  subtitle: string;
-  category: string;
-  coverColor: string;
-  coverTint: string;
-  durationLabel: string;
-  summary: string;
-  minimumScore: number;
-  examDurationSeconds: number;
-  lessons: TrainingLesson[];
-  questions: TrainingQuestion[];
-};
-
 type TrainingLessonProgress = {
   watchedSeconds: number;
   completed: boolean;
@@ -323,6 +295,7 @@ type TrainingExamAttempt = {
   correctAnswers: number;
   totalQuestions: number;
   passed: boolean;
+  minimumScore: number;
   reason: 'submitted' | 'timeout';
 };
 
@@ -822,112 +795,6 @@ const approvals: ApprovalItem[] = [
     tagLabel: 'Folga',
     tagColor: '#6F7890',
     tagTint: '#EEF0F5',
-  },
-];
-const trainingCourses: TrainingCourse[] = [
-  {
-    id: 'nr20',
-    title: 'NR-20 · Inflamáveis',
-    subtitle: 'Treinamento obrigatório da operação',
-    category: 'Segurança',
-    coverColor: '#E0002A',
-    coverTint: '#FCE8EC',
-    durationLabel: '3 aulas · 9 min',
-    summary: 'Procedimentos seguros para abastecimento, manuseio e prevenção de incidentes.',
-    minimumScore: 70,
-    examDurationSeconds: 300,
-    lessons: [
-      {
-        id: 'nr20-lesson-1',
-        title: 'Boas práticas no abastecimento',
-        description: 'Distância segura, EPIs e conferência da bomba.',
-        durationSeconds: 180,
-      },
-      {
-        id: 'nr20-lesson-2',
-        title: 'Riscos de inflamáveis',
-        description: 'Principais riscos e como agir em situações de alerta.',
-        durationSeconds: 180,
-      },
-      {
-        id: 'nr20-lesson-3',
-        title: 'Resposta imediata',
-        description: 'Passos de contenção e acionamento da liderança.',
-        durationSeconds: 180,
-      },
-    ],
-    questions: [
-      {
-        id: 'nr20-q1',
-        prompt: 'Antes de iniciar o abastecimento, qual conferência deve ser feita?',
-        options: ['Valor da bomba e EPI', 'Somente o caixa', 'Somente a placa do carro', 'Nenhuma conferência'],
-        correctOptionIndex: 0,
-      },
-      {
-        id: 'nr20-q2',
-        prompt: 'Ao identificar vazamento, a primeira ação é:',
-        options: ['Continuar o atendimento', 'Isolar a área e acionar o responsável', 'Somente avisar o cliente', 'Lavar o piso'],
-        correctOptionIndex: 1,
-      },
-      {
-        id: 'nr20-q3',
-        prompt: 'O uso de celular próximo à área de abastecimento é:',
-        options: ['Permitido', 'Permitido em horário vazio', 'Restrito', 'Obrigatório'],
-        correctOptionIndex: 2,
-      },
-      {
-        id: 'nr20-q4',
-        prompt: 'Qual item é obrigatório durante a operação?',
-        options: ['Fone de ouvido', 'EPI adequado', 'Tablet pessoal', 'Som ambiente'],
-        correctOptionIndex: 1,
-      },
-      {
-        id: 'nr20-q5',
-        prompt: 'Em caso de princípio de incêndio, o colaborador deve:',
-        options: ['Ignorar e seguir a fila', 'Acionar o protocolo e comunicar a liderança', 'Fechar apenas o caixa', 'Encerrar o turno'],
-        correctOptionIndex: 1,
-      },
-    ],
-  },
-  {
-    id: 'atendimento',
-    title: 'Atendimento no Pátio',
-    subtitle: 'Padronização da experiência do cliente',
-    category: 'Operação',
-    coverColor: '#29448D',
-    coverTint: '#E9EEFF',
-    durationLabel: '2 aulas · 6 min',
-    summary: 'Abordagem, cordialidade e conferências na jornada do cliente.',
-    minimumScore: 70,
-    examDurationSeconds: 240,
-    lessons: [
-      {
-        id: 'service-lesson-1',
-        title: 'Abordagem inicial',
-        description: 'Saudação, confirmação do pedido e postura no pátio.',
-        durationSeconds: 180,
-      },
-      {
-        id: 'service-lesson-2',
-        title: 'Encerramento do atendimento',
-        description: 'Conferência final e despedida padronizada.',
-        durationSeconds: 180,
-      },
-    ],
-    questions: [
-      {
-        id: 'service-q1',
-        prompt: 'A confirmação do pedido deve acontecer:',
-        options: ['Depois do abastecimento', 'No início do contato', 'Somente no caixa', 'Nunca'],
-        correctOptionIndex: 1,
-      },
-      {
-        id: 'service-q2',
-        prompt: 'No encerramento, o colaborador deve:',
-        options: ['Virar as costas rapidamente', 'Confirmar finalização e agradecer', 'Apenas receber o pagamento', 'Chamar outro frentista'],
-        correctOptionIndex: 1,
-      },
-    ],
   },
 ];
 
@@ -3837,13 +3704,11 @@ const TRAINING_STATUS_LABELS: Record<ColaboradorTreinamentoItem['status'], strin
 
 // A lista abaixo (cards) reflete status/progresso reais de
 // rh_treinamento_inscricoes + rh_treinamentos (via GET /treinamentos). O
-// conteúdo do curso em si (aulas, vídeo, prova) continua sendo apresentação
-// local (trainingCourses / TrainingDetailScreen mais abaixo) porque não
-// existe tabela de aulas/questões de prova no schema documentado hoje. Se o
-// id de um treinamento real não corresponder a nenhum item de
-// `trainingCourses`, a tela de detalhe (que assume esse vínculo) não vai
-// encontrar conteúdo — resolver isso de verdade exige uma tabela de conteúdo
-// no backend, fora do escopo desta tarefa.
+// conteúdo do curso (aulas, vídeo, prova) também é real agora — ver
+// TrainingDetailScreen/TrainingExamScreen mais abaixo, que buscam
+// rh_treinamento_aulas/questoes/inscricoes e persistem a prova via
+// rh_treinamento_respostas/prova (endpoint confirmado pela Lovable em
+// 03/08/2026).
 function TrainingsScreen({ navigation }: ScreenProps<'Trainings'>) {
   const { identity } = useContext(AuthIdentityContext);
   const colaboradorId = identity?.colaboradorId ?? null;
@@ -3981,149 +3846,157 @@ function useScreenCaptureProtection() {
 
 function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail'>) {
   useScreenCaptureProtection();
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
   const { courseProgress, updateLessonWatchTime } = useContext(TrainingProgressContext);
-  const isFocused = useIsFocused();
-  const course = trainingCourses.find((item) => item.id === route.params.courseId);
-  const fallbackCourse = course ?? trainingCourses[0];
-  const [appState, setAppState] = useState(AppState.currentState);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [isVideoExpanded, setIsVideoExpanded] = useState(false);
-  const [areExpandedControlsVisible, setAreExpandedControlsVisible] = useState(false);
-  const hasLeftLessonRef = useRef(false);
-  const [selectedLessonId, setSelectedLessonId] = useState(
-    getCurrentTrainingLessonId(fallbackCourse, courseProgress[fallbackCourse.id])
-  );
+  const courseId = route.params.courseId;
 
-  if (!course) {
-    return null;
-  }
+  const [treinamento, setTreinamento] = useState<RhTreinamentoCatalogo | null>(null);
+  const [aulas, setAulas] = useState<RhTreinamentoAula[]>([]);
+  const [questoesCount, setQuestoesCount] = useState<number>(0);
+  const [inscricaoId, setInscricaoId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
+  const hasMarkedStartedRef = useRef(false);
 
-  const progress = courseProgress[course.id];
-  const summary = getTrainingCourseProgressSummary(course, progress);
-  const currentLessonId = getCurrentTrainingLessonId(course, progress);
-  const unlockedLessonIds = getUnlockedTrainingLessonIds(course, progress);
+  useEffect(() => {
+    if (!colaboradorId) {
+      setIsLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    Promise.all([
+      fetchRhTreinamentoDetalhe(courseId),
+      fetchRhTreinamentoAulas(courseId),
+      fetchRhTreinamentoQuestoes(courseId),
+      fetchRhTreinamentoInscricoes({ colaboradorId, treinamentoId: courseId }),
+    ])
+      .then(([treinamentoData, aulasData, questoesData, inscricoesData]) => {
+        if (!isActive) return;
+        setTreinamento(treinamentoData);
+        setAulas([...aulasData].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
+        setQuestoesCount(questoesData.length);
+        const inscricao = inscricoesData[0] as { id?: string } | undefined;
+        setInscricaoId((inscricao?.id as string | undefined) ?? null);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar o treinamento.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [courseId, colaboradorId]);
+
+  // Quando não há aulas cadastradas em rh_treinamento_aulas, mas o próprio
+  // treinamento tem um video_url direto, tratamos ele como a aula única —
+  // é literalmente o conteúdo que existe, não é invenção.
+  const effectiveLessons: RhTreinamentoAula[] = useMemo(() => {
+    if (aulas.length > 0) return aulas;
+    if (treinamento?.video_url) {
+      return [
+        {
+          id: `treinamento-${courseId}`,
+          treinamento_id: courseId,
+          ordem: 1,
+          titulo: treinamento.titulo,
+          descricao: treinamento.subtitulo ?? null,
+          duracao_min: treinamento.carga_horaria_min ?? null,
+          video_url: treinamento.video_url,
+          video_storage_path: null,
+        },
+      ];
+    }
+    return [];
+  }, [aulas, treinamento, courseId]);
+
+  const lessonIds = useMemo(() => effectiveLessons.map((lesson) => lesson.id), [effectiveLessons]);
+  const progress = courseProgress[courseId];
+  const summary = getRealLessonProgressSummary(lessonIds, progress);
+  const currentLessonId = getCurrentRealLessonId(lessonIds, progress);
+  const unlockedLessonIds = getUnlockedRealLessonIds(lessonIds, progress);
+
+  useEffect(() => {
+    if (lessonIds.length === 0) return;
+    if (!selectedLessonId || !lessonIds.includes(selectedLessonId)) {
+      setSelectedLessonId(currentLessonId ?? lessonIds[0]);
+    }
+  }, [currentLessonId, lessonIds, selectedLessonId]);
+
   const selectedLesson =
-    course.lessons.find((lesson) => lesson.id === selectedLessonId) ??
-    course.lessons.find((lesson) => lesson.id === currentLessonId) ??
-    course.lessons[0];
-  const selectedLessonProgress = progress?.lessons[selectedLesson.id] ?? {
+    effectiveLessons.find((lesson) => lesson.id === selectedLessonId) ??
+    effectiveLessons.find((lesson) => lesson.id === currentLessonId) ??
+    effectiveLessons[0] ??
+    null;
+  const selectedLessonProgress = (selectedLesson && progress?.lessons[selectedLesson.id]) ?? {
     watchedSeconds: 0,
     completed: false,
   };
-  const selectedLessonPercent = Math.min(
-    100,
-    Math.round((selectedLessonProgress.watchedSeconds / selectedLesson.durationSeconds) * 100)
-  );
-  const isSelectedLessonCurrent = selectedLesson.id === currentLessonId;
-  const canTrackWatchTime =
-    isFocused &&
-    appState === 'active' &&
-    isPlaying &&
-    isSelectedLessonCurrent &&
-    !selectedLessonProgress.completed;
-  const lessonStatusColor = selectedLessonProgress.completed ? '#18955A' : '#E0002A';
-  const lessonActionStyle = selectedLessonProgress.completed
-    ? styles.trainingCompletedButton
-    : styles.primaryButton;
-  const lessonActionTextStyle = selectedLessonProgress.completed
-    ? styles.trainingCompletedButtonText
-    : styles.primaryButtonText;
+  const selectedLessonDurationSeconds = (selectedLesson?.duracao_min ?? 0) * 60;
+  const isSelectedLessonCurrent = selectedLesson?.id === currentLessonId;
+  const latestAttempt = progress?.examAttempt;
+  const minimumScore = treinamento?.prova_min_acerto ?? 70;
+  const examDurationSeconds = (treinamento?.prova_tempo_limite_min ?? 0) * 60;
+
+  const player = useVideoPlayer(selectedLesson?.video_url ?? null, (p) => {
+    p.timeUpdateEventInterval = 2;
+  });
+
+  useEffect(() => {
+    if (selectedLesson?.video_url) {
+      player.replace(selectedLesson.video_url);
+    }
+  }, [selectedLesson?.video_url, player]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      setAppState(nextState);
+      if (nextState !== 'active') {
+        player.pause();
+      }
     });
 
     return () => subscription.remove();
-  }, []);
+  }, [player]);
 
-  useEffect(() => {
-    const isAwayFromLesson = !isFocused || appState !== 'active';
+  useEventListener(player, 'timeUpdate', ({ currentTime }) => {
+    if (!selectedLesson || !isSelectedLessonCurrent || selectedLessonProgress.completed) return;
 
-    if (isAwayFromLesson) {
-      hasLeftLessonRef.current = true;
-      setIsPlaying(false);
-    } else if (hasLeftLessonRef.current) {
-      hasLeftLessonRef.current = false;
-      Alert.alert(
-        'Não saia da tela',
-        'O vídeo foi pausado porque você saiu da tela do treinamento. Continue por aqui para concluir a aula.'
-      );
-    }
-  }, [appState, isFocused]);
-
-  useEffect(() => {
-    async function syncOrientation() {
-      await ScreenOrientation.lockAsync(
-        isVideoExpanded
-          ? ScreenOrientation.OrientationLock.LANDSCAPE
-          : ScreenOrientation.OrientationLock.PORTRAIT_UP
-      );
+    const duration = player.duration || selectedLessonDurationSeconds || 0;
+    if (duration > 0) {
+      updateLessonWatchTime(courseId, selectedLesson.id, Math.floor(currentTime), duration);
     }
 
-    void syncOrientation();
-  }, [isVideoExpanded]);
-
-  useEffect(() => {
-    return () => {
-      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isVideoExpanded || !areExpandedControlsVisible) {
-      return;
+    // Registra que o colaborador começou o treinamento — PATCH real em
+    // rh_treinamento_inscricoes, uma vez por sessão nesta tela. Não fabrica
+    // progresso por aula (o backend não guarda isso granularmente), só
+    // marca que ele engajou com o conteúdo.
+    if (inscricaoId && !hasMarkedStartedRef.current) {
+      hasMarkedStartedRef.current = true;
+      updateRhTreinamentoInscricao(
+        inscricaoId,
+        { status: 'em_andamento', iniciado_em: new Date().toISOString() },
+        identity?.profileId
+      ).catch(() => {});
     }
+  });
 
-    const timeout = setTimeout(() => {
-      setAreExpandedControlsVisible(false);
-    }, 3000);
-
-    return () => clearTimeout(timeout);
-  }, [areExpandedControlsVisible, isVideoExpanded]);
-
-  useEffect(() => {
-    if (!isVideoExpanded) {
-      setAreExpandedControlsVisible(false);
+  useEventListener(player, 'playToEnd', () => {
+    if (!selectedLesson) return;
+    const duration = player.duration || selectedLessonDurationSeconds || 0;
+    if (duration > 0) {
+      updateLessonWatchTime(courseId, selectedLesson.id, duration, duration);
     }
-  }, [isVideoExpanded]);
-
-  useEffect(() => {
-    if (!unlockedLessonIds.includes(selectedLessonId)) {
-      setSelectedLessonId(currentLessonId);
-    }
-  }, [currentLessonId, selectedLessonId, unlockedLessonIds]);
-
-  useEffect(() => {
-    if (!canTrackWatchTime) {
-      return;
-    }
-
-    const interval = setInterval(() => {
-      updateLessonWatchTime(
-        course.id,
-        selectedLesson.id,
-        selectedLessonProgress.watchedSeconds + 1,
-        selectedLesson.durationSeconds
-      );
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [
-    canTrackWatchTime,
-    course.id,
-    selectedLesson.durationSeconds,
-    selectedLesson.id,
-    selectedLessonProgress.watchedSeconds,
-    updateLessonWatchTime,
-  ]);
-
-  useEffect(() => {
-    if (selectedLessonProgress.completed && !summary.allLessonsCompleted && currentLessonId !== selectedLesson.id) {
-      setSelectedLessonId(currentLessonId);
-      setIsPlaying(true);
-    }
-  }, [currentLessonId, selectedLesson.id, selectedLessonProgress.completed, summary.allLessonsCompleted]);
+  });
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -4138,319 +4011,316 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
           <Text style={styles.profileBackText}>Treinamentos</Text>
         </Pressable>
 
-        <View style={styles.trainingPlayerCard}>
-          <View style={styles.trainingCourseTopBlock}>
-            <View style={styles.trainingCourseTopHeader}>
-              <View style={[styles.trainingTag, { backgroundColor: course.coverTint }]}>
-                <Text style={[styles.trainingTagText, { color: course.coverColor }]}>{course.category}</Text>
-              </View>
-              <Text style={styles.trainingCourseTopProgress}>
-                {summary.completedLessons}/{course.lessons.length} concluídas
-              </Text>
-            </View>
-
-            <Text style={styles.trainingCourseTopTitle}>{course.title}</Text>
-            <Text style={styles.trainingCourseTopSubtitle}>{course.subtitle}</Text>
-          </View>
-
-          <View style={styles.trainingPlayerHeader}>
-            <View style={styles.trainingPlayerHeaderText}>
-              <Text style={styles.trainingPlayerLabel}>AULA ATUAL</Text>
-              <Text style={styles.trainingPlayerTitle}>{selectedLesson.title}</Text>
-            </View>
-            <View style={styles.trainingPlayerTimePill}>
-              <Text style={styles.trainingPlayerTimeText}>
-                {formatSeconds(selectedLessonProgress.watchedSeconds)} / {formatSeconds(selectedLesson.durationSeconds)}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.trainingVideoMock}>
-            <Pressable
-              style={styles.trainingExpandButton}
-              onPress={() => {
-                setIsVideoExpanded(true);
-                setAreExpandedControlsVisible(false);
-              }}
-            >
-              <Feather name="maximize-2" size={16} color="#FFFFFF" />
-            </Pressable>
-            <View style={styles.trainingVideoMockCenter}>
-              <View style={styles.trainingVideoPlayButton}>
-                <Feather name={isPlaying && canTrackWatchTime ? 'pause' : 'play'} size={18} color="#FFFFFF" />
-              </View>
-              <Text style={styles.trainingVideoMockTitle}>{selectedLesson.description}</Text>
-              <Text style={styles.trainingVideoMockSubtitle}>
-                Sem avanço manual. O vídeo só conclui assistindo até o final.
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.trainingProgressRow}>
-            <View style={styles.trainingProgressTrack}>
-              <View
-                style={[
-                  styles.trainingProgressFill,
-                  { width: `${selectedLessonPercent}%`, backgroundColor: '#E0002A' },
-                ]}
-              />
-            </View>
-            <Text style={styles.trainingProgressValue}>{selectedLessonPercent}%</Text>
-          </View>
-
-          <View style={styles.trainingPlayerActions}>
-            <Pressable
-              style={lessonActionStyle}
-              onPress={() => setIsPlaying((value) => !value)}
-              disabled={selectedLessonProgress.completed || !isSelectedLessonCurrent}
-            >
-              <Text style={lessonActionTextStyle}>
-                {selectedLessonProgress.completed ? 'Concluída' : isPlaying ? 'Pausar aula' : 'Continuar aula'}
-              </Text>
-            </Pressable>
-          </View>
-
-          {!isFocused || appState !== 'active' ? (
-            <Text style={styles.trainingPausedHint}>Ao sair da página o vídeo pausa automaticamente.</Text>
-          ) : null}
-        </View>
-
-        <View style={styles.trainingLessonsCard}>
-          <Text style={styles.trainingSectionTitle}>Aulas</Text>
-
-          {course.lessons.map((lesson, index) => {
-            const lessonProgress = progress?.lessons[lesson.id] ?? { watchedSeconds: 0, completed: false };
-            const lessonPercent = Math.min(
-              100,
-              Math.round((lessonProgress.watchedSeconds / lesson.durationSeconds) * 100)
-            );
-            const isUnlocked = unlockedLessonIds.includes(lesson.id);
-            const isCurrent = lesson.id === currentLessonId;
-            const statusLabel = lessonProgress.completed
-              ? 'Concluída'
-              : isCurrent
-                ? lessonPercent > 0
-                  ? 'Em andamento'
-                  : 'Assistir'
-                : isUnlocked
-                  ? 'Assistir'
-                  : 'Bloqueada';
-
-            return (
-              <Pressable
-                key={lesson.id}
-                style={[
-                  styles.trainingLessonRow,
-                  index < course.lessons.length - 1 ? styles.trainingLessonBorder : null,
-                  selectedLesson.id === lesson.id ? styles.trainingLessonRowActive : null,
-                ]}
-                onPress={() => {
-                  if (!isUnlocked) {
-                    return;
-                  }
-
-                  setSelectedLessonId(lesson.id);
-                  setIsPlaying(lesson.id === currentLessonId && !lessonProgress.completed);
-                  setIsVideoExpanded(false);
-                }}
-                disabled={!isUnlocked}
-              >
-                <View style={styles.trainingLessonLeft}>
-                  <View
-                    style={[
-                      styles.trainingLessonIcon,
-                      lessonProgress.completed
-                        ? styles.trainingLessonIconDone
-                        : isCurrent
-                          ? styles.trainingLessonIconCurrent
-                          : styles.trainingLessonIconDefault,
-                    ]}
-                  >
-                    <Feather
-                      name={lessonProgress.completed ? 'check' : !isUnlocked ? 'lock' : 'play'}
-                      size={14}
-                      color={lessonProgress.completed || isCurrent ? '#FFFFFF' : '#6D7690'}
-                    />
-                  </View>
-
-                  <View style={styles.trainingLessonTextBlock}>
-                    <Text style={styles.trainingLessonTitle}>{lesson.title}</Text>
-                    <Text style={styles.trainingLessonSubtitle}>
-                      {lesson.description} · {formatSeconds(lesson.durationSeconds)}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.trainingLessonStatus,
-                        lessonProgress.completed ? styles.trainingLessonStatusDone : null,
-                      ]}
-                    >
-                      {statusLabel}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.trainingLessonPercent}>{lessonPercent}%</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <View style={styles.trainingExamCard}>
-          <View style={styles.trainingExamHeader}>
-            <View>
-              <Text style={styles.trainingSectionTitle}>Prova final</Text>
-              <Text style={styles.trainingExamSubtitle}>
-                {course.questions.length} questões · mínimo {course.minimumScore}% para aprovação
-              </Text>
-            </View>
-            {progress?.examAttempt ? (
-              <View
-                style={[
-                  styles.trainingTag,
-                  { backgroundColor: progress.examAttempt.passed ? '#E4F5EE' : '#FCE8EC' },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.trainingTagText,
-                    { color: progress.examAttempt.passed ? '#18955A' : '#E0002A' },
-                  ]}
-                >
-                  {progress.examAttempt.passed ? 'Aprovado' : 'Não aprovado'}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          <Text style={styles.trainingExamMeta}>Tempo limite: {formatSeconds(course.examDurationSeconds)}</Text>
-
-          <Pressable
-            style={[styles.primaryButton, !summary.allLessonsCompleted ? styles.trainingDisabledButton : null]}
-            onPress={() => navigation.navigate('TrainingExam', { courseId: course.id })}
-            disabled={!summary.allLessonsCompleted}
-          >
-            <Text style={styles.primaryButtonText}>
-              {progress?.examAttempt ? 'Refazer prova' : 'Iniciar prova'}
-            </Text>
-          </Pressable>
-
-          {!summary.allLessonsCompleted ? (
-            <Text style={styles.trainingPausedHint}>A prova libera somente após assistir todas as aulas.</Text>
-          ) : null}
-        </View>
-      </ScrollView>
-
-      {isVideoExpanded ? (
-        <View style={styles.trainingVideoOverlay}>
-          <StatusBar style="light" hidden />
-          <SafeAreaView style={styles.trainingVideoOverlaySafeArea} edges={['top', 'bottom']}>
-            <View style={styles.trainingVideoOverlayPlayer}>
-              <Pressable
-                style={styles.trainingVideoOverlayTapArea}
-                onPress={() => setAreExpandedControlsVisible((value) => !value)}
-              />
-
-              {areExpandedControlsVisible ? (
-                <View style={styles.trainingVideoOverlayTopControls}>
-                  <View style={styles.trainingVideoOverlayHeader}>
-                    <Pressable style={styles.trainingVideoOverlayButton} onPress={() => setIsVideoExpanded(false)}>
-                      <Feather name="minimize-2" size={18} color="#FFFFFF" />
-                    </Pressable>
-
-                    <View style={styles.trainingVideoOverlayMeta}>
-                      <Text style={styles.trainingVideoOverlayLabel}>Aula atual</Text>
-                      <Text style={styles.trainingVideoOverlayTitle}>{selectedLesson.title}</Text>
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seus treinamentos.
+          </Text>
+        ) : isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando treinamento...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : !inscricaoId ? (
+          <Text style={styles.conversaEmptyText}>
+            Você ainda não está inscrito neste treinamento. Fale com o RH.
+          </Text>
+        ) : (
+          <>
+            <View style={styles.trainingPlayerCard}>
+              <View style={styles.trainingCourseTopBlock}>
+                <View style={styles.trainingCourseTopHeader}>
+                  {treinamento?.categoria ? (
+                    <View style={[styles.trainingTag, { backgroundColor: '#EEF0F6' }]}>
+                      <Text style={[styles.trainingTagText, { color: '#5C6580' }]}>{treinamento.categoria}</Text>
                     </View>
-
-                    <View style={styles.trainingVideoOverlayTimePill}>
-                      <Text style={styles.trainingVideoOverlayTimeText}>
-                        {formatSeconds(selectedLessonProgress.watchedSeconds)} / {formatSeconds(selectedLesson.durationSeconds)}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              ) : null}
-
-              <View style={styles.trainingVideoOverlayCenter}>
-                <View style={styles.trainingVideoMockCenter}>
-                  <View style={styles.trainingVideoPlayButton}>
-                    <Feather name={isPlaying && canTrackWatchTime ? 'pause' : 'play'} size={22} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.trainingVideoMockTitle}>{selectedLesson.description}</Text>
-                  <Text style={styles.trainingVideoMockSubtitle}>
-                    Sem avanço manual. O vídeo só conclui assistindo até o final.
+                  ) : null}
+                  <Text style={styles.trainingCourseTopProgress}>
+                    {summary.completedLessons}/{effectiveLessons.length} concluídas
                   </Text>
                 </View>
+
+                <Text style={styles.trainingCourseTopTitle}>{treinamento?.titulo ?? 'Treinamento'}</Text>
+                {treinamento?.subtitulo ? (
+                  <Text style={styles.trainingCourseTopSubtitle}>{treinamento.subtitulo}</Text>
+                ) : null}
               </View>
 
-              {areExpandedControlsVisible ? (
-                <View style={styles.trainingVideoOverlayBottomControls}>
+              {selectedLesson ? (
+                <>
+                  <View style={styles.trainingPlayerHeader}>
+                    <View style={styles.trainingPlayerHeaderText}>
+                      <Text style={styles.trainingPlayerLabel}>AULA ATUAL</Text>
+                      <Text style={styles.trainingPlayerTitle}>{selectedLesson.titulo}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.trainingVideoPlayer}>
+                    {selectedLesson.video_url ? (
+                      <VideoView
+                        player={player}
+                        style={{ width: '100%', height: '100%' }}
+                        nativeControls
+                        allowsFullscreen
+                        allowsPictureInPicture
+                        contentFit="contain"
+                      />
+                    ) : (
+                      <View style={styles.trainingVideoMockCenter}>
+                        <Text style={styles.trainingVideoMockSubtitle}>
+                          Nenhum vídeo cadastrado para esta aula.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
                   <View style={styles.trainingProgressRow}>
                     <View style={styles.trainingProgressTrack}>
                       <View
                         style={[
                           styles.trainingProgressFill,
-                          { width: `${selectedLessonPercent}%`, backgroundColor: lessonStatusColor },
+                          {
+                            width: `${Math.min(100, Math.round((selectedLessonProgress.watchedSeconds / (selectedLessonDurationSeconds || player.duration || 1)) * 100))}%`,
+                            backgroundColor: '#E0002A',
+                          },
                         ]}
                       />
                     </View>
-                    <Text style={[styles.trainingProgressValue, styles.trainingVideoOverlayPercent]}>
-                      {selectedLessonPercent}%
+                    <Text style={styles.trainingProgressValue}>
+                      {selectedLessonProgress.completed ? 'Concluída' : 'Em andamento'}
                     </Text>
                   </View>
+                </>
+              ) : (
+                <Text style={styles.conversaEmptyText}>
+                  Nenhum conteúdo de aula cadastrado para este treinamento ainda.
+                </Text>
+              )}
+            </View>
+
+            {effectiveLessons.length > 0 ? (
+              <View style={styles.trainingLessonsCard}>
+                <Text style={styles.trainingSectionTitle}>Aulas</Text>
+
+                {effectiveLessons.map((lesson, index) => {
+                  const lessonProgress = progress?.lessons[lesson.id] ?? { watchedSeconds: 0, completed: false };
+                  const lessonDurationSeconds = (lesson.duracao_min ?? 0) * 60;
+                  const lessonPercent = lessonDurationSeconds
+                    ? Math.min(100, Math.round((lessonProgress.watchedSeconds / lessonDurationSeconds) * 100))
+                    : 0;
+                  const isUnlocked = unlockedLessonIds.includes(lesson.id);
+                  const isCurrent = lesson.id === currentLessonId;
+                  const statusLabel = lessonProgress.completed
+                    ? 'Concluída'
+                    : isCurrent
+                      ? lessonPercent > 0
+                        ? 'Em andamento'
+                        : 'Assistir'
+                      : isUnlocked
+                        ? 'Assistir'
+                        : 'Bloqueada';
+
+                  return (
+                    <Pressable
+                      key={lesson.id}
+                      style={[
+                        styles.trainingLessonRow,
+                        index < effectiveLessons.length - 1 ? styles.trainingLessonBorder : null,
+                        selectedLesson?.id === lesson.id ? styles.trainingLessonRowActive : null,
+                      ]}
+                      onPress={() => {
+                        if (!isUnlocked) return;
+                        setSelectedLessonId(lesson.id);
+                      }}
+                      disabled={!isUnlocked}
+                    >
+                      <View style={styles.trainingLessonLeft}>
+                        <View
+                          style={[
+                            styles.trainingLessonIcon,
+                            lessonProgress.completed
+                              ? styles.trainingLessonIconDone
+                              : isCurrent
+                                ? styles.trainingLessonIconCurrent
+                                : styles.trainingLessonIconDefault,
+                          ]}
+                        >
+                          <Feather
+                            name={lessonProgress.completed ? 'check' : !isUnlocked ? 'lock' : 'play'}
+                            size={14}
+                            color={lessonProgress.completed || isCurrent ? '#FFFFFF' : '#6D7690'}
+                          />
+                        </View>
+
+                        <View style={styles.trainingLessonTextBlock}>
+                          <Text style={styles.trainingLessonTitle}>{lesson.titulo}</Text>
+                          <Text style={styles.trainingLessonSubtitle}>
+                            {lesson.descricao ? `${lesson.descricao} · ` : ''}
+                            {lesson.duracao_min ? `${lesson.duracao_min} min` : '—'}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.trainingLessonStatus,
+                              lessonProgress.completed ? styles.trainingLessonStatusDone : null,
+                            ]}
+                          >
+                            {statusLabel}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <Text style={styles.trainingLessonPercent}>{lessonPercent}%</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            <View style={styles.trainingExamCard}>
+              <View style={styles.trainingExamHeader}>
+                <View>
+                  <Text style={styles.trainingSectionTitle}>Prova final</Text>
+                  <Text style={styles.trainingExamSubtitle}>
+                    {questoesCount} questões · mínimo {minimumScore}% para aprovação
+                  </Text>
                 </View>
+                {latestAttempt ? (
+                  <View
+                    style={[
+                      styles.trainingTag,
+                      { backgroundColor: latestAttempt.passed ? '#E4F5EE' : '#FCE8EC' },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.trainingTagText,
+                        { color: latestAttempt.passed ? '#18955A' : '#E0002A' },
+                      ]}
+                    >
+                      {latestAttempt.passed ? 'Aprovado' : 'Não aprovado'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <Text style={styles.trainingExamMeta}>
+                {examDurationSeconds > 0 ? `Tempo limite: ${formatSeconds(examDurationSeconds)}` : 'Sem tempo limite definido'}
+              </Text>
+
+              <Pressable
+                style={[
+                  styles.primaryButton,
+                  !summary.allLessonsCompleted || questoesCount === 0 ? styles.trainingDisabledButton : null,
+                ]}
+                onPress={() => navigation.navigate('TrainingExam', { courseId })}
+                disabled={!summary.allLessonsCompleted || questoesCount === 0}
+              >
+                <Text style={styles.primaryButtonText}>{latestAttempt ? 'Refazer prova' : 'Iniciar prova'}</Text>
+              </Pressable>
+
+              {questoesCount === 0 ? (
+                <Text style={styles.trainingPausedHint}>Este treinamento ainda não tem perguntas cadastradas.</Text>
+              ) : !summary.allLessonsCompleted ? (
+                <Text style={styles.trainingPausedHint}>A prova libera somente após assistir todas as aulas.</Text>
               ) : null}
             </View>
-          </SafeAreaView>
-        </View>
-      ) : null}
+          </>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) {
   useScreenCaptureProtection();
-  const { resetExamAttempt, saveExamAttempt } = useContext(TrainingProgressContext);
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const { saveExamAttempt } = useContext(TrainingProgressContext);
   const isFocused = useIsFocused();
-  const course = trainingCourses.find((item) => item.id === route.params.courseId);
-  const [answers, setAnswers] = useState<Record<string, number>>({});
+  const courseId = route.params.courseId;
+
+  const [treinamento, setTreinamento] = useState<RhTreinamentoCatalogo | null>(null);
+  const [questoes, setQuestoes] = useState<RhTreinamentoQuestao[]>([]);
+  const [inscricaoId, setInscricaoId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [appState, setAppState] = useState(AppState.currentState);
-  const [remainingSeconds, setRemainingSeconds] = useState(course?.examDurationSeconds ?? 0);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [hasFinished, setHasFinished] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const hasLeftExamRef = useRef(false);
+  const startedAtRef = useRef(Date.now());
 
-  if (!course) {
-    return null;
-  }
-
-  const currentQuestion = course.questions[currentQuestionIndex];
-
-  const finalizeExam = (reason: 'submitted' | 'timeout') => {
-    if (hasFinished) {
+  useEffect(() => {
+    if (!colaboradorId) {
+      setErrorMessage('Seu acesso ainda não está vinculado a um colaborador no RH.');
+      setIsLoading(false);
       return;
     }
 
-    const correctAnswers = course.questions.reduce((total, question) => {
-      return total + (answers[question.id] === question.correctOptionIndex ? 1 : 0);
-    }, 0);
-    const scorePercent = Math.round((correctAnswers / course.questions.length) * 100);
-    const attempt: TrainingExamAttempt = {
-      scorePercent,
-      correctAnswers,
-      totalQuestions: course.questions.length,
-      passed: reason === 'submitted' && scorePercent >= course.minimumScore,
-      reason,
-    };
+    setIsLoading(true);
+    setErrorMessage(null);
 
-    setHasFinished(true);
-    saveExamAttempt(course.id, attempt);
-    navigation.replace('TrainingExamResult', { courseId: course.id });
-  };
+    Promise.all([
+      fetchRhTreinamentoDetalhe(courseId),
+      fetchRhTreinamentoQuestoes(courseId, false),
+      fetchRhTreinamentoInscricoes({ colaboradorId, treinamentoId: courseId }),
+    ])
+      .then(([treinamentoData, questoesData, inscricoesData]) => {
+        setTreinamento(treinamentoData);
+        setQuestoes([...questoesData].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
+        const inscricao = inscricoesData[0] as { id?: string } | undefined;
+        setInscricaoId((inscricao?.id as string | undefined) ?? null);
+        const limiteMin = treinamentoData?.prova_tempo_limite_min;
+        setRemainingSeconds(limiteMin ? limiteMin * 60 : null);
+      })
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar a prova.');
+      })
+      .finally(() => setIsLoading(false));
+  }, [courseId, colaboradorId]);
 
-  useEffect(() => {
-    resetExamAttempt(course.id);
-  }, [course.id, resetExamAttempt]);
+  const currentQuestion = questoes[currentQuestionIndex] ?? null;
+
+  const finalizeExam = useCallback(
+    (reason: 'submitted' | 'timeout') => {
+      if (hasFinished || !inscricaoId || questoes.length === 0) return;
+      setHasFinished(true);
+      setIsSubmitting(true);
+
+      const tempoGastoMin = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60000));
+
+      submeterProvaTreinamento(
+        {
+          inscricao_id: inscricaoId,
+          respostas: questoes.map((questao) => ({
+            questao_id: questao.id,
+            resposta: answers[questao.id] ?? '',
+          })),
+          tempo_gasto_min: tempoGastoMin,
+        },
+        identity?.profileId
+      )
+        .then(({ resultado }) => {
+          const attempt: TrainingExamAttempt = {
+            scorePercent: resultado.nota,
+            correctAnswers: resultado.acertos,
+            totalQuestions: resultado.total,
+            passed: resultado.aprovado,
+            minimumScore: resultado.prova_min_acerto,
+            reason,
+          };
+          saveExamAttempt(courseId, attempt);
+          navigation.replace('TrainingExamResult', { courseId });
+        })
+        .catch((err) => {
+          setHasFinished(false);
+          Alert.alert('Não foi possível enviar a prova', err instanceof Error ? err.message : 'Tente novamente.');
+        })
+        .finally(() => setIsSubmitting(false));
+    },
+    [hasFinished, inscricaoId, questoes, answers, identity?.profileId, saveExamAttempt, courseId, navigation]
+  );
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', setAppState);
@@ -4460,7 +4330,7 @@ function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) 
   const isExamOnScreen = isFocused && appState === 'active';
 
   useEffect(() => {
-    if (hasFinished) {
+    if (hasFinished || remainingSeconds === null) {
       return;
     }
 
@@ -4479,6 +4349,7 @@ function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) 
 
     const interval = setInterval(() => {
       setRemainingSeconds((current) => {
+        if (current === null) return current;
         const nextRemainingSeconds = Math.max(0, current - 1);
 
         if (nextRemainingSeconds === 0) {
@@ -4490,7 +4361,26 @@ function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) 
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [finalizeExam, hasFinished, isExamOnScreen]);
+  }, [finalizeExam, hasFinished, isExamOnScreen, remainingSeconds]);
+
+  const progressBlock = questoes.length > 0 ? (
+    <View style={styles.trainingExamProgressBlock}>
+      <Text style={styles.trainingExamProgressLabel}>
+        Questão {currentQuestionIndex + 1} de {questoes.length}
+      </Text>
+      <View style={styles.trainingProgressTrack}>
+        <View
+          style={[
+            styles.trainingProgressFill,
+            {
+              width: `${((currentQuestionIndex + 1) / questoes.length) * 100}%`,
+              backgroundColor: '#29448D',
+            },
+          ]}
+        />
+      </View>
+    </View>
+  ) : null;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -4502,78 +4392,86 @@ function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <Pressable style={styles.profileBackRow} onPress={() => navigation.goBack()}>
           <Feather name="chevron-left" size={18} color="#29448D" />
-          <Text style={styles.profileBackText}>{course.title}</Text>
+          <Text style={styles.profileBackText}>{treinamento?.titulo ?? 'Treinamentos'}</Text>
         </Pressable>
 
-        <View style={styles.trainingExamTimerCard}>
-          <View>
-            <Text style={styles.trainingExamTimerLabel}>Tempo restante</Text>
-            <Text style={styles.trainingExamTimerValue}>{formatSeconds(remainingSeconds)}</Text>
-          </View>
+        {isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando prova...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : !inscricaoId ? (
+          <Text style={styles.conversaEmptyText}>
+            Você ainda não está inscrito neste treinamento. Fale com o RH.
+          </Text>
+        ) : questoes.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Este treinamento ainda não tem perguntas cadastradas.</Text>
+        ) : (
+          <>
+            {remainingSeconds !== null ? (
+              <View style={styles.trainingExamTimerCard}>
+                <View>
+                  <Text style={styles.trainingExamTimerLabel}>Tempo restante</Text>
+                  <Text style={styles.trainingExamTimerValue}>{formatSeconds(remainingSeconds)}</Text>
+                </View>
+                {progressBlock}
+              </View>
+            ) : (
+              progressBlock
+            )}
 
-          <View style={styles.trainingExamProgressBlock}>
-            <Text style={styles.trainingExamProgressLabel}>
-              Questão {currentQuestionIndex + 1} de {course.questions.length}
-            </Text>
-            <View style={styles.trainingProgressTrack}>
-              <View
-                style={[
-                  styles.trainingProgressFill,
-                  {
-                    width: `${((currentQuestionIndex + 1) / course.questions.length) * 100}%`,
-                    backgroundColor: '#29448D',
-                  },
-                ]}
-              />
-            </View>
-          </View>
-        </View>
+            {currentQuestion ? (
+              <View style={styles.trainingQuestionCard}>
+                <Text style={styles.trainingQuestionTitle}>{currentQuestion.enunciado}</Text>
 
-        <View style={styles.trainingQuestionCard}>
-          <Text style={styles.trainingQuestionTitle}>{currentQuestion.prompt}</Text>
+                {currentQuestion.alternativas.map((alternativa) => {
+                  const isSelected = answers[currentQuestion.id] === alternativa.chave;
 
-          {currentQuestion.options.map((option, optionIndex) => {
-            const isSelected = answers[currentQuestion.id] === optionIndex;
+                  return (
+                    <Pressable
+                      key={`${currentQuestion.id}-${alternativa.chave}`}
+                      style={[styles.trainingOptionCard, isSelected ? styles.trainingOptionCardSelected : null]}
+                      onPress={() =>
+                        setAnswers((current) => ({ ...current, [currentQuestion.id]: alternativa.chave }))
+                      }
+                    >
+                      <View style={[styles.trainingOptionDot, isSelected ? styles.trainingOptionDotSelected : null]} />
+                      <Text style={[styles.trainingOptionText, isSelected ? styles.trainingOptionTextSelected : null]}>
+                        {alternativa.texto}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
 
-            return (
+            <View style={styles.trainingExamButtons}>
               <Pressable
-                key={`${currentQuestion.id}-${optionIndex}`}
-                style={[styles.trainingOptionCard, isSelected ? styles.trainingOptionCardSelected : null]}
-                onPress={() => setAnswers((current) => ({ ...current, [currentQuestion.id]: optionIndex }))}
+                style={[styles.secondaryButton, currentQuestionIndex === 0 ? styles.trainingDisabledButton : null]}
+                onPress={() => setCurrentQuestionIndex((value) => Math.max(0, value - 1))}
+                disabled={currentQuestionIndex === 0}
               >
-                <View style={[styles.trainingOptionDot, isSelected ? styles.trainingOptionDotSelected : null]} />
-                <Text style={[styles.trainingOptionText, isSelected ? styles.trainingOptionTextSelected : null]}>
-                  {option}
-                </Text>
+                <Text style={styles.secondaryButtonText}>Anterior</Text>
               </Pressable>
-            );
-          })}
-        </View>
 
-        <View style={styles.trainingExamButtons}>
-          <Pressable
-            style={[styles.secondaryButton, currentQuestionIndex === 0 ? styles.trainingDisabledButton : null]}
-            onPress={() => setCurrentQuestionIndex((value) => Math.max(0, value - 1))}
-            disabled={currentQuestionIndex === 0}
-          >
-            <Text style={styles.secondaryButtonText}>Anterior</Text>
-          </Pressable>
-
-          {currentQuestionIndex < course.questions.length - 1 ? (
-            <Pressable
-              style={styles.primaryButton}
-              onPress={() =>
-                setCurrentQuestionIndex((value) => Math.min(course.questions.length - 1, value + 1))
-              }
-            >
-              <Text style={styles.primaryButtonText}>Próxima</Text>
-            </Pressable>
-          ) : (
-            <Pressable style={styles.primaryButton} onPress={() => finalizeExam('submitted')}>
-              <Text style={styles.primaryButtonText}>Finalizar prova</Text>
-            </Pressable>
-          )}
-        </View>
+              {currentQuestionIndex < questoes.length - 1 ? (
+                <Pressable
+                  style={styles.primaryButton}
+                  onPress={() => setCurrentQuestionIndex((value) => Math.min(questoes.length - 1, value + 1))}
+                >
+                  <Text style={styles.primaryButtonText}>Próxima</Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  style={[styles.primaryButton, isSubmitting ? styles.primaryButtonDisabled : null]}
+                  onPress={() => finalizeExam('submitted')}
+                  disabled={isSubmitting}
+                >
+                  <Text style={styles.primaryButtonText}>{isSubmitting ? 'Enviando...' : 'Finalizar prova'}</Text>
+                </Pressable>
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -4581,10 +4479,10 @@ function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) 
 
 function TrainingExamResultScreen({ navigation, route }: ScreenProps<'TrainingExamResult'>) {
   const { courseProgress } = useContext(TrainingProgressContext);
-  const course = trainingCourses.find((item) => item.id === route.params.courseId);
-  const attempt = courseProgress[route.params.courseId]?.examAttempt;
+  const courseId = route.params.courseId;
+  const attempt = courseProgress[courseId]?.examAttempt;
 
-  if (!course || !attempt) {
+  if (!attempt) {
     return null;
   }
 
@@ -4597,7 +4495,7 @@ function TrainingExamResultScreen({ navigation, route }: ScreenProps<'TrainingEx
     attempt.reason === 'timeout'
       ? 'O tempo da prova terminou antes da conclusão. Revise o conteúdo e tente novamente.'
       : isFailed
-        ? `Você não atingiu a nota mínima de ${course.minimumScore}%. Revise o conteúdo e tente novamente.`
+        ? `Você não atingiu a nota mínima de ${attempt.minimumScore}%. Revise o conteúdo e tente novamente.`
         : 'Você concluiu a avaliação com sucesso e já pode seguir com o treinamento.';
 
   return (
@@ -4631,11 +4529,11 @@ function TrainingExamResultScreen({ navigation, route }: ScreenProps<'TrainingEx
         ) : null}
 
         <View style={styles.trainingResultButtons}>
-          <Pressable style={styles.primaryButton} onPress={() => navigation.replace('TrainingExam', { courseId: course.id })}>
+          <Pressable style={styles.primaryButton} onPress={() => navigation.replace('TrainingExam', { courseId })}>
             <Text style={styles.primaryButtonText}>{isFailed ? 'Refazer prova' : 'Fazer novamente'}</Text>
           </Pressable>
 
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.replace('TrainingDetail', { courseId: course.id })}>
+          <Pressable style={styles.secondaryButton} onPress={() => navigation.replace('TrainingDetail', { courseId })}>
             <Text style={styles.secondaryButtonText}>Voltar ao curso</Text>
           </Pressable>
 
@@ -10958,31 +10856,30 @@ function formatSeconds(totalSeconds: number) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function getTrainingCourseProgressSummary(course: TrainingCourse, progress?: TrainingCourseProgress) {
-  const completedLessons = course.lessons.filter((lesson) => progress?.lessons[lesson.id]?.completed).length;
-  const percent = Math.round((completedLessons / course.lessons.length) * 100);
+// Versões genéricas (operam em cima de uma lista de ids de aula reais —
+// rh_treinamento_aulas — em vez do TrainingCourse mock que existia antes).
+function getRealLessonProgressSummary(lessonIds: string[], progress?: TrainingCourseProgress) {
+  const completedLessons = lessonIds.filter((id) => progress?.lessons[id]?.completed).length;
+  const percent = lessonIds.length ? Math.round((completedLessons / lessonIds.length) * 100) : 0;
 
   return {
     completedLessons,
     percent,
-    allLessonsCompleted: completedLessons === course.lessons.length,
+    allLessonsCompleted: lessonIds.length > 0 && completedLessons === lessonIds.length,
   };
 }
 
-function getCurrentTrainingLessonId(course: TrainingCourse, progress?: TrainingCourseProgress) {
-  return (
-    course.lessons.find((lesson) => !progress?.lessons[lesson.id]?.completed)?.id ??
-    course.lessons[course.lessons.length - 1]?.id
-  );
+function getCurrentRealLessonId(lessonIds: string[], progress?: TrainingCourseProgress) {
+  return lessonIds.find((id) => !progress?.lessons[id]?.completed) ?? lessonIds[lessonIds.length - 1];
 }
 
-function getUnlockedTrainingLessonIds(course: TrainingCourse, progress?: TrainingCourseProgress) {
+function getUnlockedRealLessonIds(lessonIds: string[], progress?: TrainingCourseProgress) {
   const unlockedIds = new Set<string>();
-  const currentLessonId = getCurrentTrainingLessonId(course, progress);
+  const currentLessonId = getCurrentRealLessonId(lessonIds, progress);
 
-  course.lessons.forEach((lesson) => {
-    if (progress?.lessons[lesson.id]?.completed || lesson.id === currentLessonId) {
-      unlockedIds.add(lesson.id);
+  lessonIds.forEach((id) => {
+    if (progress?.lessons[id]?.completed || id === currentLessonId) {
+      unlockedIds.add(id);
     }
   });
 
@@ -12308,6 +12205,13 @@ export const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  trainingVideoPlayer: {
+    height: 190,
+    borderRadius: 20,
+    backgroundColor: '#000000',
+    marginTop: 14,
+    overflow: 'hidden',
   },
   trainingVideoMockCenter: {
     alignItems: 'center',
