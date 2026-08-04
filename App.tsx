@@ -211,6 +211,7 @@ type DashboardCardProps = {
   tintColor: string;
   label: string;
   value: string;
+  caption?: string | null;
 };
 
 type CalendarEvent = {
@@ -3500,7 +3501,7 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
   const [homeData, setHomeData] = useState<ColaboradorHomeData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [proximosEventosCount, setProximosEventosCount] = useState<number | null>(null);
+  const [proximoEvento, setProximoEvento] = useState<RhCalendarioEvento | null | undefined>(undefined);
 
   useEffect(() => {
     if (!colaboradorId) {
@@ -3535,21 +3536,21 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
   }, [colaboradorId]);
 
   // rh_calendario_eventos (endpoint liberado pela Lovable em 03/08/2026) — o
-  // card "Próximos eventos" mostra a contagem de eventos futuros do
-  // colaborador + globais, em vez do "Em breve" fixo.
+  // card "Próximos eventos" mostra o próprio próximo evento (data + título),
+  // igual ao card do web, em vez de uma contagem.
   useEffect(() => {
     if (!colaboradorId) {
-      setProximosEventosCount(null);
+      setProximoEvento(null);
       return;
     }
 
     let isActive = true;
-    fetchRhCalendarioEventos({ colaboradorId, de: new Date().toISOString(), incluirGlobais: true, limit: 50 })
+    fetchRhCalendarioEventos({ colaboradorId, de: new Date().toISOString(), incluirGlobais: true, limit: 1 })
       .then((eventos) => {
-        if (isActive) setProximosEventosCount(eventos.length);
+        if (isActive) setProximoEvento(eventos[0] ?? null);
       })
       .catch(() => {
-        if (isActive) setProximosEventosCount(null);
+        if (isActive) setProximoEvento(null);
       });
 
     return () => {
@@ -3570,7 +3571,13 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
       iconColor: '#5F6DB3',
       tintColor: '#EDF1FF',
       label: 'Próximos eventos',
-      value: proximosEventosCount === null ? '—' : String(proximosEventosCount),
+      value:
+        proximoEvento === undefined
+          ? '—'
+          : proximoEvento === null
+          ? '—'
+          : formatDiaMesBR(proximoEvento.inicio_em),
+      caption: proximoEvento?.titulo ?? null,
     },
     {
       icon: 'briefcase-outline',
@@ -6486,6 +6493,14 @@ function formatDateOnlyBR(raw: unknown): string {
   if (!match) return raw;
   const [, year, month, day] = match;
   return `${day}/${month}/${year}`;
+}
+
+function formatDiaMesBR(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (!match) return '—';
+  const [, , month, day] = match;
+  return `${day}/${month}`;
 }
 
 function buildColaboradorProfileSummary(row: RhColaboradorRaw | null): ProfileField[] {
@@ -10849,7 +10864,7 @@ function InputRow({
   );
 }
 
-function DashboardCard({ icon, iconColor, tintColor, label, value }: DashboardCardProps) {
+function DashboardCard({ icon, iconColor, tintColor, label, value, caption }: DashboardCardProps) {
   return (
     <View style={styles.dashboardCard}>
       <View style={[styles.iconShell, { backgroundColor: tintColor }]}>
@@ -10857,6 +10872,11 @@ function DashboardCard({ icon, iconColor, tintColor, label, value }: DashboardCa
       </View>
       <Text style={styles.dashboardCardValue}>{value}</Text>
       <Text style={styles.dashboardCardLabel}>{label}</Text>
+      {caption ? (
+        <Text style={styles.dashboardCardCaption} numberOfLines={1}>
+          {caption}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -11831,6 +11851,13 @@ export const styles = StyleSheet.create({
     color: '#697187',
     fontSize: 14,
     lineHeight: 18,
+    fontWeight: '600',
+  },
+  dashboardCardCaption: {
+    marginTop: 2,
+    color: '#B18316',
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '600',
   },
   infoCard: {
