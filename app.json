@@ -11,6 +11,7 @@
       "bundleIdentifier": "br.com.af360"
     },
     "android": {
+      "package": "br.com.af360",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/logo.png"
