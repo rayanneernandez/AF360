@@ -29,6 +29,11 @@
           "photosPermission": "Permita o acesso às suas fotos para anexar arquivos às solicitações."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "48d41531-1aae-49dc-bfa0-b540a394ecfe"
+      }
+    }
   }
 }
