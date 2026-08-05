@@ -8493,21 +8493,14 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
   const resumo = gnv?.resumo ?? gnv ?? null;
   const gnvPostosTodos = pickArr(gnv, ['postos']);
 
-  // Faixa ideal é 35-45% pros postos padrão, mas existem postos "alternativos"
-  // com faixa 18-23% (lista em src/lib/gnv-faixas.ts, não exposta no payload
-  // ainda) — classificamos só pela faixa padrão por enquanto, o que pode
-  // marcar postos alternativos saudáveis como "fora da faixa". Pedimos pra
-  // Lovable expor a faixa por posto pra corrigir isso com precisão.
-  const gnvPostosComPercentual = gnvPostosTodos
-    .map((station: any) => ({ station, percentual: pickNum(station, ['pct_desconto_gnv']) }))
-    .filter((entry) => entry.percentual !== null);
-  const podeClassificarFaixa = gnvPostosComPercentual.length > 0;
-  const postosForaDaFaixa = podeClassificarFaixa
-    ? gnvPostosComPercentual.filter((entry) => entry.percentual! < 35 || entry.percentual! > 45).map((entry) => entry.station)
-    : [];
-  const postosDentroDaFaixa = podeClassificarFaixa
-    ? gnvPostosComPercentual.filter((entry) => entry.percentual! >= 35 && entry.percentual! <= 45)
-    : [];
+  // Confirmado pela Lovable em 05/08/2026: cada posto já vem com faixa_status
+  // ("ideal"|"atencao"|"risco") pré-calculado, respeitando faixa_tipo
+  // (padrao/alternativo/customizado) e overrides por posto — não precisamos
+  // mais aplicar o threshold 35-45% no cliente.
+  const postosRisco = gnvPostosTodos.filter((station: any) => pickStr(station, ['faixa_status']) === 'risco');
+  const postosAtencao = gnvPostosTodos.filter((station: any) => pickStr(station, ['faixa_status']) === 'atencao');
+  const postosIdeal = gnvPostosTodos.filter((station: any) => pickStr(station, ['faixa_status']) === 'ideal');
+  const podeClassificarFaixa = postosRisco.length + postosAtencao.length + postosIdeal.length > 0;
 
   const totalFaturado = pickNum(resumo, ['total_faturado_gnv']);
   const faturamentoDesconto = pickNum(resumo, ['faturamento_desconto_gnv']);
@@ -8517,7 +8510,27 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
   const economiaIcms = pickNum(resumo, ['economia_icms']);
 
   const periodoLabel = periodo.de ? formatDateBR(new Date(periodo.de + 'T00:00:00')) : formatDateBR(new Date());
-  const idealCount = podeClassificarFaixa ? postosDentroDaFaixa.length : null;
+
+  const renderPostoRow = (station: any, index: number) => {
+    const volume = pickNum(station, ['volume_total']);
+    const faturamento = pickNum(station, ['faturamento_total']);
+    const percentual = pickNum(station, ['pct_desconto_gnv']);
+    const faixaMin = pickNum(station, ['faixa_min']);
+    const faixaMax = pickNum(station, ['faixa_max']);
+
+    return (
+      <View key={pickStr(station, ['posto_id']) ?? index} style={styles.gnvRiskRow}>
+        <View style={styles.gnvRiskTextBlock}>
+          <Text style={styles.gnvRiskName}>{pickStr(station, ['posto_nome']) ?? '—'}</Text>
+          <Text style={styles.gnvRiskMeta}>
+            {fmtNumOrDash(volume, ' m³')} · {fmtBRLOrDash(faturamento)}
+            {faixaMin !== null && faixaMax !== null ? ` · meta ${faixaMin}-${faixaMax}%` : ''}
+          </Text>
+        </View>
+        <Text style={styles.gnvRiskPercent}>{fmtPercentOrDash(percentual)}</Text>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -8580,18 +8593,29 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
                 <View style={styles.gnvReportStatBlock}>
                   <View style={styles.gnvReportStatTopRow}>
                     <View style={[styles.gnvReportStatDot, { backgroundColor: '#E6213D' }]} />
-                    <Text style={styles.gnvReportStatLabel}>Fora da faixa</Text>
+                    <Text style={styles.gnvReportStatLabel}>Risco</Text>
                   </View>
                   <Text style={[styles.gnvReportStatValue, { color: '#E6213D' }]}>
-                    {podeClassificarFaixa ? postosForaDaFaixa.length : '—'}
+                    {podeClassificarFaixa ? postosRisco.length : '—'}
+                  </Text>
+                </View>
+                <View style={styles.gnvReportStatBlock}>
+                  <View style={styles.gnvReportStatTopRow}>
+                    <View style={[styles.gnvReportStatDot, { backgroundColor: '#B7791F' }]} />
+                    <Text style={styles.gnvReportStatLabel}>Atenção</Text>
+                  </View>
+                  <Text style={[styles.gnvReportStatValue, { color: '#B7791F' }]}>
+                    {podeClassificarFaixa ? postosAtencao.length : '—'}
                   </Text>
                 </View>
                 <View style={styles.gnvReportStatBlock}>
                   <View style={styles.gnvReportStatTopRow}>
                     <View style={[styles.gnvReportStatDot, { backgroundColor: '#18955A' }]} />
-                    <Text style={styles.gnvReportStatLabel}>Dentro da faixa (35-45%)</Text>
+                    <Text style={styles.gnvReportStatLabel}>Ideal</Text>
                   </View>
-                  <Text style={[styles.gnvReportStatValue, { color: '#18955A' }]}>{fmtNumOrDash(idealCount)}</Text>
+                  <Text style={[styles.gnvReportStatValue, { color: '#18955A' }]}>
+                    {podeClassificarFaixa ? postosIdeal.length : '—'}
+                  </Text>
                 </View>
               </View>
               {!podeClassificarFaixa && gnvPostosTodos.length > 0 ? (
@@ -8602,31 +8626,34 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
               ) : null}
             </View>
 
-            <Text style={styles.directorSectionTitle}>
-              FORA DA FAIXA (35-45%){podeClassificarFaixa ? ` · ${postosForaDaFaixa.length}` : ''}
-            </Text>
             {!podeClassificarFaixa ? (
-              <Text style={styles.conversaEmptyText}>Sem classificação por faixa de desconto disponível.</Text>
-            ) : postosForaDaFaixa.length === 0 ? (
-              <Text style={styles.conversaEmptyText}>Nenhum posto fora da faixa de desconto no período.</Text>
+              <>
+                <Text style={styles.directorSectionTitle}>POSTOS COM GNV</Text>
+                <Text style={styles.conversaEmptyText}>Sem classificação por faixa de desconto disponível.</Text>
+              </>
             ) : (
-              postosForaDaFaixa.map((station: any, index: number) => {
-                const volume = pickNum(station, ['volume_total']);
-                const faturamento = pickNum(station, ['faturamento_total']);
-                const percentual = pickNum(station, ['pct_desconto_gnv']);
+              <>
+                <Text style={styles.directorSectionTitle}>RISCO · {postosRisco.length}</Text>
+                {postosRisco.length === 0 ? (
+                  <Text style={styles.conversaEmptyText}>Nenhum posto em risco no período.</Text>
+                ) : (
+                  postosRisco.map(renderPostoRow)
+                )}
 
-                return (
-                  <View key={pickStr(station, ['posto_id']) ?? index} style={styles.gnvRiskRow}>
-                    <View style={styles.gnvRiskTextBlock}>
-                      <Text style={styles.gnvRiskName}>{pickStr(station, ['posto_nome']) ?? '—'}</Text>
-                      <Text style={styles.gnvRiskMeta}>
-                        {fmtNumOrDash(volume, ' m³')} · {fmtBRLOrDash(faturamento)}
-                      </Text>
-                    </View>
-                    <Text style={styles.gnvRiskPercent}>{fmtPercentOrDash(percentual)}</Text>
-                  </View>
-                );
-              })
+                <Text style={styles.directorSectionTitle}>ATENÇÃO · {postosAtencao.length}</Text>
+                {postosAtencao.length === 0 ? (
+                  <Text style={styles.conversaEmptyText}>Nenhum posto em atenção no período.</Text>
+                ) : (
+                  postosAtencao.map(renderPostoRow)
+                )}
+
+                <Text style={styles.directorSectionTitle}>IDEAL · {postosIdeal.length}</Text>
+                {postosIdeal.length === 0 ? (
+                  <Text style={styles.conversaEmptyText}>Nenhum posto na faixa ideal no período.</Text>
+                ) : (
+                  postosIdeal.map(renderPostoRow)
+                )}
+              </>
             )}
           </>
         )}
