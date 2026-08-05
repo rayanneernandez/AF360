@@ -2631,6 +2631,34 @@ export async function fetchAdminDashboardKpis(opts?: {
   return json.data as AdminDashboardKpis;
 }
 
+// --- Diretoria: painel de Vendas/Margem/Estoques/Métricas GNV — endpoint
+// unificado confirmado pela Lovable em 04/08/2026 (/api/public/internal/
+// diretoria-vendas, via proxy /api/diretoria-painel). "recurso" pode ser
+// resumo|rede|margem|estoques|gnv|postos|periodo; sem de/ate vem o mês
+// corrente até a última data com movimento. O shape de "dados" é o mesmo DTO
+// que a UI deles consome (FlashDiarioPayload/MargensPayload/
+// EstoqueDiretoriaPayload/etc.) — mantido como "any" aqui de propósito: os
+// nomes de campo exatos vieram só por descrição, não por um schema formal, e
+// prefiro validar/ajustar contra o retorno real na primeira carga em vez de
+// arriscar um tipo rígido errado.
+
+export type DiretoriaPainelRecurso = 'resumo' | 'rede' | 'margem' | 'estoques' | 'gnv' | 'postos' | 'periodo';
+
+export async function fetchDiretoriaPainel<T = any>(
+  recurso: DiretoriaPainelRecurso,
+  params: { de?: string; ate?: string; posto?: string } = {},
+  actorId?: string | null
+): Promise<T> {
+  const search = new URLSearchParams();
+  search.set('recurso', recurso);
+  if (params.de) search.set('de', params.de);
+  if (params.ate) search.set('ate', params.ate);
+  if (params.posto) search.set('posto', params.posto);
+  const path = `/api/diretoria-painel?${search.toString()}`;
+  const json = await api.get(withActorId(path, actorId));
+  return json.dados as T;
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {

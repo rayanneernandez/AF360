@@ -41,6 +41,7 @@ import {
   ToggleSwitch,
   adminUser,
   adminUserInitials,
+  directorUserInitials,
   AuthIdentityContext,
   AdminThemeContext,
   NotificationRoutineFormModal,
@@ -10475,9 +10476,9 @@ function adminNotifRoutineToWriteBody(
   };
 }
 
-function adminNotifTemplateToWriteBody(local: NotificationTemplateItem): AdminNotifTemplateWriteBody {
+function adminNotifTemplateToWriteBody(local: NotificationTemplateItem, modulo: string): AdminNotifTemplateWriteBody {
   return {
-    modulo: ADMIN_NOTIF_MODULO,
+    modulo,
     codigo: local.code,
     nome: local.title,
     titulo: local.messageTitle,
@@ -10486,7 +10487,14 @@ function adminNotifTemplateToWriteBody(local: NotificationTemplateItem): AdminNo
   };
 }
 
-export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotifications'>) {
+type NotificationsPanelKind = 'admin' | 'diretoria';
+
+// Painel de Notificações compartilhado entre Admin e Diretoria — mesma tabela
+// por módulo (<modulo>_notificacoes) e mesma tabela de templates
+// (notif_templates, filtrada por coluna modulo). Cada painel só vê/edita as
+// suas próprias rotinas e templates (modulo='admin' ou modulo='diretoria').
+function NotificationsPanelScreen({ kind, navigation }: { kind: NotificationsPanelKind; navigation: any }) {
+  const modulo = kind === 'diretoria' ? 'diretoria' : ADMIN_NOTIF_MODULO;
   const { identity } = useContext(AuthIdentityContext);
   const actorId = identity?.profileId;
 
@@ -10509,22 +10517,22 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
   const loadTemplates = useCallback(() => {
     setIsLoadingTemplates(true);
     setTemplatesError(null);
-    fetchAdminNotifTemplates({ modulo: ADMIN_NOTIF_MODULO })
+    fetchAdminNotifTemplates({ modulo })
       .then((data) => setRealTemplates(data.templates))
       .catch((err) =>
         setTemplatesError(err instanceof Error ? err.message : 'Não foi possível carregar os templates.')
       )
       .finally(() => setIsLoadingTemplates(false));
-  }, []);
+  }, [modulo]);
 
   const loadRoutines = useCallback(() => {
     setIsLoadingRoutines(true);
     setRoutinesError(null);
-    fetchAdminNotifRotinas(ADMIN_NOTIF_MODULO)
+    fetchAdminNotifRotinas(modulo)
       .then((data) => setRealRoutines(data.rotinas))
       .catch((err) => setRoutinesError(err instanceof Error ? err.message : 'Não foi possível carregar as rotinas.'))
       .finally(() => setIsLoadingRoutines(false));
-  }, []);
+  }, [modulo]);
 
   useEffect(() => {
     loadTemplates();
@@ -10546,7 +10554,7 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
     setRealRoutines((current) =>
       current.map((item) => (item.id === id ? { ...item, isActive: !item.isActive } : item))
     );
-    updateAdminNotifRotina(ADMIN_NOTIF_MODULO, id, { ativa: !target.isActive }, actorId).catch((err) => {
+    updateAdminNotifRotina(modulo, id, { ativa: !target.isActive }, actorId).catch((err) => {
       showAdminApiError(err, 'Não foi possível atualizar a rotina.');
       loadRoutines();
     });
@@ -10567,8 +10575,8 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
     const isExisting = realRoutines.some((item) => item.id === routine.id);
     setIsSavingRoutine(true);
     const request = isExisting
-      ? updateAdminNotifRotina(ADMIN_NOTIF_MODULO, routine.id, body, actorId)
-      : createAdminNotifRotina(ADMIN_NOTIF_MODULO, body, actorId);
+      ? updateAdminNotifRotina(modulo, routine.id, body, actorId)
+      : createAdminNotifRotina(modulo, body, actorId);
     request
       .then(() => {
         setIsRoutineFormOpen(false);
@@ -10579,7 +10587,7 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
   };
 
   const handleRunRoutine = (routine: NotificationRoutineItem) => {
-    executarAdminNotifRotina(ADMIN_NOTIF_MODULO, routine.id, actorId)
+    executarAdminNotifRotina(modulo, routine.id, actorId)
       .then(() => {
         Alert.alert('Rotina executada', `"${routine.title}" foi executada agora.`);
         loadRoutines();
@@ -10594,7 +10602,7 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
         text: 'Excluir',
         style: 'destructive',
         onPress: () => {
-          deleteAdminNotifRotina(ADMIN_NOTIF_MODULO, routine.id, actorId)
+          deleteAdminNotifRotina(modulo, routine.id, actorId)
             .then(() => loadRoutines())
             .catch((err) => showAdminApiError(err, 'Não foi possível excluir a rotina.'));
         },
@@ -10613,7 +10621,7 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
   };
 
   const handleSaveTemplate = (template: NotificationTemplateItem) => {
-    const body = adminNotifTemplateToWriteBody(template);
+    const body = adminNotifTemplateToWriteBody(template, modulo);
     const isExisting = realTemplates.some((item) => item.id === template.id);
     setIsSavingTemplate(true);
     const request = isExisting
@@ -10632,15 +10640,32 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.topBarContainer}>
-        <TopBar
-          initials={adminUserInitials}
-          variant="administrador"
-          onAvatarPress={() => navigation.navigate('AdminProfile')}
-        />
+        {kind === 'diretoria' ? (
+          <TopBar
+            initials={directorUserInitials}
+            variant="diretoria"
+            onAvatarPress={() => navigation.navigate('DirectorProfile')}
+          />
+        ) : (
+          <TopBar
+            initials={adminUserInitials}
+            variant="administrador"
+            onAvatarPress={() => navigation.navigate('AdminProfile')}
+          />
+        )}
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <AdminPageHeader icon="bell" title="Notificações" subtitle="Rotinas e templates" />
+        {kind === 'diretoria' ? (
+          <View style={styles.directorPageTitleRow}>
+            <View style={[styles.iconShell, styles.iconAccentRed]}>
+              <Feather name="bell" size={18} color="#E6213D" />
+            </View>
+            <Text style={styles.pageTitle}>Notificações</Text>
+          </View>
+        ) : (
+          <AdminPageHeader icon="bell" title="Notificações" subtitle="Rotinas e templates" />
+        )}
 
         <View style={styles.directorNotifTabsRow}>
           <Pressable
@@ -10847,6 +10872,16 @@ export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotif
       />
     </SafeAreaView>
   );
+}
+
+export function AdminNotificationsScreen({ navigation }: ScreenProps<'AdminNotifications'>) {
+  return <NotificationsPanelScreen kind="admin" navigation={navigation} />;
+}
+
+// Reaproveitada pela Diretoria (App.tsx > DirectorNotificationsScreen) — mesmo
+// componente, modulo='diretoria'.
+export function DirectorNotificationsPanelScreen({ navigation }: { navigation: any }) {
+  return <NotificationsPanelScreen kind="diretoria" navigation={navigation} />;
 }
 
 // ============================================================================

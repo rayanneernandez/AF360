@@ -74,6 +74,7 @@ import {
   AdminVersoesScreen,
   AdminNotificationsScreen,
   AdminLogsScreen,
+  DirectorNotificationsPanelScreen,
 } from './Administrador';
 import {
   fetchConversas,
@@ -1141,7 +1142,7 @@ const directorUser = {
   accessLabel: 'Painéis de gestão',
 };
 
-const directorUserInitials = getInitials(directorUser.fullName);
+export const directorUserInitials = getInitials(directorUser.fullName);
 const directorUserFirstName = getFirstName(directorUser.fullName);
 
 const directorSideMenuSections: Array<{
@@ -7425,48 +7426,59 @@ function DirectorDashboardScreen({ navigation }: ScreenProps<'DirectorDashboard'
 
 function DirectorProfileScreen({ navigation }: ScreenProps<'DirectorProfile'>) {
   const { identity } = useContext(AuthIdentityContext);
+  const { perfil, isLoading, errorMessage } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
+  const colaboradorId = identity?.colaboradorId ?? null;
 
-  const directorProfileFields: ProfileField[] = [
-    { label: 'Cargo', value: directorUser.role },
-    { label: 'Área', value: directorUser.area },
-    { label: 'E-mail', value: directorUser.email },
-    { label: 'Telefone', value: directorUser.phone },
-    { label: 'Acesso', value: directorUser.accessLabel },
-  ];
+  const displayName = perfil?.nome_completo || identity?.fullName || '—';
+  const displayRoleAndUnit =
+    [perfil?.cargo, perfil?.posto_trabalho].filter((part): part is string => Boolean(part)).join(' · ') || '—';
+  const initials = getInitials(perfil?.nome_completo || identity?.fullName || 'Diretoria');
+  const directorProfileFields = buildColaboradorProfileSummary(perfil);
 
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.topBarContainer}>
-        <TopBar initials={directorUserInitials} variant="diretoria" />
+        <TopBar initials={initials} variant="diretoria" />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <LinearGradient colors={['#2F4EA8', '#4C439E']} style={styles.directorProfileHero}>
           <View style={styles.directorProfileBadge}>
-            <Text style={styles.directorProfileBadgeText}>{directorUserInitials}</Text>
+            <Text style={styles.directorProfileBadgeText}>{initials}</Text>
           </View>
           <View>
-            <Text style={styles.directorProfileName}>{directorUser.fullName}</Text>
-            <Text style={styles.directorProfileRole}>{directorUser.roleAndUnit}</Text>
+            <Text style={styles.directorProfileName}>{displayName}</Text>
+            <Text style={styles.directorProfileRole}>{displayRoleAndUnit}</Text>
           </View>
         </LinearGradient>
 
-        <View style={styles.directorProfileCard}>
-          {directorProfileFields.map((item, index) => (
-            <View
-              key={item.label}
-              style={[
-                styles.directorProfileRow,
-                index < directorProfileFields.length - 1 ? styles.directorProfileRowBorder : null,
-              ]}
-            >
-              <Text style={styles.directorProfileLabel}>{item.label}</Text>
-              <Text style={styles.directorProfileValue}>{item.value}</Text>
-            </View>
-          ))}
-        </View>
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seu perfil
+            completo.
+          </Text>
+        ) : isLoading && !perfil ? (
+          <Text style={styles.conversaEmptyText}>Carregando seu perfil...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : (
+          <View style={styles.directorProfileCard}>
+            {directorProfileFields.map((item, index) => (
+              <View
+                key={item.label}
+                style={[
+                  styles.directorProfileRow,
+                  index < directorProfileFields.length - 1 ? styles.directorProfileRowBorder : null,
+                ]}
+              >
+                <Text style={styles.directorProfileLabel}>{item.label}</Text>
+                <Text style={styles.directorProfileValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {hasMultiplePanels ? (
           <Pressable style={styles.switchPanelButton} onPress={() => navigation.replace('SelectPanel')}>
@@ -9573,299 +9585,7 @@ export function TemplateFormModal({
 }
 
 function DirectorNotificationsScreen({ navigation }: ScreenProps<'DirectorNotifications'>) {
-  const [activeTab, setActiveTab] = useState<'routines' | 'templates'>('routines');
-  const [routines, setRoutines] = useState<NotificationRoutineItem[]>(notificationRoutines);
-  const [isRoutineFormOpen, setIsRoutineFormOpen] = useState(false);
-  const [editingRoutine, setEditingRoutine] = useState<NotificationRoutineItem | null>(null);
-  const [templates, setTemplates] = useState<NotificationTemplateItem[]>(notificationTemplates);
-  const [isTemplateFormOpen, setIsTemplateFormOpen] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<NotificationTemplateItem | null>(null);
-
-  const toggleRoutine = (id: string) => {
-    setRoutines((current) =>
-      current.map((item) => (item.id === id ? { ...item, enabled: !item.enabled } : item))
-    );
-  };
-
-  const openCreateRoutineModal = () => {
-    setEditingRoutine(null);
-    setIsRoutineFormOpen(true);
-  };
-
-  const openEditRoutineModal = (routine: NotificationRoutineItem) => {
-    setEditingRoutine(routine);
-    setIsRoutineFormOpen(true);
-  };
-
-  const handleSaveRoutine = (routine: NotificationRoutineItem) => {
-    setRoutines((current) => {
-      const exists = current.some((item) => item.id === routine.id);
-
-      if (exists) {
-        return current.map((item) => (item.id === routine.id ? routine : item));
-      }
-
-      return [routine, ...current];
-    });
-    setIsRoutineFormOpen(false);
-  };
-
-  const handleRunRoutine = (routine: NotificationRoutineItem) => {
-    const todayLabel = formatDateBR(new Date());
-
-    setRoutines((current) =>
-      current.map((item) => (item.id === routine.id ? { ...item, lastRunLabel: todayLabel } : item))
-    );
-    Alert.alert('Rotina executada', `"${routine.title}" foi executada agora.`);
-  };
-
-  const handleDeleteRoutine = (routine: NotificationRoutineItem) => {
-    Alert.alert('Excluir rotina', `Tem certeza que deseja excluir "${routine.title}"?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Excluir',
-        style: 'destructive',
-        onPress: () => setRoutines((current) => current.filter((item) => item.id !== routine.id)),
-      },
-    ]);
-  };
-
-  const openCreateTemplateModal = () => {
-    setEditingTemplate(null);
-    setIsTemplateFormOpen(true);
-  };
-
-  const openEditTemplateModal = (template: NotificationTemplateItem) => {
-    setEditingTemplate(template);
-    setIsTemplateFormOpen(true);
-  };
-
-  const handleSaveTemplate = (template: NotificationTemplateItem) => {
-    setTemplates((current) => {
-      const exists = current.some((item) => item.id === template.id);
-
-      if (exists) {
-        return current.map((item) => (item.id === template.id ? template : item));
-      }
-
-      return [template, ...current];
-    });
-    setIsTemplateFormOpen(false);
-  };
-
-  return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <View style={styles.topBarContainer}>
-        <TopBar
-          initials={directorUserInitials}
-          variant="diretoria"
-          onAvatarPress={() => navigation.navigate('DirectorProfile')}
-        />
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.directorPageTitleRow}>
-          <View style={[styles.iconShell, styles.iconAccentRed]}>
-            <Feather name="bell" size={18} color="#E6213D" />
-          </View>
-          <Text style={styles.pageTitle}>Notificações</Text>
-        </View>
-
-        <View style={styles.directorNotifTabsRow}>
-          <Pressable
-            style={[styles.directorNotifTab, activeTab === 'routines' ? styles.directorNotifTabActive : null]}
-            onPress={() => setActiveTab('routines')}
-          >
-            <Text
-              style={[
-                styles.directorNotifTabText,
-                activeTab === 'routines' ? styles.directorNotifTabTextActive : null,
-              ]}
-            >
-              Rotinas
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.directorNotifTab, activeTab === 'templates' ? styles.directorNotifTabActive : null]}
-            onPress={() => setActiveTab('templates')}
-          >
-            <Text
-              style={[
-                styles.directorNotifTabText,
-                activeTab === 'templates' ? styles.directorNotifTabTextActive : null,
-              ]}
-            >
-              Templates
-            </Text>
-          </Pressable>
-        </View>
-
-        {activeTab === 'routines' ? (
-          <>
-            <View style={styles.directorNotifHeaderRow}>
-              <Text style={styles.directorNotifCountLabel}>{routines.length} rotina(s) cadastrada(s)</Text>
-              <Pressable style={styles.directorNotifNewButton} onPress={openCreateRoutineModal}>
-                <Feather name="plus" size={15} color="#FFFFFF" />
-                <Text style={styles.directorNotifNewButtonText}>Nova</Text>
-              </Pressable>
-            </View>
-
-            {routines.map((routine) => {
-              const triggerMeta =
-                notificationTriggerOptions.find((option) => option.value === routine.triggerKind) ??
-                notificationTriggerOptions[2];
-              const triggerDetail =
-                routine.triggerKind === 'recorrente'
-                  ? routine.cronSchedule
-                  : routine.triggerKind === 'evento'
-                  ? routine.eventCode
-                  : '';
-              const channelLabels = (Object.keys(notificationChannelMeta) as Array<keyof NotificationChannels>)
-                .filter((key) => routine.channels[key])
-                .map((key) => notificationChannelMeta[key].label);
-              const audienceLabel =
-                routine.audienceType === 'cargo'
-                  ? `Por cargo (${routine.audienceCargos.length})`
-                  : notificationAudienceOptions.find((option) => option.value === routine.audienceType)
-                      ?.label ?? 'Todos os colaboradores';
-
-              return (
-                <View key={routine.id} style={styles.routineCard}>
-                  <View style={styles.routineTopRow}>
-                    <Text style={styles.routineTitle}>{routine.title}</Text>
-                    <ToggleSwitch value={routine.enabled} onValueChange={() => toggleRoutine(routine.id)} />
-                  </View>
-                  <Text style={styles.routineSubtitle}>{routine.messageTitle}</Text>
-                  <View style={styles.routineTagsRow}>
-                    <View
-                      style={[
-                        styles.routineTag,
-                        routine.triggerKind === 'recorrente'
-                          ? styles.routineTagRecurring
-                          : styles.routineTagEvent,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.routineTagText,
-                          routine.triggerKind === 'recorrente'
-                            ? styles.routineTagTextRecurring
-                            : styles.routineTagTextEvent,
-                        ]}
-                      >
-                        {triggerMeta.label}
-                      </Text>
-                    </View>
-                    <View style={styles.routineChannelRow}>
-                      <Feather name="message-circle" size={12} color="#7C8397" />
-                      <Text style={styles.routineChannelText} numberOfLines={1}>
-                        {channelLabels.length > 0 ? channelLabels.join(', ') : 'Nenhum canal'}
-                      </Text>
-                    </View>
-                    <Text style={styles.routineAudience}>{audienceLabel}</Text>
-                  </View>
-                  {triggerDetail ? <Text style={styles.routineTriggerDetail}>{triggerDetail}</Text> : null}
-
-                  <View style={styles.routineFooterRow}>
-                    <View style={styles.routineLastRunRow}>
-                      <Feather name="clock" size={12} color="#9AA1B5" />
-                      <Text style={styles.routineLastRunText} numberOfLines={1}>
-                        {routine.lastRunLabel === '—'
-                          ? 'Nunca executada'
-                          : `Última exec.: ${routine.lastRunLabel}`}
-                      </Text>
-                    </View>
-                    <View style={styles.routineActionsRow}>
-                      <Pressable
-                        style={styles.routineActionButton}
-                        onPress={() => handleRunRoutine(routine)}
-                        hitSlop={6}
-                      >
-                        <Feather name="play" size={15} color="#18955A" />
-                      </Pressable>
-                      <Pressable
-                        style={styles.routineActionButton}
-                        onPress={() => openEditRoutineModal(routine)}
-                        hitSlop={6}
-                      >
-                        <Feather name="edit-2" size={15} color="#3457D5" />
-                      </Pressable>
-                      <Pressable
-                        style={styles.routineActionButton}
-                        onPress={() => handleDeleteRoutine(routine)}
-                        hitSlop={6}
-                      >
-                        <Feather name="trash-2" size={15} color="#E6213D" />
-                      </Pressable>
-                    </View>
-                  </View>
-                </View>
-              );
-            })}
-          </>
-        ) : (
-          <>
-            <View style={styles.directorNotifHeaderRow}>
-              <Text style={styles.directorNotifCountLabel}>
-                {templates.length} template(s) · ⭐ padrão do sistema, demais customizados
-              </Text>
-              <Pressable style={styles.directorNotifNewButton} onPress={openCreateTemplateModal}>
-                <Feather name="plus" size={15} color="#FFFFFF" />
-                <Text style={styles.directorNotifNewButtonText}>Novo</Text>
-              </Pressable>
-            </View>
-
-            {templates.map((template) => (
-              <View key={template.id} style={styles.templateCard}>
-                <View style={styles.templateTopRow}>
-                  {template.isSystemDefault ? <Feather name="star" size={14} color="#D79A22" /> : null}
-                  <Text style={styles.templateTitle}>{template.title}</Text>
-                </View>
-                <Text style={styles.templateCode}>{template.code}</Text>
-                <Text style={styles.templateDescription}>{template.messageTitle}</Text>
-                <Text style={styles.templateDescription} numberOfLines={2}>
-                  {template.message}
-                </Text>
-                <View style={styles.templateTagsRow}>
-                  {template.variables.map((variable) => (
-                    <View key={variable} style={styles.templateTag}>
-                      <Text style={styles.templateTagText}>{`{{${variable}}}`}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                <View style={styles.templateFooterRow}>
-                  <Pressable
-                    style={styles.routineActionButton}
-                    onPress={() => openEditTemplateModal(template)}
-                    hitSlop={6}
-                  >
-                    <Feather name="edit-2" size={15} color="#3457D5" />
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-          </>
-        )}
-      </ScrollView>
-
-      <NotificationRoutineFormModal
-        visible={isRoutineFormOpen}
-        initialRoutine={editingRoutine}
-        templates={templates}
-        onClose={() => setIsRoutineFormOpen(false)}
-        onSave={handleSaveRoutine}
-      />
-
-      <TemplateFormModal
-        visible={isTemplateFormOpen}
-        initialTemplate={editingTemplate}
-        onClose={() => setIsTemplateFormOpen(false)}
-        onSave={handleSaveTemplate}
-      />
-    </SafeAreaView>
-  );
+  return <DirectorNotificationsPanelScreen navigation={navigation} />;
 }
 
 // --- Fale com a Diretoria (conversas de WhatsApp) ---
@@ -10951,6 +10671,16 @@ export function formatDateBR(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year = date.getFullYear();
   return `${day}/${month}/${year}`;
+}
+
+// YYYY-MM-DD em horário local (não usar toISOString() aqui — ele converte pra
+// UTC e pode voltar/avançar um dia dependendo do fuso do aparelho). Usado nos
+// filtros de período que o backend espera como de=/ate=.
+function toApiDateOnly(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export function getCalendarWeeks(year: number, monthIndex: number) {

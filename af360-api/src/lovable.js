@@ -581,6 +581,20 @@ function getDashboardKpis({ mes, ano, actorId } = {}) {
   return lovableGet('/api/public/internal/dashboard-kpis', { mes, ano }, actorId);
 }
 
+// --- Diretoria: painel de Vendas/Margem/Estoques/Métricas GNV — endpoint
+// unificado confirmado pela Lovable em 04/08/2026:
+// /api/public/internal/diretoria-vendas. "recurso" no GET pode ser:
+// resumo|rede|margem|estoques|gnv|postos|periodo. "de"/"ate" (YYYY-MM-DD)
+// filtram o período; sem eles vem o mês corrente até a última data com
+// movimento. "posto" filtra por idq de posto (repetível/CSV; omitir ou
+// posto=todos = rede inteira). Retorno: { recurso, de, ate, postos, dados }.
+// Fontes por baixo: espelhos Quality no Postgres AF360 deles + metas/alertas
+// (config_metas_margem, quality_alerta_custo) + API de relatórios GNV.
+
+function getDiretoriaVendas({ recurso, de, ate, posto } = {}, actorId) {
+  return lovableGet('/api/public/internal/diretoria-vendas', { recurso, de, ate, posto }, actorId);
+}
+
 // --- Colaborador: Reembolsos (tabela rh_reembolsos, endpoint confirmado pela
 // Lovable em 03/08/2026). Enum rh_reembolso_status: rascunho | enviado |
 // aprovado | pago | recusado. PATCH com status=aprovado/recusado preenche
@@ -904,6 +918,7 @@ module.exports = {
   patchLevaMaisConfig,
   getDashboardPerformance,
   getDashboardKpis,
+  getDiretoriaVendas,
   getRhReembolsos,
   postRhReembolso,
   patchRhReembolso,
