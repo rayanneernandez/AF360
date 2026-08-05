@@ -7719,7 +7719,8 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
 
 function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
   const postos = useDiretoriaPostos();
-  const { dados: margem, periodo, isLoading, errorMessage } = useDiretoriaPainelRecurso('margem', {});
+  const filtros = useMemo(() => getCurrentMonthRange(), []);
+  const { dados: margem, periodo, isLoading, errorMessage } = useDiretoriaPainelRecurso('margem', filtros);
 
   const categoriasCombustivel = pickArr(margem, ['categorias_combustivel', 'ofensores_combustivel', 'combustiveis']);
   const categoriasLoja = pickArr(margem, ['categorias_loja', 'ofensores_loja', 'loja']);
@@ -7964,12 +7965,13 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
   const postos = useDiretoriaPostos();
   const stockStationOptions = useMemo(() => ['Toda a rede', ...postos.map((p) => p.nome)], [postos]);
 
+  const estoquesFiltros = useMemo(() => getCurrentMonthRange(), []);
   const {
     dados: estoques,
     periodo: estoquesPeriodo,
     isLoading: isLoadingEstoques,
     errorMessage: estoquesError,
-  } = useDiretoriaPainelRecurso('estoques', {});
+  } = useDiretoriaPainelRecurso('estoques', estoquesFiltros);
   // Confirmado pela Lovable em 04/08/2026: tanques ficam em tanquesTodos/
   // tanquesAlerta, produtos de loja (o que alimenta a seção abaixo) em
   // "produtos" — por isso "produtos" não entra mais na busca de tanques
@@ -8456,7 +8458,8 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
 
 function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
   const postos = useDiretoriaPostos();
-  const { dados: gnv, periodo, isLoading, errorMessage } = useDiretoriaPainelRecurso('gnv', {});
+  const filtros = useMemo(() => getCurrentMonthRange(), []);
+  const { dados: gnv, periodo, isLoading, errorMessage } = useDiretoriaPainelRecurso('gnv', filtros);
 
   const resumo = gnv?.resumo ?? gnv ?? null;
   const postosForaDaFaixa = pickArr(gnv, ['postos']);
@@ -11140,6 +11143,18 @@ function toApiDateOnly(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+// Painéis de período (Vendas/Margem/Estoques/GNV) que não recebem de/ate
+// explícitos caem no default do backend, que é o dia de hoje isolado — quase
+// sempre sem venda lançada ainda, diferente do painel web (que abre com o
+// mês corrente inteiro, ex.: 01/08 a 31/08). Usar isso como filtro padrão
+// nesses recursos evita a tela abrir "zerada" só por causa do período.
+function getCurrentMonthRange(): { de: string; ate: string } {
+  const today = new Date();
+  const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  return { de: toApiDateOnly(firstDayOfMonth), ate: toApiDateOnly(lastDayOfMonth) };
 }
 
 // --- Helpers de leitura defensiva do painel da Diretoria ---
