@@ -7506,6 +7506,7 @@ export function RHPreContratadosScreen({ navigation }: ScreenProps<'RHPreContrat
 type ConformidadeEtapaResumo = {
   id: string;
   etapa: string;
+  icon: keyof typeof Feather.glyphMap;
   emAberto: number;
   atrasadas: number;
   mediaDias: number;
@@ -7513,11 +7514,43 @@ type ConformidadeEtapaResumo = {
 };
 
 const conformidadeEtapas: ConformidadeEtapaResumo[] = [
-  { id: 'documentos', etapa: 'Documentos do candidato', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '7 dias' },
-  { id: 'validacao-rh', etapa: 'Validação do RH', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '2 dias' },
-  { id: 'contabilidade', etapa: 'Contabilidade', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '3 dias' },
-  { id: 'aso', etapa: 'ASO', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '5 dias' },
-  { id: 'efetivacao', etapa: 'Efetivação após retorno', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '2 dias' },
+  {
+    id: 'documentos',
+    etapa: 'Documentos do candidato',
+    icon: 'file-text',
+    emAberto: 0,
+    atrasadas: 0,
+    mediaDias: 0,
+    slaLabel: '7 dias',
+  },
+  {
+    id: 'validacao-rh',
+    etapa: 'Validação do RH',
+    icon: 'user-check',
+    emAberto: 0,
+    atrasadas: 0,
+    mediaDias: 0,
+    slaLabel: '2 dias',
+  },
+  {
+    id: 'contabilidade',
+    etapa: 'Contabilidade',
+    icon: 'briefcase',
+    emAberto: 0,
+    atrasadas: 0,
+    mediaDias: 0,
+    slaLabel: '3 dias',
+  },
+  { id: 'aso', etapa: 'ASO', icon: 'activity', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '5 dias' },
+  {
+    id: 'efetivacao',
+    etapa: 'Efetivação após retorno',
+    icon: 'check-circle',
+    emAberto: 0,
+    atrasadas: 0,
+    mediaDias: 0,
+    slaLabel: '2 dias',
+  },
 ];
 
 const conformidadeEtapaFilterOptions = ['Todas', ...conformidadeEtapas.map((item) => item.etapa)];
@@ -7714,24 +7747,36 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
           <Text style={rhStyles.sectionTitle}>POR ETAPA</Text>
         </View>
         {conformidadeEtapas.map((item) => (
-          <View key={item.id} style={rhStyles.goalCard}>
-            <Text style={rhStyles.goalTitle}>{item.etapa}</Text>
-            <View style={rhStyles.statGridRow}>
-              <View style={rhStyles.statGridItem}>
-                <Text style={rhStyles.statGridValue}>{item.emAberto}</Text>
-                <Text style={rhStyles.statGridLabel}>Em aberto</Text>
+          <View
+            key={item.id}
+            style={[rhStyles.etapaCard, item.atrasadas > 0 ? rhStyles.etapaCardAlert : null]}
+          >
+            <View style={rhStyles.etapaCardHeader}>
+              <View style={rhStyles.etapaCardIconShell}>
+                <Feather name={item.icon} size={15} color="#3457D5" />
               </View>
-              <View style={rhStyles.statGridItem}>
-                <Text style={[rhStyles.statGridValue, rhStyles.statGridValueGold]}>{item.atrasadas}</Text>
-                <Text style={rhStyles.statGridLabel}>Atrasadas</Text>
+              <Text style={rhStyles.etapaCardTitle} numberOfLines={1}>
+                {item.etapa}
+              </Text>
+              <View style={rhStyles.etapaSlaPill}>
+                <Text style={rhStyles.etapaSlaPillText}>SLA {item.slaLabel}</Text>
               </View>
-              <View style={rhStyles.statGridItem}>
-                <Text style={rhStyles.statGridValue}>{item.mediaDias}</Text>
-                <Text style={rhStyles.statGridLabel}>Média (dias)</Text>
+            </View>
+
+            <View style={rhStyles.etapaStatsRow}>
+              <View style={rhStyles.etapaStatItem}>
+                <Text style={rhStyles.etapaStatValue}>{item.emAberto}</Text>
+                <Text style={rhStyles.etapaStatLabel}>Em aberto</Text>
               </View>
-              <View style={rhStyles.statGridItem}>
-                <Text style={[rhStyles.statGridValue, rhStyles.statGridValueGreen]}>{item.slaLabel}</Text>
-                <Text style={rhStyles.statGridLabel}>SLA</Text>
+              <View style={rhStyles.etapaStatDivider} />
+              <View style={rhStyles.etapaStatItem}>
+                <Text style={[rhStyles.etapaStatValue, { color: '#B07A1E' }]}>{item.atrasadas}</Text>
+                <Text style={rhStyles.etapaStatLabel}>Atrasadas</Text>
+              </View>
+              <View style={rhStyles.etapaStatDivider} />
+              <View style={rhStyles.etapaStatItem}>
+                <Text style={rhStyles.etapaStatValue}>{item.mediaDias}</Text>
+                <Text style={rhStyles.etapaStatLabel}>Média (dias)</Text>
               </View>
             </View>
           </View>
@@ -9951,13 +9996,16 @@ const rhStyles = StyleSheet.create({
     marginBottom: 14,
   },
   filterFieldBlock: {
-    marginTop: 12,
+    marginTop: 10,
+    // "estreito" — o campo não estica até a borda do card, fica com uma
+    // margem lateral pra parecer menor sem perder a legibilidade.
+    marginHorizontal: 6,
   },
   filterFieldLabel: {
     color: '#15203E',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   filterFieldSelect: {
     flexDirection: 'row',
@@ -9966,14 +10014,83 @@ const rhStyles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#D7DCE8',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   filterFieldSelectText: {
     color: '#15203E',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
+  },
+  // Card "Por etapa" — ícone + título + pill de SLA em cima, 3 números com
+  // divisor embaixo. Borda esquerda fica vermelha só quando tem atrasada.
+  etapaCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderLeftWidth: 4,
+    borderLeftColor: '#E2E6F0',
+    padding: 14,
+    marginBottom: 12,
+  },
+  etapaCardAlert: {
+    borderLeftColor: '#E6213D',
+  },
+  etapaCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  etapaCardIconShell: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: '#EDF1FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  etapaCardTitle: {
+    flex: 1,
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  etapaSlaPill: {
+    backgroundColor: '#E3F5EA',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  etapaSlaPillText: {
+    color: '#18955A',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  etapaStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  etapaStatItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  etapaStatValue: {
+    color: '#15203E',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  etapaStatLabel: {
+    marginTop: 2,
+    color: '#9AA1B5',
+    fontSize: 11,
+  },
+  etapaStatDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#E2E6F0',
   },
   headerActionsRow: {
     flexDirection: 'row',
