@@ -2618,6 +2618,31 @@ function RHFilterPill({
   );
 }
 
+// Campo de filtro "de formulário" (label em cima + caixa cheia com valor e
+// seta) — pra grupos de 3+ filtros juntos, onde os pills um do lado do
+// outro ficam apertados/soltos na tela. Usa a mesma largura toda (100%).
+function RHFilterSelectField({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  onPress: () => void;
+}) {
+  return (
+    <View style={rhStyles.filterFieldBlock}>
+      <Text style={rhStyles.filterFieldLabel}>{label}</Text>
+      <Pressable style={rhStyles.filterFieldSelect} onPress={onPress}>
+        <Text style={rhStyles.filterFieldSelectText} numberOfLines={1}>
+          {value}
+        </Text>
+        <Feather name="chevron-down" size={16} color="#5E667D" />
+      </Pressable>
+    </View>
+  );
+}
+
 // ---------- Colaboradores ----------
 
 type NovoColaboradorForm = {
@@ -7597,32 +7622,27 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
           </Pressable>
         </View>
 
-        <View style={rhStyles.searchRow}>
-          <Feather name="search" size={16} color="#9AA1B5" />
-          <TextInput
-            style={rhStyles.searchInput}
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Candidato, cargo, responsável..."
-            placeholderTextColor="#A7AEC2"
-          />
-        </View>
+        <View style={rhStyles.filterFieldsCard}>
+          <Text style={rhStyles.filterFieldLabel}>Buscar</Text>
+          <View style={rhStyles.searchRow}>
+            <Feather name="search" size={16} color="#9AA1B5" />
+            <TextInput
+              style={rhStyles.searchInput}
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Candidato, cargo, responsável..."
+              placeholderTextColor="#A7AEC2"
+            />
+          </View>
 
-        <View style={[rhStyles.filterPillRow, { gap: 6 }]}>
-          <RHFilterPill
-            label={unidadeFilter}
-            prefix="Unidade"
-            compact
-            onPress={() => setIsUnidadeFilterOpen(true)}
-          />
-          <RHFilterPill
-            label={responsavelFilter}
-            prefix="Responsável"
-            compact
+          <RHFilterSelectField label="Unidade" value={unidadeFilter} onPress={() => setIsUnidadeFilterOpen(true)} />
+          <RHFilterSelectField
+            label="Responsável"
+            value={responsavelFilter}
             onPress={() => setIsResponsavelFilterOpen(true)}
           />
-          <RHFilterPill label={etapaFilter} prefix="Etapa" compact onPress={() => setIsEtapaFilterOpen(true)} />
-          <RHFilterPill label={statusFilter} prefix="Status" compact onPress={() => setIsStatusFilterOpen(true)} />
+          <RHFilterSelectField label="Etapa" value={etapaFilter} onPress={() => setIsEtapaFilterOpen(true)} />
+          <RHFilterSelectField label="Status" value={statusFilter} onPress={() => setIsStatusFilterOpen(true)} />
         </View>
 
         <View style={rhStyles.conformidadeKpiRow}>
@@ -9919,6 +9939,41 @@ const rhStyles = StyleSheet.create({
   filterPillTextCompact: {
     fontSize: 11,
     maxWidth: 108,
+  },
+  // Card com filtros em formulário (label em cima + campo cheio) — usado
+  // quando tem 3+ filtros juntos e pills lado a lado ficam apertados/soltos.
+  filterFieldsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 14,
+    marginBottom: 14,
+  },
+  filterFieldBlock: {
+    marginTop: 12,
+  },
+  filterFieldLabel: {
+    color: '#15203E',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  filterFieldSelect: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D7DCE8',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  filterFieldSelectText: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '600',
   },
   headerActionsRow: {
     flexDirection: 'row',
