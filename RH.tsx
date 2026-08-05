@@ -2592,14 +2592,19 @@ function RHSelectField({
 function RHFilterPill({
   label,
   onPress,
+  prefix,
 }: {
   label: string;
   onPress: () => void;
+  // Mostra "Prefixo: valor" (ex.: "Unidade: Todas") em vez de só o valor —
+  // usado quando vários pills ficam juntos e "Todas"/"Todos" sozinho não diz
+  // a que filtro pertence.
+  prefix?: string;
 }) {
   return (
     <Pressable style={rhStyles.filterPill} onPress={onPress}>
       <Text style={rhStyles.filterPillText} numberOfLines={1}>
-        {label}
+        {prefix ? `${prefix}: ${label}` : label}
       </Text>
       <Feather name="chevron-down" size={14} color="#5E667D" />
     </Pressable>
@@ -7597,32 +7602,44 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
         </View>
 
         <View style={rhStyles.filterPillRow}>
-          <RHFilterPill label={unidadeFilter} onPress={() => setIsUnidadeFilterOpen(true)} />
-          <RHFilterPill label={responsavelFilter} onPress={() => setIsResponsavelFilterOpen(true)} />
-          <RHFilterPill label={etapaFilter} onPress={() => setIsEtapaFilterOpen(true)} />
-          <RHFilterPill label={statusFilter} onPress={() => setIsStatusFilterOpen(true)} />
+          <RHFilterPill label={unidadeFilter} prefix="Unidade" onPress={() => setIsUnidadeFilterOpen(true)} />
+          <RHFilterPill label={responsavelFilter} prefix="Responsável" onPress={() => setIsResponsavelFilterOpen(true)} />
+          <RHFilterPill label={etapaFilter} prefix="Etapa" onPress={() => setIsEtapaFilterOpen(true)} />
+          <RHFilterPill label={statusFilter} prefix="Status" onPress={() => setIsStatusFilterOpen(true)} />
         </View>
 
-        <View style={rhStyles.statsPillRow}>
-          <Pressable style={rhStyles.statsPill} onPress={() => setStatusFilter('Em andamento')}>
-            <Text style={rhStyles.statsPillLabel}>Iniciadas</Text>
-            <Text style={rhStyles.statsPillValue}>{kpis.iniciadas}</Text>
+        <View style={rhStyles.conformidadeKpiRow}>
+          <Pressable style={rhStyles.conformidadeKpiPill} onPress={() => setStatusFilter('Em andamento')}>
+            <Text style={rhStyles.conformidadeKpiValue}>{kpis.iniciadas}</Text>
+            <Text style={rhStyles.conformidadeKpiLabel}>Iniciadas</Text>
           </Pressable>
-          <Pressable style={[rhStyles.statsPill, { backgroundColor: '#EDF1FF' }]} onPress={() => setStatusFilter('Aguardando documentos')}>
-            <Text style={[rhStyles.statsPillLabel, { color: '#3457D5' }]}>Em aberto</Text>
-            <Text style={[rhStyles.statsPillValue, { color: '#3457D5' }]}>{kpis.emAberto}</Text>
+          <Pressable
+            style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#EDF1FF' }]}
+            onPress={() => setStatusFilter('Aguardando documentos')}
+          >
+            <Text style={[rhStyles.conformidadeKpiValue, { color: '#3457D5' }]}>{kpis.emAberto}</Text>
+            <Text style={[rhStyles.conformidadeKpiLabel, { color: '#3457D5' }]}>Em aberto</Text>
           </Pressable>
-          <Pressable style={[rhStyles.statsPill, { backgroundColor: '#FCE8EC' }]} onPress={() => setStatusFilter('Todos')}>
-            <Text style={[rhStyles.statsPillLabel, { color: '#E6213D' }]}>Atrasadas</Text>
-            <Text style={[rhStyles.statsPillValue, { color: '#E6213D' }]}>{kpis.atrasadas}</Text>
+          <Pressable
+            style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#FCE8EC' }]}
+            onPress={() => setStatusFilter('Todos')}
+          >
+            <Text style={[rhStyles.conformidadeKpiValue, { color: '#E6213D' }]}>{kpis.atrasadas}</Text>
+            <Text style={[rhStyles.conformidadeKpiLabel, { color: '#E6213D' }]}>Atrasadas</Text>
           </Pressable>
-          <Pressable style={[rhStyles.statsPill, { backgroundColor: '#E3F5EA' }]} onPress={() => setStatusFilter('Admitidos')}>
-            <Text style={[rhStyles.statsPillLabel, { color: '#18955A' }]}>Concluídas</Text>
-            <Text style={[rhStyles.statsPillValue, { color: '#18955A' }]}>{kpis.concluidas}</Text>
+          <Pressable
+            style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#E3F5EA' }]}
+            onPress={() => setStatusFilter('Admitidos')}
+          >
+            <Text style={[rhStyles.conformidadeKpiValue, { color: '#18955A' }]}>{kpis.concluidas}</Text>
+            <Text style={[rhStyles.conformidadeKpiLabel, { color: '#18955A' }]}>Concluídas</Text>
           </Pressable>
-          <Pressable style={[rhStyles.statsPill, { backgroundColor: '#FCF4DE' }]} onPress={() => setStatusFilter('Todos')}>
-            <Text style={[rhStyles.statsPillLabel, { color: '#B07A1E' }]}>Pendências abertas</Text>
-            <Text style={[rhStyles.statsPillValue, { color: '#B07A1E' }]}>{kpis.pendenciasAbertas}</Text>
+          <Pressable
+            style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#FCF4DE' }]}
+            onPress={() => setStatusFilter('Todos')}
+          >
+            <Text style={[rhStyles.conformidadeKpiValue, { color: '#B07A1E' }]}>{kpis.pendenciasAbertas}</Text>
+            <Text style={[rhStyles.conformidadeKpiLabel, { color: '#B07A1E' }]}>Pendências</Text>
           </Pressable>
         </View>
 
@@ -9791,6 +9808,34 @@ const rhStyles = StyleSheet.create({
     color: '#15203E',
     fontSize: 16,
     fontWeight: '800',
+  },
+  // Fileira densa de KPI que precisa caber tudo numa linha só (5 itens) —
+  // por isso sem flexWrap e com fonte bem menor que o statsPill genérico.
+  conformidadeKpiRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 14,
+  },
+  conformidadeKpiPill: {
+    flex: 1,
+    backgroundColor: '#F1F2F7',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+  },
+  conformidadeKpiValue: {
+    color: '#15203E',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  conformidadeKpiLabel: {
+    marginTop: 2,
+    color: '#5E667D',
+    fontSize: 9,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    textAlign: 'center',
   },
   filterPillRow: {
     flexDirection: 'row',
