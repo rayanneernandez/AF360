@@ -133,6 +133,8 @@ import {
   updateRhTreinamentoInscricao,
   fetchRhTreinamentoInscricoes,
   marcarComunicadoLido,
+  fetchDiretoriaPainel,
+  type DiretoriaPainelRecurso,
 } from './api';
 
 export type RootStackParamList = {
@@ -7496,12 +7498,25 @@ function DirectorProfileScreen({ navigation }: ScreenProps<'DirectorProfile'>) {
 }
 
 function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
-  const defaultFlashDate = useMemo(() => new Date(2026, 6, 1), []);
+  const defaultFlashDate = useMemo(() => new Date(), []);
   const [startDate, setStartDate] = useState(defaultFlashDate);
   const [endDate, setEndDate] = useState(defaultFlashDate);
   const [openPicker, setOpenPicker] = useState<'start' | 'end' | null>(null);
-  const [selectedStation, setSelectedStation] = useState(directorStationOptions[0]);
+
+  const postos = useDiretoriaPostos();
+  const stationOptions = useMemo(() => ['Todos os postos', ...postos.map((p) => p.nome)], [postos]);
+  const [selectedStation, setSelectedStation] = useState('Todos os postos');
   const [isStationPickerOpen, setIsStationPickerOpen] = useState(false);
+  const selectedPostoId = useMemo(
+    () => postos.find((p) => p.nome === selectedStation)?.id,
+    [postos, selectedStation]
+  );
+
+  const filtros = useMemo(
+    () => ({ de: toApiDateOnly(startDate), ate: toApiDateOnly(endDate), posto: selectedPostoId }),
+    [startDate, endDate, selectedPostoId]
+  );
+  const { dados: resumo, isLoading, errorMessage } = useDiretoriaPainelRecurso('resumo', filtros);
 
   const isSingleDay = formatDateBR(startDate) === formatDateBR(endDate);
   const flashRangeLabel = isSingleDay
@@ -7521,6 +7536,54 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
       }
     }
   };
+
+  const kpis = resumo?.kpis ?? resumo ?? null;
+  const summaryCards = useMemo(() => {
+    if (!kpis) return [];
+    const items: Array<{ id: string; label: string; value: number | null; meta?: string | null; marginPct: number | null }> = [
+      {
+        id: 'total',
+        label: 'Faturamento TOTAL',
+        value: pickNum(kpis, ['faturamento_total', 'faturamento', 'total']),
+        marginPct: pickNum(kpis, ['margem_total_pct', 'margem_pct', 'margem']),
+      },
+      {
+        id: 'fuels',
+        label: 'Combustíveis líquidos',
+        value: pickNum(kpis, ['faturamento_combustiveis', 'faturamento_combustivel']),
+        meta:
+          pickNum(kpis, ['volume_combustiveis_litros', 'litros', 'volume_litros']) !== null
+            ? `Volume: ${fmtNumOrDash(pickNum(kpis, ['volume_combustiveis_litros', 'litros', 'volume_litros']), ' L')}`
+            : null,
+        marginPct: pickNum(kpis, ['margem_combustiveis_pct', 'margem_combustiveis']),
+      },
+      {
+        id: 'gnv',
+        label: 'GNV',
+        value: pickNum(kpis, ['faturamento_gnv', 'gnv_faturamento']),
+        meta:
+          pickNum(kpis, ['volume_gnv_m3', 'gnv_volume_m3', 'm3']) !== null
+            ? `Volume: ${fmtNumOrDash(pickNum(kpis, ['volume_gnv_m3', 'gnv_volume_m3', 'm3']), ' m³')}`
+            : null,
+        marginPct: pickNum(kpis, ['margem_gnv_pct', 'margem_gnv']),
+      },
+      {
+        id: 'store-track',
+        label: 'Loja pista',
+        value: pickNum(kpis, ['faturamento_loja_pista', 'loja_pista_faturamento']),
+        marginPct: pickNum(kpis, ['margem_loja_pista_pct', 'margem_loja_pista']),
+      },
+      {
+        id: 'store-convenience',
+        label: 'Loja conveniência',
+        value: pickNum(kpis, ['faturamento_loja_conveniencia', 'loja_conveniencia_faturamento']),
+        marginPct: pickNum(kpis, ['margem_loja_conveniencia_pct', 'margem_loja_conveniencia']),
+      },
+    ];
+    return items;
+  }, [kpis]);
+
+  const fuelBreakdown = pickArr(resumo, ['mix_combustivel', 'combustiveis', 'mix']);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -7545,7 +7608,7 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
 
         <Text style={styles.directorFlashTitle}>Flash de Vendas</Text>
         <Text style={styles.directorFlashSubtitle}>
-          {flashRangeLabel} · Rede completa (56 postos)
+          {flashRangeLabel} · {selectedStation === 'Todos os postos' ? `Rede completa (${postos.length} postos)` : selectedStation}
         </Text>
 
         <View style={styles.directorFilterRow}>
@@ -7568,40 +7631,60 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
         </View>
 
         <Text style={styles.directorSectionTitle}>RESUMO DA REDE</Text>
-        {salesSummaryItems.map((item) => {
-          const tone = getMarginTone(item.marginValue);
+        {isLoading && !resumo ? (
+          <Text style={styles.conversaEmptyText}>Carregando vendas...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : summaryCards.every((item) => item.value === null) ? (
+          <Text style={styles.conversaEmptyText}>Sem dados de vendas no período selecionado.</Text>
+        ) : (
+          summaryCards.map((item) => {
+            const tone = item.marginPct !== null ? getMarginTone(item.marginPct) : null;
 
-          return (
-            <View key={item.id} style={styles.directorSummaryCard}>
-              <View style={styles.directorSummaryLeft}>
-                <Text style={styles.directorSummaryLabel}>{item.label}</Text>
-                <Text style={styles.directorSummaryValue}>{item.value}</Text>
-                {item.meta ? <Text style={styles.directorSummaryMeta}>{item.meta}</Text> : null}
+            return (
+              <View key={item.id} style={styles.directorSummaryCard}>
+                <View style={styles.directorSummaryLeft}>
+                  <Text style={styles.directorSummaryLabel}>{item.label}</Text>
+                  <Text style={styles.directorSummaryValue}>{fmtBRLOrDash(item.value)}</Text>
+                  {item.meta ? <Text style={styles.directorSummaryMeta}>{item.meta}</Text> : null}
+                </View>
+                {tone ? (
+                  <View style={[styles.directorSummaryPill, { backgroundColor: tone.tint }]}>
+                    <Text style={[styles.directorSummaryPillText, { color: tone.color }]}>{tone.label}</Text>
+                  </View>
+                ) : null}
               </View>
-              <View style={[styles.directorSummaryPill, { backgroundColor: tone.tint }]}>
-                <Text style={[styles.directorSummaryPillText, { color: tone.color }]}>
-                  {tone.label}
-                </Text>
-              </View>
-            </View>
-          );
-        })}
+            );
+          })
+        )}
 
         <Text style={styles.directorSectionTitle}>COMBUSTÍVEIS LÍQUIDOS</Text>
-        {fuelSalesItems.map((item) => {
-          const tone = getMarginTone(item.marginValue);
+        {fuelBreakdown.length === 0 ? (
+          !isLoading ? <Text style={styles.conversaEmptyText}>Sem detalhe por combustível no período.</Text> : null
+        ) : (
+          fuelBreakdown.map((item, index) => {
+            const marginPct = pickNum(item, ['margem_pct', 'margem']);
+            const tone = marginPct !== null ? getMarginTone(marginPct) : null;
+            const produto = pickStr(item, ['produto', 'nome', 'combustivel']) ?? `Produto ${index + 1}`;
+            const faturamento = pickNum(item, ['faturamento', 'valor_total']);
+            const volumeLitros = pickNum(item, ['volume_litros', 'volume', 'litros']);
+            const accentColor =
+              produto.toUpperCase().includes('GASOLINA')
+                ? '#E6213D'
+                : produto.toUpperCase().includes('ETANOL')
+                ? '#18955A'
+                : '#3457D5';
 
-          return (
-            <View key={item.id} style={[styles.fuelCard, { borderLeftColor: item.accentColor }]}>
-              <Text style={[styles.fuelCardLabel, { color: item.accentColor }]}>{item.label}</Text>
-              <Text style={styles.fuelCardValue}>{item.value}</Text>
-              <Text style={styles.fuelCardMeta}>{item.volumeLabel}</Text>
-              <Text style={[styles.fuelCardMargin, { color: tone.color }]}>{tone.label}</Text>
-            </View>
-          );
-        })}
-
-        <Text style={styles.directorUpdatedAt}>{salesUpdatedAtLabel}</Text>
+            return (
+              <View key={pickStr(item, ['id']) ?? produto} style={[styles.fuelCard, { borderLeftColor: accentColor }]}>
+                <Text style={[styles.fuelCardLabel, { color: accentColor }]}>{produto.toUpperCase()}</Text>
+                <Text style={styles.fuelCardValue}>{fmtBRLOrDash(faturamento)}</Text>
+                <Text style={styles.fuelCardMeta}>Volume: {fmtNumOrDash(volumeLitros, ' L')}</Text>
+                {tone ? <Text style={[styles.fuelCardMargin, { color: tone.color }]}>{tone.label}</Text> : null}
+              </View>
+            );
+          })
+        )}
       </ScrollView>
 
       <MiniCalendarModal
@@ -7614,7 +7697,7 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
       <SimpleListModal
         visible={isStationPickerOpen}
         title="Selecionar posto"
-        options={directorStationOptions}
+        options={stationOptions}
         selectedValue={selectedStation}
         onSelect={setSelectedStation}
         onClose={() => setIsStationPickerOpen(false)}
@@ -7624,6 +7707,19 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
 }
 
 function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
+  const postos = useDiretoriaPostos();
+  const { dados: margem, periodo, isLoading, errorMessage } = useDiretoriaPainelRecurso('margem', {});
+
+  const categoriasCombustivel = pickArr(margem, ['categorias_combustivel', 'ofensores_combustivel', 'combustiveis']);
+  const categoriasLoja = pickArr(margem, ['categorias_loja', 'ofensores_loja', 'loja']);
+  const alertasCusto = pickArr(margem, ['alertas_custo', 'custos_nao_reconhecidos', 'alertasCusto']);
+
+  const periodoLabel = periodo.de
+    ? periodo.ate && periodo.ate !== periodo.de
+      ? `${formatDateBR(new Date(periodo.de + 'T00:00:00'))} a ${formatDateBR(new Date(periodo.ate + 'T00:00:00'))}`
+      : formatDateBR(new Date(periodo.de + 'T00:00:00'))
+    : null;
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -7643,150 +7739,194 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
             </View>
             <Text style={styles.pageTitle}>Margem</Text>
           </View>
-          <View style={styles.marginAlertPill}>
-            <Feather name="bell" size={13} color="#FFFFFF" />
-            <Text style={styles.marginAlertPillText}>1 alerta</Text>
-          </View>
+          {alertasCusto.length > 0 ? (
+            <View style={styles.marginAlertPill}>
+              <Feather name="bell" size={13} color="#FFFFFF" />
+              <Text style={styles.marginAlertPillText}>
+                {alertasCusto.length} alerta{alertasCusto.length === 1 ? '' : 's'}
+              </Text>
+            </View>
+          ) : null}
         </View>
-        <Text style={styles.pageSubtitle}>Postos ofensores · 01/07/2026 · Toda a rede</Text>
-
-        <Text style={[styles.directorSectionTitle, styles.spacingTop]}>
-          COMBUSTÍVEIS — POSTOS OFENSORES
+        <Text style={styles.pageSubtitle}>
+          Postos ofensores{periodoLabel ? ` · ${periodoLabel}` : ''} · Toda a rede ({postos.length} postos)
         </Text>
 
-        {marginOffenderCategories.map((category) => (
-          <View key={category.id} style={styles.marginCategoryCard}>
-            <View style={styles.marginCategoryHeader}>
-              <Text style={styles.marginCategoryTitle}>{category.title}</Text>
-              <Text style={styles.marginCategoryAverage}>{category.networkAverageLabel}</Text>
-            </View>
+        {isLoading && !margem ? (
+          <Text style={styles.conversaEmptyText}>Carregando margem...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : (
+          <>
+            <Text style={[styles.directorSectionTitle, styles.spacingTop]}>
+              COMBUSTÍVEIS — POSTOS OFENSORES
+            </Text>
 
-            {category.stations.map((station) => (
-              <View key={station.id} style={styles.marginStationRow}>
-                <Text style={styles.marginRank}>#{station.rank}</Text>
-                <View style={styles.marginStationTextBlock}>
-                  <Text style={styles.marginStationName}>{station.name}</Text>
-                  <Text style={styles.marginStationPulledBy}>{station.pulledBy}</Text>
-                </View>
-                <View style={styles.marginStationRight}>
-                  <View style={styles.marginStationPercentRow}>
-                    <View
-                      style={[
-                        styles.marginStationDot,
-                        { backgroundColor: station.severity === 'critical' ? '#E6213D' : '#D79A22' },
-                      ]}
-                    />
-                    <Text style={styles.marginStationPercent}>{station.percentLabel}</Text>
+            {categoriasCombustivel.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Sem ofensores de combustível no período.</Text>
+            ) : (
+              categoriasCombustivel.map((category, categoryIndex) => {
+                const ofensores = pickArr(category, ['ofensores', 'postos', 'stations']);
+                const titulo = pickStr(category, ['titulo', 'produto', 'title']) ?? `Categoria ${categoryIndex + 1}`;
+                const mediaRede = pickNum(category, ['media_rede_pct', 'media_rede']);
+                const impacto = pickNum(category, ['impacto_valor', 'impacto']);
+
+                return (
+                  <View key={titulo} style={styles.marginCategoryCard}>
+                    <View style={styles.marginCategoryHeader}>
+                      <Text style={styles.marginCategoryTitle}>{titulo.toUpperCase()}</Text>
+                      <Text style={styles.marginCategoryAverage}>Média rede: {fmtPercentOrDash(mediaRede)}</Text>
+                    </View>
+
+                    {ofensores.map((station: any, stationIndex: number) => {
+                      const severidade = pickStr(station, ['severidade', 'severity']);
+                      const percentual = pickNum(station, ['percentual_atual', 'percent', 'percentual']);
+                      const delta = pickNum(station, ['delta_pct', 'delta']);
+
+                      return (
+                        <View key={pickStr(station, ['id']) ?? stationIndex} style={styles.marginStationRow}>
+                          <Text style={styles.marginRank}>
+                            #{pickNum(station, ['rank']) ?? stationIndex + 1}
+                          </Text>
+                          <View style={styles.marginStationTextBlock}>
+                            <Text style={styles.marginStationName}>
+                              {pickStr(station, ['nome', 'posto', 'name']) ?? '—'}
+                            </Text>
+                            <Text style={styles.marginStationPulledBy}>
+                              {pickStr(station, ['pulled_by', 'motivo']) ?? ''}
+                            </Text>
+                          </View>
+                          <View style={styles.marginStationRight}>
+                            <View style={styles.marginStationPercentRow}>
+                              <View
+                                style={[
+                                  styles.marginStationDot,
+                                  { backgroundColor: severidade === 'critical' || severidade === 'critico' ? '#E6213D' : '#D79A22' },
+                                ]}
+                              />
+                              <Text style={styles.marginStationPercent}>{fmtPercentOrDash(percentual)}</Text>
+                            </View>
+                            <Text style={styles.marginStationDelta}>
+                              {delta === null ? '—' : `${delta > 0 ? '+' : ''}${fmtPercentOrDash(delta)}`}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+
+                    <View style={styles.marginCategoryFooter}>
+                      <Text style={styles.marginCategoryFooterOffenders}>{ofensores.length} ofensores</Text>
+                      <Text style={styles.marginCategoryFooterImpact}>Impacto: {fmtBRLOrDash(impacto)}</Text>
+                    </View>
                   </View>
-                  <Text style={styles.marginStationDelta}>{station.deltaLabel}</Text>
-                </View>
-              </View>
-            ))}
+                );
+              })
+            )}
 
-            <View style={styles.marginCategoryFooter}>
-              <Text style={styles.marginCategoryFooterOffenders}>{category.offendersCount} ofensores</Text>
-              <Text style={styles.marginCategoryFooterImpact}>{category.impactLabel}</Text>
-            </View>
-          </View>
-        ))}
+            <Text style={styles.directorSectionTitle}>LOJAS — POSTOS OFENSORES</Text>
+            {categoriasLoja.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Sem ofensores de loja no período.</Text>
+            ) : (
+              categoriasLoja.map((item, index) => {
+                const titulo = pickStr(item, ['titulo', 'title']) ?? `Loja ${index + 1}`;
+                const mediaRede = pickNum(item, ['media_rede_pct', 'media_rede']);
+                const percentual = pickNum(item, ['percentual_atual', 'percent']);
+                const delta = pickNum(item, ['delta_pct', 'delta']);
 
-        <Text style={styles.directorSectionTitle}>LOJAS — POSTOS OFENSORES</Text>
-        {storeOffenders.map((item) => (
-          <View key={item.id} style={styles.marginCategoryCard}>
-            <View style={styles.marginCategoryHeader}>
-              <Text style={styles.marginCategoryTitle}>{item.title}</Text>
-              <Text style={styles.marginCategoryAverage}>{item.networkAverageLabel}</Text>
-            </View>
-            <View style={styles.marginStationRow}>
-              <View style={styles.marginStationTextBlock}>
-                <Text style={styles.marginStationName}>{item.stationName}</Text>
-              </View>
-              <View style={styles.marginStationRight}>
-                <View style={styles.marginStationPercentRow}>
-                  <Feather name="arrow-down-right" size={12} color="#E6213D" />
-                  <Text style={styles.marginStationPercent}>{item.percentLabel}</Text>
-                </View>
-                <Text style={styles.marginStationDelta}>{item.deltaLabel}</Text>
-              </View>
-            </View>
-          </View>
-        ))}
+                return (
+                  <View key={titulo} style={styles.marginCategoryCard}>
+                    <View style={styles.marginCategoryHeader}>
+                      <Text style={styles.marginCategoryTitle}>{titulo.toUpperCase()}</Text>
+                      <Text style={styles.marginCategoryAverage}>Média rede: {fmtPercentOrDash(mediaRede)}</Text>
+                    </View>
+                    <View style={styles.marginStationRow}>
+                      <View style={styles.marginStationTextBlock}>
+                        <Text style={styles.marginStationName}>
+                          {pickStr(item, ['nome', 'posto', 'stationName']) ?? '—'}
+                        </Text>
+                      </View>
+                      <View style={styles.marginStationRight}>
+                        <View style={styles.marginStationPercentRow}>
+                          <Feather name="arrow-down-right" size={12} color="#E6213D" />
+                          <Text style={styles.marginStationPercent}>{fmtPercentOrDash(percentual)}</Text>
+                        </View>
+                        <Text style={styles.marginStationDelta}>
+                          {delta === null ? '—' : `${delta > 0 ? '+' : ''}${fmtPercentOrDash(delta)}`}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })
+            )}
 
-        <Text style={styles.directorSectionTitle}>Custos que ofendem a margem</Text>
-        <Text style={styles.unrecognizedSectionSubtitle}>
-          {unrecognizedCosts.length} não reconhecido{unrecognizedCosts.length === 1 ? '' : 's'}
-        </Text>
-
-        <View style={styles.unrecognizedActionsRow}>
-          <Pressable style={styles.unrecognizedActionButton}>
-            <Feather name="refresh-cw" size={14} color="#3A415C" />
-            <Text
-              style={styles.unrecognizedActionButtonText}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.75}
-            >
-              Varrer novas entradas
+            <Text style={styles.directorSectionTitle}>Custos que ofendem a margem</Text>
+            <Text style={styles.unrecognizedSectionSubtitle}>
+              {alertasCusto.length} não reconhecido{alertasCusto.length === 1 ? '' : 's'}
             </Text>
-          </Pressable>
-          <Pressable style={styles.unrecognizedActionButton}>
-            <Feather name="check" size={14} color="#3A415C" />
-            <Text
-              style={styles.unrecognizedActionButtonText}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.75}
-            >
-              Reconhecer todos
-            </Text>
-          </Pressable>
-        </View>
 
-        {unrecognizedCosts.map((item) => (
-          <View key={item.id} style={styles.unrecognizedCard}>
-            <Text style={styles.unrecognizedStationName}>{item.stationName}</Text>
-            <Text style={styles.unrecognizedProductLabel}>
-              {item.productLabel} · {item.dateLabel}
-            </Text>
-            <View style={styles.unrecognizedStatsRow}>
-              <View style={styles.unrecognizedStatBlock}>
-                <Text style={styles.unrecognizedStatLabel}>Custo</Text>
-                <Text style={styles.unrecognizedStatValue}>{item.costLabel}</Text>
-              </View>
-              <View style={styles.unrecognizedStatBlock}>
-                <Text style={styles.unrecognizedStatLabel}>Preço Ref</Text>
-                <Text style={styles.unrecognizedStatValue}>{item.referencePriceLabel}</Text>
-              </View>
-              <View style={styles.unrecognizedStatBlock}>
-                <Text style={styles.unrecognizedStatLabel}>Margem</Text>
-                <Text style={[styles.unrecognizedStatValue, styles.unrecognizedStatValueDanger]}>
-                  {item.marginLabel}
-                </Text>
-              </View>
-              <View style={styles.unrecognizedStatBlock}>
-                <Text style={styles.unrecognizedStatLabel}>Meta</Text>
-                <Text style={styles.unrecognizedStatValue}>{item.targetLabel}</Text>
-              </View>
-              <View style={styles.unrecognizedStatBlock}>
-                <Text style={styles.unrecognizedStatLabel}>Status</Text>
-                <View style={styles.unrecognizedStatusRow}>
-                  <View
-                    style={[
-                      styles.unrecognizedStatusDot,
-                      { backgroundColor: item.severityLabel === 'Crítico' ? '#E6213D' : '#B7791F' },
-                    ]}
-                  />
-                  <Text style={[styles.unrecognizedStatValue, styles.unrecognizedStatValueDanger]}>
-                    {item.severityLabel}
-                  </Text>
-                </View>
-              </View>
-            </View>
-            <Pressable style={styles.unrecognizedButton}>
-              <Text style={styles.unrecognizedButtonText}>Reconhecer</Text>
-            </Pressable>
-          </View>
-        ))}
+            {alertasCusto.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Nenhum custo não reconhecido no período.</Text>
+            ) : (
+              alertasCusto.map((item, index) => {
+                const severidade = pickStr(item, ['severidade', 'severity']) ?? '';
+                const isCritico = severidade.toLowerCase().includes('crit');
+
+                return (
+                  <View key={pickStr(item, ['id']) ?? index} style={styles.unrecognizedCard}>
+                    <Text style={styles.unrecognizedStationName}>
+                      {pickStr(item, ['posto', 'stationName']) ?? '—'}
+                    </Text>
+                    <Text style={styles.unrecognizedProductLabel}>
+                      {pickStr(item, ['produto', 'productLabel']) ?? '—'} ·{' '}
+                      {pickStr(item, ['data', 'dateLabel']) ?? '—'}
+                    </Text>
+                    <View style={styles.unrecognizedStatsRow}>
+                      <View style={styles.unrecognizedStatBlock}>
+                        <Text style={styles.unrecognizedStatLabel}>Custo</Text>
+                        <Text style={styles.unrecognizedStatValue}>
+                          {fmtBRLOrDash(pickNum(item, ['custo']))}
+                        </Text>
+                      </View>
+                      <View style={styles.unrecognizedStatBlock}>
+                        <Text style={styles.unrecognizedStatLabel}>Preço Ref</Text>
+                        <Text style={styles.unrecognizedStatValue}>
+                          {fmtBRLOrDash(pickNum(item, ['preco_referencia']))}
+                        </Text>
+                      </View>
+                      <View style={styles.unrecognizedStatBlock}>
+                        <Text style={styles.unrecognizedStatLabel}>Margem</Text>
+                        <Text style={[styles.unrecognizedStatValue, styles.unrecognizedStatValueDanger]}>
+                          {fmtPercentOrDash(pickNum(item, ['margem']))}
+                        </Text>
+                      </View>
+                      <View style={styles.unrecognizedStatBlock}>
+                        <Text style={styles.unrecognizedStatLabel}>Meta</Text>
+                        <Text style={styles.unrecognizedStatValue}>
+                          {fmtPercentOrDash(pickNum(item, ['meta']))}
+                        </Text>
+                      </View>
+                      <View style={styles.unrecognizedStatBlock}>
+                        <Text style={styles.unrecognizedStatLabel}>Status</Text>
+                        <View style={styles.unrecognizedStatusRow}>
+                          <View
+                            style={[
+                              styles.unrecognizedStatusDot,
+                              { backgroundColor: isCritico ? '#E6213D' : '#B7791F' },
+                            ]}
+                          />
+                          <Text style={[styles.unrecognizedStatValue, styles.unrecognizedStatValueDanger]}>
+                            {severidade || '—'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -7865,6 +8005,29 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
     setLowStockPage(1);
   };
 
+  const {
+    dados: estoques,
+    periodo: estoquesPeriodo,
+    isLoading: isLoadingEstoques,
+    errorMessage: estoquesError,
+  } = useDiretoriaPainelRecurso('estoques', {});
+  const estoqueItems = pickArr(estoques, ['tanques', 'produtos', 'itens', 'familias']);
+  const estoquesPeriodoLabel = estoquesPeriodo.de
+    ? formatDateBR(new Date(estoquesPeriodo.de + 'T00:00:00'))
+    : formatDateBR(new Date());
+
+  const mapEstoqueStatus = (raw: string | null): StockTankItem['status'] => {
+    const value = (raw ?? '').toLowerCase();
+    if (value.includes('crit')) return 'critical';
+    if (value.includes('monitor') || value.includes('aten') || value.includes('warn')) return 'warning';
+    return 'ok';
+  };
+  const estoqueStatusLabel: Record<StockTankItem['status'], string> = {
+    ok: 'OK',
+    warning: 'Monitorar',
+    critical: 'Crítico',
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -7889,7 +8052,7 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
         <View style={styles.directorFilterRow}>
           <View style={styles.directorFilterPill}>
             <Feather name="calendar" size={14} color="#5E667D" />
-            <Text style={styles.directorFilterPillText}>03/07/2026</Text>
+            <Text style={styles.directorFilterPillText}>{estoquesPeriodoLabel}</Text>
           </View>
           <Pressable style={styles.directorFilterPill} onPress={() => setIsStationPickerOpen(true)}>
             <Text style={styles.directorFilterPillText}>{stationFilterLabel}</Text>
@@ -7902,36 +8065,60 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
           <Text style={styles.stockSectionTitle}>Tanques de combustível</Text>
         </View>
 
-        {stockTanks.map((tank) => {
-          const colors = statusColors[tank.status];
+        {isLoadingEstoques && !estoques ? (
+          <Text style={styles.conversaEmptyText}>Carregando estoques...</Text>
+        ) : estoquesError ? (
+          <Text style={styles.conversaEmptyText}>{estoquesError}</Text>
+        ) : estoqueItems.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Sem dados de estoque no período.</Text>
+        ) : (
+          estoqueItems.map((item: any, index: number) => {
+            const statusKey = mapEstoqueStatus(pickStr(item, ['status']));
+            const colors = statusColors[statusKey];
+            const volumeAtual = pickNum(item, ['volume_atual', 'volume']);
+            const capacidade = pickNum(item, ['capacidade_total', 'capacidade']);
+            const progress = volumeAtual !== null && capacidade ? volumeAtual / capacidade : 0;
+            const qtdTanques = pickNum(item, ['qtd_tanques', 'quantidade_tanques']);
+            const qtdPostos = pickNum(item, ['qtd_postos', 'quantidade_postos']);
+            const coberturaDias = pickNum(item, ['cobertura_dias', 'cobertura']);
+            const titulo = pickStr(item, ['titulo', 'produto', 'nome']) ?? `Produto ${index + 1}`;
 
-          return (
-            <View key={tank.id} style={[styles.stockCard, { borderLeftColor: colors.border }]}>
-              <View style={styles.stockCardTopRow}>
-                <Text style={styles.stockCardTitle}>{tank.title}</Text>
-                <View style={[styles.stockStatusPill, { backgroundColor: colors.tint }]}>
-                  <Text style={[styles.stockStatusPillText, { color: colors.text }]}>
-                    {tank.statusLabel}
+            return (
+              <View key={titulo} style={[styles.stockCard, { borderLeftColor: colors.border }]}>
+                <View style={styles.stockCardTopRow}>
+                  <Text style={styles.stockCardTitle}>{titulo}</Text>
+                  <View style={[styles.stockStatusPill, { backgroundColor: colors.tint }]}>
+                    <Text style={[styles.stockStatusPillText, { color: colors.text }]}>
+                      {estoqueStatusLabel[statusKey]}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.stockCardSubtitle}>
+                  {qtdTanques !== null ? `${qtdTanques} tanque${qtdTanques === 1 ? '' : 's'}` : '—'}
+                  {qtdPostos !== null ? ` · ${qtdPostos} posto${qtdPostos === 1 ? '' : 's'}` : ''}
+                </Text>
+                <Text style={styles.stockCardValue}>
+                  {fmtNumOrDash(volumeAtual, ' L')}
+                  {capacidade !== null ? ` / ${fmtNumOrDash(capacidade, ' L')}` : ''}
+                </Text>
+                <View style={styles.stockProgressTrack}>
+                  <View
+                    style={[
+                      styles.stockProgressFill,
+                      { width: `${Math.min(100, Math.max(0, progress * 100))}%`, backgroundColor: colors.fill },
+                    ]}
+                  />
+                </View>
+                <View style={styles.stockConsumptionRow}>
+                  <Text style={styles.stockConsumptionLabel}>Cobertura</Text>
+                  <Text style={styles.stockConsumptionValue}>
+                    {coberturaDias === null ? '—' : `${coberturaDias} dia${coberturaDias === 1 ? '' : 's'}`}
                   </Text>
                 </View>
               </View>
-              <Text style={styles.stockCardSubtitle}>{tank.subtitle}</Text>
-              <Text style={styles.stockCardValue}>{tank.valueLabel}</Text>
-              <View style={styles.stockProgressTrack}>
-                <View
-                  style={[
-                    styles.stockProgressFill,
-                    { width: `${Math.min(100, tank.progress * 100)}%`, backgroundColor: colors.fill },
-                  ]}
-                />
-              </View>
-              <View style={styles.stockConsumptionRow}>
-                <Text style={styles.stockConsumptionLabel}>Consumo médio/dia</Text>
-                <Text style={styles.stockConsumptionValue}>—</Text>
-              </View>
-            </View>
-          );
-        })}
+            );
+          })
+        )}
 
         <View style={styles.stockSectionHeaderRow}>
           <Feather name="box" size={15} color="#E6213D" />
@@ -8176,6 +8363,22 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
 }
 
 function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
+  const postos = useDiretoriaPostos();
+  const { dados: gnv, periodo, isLoading, errorMessage } = useDiretoriaPainelRecurso('gnv', {});
+
+  const resumo = gnv?.resumo ?? gnv ?? null;
+  const postosForaDaFaixa = pickArr(gnv, ['postos']);
+
+  const totalFaturado = pickNum(resumo, ['faturamento_total', 'faturamento']);
+  const faturamentoDesconto = pickNum(resumo, ['faturamento_desconto', 'faturamento_com_desconto']);
+  const percentualDesconto = pickNum(resumo, ['percentual_desconto', 'desconto_pct', 'pct_desconto']);
+  const volumeM3 = pickNum(resumo, ['volume_m3', 'volume']);
+  const margemPct = pickNum(resumo, ['margem_pct', 'margem']);
+
+  const periodoLabel = periodo.de ? formatDateBR(new Date(periodo.de + 'T00:00:00')) : formatDateBR(new Date());
+  const totalPostosCount = postos.length;
+  const idealCount = totalPostosCount > 0 ? Math.max(0, totalPostosCount - postosForaDaFaixa.length) : null;
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -8195,85 +8398,83 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
             </View>
             <Text style={styles.pageTitle}>Métricas GNV</Text>
           </View>
-          <Text style={styles.pageSubtitle}>01/07/2026 · Todos os postos</Text>
+          <Text style={styles.pageSubtitle}>{periodoLabel} · Todos os postos</Text>
         </View>
 
-        <View style={styles.gnvStatsRow}>
-          <View style={styles.gnvStatCard}>
-            <Text style={[styles.gnvStatLabel, { color: '#18955A' }]}>TOTAL FATURADO</Text>
-            <Text style={styles.gnvStatValue}>{gnvTotalFaturado}</Text>
-            <Text style={styles.gnvStatMeta}>{gnvVolumeLabel}</Text>
-            <Text style={[styles.gnvStatMeta, styles.gnvStatMetaStrong]}>{gnvMarginLabel}</Text>
-          </View>
-          <View style={styles.gnvStatCard}>
-            <Text style={[styles.gnvStatLabel, { color: '#E6213D' }]}>% DESCONTO GNV</Text>
-            <Text style={[styles.gnvStatValue, { color: '#E6213D' }]}>{gnvDescontoLabel}</Text>
-            <Text style={styles.gnvStatMeta}>{gnvOutOfRangeLabel}</Text>
-          </View>
-        </View>
-
-        <View style={styles.gnvChartCard}>
-          <Text style={styles.gnvChartTitle}>Evolução diária — % desconto</Text>
-          <Text style={styles.gnvChartSubtitle}>referência da meta (35-45%)</Text>
-
-          <View style={styles.gnvChartArea}>
-            <View style={styles.gnvChartLineRow}>
-              <Text style={styles.gnvChartAxisLabel}>45%</Text>
-              <View style={styles.gnvChartDashedLine} />
-            </View>
-            <View style={styles.gnvChartLineRow}>
-              <Text style={styles.gnvChartAxisLabel}>35%</Text>
-              <View style={styles.gnvChartDashedLine} />
-            </View>
-            <View style={styles.gnvChartBaseline} />
-            <View style={styles.gnvChartDot} />
-          </View>
-          <Text style={styles.gnvChartDateLabel}>01/07</Text>
-        </View>
-
-        <View style={styles.gnvReportCard}>
-          <View style={styles.gnvReportHeaderRow}>
-            <Text style={styles.gnvReportTitle}>Relatório GNV</Text>
-            <Text style={styles.gnvReportMeta}>{gnvReportMonthLabel}</Text>
-          </View>
-
-          <View style={styles.gnvReportStatsRow}>
-            <View style={styles.gnvReportStatBlock}>
-              <View style={styles.gnvReportStatTopRow}>
-                <View style={[styles.gnvReportStatDot, { backgroundColor: '#E6213D' }]} />
-                <Text style={styles.gnvReportStatLabel}>Risco</Text>
+        {isLoading && !gnv ? (
+          <Text style={styles.conversaEmptyText}>Carregando métricas GNV...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : (
+          <>
+            <View style={styles.gnvStatsRow}>
+              <View style={styles.gnvStatCard}>
+                <Text style={[styles.gnvStatLabel, { color: '#18955A' }]}>TOTAL FATURADO</Text>
+                <Text style={styles.gnvStatValue}>{fmtBRLOrDash(totalFaturado)}</Text>
+                <Text style={styles.gnvStatMeta}>Volume: {fmtNumOrDash(volumeM3, ' m³')}</Text>
+                {margemPct !== null ? (
+                  <Text style={[styles.gnvStatMeta, styles.gnvStatMetaStrong]}>
+                    Margem {fmtPercentOrDash(margemPct)}
+                  </Text>
+                ) : null}
               </View>
-              <Text style={[styles.gnvReportStatValue, { color: '#E6213D' }]}>{gnvRiskCount}</Text>
-            </View>
-            <View style={styles.gnvReportStatBlock}>
-              <View style={styles.gnvReportStatTopRow}>
-                <View style={[styles.gnvReportStatDot, { backgroundColor: '#D79A22' }]} />
-                <Text style={styles.gnvReportStatLabel}>Atenção</Text>
+              <View style={styles.gnvStatCard}>
+                <Text style={[styles.gnvStatLabel, { color: '#E6213D' }]}>% DESCONTO GNV</Text>
+                <Text style={[styles.gnvStatValue, { color: '#E6213D' }]}>{fmtPercentOrDash(percentualDesconto)}</Text>
+                <Text style={styles.gnvStatMeta}>
+                  Faturamento com desconto: {fmtBRLOrDash(faturamentoDesconto)}
+                </Text>
               </View>
-              <Text style={[styles.gnvReportStatValue, { color: '#B7791F' }]}>{gnvAttentionCount}</Text>
             </View>
-            <View style={styles.gnvReportStatBlock}>
-              <View style={styles.gnvReportStatTopRow}>
-                <View style={[styles.gnvReportStatDot, { backgroundColor: '#18955A' }]} />
-                <Text style={styles.gnvReportStatLabel}>Ideal</Text>
-              </View>
-              <Text style={[styles.gnvReportStatValue, { color: '#18955A' }]}>{gnvIdealCount}</Text>
-            </View>
-          </View>
-        </View>
 
-        <Text style={styles.directorSectionTitle}>RISCO · {gnvRiskCount}</Text>
-        {gnvRiskStations.map((station) => (
-          <View key={station.id} style={styles.gnvRiskRow}>
-            <View style={styles.gnvRiskTextBlock}>
-              <Text style={styles.gnvRiskName}>{station.name}</Text>
-              <Text style={styles.gnvRiskMeta}>
-                {station.volumeLabel} · {station.billingLabel}
-              </Text>
+            <View style={styles.gnvReportCard}>
+              <View style={styles.gnvReportHeaderRow}>
+                <Text style={styles.gnvReportTitle}>Relatório GNV</Text>
+                <Text style={styles.gnvReportMeta}>{periodoLabel}</Text>
+              </View>
+
+              <View style={styles.gnvReportStatsRow}>
+                <View style={styles.gnvReportStatBlock}>
+                  <View style={styles.gnvReportStatTopRow}>
+                    <View style={[styles.gnvReportStatDot, { backgroundColor: '#E6213D' }]} />
+                    <Text style={styles.gnvReportStatLabel}>Fora da faixa</Text>
+                  </View>
+                  <Text style={[styles.gnvReportStatValue, { color: '#E6213D' }]}>{postosForaDaFaixa.length}</Text>
+                </View>
+                <View style={styles.gnvReportStatBlock}>
+                  <View style={styles.gnvReportStatTopRow}>
+                    <View style={[styles.gnvReportStatDot, { backgroundColor: '#18955A' }]} />
+                    <Text style={styles.gnvReportStatLabel}>Dentro da faixa (35-45%)</Text>
+                  </View>
+                  <Text style={[styles.gnvReportStatValue, { color: '#18955A' }]}>{fmtNumOrDash(idealCount)}</Text>
+                </View>
+              </View>
             </View>
-            <Text style={styles.gnvRiskPercent}>{station.percentLabel}</Text>
-          </View>
-        ))}
+
+            <Text style={styles.directorSectionTitle}>FORA DA FAIXA (35-45%) · {postosForaDaFaixa.length}</Text>
+            {postosForaDaFaixa.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Nenhum posto fora da faixa de desconto no período.</Text>
+            ) : (
+              postosForaDaFaixa.map((station: any, index: number) => {
+                const volume = pickNum(station, ['volume_m3', 'volume']);
+                const faturamento = pickNum(station, ['faturamento']);
+                const percentual = pickNum(station, ['percentual_desconto', 'desconto_pct']);
+
+                return (
+                  <View key={pickStr(station, ['id']) ?? index} style={styles.gnvRiskRow}>
+                    <View style={styles.gnvRiskTextBlock}>
+                      <Text style={styles.gnvRiskName}>{pickStr(station, ['nome', 'posto', 'name']) ?? '—'}</Text>
+                      <Text style={styles.gnvRiskMeta}>
+                        {fmtNumOrDash(volume, ' m³')} · {fmtBRLOrDash(faturamento)}
+                      </Text>
+                    </View>
+                    <Text style={styles.gnvRiskPercent}>{fmtPercentOrDash(percentual)}</Text>
+                  </View>
+                );
+              })
+            )}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -10681,6 +10882,121 @@ function toApiDateOnly(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+// --- Helpers de leitura defensiva do painel da Diretoria ---
+// A Lovable descreveu o shape do DTO em texto (não mandou o JSON exato campo
+// a campo), então em vez de travar num nome de campo que pode estar errado,
+// tento algumas variações plausíveis e caio pra "sem dado" (não pra um valor
+// fabricado) quando nenhuma bate. Ajustar aqui é o lugar certo depois de ver
+// o retorno real do endpoint publicado.
+function pickNum(obj: unknown, keys: string[]): number | null {
+  if (!obj || typeof obj !== 'object') return null;
+  for (const key of keys) {
+    const value = (obj as Record<string, unknown>)[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+function pickStr(obj: unknown, keys: string[]): string | null {
+  if (!obj || typeof obj !== 'object') return null;
+  for (const key of keys) {
+    const value = (obj as Record<string, unknown>)[key];
+    if (typeof value === 'string' && value) return value;
+  }
+  return null;
+}
+function pickArr(obj: unknown, keys: string[]): any[] {
+  if (!obj || typeof obj !== 'object') return [];
+  for (const key of keys) {
+    const value = (obj as Record<string, unknown>)[key];
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+function fmtBRLOrDash(value: number | null): string {
+  return value === null ? '—' : formatBRL(value);
+}
+function fmtPercentOrDash(value: number | null): string {
+  return value === null ? '—' : `${value.toFixed(1).replace('.', ',')}%`;
+}
+function fmtNumOrDash(value: number | null, suffix = ''): string {
+  return value === null ? '—' : `${value.toLocaleString('pt-BR')}${suffix}`;
+}
+
+type DiretoriaPosto = { id: string; nome: string };
+
+// Lista real de postos (recurso=postos) — substitui as listas fixas usadas
+// antes nos seletores de posto de Vendas/Estoques.
+function useDiretoriaPostos() {
+  const { identity } = useContext(AuthIdentityContext);
+  const [postos, setPostos] = useState<DiretoriaPosto[]>([]);
+
+  useEffect(() => {
+    let isActive = true;
+    fetchDiretoriaPainel<any>('postos', {}, identity?.profileId)
+      .then((response) => {
+        if (!isActive) return;
+        const data = response?.dados;
+        const list: any[] = Array.isArray(data) ? data : pickArr(data, ['postos', 'data']);
+        const mapped = list
+          .map((item) => ({
+            id: String(item?.id ?? item?.idq ?? item?.posto_id ?? item?.codigo ?? ''),
+            nome: String(item?.nome ?? item?.name ?? item?.posto ?? ''),
+          }))
+          .filter((item) => item.id && item.nome);
+        setPostos(mapped);
+      })
+      .catch(() => {
+        if (isActive) setPostos([]);
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [identity?.profileId]);
+
+  return postos;
+}
+
+// Hook genérico pra buscar um recurso do painel da Diretoria com filtro de
+// período/posto — usado por Vendas/Margem/Estoques/GNV.
+function useDiretoriaPainelRecurso(
+  recurso: DiretoriaPainelRecurso,
+  filtros: { de?: string; ate?: string; posto?: string }
+) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [dados, setDados] = useState<any>(null);
+  const [periodo, setPeriodo] = useState<{ de?: string; ate?: string }>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchDiretoriaPainel<any>(recurso, filtros, identity?.profileId)
+      .then((response) => {
+        if (isActive) {
+          setDados(response?.dados ?? null);
+          setPeriodo({ de: response?.de, ate: response?.ate });
+        }
+      })
+      .catch((err) => {
+        if (isActive) {
+          setDados(null);
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os dados.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+    return () => {
+      isActive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recurso, filtros.de, filtros.ate, filtros.posto, identity?.profileId]);
+
+  return { dados, periodo, isLoading, errorMessage };
 }
 
 export function getCalendarWeeks(year: number, monthIndex: number) {

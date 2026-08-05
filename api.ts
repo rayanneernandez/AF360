@@ -2644,11 +2644,19 @@ export async function fetchAdminDashboardKpis(opts?: {
 
 export type DiretoriaPainelRecurso = 'resumo' | 'rede' | 'margem' | 'estoques' | 'gnv' | 'postos' | 'periodo';
 
+export type DiretoriaPainelResponse<T = any> = {
+  recurso: string;
+  de?: string;
+  ate?: string;
+  postos?: unknown;
+  dados: T;
+};
+
 export async function fetchDiretoriaPainel<T = any>(
   recurso: DiretoriaPainelRecurso,
   params: { de?: string; ate?: string; posto?: string } = {},
   actorId?: string | null
-): Promise<T> {
+): Promise<DiretoriaPainelResponse<T>> {
   const search = new URLSearchParams();
   search.set('recurso', recurso);
   if (params.de) search.set('de', params.de);
@@ -2656,7 +2664,7 @@ export async function fetchDiretoriaPainel<T = any>(
   if (params.posto) search.set('posto', params.posto);
   const path = `/api/diretoria-painel?${search.toString()}`;
   const json = await api.get(withActorId(path, actorId));
-  return json.dados as T;
+  return { recurso: json.recurso ?? recurso, de: json.de, ate: json.ate, postos: json.postos, dados: json.dados as T };
 }
 
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
