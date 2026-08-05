@@ -7746,38 +7746,41 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
         <View style={rhStyles.sectionHeaderRow}>
           <Text style={rhStyles.sectionTitle}>POR ETAPA</Text>
         </View>
-        <View style={rhStyles.etapaListCard}>
-          {conformidadeEtapas.map((item, index) => (
-            <View
-              key={item.id}
-              style={[
-                rhStyles.etapaRow,
-                index === conformidadeEtapas.length - 1 ? rhStyles.etapaRowLast : null,
-              ]}
-            >
-              <View style={rhStyles.etapaRowHeader}>
-                <Text style={rhStyles.etapaRowTitle} numberOfLines={1}>
-                  {item.etapa}
-                </Text>
-                <Text style={rhStyles.etapaRowSla}>SLA {item.slaLabel}</Text>
+        {conformidadeEtapas.map((item) => (
+          <View
+            key={item.id}
+            style={[rhStyles.etapaCard, item.atrasadas > 0 ? rhStyles.etapaCardAlert : null]}
+          >
+            <View style={rhStyles.etapaCardHeader}>
+              <View style={rhStyles.etapaCardIconShell}>
+                <Feather name={item.icon} size={15} color="#3457D5" />
               </View>
-              <View style={rhStyles.etapaRowStats}>
-                <View style={rhStyles.etapaRowStatItem}>
-                  <Text style={rhStyles.etapaRowStatValue}>{item.emAberto}</Text>
-                  <Text style={rhStyles.etapaRowStatLabel}>Em aberto</Text>
-                </View>
-                <View style={rhStyles.etapaRowStatItem}>
-                  <Text style={rhStyles.etapaRowStatValue}>{item.atrasadas}</Text>
-                  <Text style={rhStyles.etapaRowStatLabel}>Atrasadas</Text>
-                </View>
-                <View style={rhStyles.etapaRowStatItem}>
-                  <Text style={rhStyles.etapaRowStatValue}>{item.mediaDias}</Text>
-                  <Text style={rhStyles.etapaRowStatLabel}>Média (dias)</Text>
-                </View>
+              <Text style={rhStyles.etapaCardTitle} numberOfLines={1}>
+                {item.etapa}
+              </Text>
+              <View style={rhStyles.etapaSlaPill}>
+                <Text style={rhStyles.etapaSlaPillText}>SLA {item.slaLabel}</Text>
               </View>
             </View>
-          ))}
-        </View>
+
+            <View style={rhStyles.etapaStatsRow}>
+              <View style={rhStyles.etapaStatItem}>
+                <Text style={rhStyles.etapaStatValue}>{item.emAberto}</Text>
+                <Text style={rhStyles.etapaStatLabel}>Em aberto</Text>
+              </View>
+              <View style={rhStyles.etapaStatDivider} />
+              <View style={rhStyles.etapaStatItem}>
+                <Text style={[rhStyles.etapaStatValue, { color: '#B07A1E' }]}>{item.atrasadas}</Text>
+                <Text style={rhStyles.etapaStatLabel}>Atrasadas</Text>
+              </View>
+              <View style={rhStyles.etapaStatDivider} />
+              <View style={rhStyles.etapaStatItem}>
+                <Text style={rhStyles.etapaStatValue}>{item.mediaDias}</Text>
+                <Text style={rhStyles.etapaStatLabel}>Média (dias)</Text>
+              </View>
+            </View>
+          </View>
+        ))}
 
         <View style={rhStyles.sectionHeaderRow}>
           <Text style={rhStyles.sectionTitle}>POR RESPONSÁVEL</Text>
@@ -10020,60 +10023,74 @@ const rhStyles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  // "Por etapa" — uma lista só (um card, várias linhas com traço fino entre
-  // elas) em vez de vários cards separados. Sem cor: só hierarquia de
-  // tipografia (título escuro, SLA e labels em cinza), pra combinar com o
-  // resto da tela em vez de disputar atenção.
-  etapaListCard: {
+  // Card "Por etapa" — ícone + título + pill de SLA em cima, 3 números com
+  // divisor embaixo. Borda esquerda fica vermelha só quando tem atrasada.
+  etapaCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E6F0',
-    marginBottom: 14,
-    overflow: 'hidden',
+    borderLeftWidth: 4,
+    borderLeftColor: '#E2E6F0',
+    padding: 14,
+    marginBottom: 12,
   },
-  etapaRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEF0F5',
+  etapaCardAlert: {
+    borderLeftColor: '#E6213D',
   },
-  etapaRowLast: {
-    borderBottomWidth: 0,
-  },
-  etapaRowHeader: {
+  etapaCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 10,
-    marginBottom: 10,
+    marginBottom: 14,
   },
-  etapaRowTitle: {
+  etapaCardIconShell: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: '#EDF1FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  etapaCardTitle: {
     flex: 1,
     color: '#15203E',
     fontSize: 14,
-    fontWeight: '700',
-  },
-  etapaRowSla: {
-    color: '#9AA1B5',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  etapaRowStats: {
-    flexDirection: 'row',
-  },
-  etapaRowStatItem: {
-    flex: 1,
-  },
-  etapaRowStatValue: {
-    color: '#15203E',
-    fontSize: 16,
     fontWeight: '800',
   },
-  etapaRowStatLabel: {
+  etapaSlaPill: {
+    backgroundColor: '#E3F5EA',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  etapaSlaPillText: {
+    color: '#18955A',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  etapaStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  etapaStatItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  etapaStatValue: {
+    color: '#15203E',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  etapaStatLabel: {
     marginTop: 2,
     color: '#9AA1B5',
     fontSize: 11,
+  },
+  etapaStatDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#E2E6F0',
   },
   headerActionsRow: {
     flexDirection: 'row',
