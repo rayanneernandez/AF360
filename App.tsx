@@ -7527,7 +7527,15 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
     () => ({ de: toApiDateOnly(startDate), ate: toApiDateOnly(endDate), posto: selectedPostoId }),
     [startDate, endDate, selectedPostoId]
   );
-  const { dados: resumo, isLoading, errorMessage } = useDiretoriaPainelRecurso('resumo', filtros);
+  // Confirmado pela Lovable em 05/08/2026: os 5 cards de faturamento/margem
+  // por segmento vêm do recurso=rede (não do resumo — resumo só tem kpis
+  // agregados gerais: faturamento, faturamento_pdv, faturamento_desconto_gnv,
+  // litros, m3, postos_com_venda). Shape de rede: dados.total.{faturamento,
+  // custo,margem_pct} e dados.segmentos.{COMB_LIQ,GNV,PISTA,LOJA}.{faturamento,
+  // volume,custo,margem_pct}; dados.combustiveisLiquidos.{GASOLINA,ETANOL,
+  // DIESEL} já vem agrupado (comum+aditivado somados), então não precisamos
+  // mais agrupar isso no cliente.
+  const { dados: rede, isLoading, errorMessage } = useDiretoriaPainelRecurso('rede', filtros);
 
   const isSingleDay = formatDateBR(startDate) === formatDateBR(endDate);
   const flashRangeLabel = isSingleDay
@@ -7548,126 +7556,76 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
     }
   };
 
-  const kpis = resumo?.kpis ?? resumo ?? null;
-  const fuelBreakdown = pickArr(resumo, ['mix_combustivel', 'combustiveis', 'mix']);
+  const redeTotal = rede?.total ?? null;
+  const segmentos = rede?.segmentos ?? null;
+  const combustiveisLiquidos = rede?.combustiveisLiquidos ?? null;
 
-  // A Lovable não confirmou os nomes exatos de faturamento_combustiveis/
-  // faturamento_gnv/loja_pista/loja_conveniencia nos kpis — na prática eles
-  // não batem com o retorno real. Só o total geral e os volumes batem. Em
-  // vez de deixar Combustíveis líquidos e GNV zerados quando o dado já está
-  // ali (a lista mix_combustivel traz cada item, GNV incluso), derivamos os
-  // dois pela soma da própria lista como fallback.
-  const fuelBreakdownDerived = useMemo(() => {
-    let gnvItem: any = null;
-    let liquidosFaturamento = 0;
-    let liquidosVolume = 0;
-    let temItemLiquido = false;
-    for (const item of fuelBreakdown) {
-      const nome = (pickStr(item, ['produto', 'nome', 'combustivel']) ?? '').toUpperCase();
-      if (nome.includes('GNV')) {
-        gnvItem = item;
-        continue;
-      }
-      temItemLiquido = true;
-      liquidosFaturamento += pickNum(item, ['faturamento', 'valor_total']) ?? 0;
-      liquidosVolume += pickNum(item, ['volume_litros', 'volume', 'litros']) ?? 0;
-    }
-    return {
-      faturamentoCombustiveis: temItemLiquido ? liquidosFaturamento : null,
-      volumeCombustiveisLitros: temItemLiquido ? liquidosVolume : null,
-      faturamentoGnv: gnvItem ? pickNum(gnvItem, ['faturamento', 'valor_total']) : null,
-      volumeGnvM3: gnvItem ? pickNum(gnvItem, ['volume_litros', 'volume', 'litros']) : null,
-    };
-  }, [fuelBreakdown]);
+  const segmento = (chave: string) => (segmentos ? (segmentos as Record<string, unknown>)[chave] : null);
 
   const summaryCards = useMemo(() => {
-    if (!kpis) return [];
+    if (!redeTotal && !segmentos) return [];
     const items: Array<{ id: string; label: string; value: number | null; meta?: string | null; marginPct: number | null }> = [
       {
         id: 'total',
         label: 'Faturamento TOTAL',
-        value: pickNum(kpis, ['faturamento_total', 'faturamento', 'total']),
-        marginPct: pickNum(kpis, ['margem_total_pct', 'margem_pct', 'margem']),
+        value: pickNum(redeTotal, ['faturamento']),
+        marginPct: pickNum(redeTotal, ['margem_pct']),
       },
       {
         id: 'fuels',
         label: 'Combustíveis líquidos',
-        value: pickNum(kpis, ['faturamento_combustiveis', 'faturamento_combustivel']) ?? fuelBreakdownDerived.faturamentoCombustiveis,
+        value: pickNum(segmento('COMB_LIQ'), ['faturamento']),
         meta:
-          pickNum(kpis, ['volume_combustiveis_litros', 'litros', 'volume_litros']) !== null
-            ? `Volume: ${fmtNumOrDash(pickNum(kpis, ['volume_combustiveis_litros', 'litros', 'volume_litros']), ' L')}`
-            : fuelBreakdownDerived.volumeCombustiveisLitros !== null
-            ? `Volume: ${fmtNumOrDash(fuelBreakdownDerived.volumeCombustiveisLitros, ' L')}`
+          pickNum(segmento('COMB_LIQ'), ['volume']) !== null
+            ? `Volume: ${fmtNumOrDash(pickNum(segmento('COMB_LIQ'), ['volume']), ' L')}`
             : null,
-        marginPct: pickNum(kpis, ['margem_combustiveis_pct', 'margem_combustiveis']),
+        marginPct: pickNum(segmento('COMB_LIQ'), ['margem_pct']),
       },
       {
         id: 'gnv',
         label: 'GNV',
-        value: pickNum(kpis, ['faturamento_gnv', 'gnv_faturamento']) ?? fuelBreakdownDerived.faturamentoGnv,
+        value: pickNum(segmento('GNV'), ['faturamento']),
         meta:
-          pickNum(kpis, ['volume_gnv_m3', 'gnv_volume_m3', 'm3']) !== null
-            ? `Volume: ${fmtNumOrDash(pickNum(kpis, ['volume_gnv_m3', 'gnv_volume_m3', 'm3']), ' m³')}`
-            : fuelBreakdownDerived.volumeGnvM3 !== null
-            ? `Volume: ${fmtNumOrDash(fuelBreakdownDerived.volumeGnvM3, ' m³')}`
+          pickNum(segmento('GNV'), ['volume']) !== null
+            ? `Volume: ${fmtNumOrDash(pickNum(segmento('GNV'), ['volume']), ' m³')}`
             : null,
-        marginPct: pickNum(kpis, ['margem_gnv_pct', 'margem_gnv']),
+        marginPct: pickNum(segmento('GNV'), ['margem_pct']),
       },
       {
         id: 'store-track',
         label: 'Loja pista',
-        value: pickNum(kpis, ['faturamento_loja_pista', 'loja_pista_faturamento']),
-        marginPct: pickNum(kpis, ['margem_loja_pista_pct', 'margem_loja_pista']),
+        value: pickNum(segmento('PISTA'), ['faturamento']),
+        marginPct: pickNum(segmento('PISTA'), ['margem_pct']),
       },
       {
         id: 'store-convenience',
         label: 'Loja conveniência',
-        value: pickNum(kpis, ['faturamento_loja_conveniencia', 'loja_conveniencia_faturamento']),
-        marginPct: pickNum(kpis, ['margem_loja_conveniencia_pct', 'margem_loja_conveniencia']),
+        value: pickNum(segmento('LOJA'), ['faturamento']),
+        marginPct: pickNum(segmento('LOJA'), ['margem_pct']),
       },
     ];
     return items;
-  }, [kpis, fuelBreakdownDerived]);
+  }, [redeTotal, segmentos]);
 
-  // O site agrupa comum+aditivado em 3 categorias (Gasolina/Etanol/Diesel) e
-  // trata GNV separado (já tem card próprio acima) — a lista bruta da API
-  // vem com as 2 variações de cada combustível soltas. Agrupamos aqui pra
-  // bater com a mesma leitura do painel web.
+  // dados.combustiveisLiquidos já vem agrupado por tipo (Gasolina/Etanol/
+  // Diesel, comum+aditivado somados) — igual à leitura do painel web.
   const groupedFuelBreakdown = useMemo(() => {
-    type Grupo = { categoria: string; faturamento: number; volumeLitros: number; margemPondSoma: number };
-    const grupos: Record<string, Grupo> = {};
-    const ordem: string[] = [];
-    for (const item of fuelBreakdown) {
-      const nome = (pickStr(item, ['produto', 'nome', 'combustivel']) ?? '').toUpperCase();
-      if (nome.includes('GNV')) continue;
-      let categoria: string | null = null;
-      if (nome.includes('GASOLINA')) categoria = 'GASOLINA';
-      else if (nome.includes('ETANOL')) categoria = 'ETANOL';
-      else if (nome.includes('DIESEL')) categoria = 'DIESEL';
-      if (!categoria) continue;
-
-      const faturamento = pickNum(item, ['faturamento', 'valor_total']) ?? 0;
-      const volume = pickNum(item, ['volume_litros', 'volume', 'litros']) ?? 0;
-      const margem = pickNum(item, ['margem_pct', 'margem']) ?? 0;
-
-      if (!grupos[categoria]) {
-        grupos[categoria] = { categoria, faturamento: 0, volumeLitros: 0, margemPondSoma: 0 };
-        ordem.push(categoria);
-      }
-      grupos[categoria].faturamento += faturamento;
-      grupos[categoria].volumeLitros += volume;
-      grupos[categoria].margemPondSoma += faturamento * margem;
-    }
-    return ordem.map((categoria) => {
-      const grupo = grupos[categoria];
-      return {
-        produto: categoria,
-        faturamento: grupo.faturamento,
-        volumeLitros: grupo.volumeLitros,
-        margemPct: grupo.faturamento > 0 ? grupo.margemPondSoma / grupo.faturamento : null,
-      };
-    });
-  }, [fuelBreakdown]);
+    if (!combustiveisLiquidos) return [];
+    const categorias = ['GASOLINA', 'ETANOL', 'DIESEL'] as const;
+    return categorias
+      .map((categoria) => {
+        const seg = (combustiveisLiquidos as Record<string, unknown>)[categoria];
+        const faturamento = pickNum(seg, ['faturamento']);
+        if (seg === undefined || seg === null || faturamento === null) return null;
+        return {
+          produto: categoria,
+          faturamento,
+          volumeLitros: pickNum(seg, ['volume']),
+          margemPct: pickNum(seg, ['margem_pct']),
+        };
+      })
+      .filter((item): item is { produto: string; faturamento: number; volumeLitros: number | null; margemPct: number | null } => item !== null);
+  }, [combustiveisLiquidos]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -7715,7 +7673,7 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
         </View>
 
         <Text style={styles.directorSectionTitle}>RESUMO DA REDE</Text>
-        {isLoading && !resumo ? (
+        {isLoading && !rede ? (
           <Text style={styles.conversaEmptyText}>Carregando vendas...</Text>
         ) : errorMessage ? (
           <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
@@ -8526,26 +8484,22 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
   const filtros = useMemo(() => getCurrentMonthRange(), []);
   const { dados: gnv, periodo, isLoading, errorMessage } = useDiretoriaPainelRecurso('gnv', filtros);
 
+  // Confirmado pela Lovable em 05/08/2026 — shape real do recurso=gnv:
+  // dados.resumo.{total_faturado_gnv,faturamento_desconto_gnv,faturamento_pdv,
+  // pct_desconto_gnv,volume_total_m3,economia_icms,margem_pct} e dados.postos
+  // é a lista COMPLETA (os 44), já ordenada por pct_desconto_gnv desc, com
+  // {posto_id,posto_nome,volume_desconto_gnv,volume_fiscal,volume_total,
+  // faturamento_desconto_gnv,faturamento_pdv,faturamento_total,pct_desconto_gnv}.
   const resumo = gnv?.resumo ?? gnv ?? null;
-  // gnv.postos é a lista COMPLETA de postos com GNV (bate com o "44 postos"
-  // do relatório do site) — não é uma lista pré-filtrada de "fora da faixa".
-  // A Lovable não confirmou os nomes de campo do percentual por posto ainda,
-  // então classificamos só quando algum dos nomes testados bater; quando
-  // nenhum bate pra nenhum posto, mostramos "não classificado" em vez de
-  // fabricar uma divisão fora/dentro que não corresponde à realidade.
   const gnvPostosTodos = pickArr(gnv, ['postos']);
+
+  // Faixa ideal é 35-45% pros postos padrão, mas existem postos "alternativos"
+  // com faixa 18-23% (lista em src/lib/gnv-faixas.ts, não exposta no payload
+  // ainda) — classificamos só pela faixa padrão por enquanto, o que pode
+  // marcar postos alternativos saudáveis como "fora da faixa". Pedimos pra
+  // Lovable expor a faixa por posto pra corrigir isso com precisão.
   const gnvPostosComPercentual = gnvPostosTodos
-    .map((station: any) => ({
-      station,
-      percentual: pickNum(station, [
-        'percentual_desconto',
-        'desconto_pct',
-        'pct_desconto',
-        'percentual',
-        'desconto_gnv_pct',
-        'faixa_desconto_pct',
-      ]),
-    }))
+    .map((station: any) => ({ station, percentual: pickNum(station, ['pct_desconto_gnv']) }))
     .filter((entry) => entry.percentual !== null);
   const podeClassificarFaixa = gnvPostosComPercentual.length > 0;
   const postosForaDaFaixa = podeClassificarFaixa
@@ -8555,11 +8509,12 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
     ? gnvPostosComPercentual.filter((entry) => entry.percentual! >= 35 && entry.percentual! <= 45)
     : [];
 
-  const totalFaturado = pickNum(resumo, ['faturamento_total', 'faturamento']);
-  const faturamentoDesconto = pickNum(resumo, ['faturamento_desconto', 'faturamento_com_desconto']);
-  const percentualDesconto = pickNum(resumo, ['percentual_desconto', 'desconto_pct', 'pct_desconto']);
-  const volumeM3 = pickNum(resumo, ['volume_m3', 'volume']);
-  const margemPct = pickNum(resumo, ['margem_pct', 'margem']);
+  const totalFaturado = pickNum(resumo, ['total_faturado_gnv']);
+  const faturamentoDesconto = pickNum(resumo, ['faturamento_desconto_gnv']);
+  const percentualDesconto = pickNum(resumo, ['pct_desconto_gnv']);
+  const volumeM3 = pickNum(resumo, ['volume_total_m3']);
+  const margemPct = pickNum(resumo, ['margem_pct']);
+  const economiaIcms = pickNum(resumo, ['economia_icms']);
 
   const periodoLabel = periodo.de ? formatDateBR(new Date(periodo.de + 'T00:00:00')) : formatDateBR(new Date());
   const idealCount = podeClassificarFaixa ? postosDentroDaFaixa.length : null;
@@ -8597,6 +8552,9 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
                 <Text style={[styles.gnvStatLabel, { color: '#18955A' }]}>TOTAL FATURADO</Text>
                 <Text style={styles.gnvStatValue}>{fmtBRLOrDash(totalFaturado)}</Text>
                 <Text style={styles.gnvStatMeta}>Volume: {fmtNumOrDash(volumeM3, ' m³')}</Text>
+                {economiaIcms !== null ? (
+                  <Text style={styles.gnvStatMeta}>Economia ICMS: {fmtBRLOrDash(economiaIcms)}</Text>
+                ) : null}
                 {margemPct !== null ? (
                   <Text style={[styles.gnvStatMeta, styles.gnvStatMetaStrong]}>
                     Margem {fmtPercentOrDash(margemPct)}
@@ -8653,21 +8611,14 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
               <Text style={styles.conversaEmptyText}>Nenhum posto fora da faixa de desconto no período.</Text>
             ) : (
               postosForaDaFaixa.map((station: any, index: number) => {
-                const volume = pickNum(station, ['volume_m3', 'volume']);
-                const faturamento = pickNum(station, ['faturamento']);
-                const percentual = pickNum(station, [
-                  'percentual_desconto',
-                  'desconto_pct',
-                  'pct_desconto',
-                  'percentual',
-                  'desconto_gnv_pct',
-                  'faixa_desconto_pct',
-                ]);
+                const volume = pickNum(station, ['volume_total']);
+                const faturamento = pickNum(station, ['faturamento_total']);
+                const percentual = pickNum(station, ['pct_desconto_gnv']);
 
                 return (
-                  <View key={pickStr(station, ['id']) ?? index} style={styles.gnvRiskRow}>
+                  <View key={pickStr(station, ['posto_id']) ?? index} style={styles.gnvRiskRow}>
                     <View style={styles.gnvRiskTextBlock}>
-                      <Text style={styles.gnvRiskName}>{pickStr(station, ['nome', 'posto', 'name']) ?? '—'}</Text>
+                      <Text style={styles.gnvRiskName}>{pickStr(station, ['posto_nome']) ?? '—'}</Text>
                       <Text style={styles.gnvRiskMeta}>
                         {fmtNumOrDash(volume, ' m³')} · {fmtBRLOrDash(faturamento)}
                       </Text>
