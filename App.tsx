@@ -43,6 +43,8 @@ import {
   RHProfileScreen,
   RHColaboradoresScreen,
   RHColaboradorDetalheScreen,
+  RHPreContratadosScreen,
+  RHConformidadeAdmissoesScreen,
   RHTransferenciasScreen,
   RHComunicadosScreen,
   RHSolicitacoesScreen,
@@ -171,6 +173,8 @@ export type RootStackParamList = {
   RHProfile: undefined;
   RHColaboradores: undefined;
   RHColaboradorDetalhe: { employeeId: string; employeeInicial?: import('./RH').Employee };
+  RHPreContratados: undefined;
+  RHConformidadeAdmissoes: undefined;
   RHTransferencias: undefined;
   RHComunicados: undefined;
   RHSolicitacoes: undefined;
@@ -351,6 +355,8 @@ type DirectorSideMenuRoute =
 export type RHSideMenuRoute =
   | 'RHDashboard'
   | 'RHColaboradores'
+  | 'RHPreContratados'
+  | 'RHConformidadeAdmissoes'
   | 'RHTransferencias'
   | 'RHComunicados'
   | 'RHSolicitacoes'
@@ -1226,6 +1232,13 @@ export const rhSideMenuSections: Array<{
     title: 'PESSOAS',
     items: [
       { id: 'rh-colaboradores', label: 'Colaboradores', icon: 'users', route: 'RHColaboradores' },
+      { id: 'rh-pre-contratados', label: 'Pré-Contratados', icon: 'user-check', route: 'RHPreContratados' },
+      {
+        id: 'rh-conformidade-admissoes',
+        label: 'Conformidade de Admissões',
+        icon: 'clipboard',
+        route: 'RHConformidadeAdmissoes',
+      },
       { id: 'rh-transferencias', label: 'Transferências', icon: 'repeat', route: 'RHTransferencias' },
       { id: 'rh-comunicados', label: 'Comunicados', icon: 'volume-2', route: 'RHComunicados' },
       { id: 'rh-solicitacoes', label: 'Solicitações', icon: 'message-circle', route: 'RHSolicitacoes' },
@@ -2837,6 +2850,8 @@ export default function App() {
                     <Stack.Screen name="RHProfile" component={RHProfileScreen} />
                     <Stack.Screen name="RHColaboradores" component={RHColaboradoresScreen} />
                     <Stack.Screen name="RHColaboradorDetalhe" component={RHColaboradorDetalheScreen} />
+                    <Stack.Screen name="RHPreContratados" component={RHPreContratadosScreen} />
+                    <Stack.Screen name="RHConformidadeAdmissoes" component={RHConformidadeAdmissoesScreen} />
                     <Stack.Screen name="RHTransferencias" component={RHTransferenciasScreen} />
                     <Stack.Screen name="RHComunicados" component={RHComunicadosScreen} />
                     <Stack.Screen name="RHSolicitacoes" component={RHSolicitacoesScreen} />

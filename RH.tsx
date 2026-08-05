@@ -7382,6 +7382,345 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
   );
 }
 
+// ---------- Pré-Contratados ----------
+// Telas novas no web (fluxo de admissão: documentos do candidato → validação
+// do RH → contabilidade → retorno da contabilidade → efetivação). Ainda sem
+// crédito na Lovable pra vincular ao banco — por ora é só o layout/fluxo de
+// filtro, com o mesmo estado vazio ("0 processo(s)") que o próprio site
+// mostra agora. Quando o backend vier, troca a lista mock por um fetch real.
+
+const preContratadosStatusOptions = [
+  'Em andamento',
+  'Aguardando documentos',
+  'Em validação do RH',
+  'Na contabilidade',
+  'Retorno da contabilidade',
+  'Admitidos',
+  'Todos',
+];
+
+export function RHPreContratadosScreen({ navigation }: ScreenProps<'RHPreContratados'>) {
+  const [statusFilter, setStatusFilter] = useState(preContratadosStatusOptions[0]);
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Sem endpoint de admissão liberado ainda — lista vazia de propósito,
+  // igual ao que o site mostra hoje pra esse mesmo filtro.
+  const processos: never[] = [];
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={rhUserInitials} variant="rh" onAvatarPress={() => navigation.navigate('RHProfile')} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <RHPageHeader
+          icon="user-check"
+          title="Pré-Contratados"
+          subtitle="Admissões em andamento: documentos do candidato, validação, contabilidade e efetivação."
+        />
+
+        <View style={rhStyles.filterPillRow}>
+          <RHFilterPill label={statusFilter} onPress={() => setIsStatusFilterOpen(true)} />
+          <Pressable style={rhStyles.secondaryIconButton} onPress={handleRefresh}>
+            <Feather name="refresh-cw" size={14} color="#15203E" />
+            <Text style={rhStyles.secondaryIconButtonText}>Atualizar</Text>
+          </Pressable>
+        </View>
+
+        <View style={rhStyles.sectionHeaderRow}>
+          <View />
+          <Text style={rhStyles.sectionHeaderMeta}>{processos.length} processo(s)</Text>
+        </View>
+
+        <View style={styles.processEmptyCard}>
+          <Text style={styles.processEmptyText}>
+            {isRefreshing ? 'Atualizando...' : 'Nenhum processo de admissão neste filtro.'}
+          </Text>
+        </View>
+      </ScrollView>
+
+      <RHSimplePickerModal
+        visible={isStatusFilterOpen}
+        title="Status do processo"
+        options={preContratadosStatusOptions}
+        selectedValue={statusFilter}
+        onSelect={setStatusFilter}
+        onClose={() => setIsStatusFilterOpen(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
+// ---------- Conformidade de Admissões ----------
+// Painel de SLA/pendências do mesmo fluxo de admissão acima. Também sem
+// backend ainda — os cards e a tabela ficam com os totais zerados (estado
+// real de "sem admissão em andamento"), prontos pra receber o fetch quando
+// o endpoint existir. Unidade já usa a lista real (fetchRhUnidades) porque
+// isso já está disponível hoje, não depende de crédito novo.
+
+type ConformidadeEtapaResumo = {
+  id: string;
+  etapa: string;
+  emAberto: number;
+  atrasadas: number;
+  mediaDias: number;
+  slaLabel: string;
+};
+
+const conformidadeEtapas: ConformidadeEtapaResumo[] = [
+  { id: 'documentos', etapa: 'Documentos do candidato', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '7 dias' },
+  { id: 'validacao-rh', etapa: 'Validação do RH', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '2 dias' },
+  { id: 'contabilidade', etapa: 'Contabilidade', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '3 dias' },
+  { id: 'aso', etapa: 'ASO', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '5 dias' },
+  { id: 'efetivacao', etapa: 'Efetivação após retorno', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '2 dias' },
+];
+
+const conformidadeEtapaFilterOptions = ['Todas', ...conformidadeEtapas.map((item) => item.etapa)];
+const conformidadeResponsavelFilterOptions = ['Todos'];
+const conformidadeStatusFilterOptions = ['Todos', ...preContratadosStatusOptions.filter((item) => item !== 'Todos')];
+
+function firstDayOfCurrentMonth(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHConformidadeAdmissoes'>) {
+  const [deLabel, setDeLabel] = useState(formatDateBR(firstDayOfCurrentMonth()));
+  const [ateLabel, setAteLabel] = useState(formatDateBR(new Date()));
+  const [isDeModalOpen, setIsDeModalOpen] = useState(false);
+  const [isAteModalOpen, setIsAteModalOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [unidadeFilter, setUnidadeFilter] = useState('Todas');
+  const [responsavelFilter, setResponsavelFilter] = useState(conformidadeResponsavelFilterOptions[0]);
+  const [etapaFilter, setEtapaFilter] = useState(conformidadeEtapaFilterOptions[0]);
+  const [statusFilter, setStatusFilter] = useState(conformidadeStatusFilterOptions[0]);
+  const [isUnidadeFilterOpen, setIsUnidadeFilterOpen] = useState(false);
+  const [isResponsavelFilterOpen, setIsResponsavelFilterOpen] = useState(false);
+  const [isEtapaFilterOpen, setIsEtapaFilterOpen] = useState(false);
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [unidadesReais, setUnidadesReais] = useState<RhUnidadeItem[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchRhUnidades()
+      .then((rows) => {
+        if (isMounted) setUnidadesReais(rows);
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const unidadeFilterOptions = useMemo(
+    () => ['Todas', ...unidadesReais.map((unidade) => unidade.nome).sort((a, b) => a.localeCompare(b, 'pt-BR'))],
+    [unidadesReais]
+  );
+
+  // Zerados de propósito — sem endpoint de admissão ainda. Ver comentário no
+  // topo da seção.
+  const kpis = { iniciadas: 0, emAberto: 0, atrasadas: 0, concluidas: 0, pendenciasAbertas: 0 };
+  const admissoes: never[] = [];
+  const responsaveis: never[] = [];
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  const handleExport = (formato: 'CSV' | 'PDF') => {
+    Alert.alert(
+      'Ainda não disponível',
+      `Exportar em ${formato} vai funcionar quando essa tela estiver ligada ao fluxo real de admissão.`
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={rhUserInitials} variant="rh" onAvatarPress={() => navigation.navigate('RHProfile')} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <RHPageHeader
+          icon="clipboard"
+          title="Conformidade de Admissões"
+          subtitle="Pendências, prazos e atrasos por etapa e responsável no fluxo de admissão."
+        />
+
+        <View style={styles.directorFilterRow}>
+          <Pressable style={styles.directorFilterPill} onPress={() => setIsDeModalOpen(true)}>
+            <Feather name="calendar" size={14} color="#5E667D" />
+            <Text style={styles.directorFilterPillText}>{deLabel}</Text>
+          </Pressable>
+          <Text style={styles.directorFilterUntilText}>até</Text>
+          <Pressable style={styles.directorFilterPill} onPress={() => setIsAteModalOpen(true)}>
+            <Feather name="calendar" size={14} color="#5E667D" />
+            <Text style={styles.directorFilterPillText}>{ateLabel}</Text>
+          </Pressable>
+        </View>
+
+        <View style={rhStyles.filterPillRow}>
+          <Pressable style={rhStyles.secondaryIconButton} onPress={handleRefresh}>
+            <Feather name="refresh-cw" size={14} color="#15203E" />
+            <Text style={rhStyles.secondaryIconButtonText}>{isRefreshing ? 'Atualizando...' : 'Atualizar'}</Text>
+          </Pressable>
+          <Pressable style={rhStyles.secondaryIconButton} onPress={() => handleExport('CSV')}>
+            <Feather name="download" size={14} color="#15203E" />
+            <Text style={rhStyles.secondaryIconButtonText}>CSV</Text>
+          </Pressable>
+          <Pressable style={rhStyles.secondaryIconButton} onPress={() => handleExport('PDF')}>
+            <Feather name="file-text" size={14} color="#15203E" />
+            <Text style={rhStyles.secondaryIconButtonText}>PDF</Text>
+          </Pressable>
+        </View>
+
+        <View style={rhStyles.searchRow}>
+          <Feather name="search" size={16} color="#9AA1B5" />
+          <TextInput
+            style={rhStyles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Candidato, cargo, responsável..."
+            placeholderTextColor="#A7AEC2"
+          />
+        </View>
+
+        <View style={rhStyles.filterPillRow}>
+          <RHFilterPill label={unidadeFilter} onPress={() => setIsUnidadeFilterOpen(true)} />
+          <RHFilterPill label={responsavelFilter} onPress={() => setIsResponsavelFilterOpen(true)} />
+          <RHFilterPill label={etapaFilter} onPress={() => setIsEtapaFilterOpen(true)} />
+          <RHFilterPill label={statusFilter} onPress={() => setIsStatusFilterOpen(true)} />
+        </View>
+
+        <View style={rhStyles.statsPillRow}>
+          <Pressable style={rhStyles.statsPill} onPress={() => setStatusFilter('Em andamento')}>
+            <Text style={rhStyles.statsPillLabel}>Iniciadas</Text>
+            <Text style={rhStyles.statsPillValue}>{kpis.iniciadas}</Text>
+          </Pressable>
+          <Pressable style={[rhStyles.statsPill, { backgroundColor: '#EDF1FF' }]} onPress={() => setStatusFilter('Aguardando documentos')}>
+            <Text style={[rhStyles.statsPillLabel, { color: '#3457D5' }]}>Em aberto</Text>
+            <Text style={[rhStyles.statsPillValue, { color: '#3457D5' }]}>{kpis.emAberto}</Text>
+          </Pressable>
+          <Pressable style={[rhStyles.statsPill, { backgroundColor: '#FCE8EC' }]} onPress={() => setStatusFilter('Todos')}>
+            <Text style={[rhStyles.statsPillLabel, { color: '#E6213D' }]}>Atrasadas</Text>
+            <Text style={[rhStyles.statsPillValue, { color: '#E6213D' }]}>{kpis.atrasadas}</Text>
+          </Pressable>
+          <Pressable style={[rhStyles.statsPill, { backgroundColor: '#E3F5EA' }]} onPress={() => setStatusFilter('Admitidos')}>
+            <Text style={[rhStyles.statsPillLabel, { color: '#18955A' }]}>Concluídas</Text>
+            <Text style={[rhStyles.statsPillValue, { color: '#18955A' }]}>{kpis.concluidas}</Text>
+          </Pressable>
+          <Pressable style={[rhStyles.statsPill, { backgroundColor: '#FCF4DE' }]} onPress={() => setStatusFilter('Todos')}>
+            <Text style={[rhStyles.statsPillLabel, { color: '#B07A1E' }]}>Pendências abertas</Text>
+            <Text style={[rhStyles.statsPillValue, { color: '#B07A1E' }]}>{kpis.pendenciasAbertas}</Text>
+          </Pressable>
+        </View>
+
+        <View style={rhStyles.sectionHeaderRow}>
+          <Text style={rhStyles.sectionTitle}>POR ETAPA</Text>
+        </View>
+        {conformidadeEtapas.map((item) => (
+          <View key={item.id} style={rhStyles.goalCard}>
+            <Text style={rhStyles.goalTitle}>{item.etapa}</Text>
+            <View style={rhStyles.statGridRow}>
+              <View style={rhStyles.statGridItem}>
+                <Text style={rhStyles.statGridValue}>{item.emAberto}</Text>
+                <Text style={rhStyles.statGridLabel}>Em aberto</Text>
+              </View>
+              <View style={rhStyles.statGridItem}>
+                <Text style={[rhStyles.statGridValue, rhStyles.statGridValueGold]}>{item.atrasadas}</Text>
+                <Text style={rhStyles.statGridLabel}>Atrasadas</Text>
+              </View>
+              <View style={rhStyles.statGridItem}>
+                <Text style={rhStyles.statGridValue}>{item.mediaDias}</Text>
+                <Text style={rhStyles.statGridLabel}>Média (dias)</Text>
+              </View>
+              <View style={rhStyles.statGridItem}>
+                <Text style={[rhStyles.statGridValue, rhStyles.statGridValueGreen]}>{item.slaLabel}</Text>
+                <Text style={rhStyles.statGridLabel}>SLA</Text>
+              </View>
+            </View>
+          </View>
+        ))}
+
+        <View style={rhStyles.sectionHeaderRow}>
+          <Text style={rhStyles.sectionTitle}>POR RESPONSÁVEL</Text>
+        </View>
+        {responsaveis.length === 0 ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Nenhum responsável com pendência no período.</Text>
+          </View>
+        ) : null}
+
+        <View style={rhStyles.sectionHeaderRow}>
+          <Text style={rhStyles.sectionTitle}>ADMISSÕES NO PERÍODO</Text>
+          <Text style={rhStyles.sectionHeaderMeta}>{admissoes.length} de {admissoes.length} registro(s)</Text>
+        </View>
+        <View style={styles.processEmptyCard}>
+          <Text style={styles.processEmptyText}>Nenhuma admissão para os filtros selecionados.</Text>
+        </View>
+      </ScrollView>
+
+      <RHDatePickerModal
+        visible={isDeModalOpen}
+        title="De"
+        value={deLabel}
+        onSelect={setDeLabel}
+        onClose={() => setIsDeModalOpen(false)}
+      />
+      <RHDatePickerModal
+        visible={isAteModalOpen}
+        title="Até"
+        value={ateLabel}
+        onSelect={setAteLabel}
+        onClose={() => setIsAteModalOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isUnidadeFilterOpen}
+        title="Unidade"
+        options={unidadeFilterOptions}
+        selectedValue={unidadeFilter}
+        onSelect={setUnidadeFilter}
+        onClose={() => setIsUnidadeFilterOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isResponsavelFilterOpen}
+        title="Responsável"
+        options={conformidadeResponsavelFilterOptions}
+        selectedValue={responsavelFilter}
+        onSelect={setResponsavelFilter}
+        onClose={() => setIsResponsavelFilterOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isEtapaFilterOpen}
+        title="Etapa"
+        options={conformidadeEtapaFilterOptions}
+        selectedValue={etapaFilter}
+        onSelect={setEtapaFilter}
+        onClose={() => setIsEtapaFilterOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isStatusFilterOpen}
+        title="Status"
+        options={conformidadeStatusFilterOptions}
+        selectedValue={statusFilter}
+        onSelect={setStatusFilter}
+        onClose={() => setIsStatusFilterOpen(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
 // ---------- Transferências ----------
 
 export function RHTransferenciasScreen({ navigation }: ScreenProps<'RHTransferencias'>) {
