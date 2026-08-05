@@ -7502,9 +7502,16 @@ function DirectorProfileScreen({ navigation }: ScreenProps<'DirectorProfile'>) {
 }
 
 function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
-  const defaultFlashDate = useMemo(() => new Date(), []);
-  const [startDate, setStartDate] = useState(defaultFlashDate);
-  const [endDate, setEndDate] = useState(defaultFlashDate);
+  // Igual ao painel web: por padrão mostra o mês corrente inteiro (não só o
+  // dia de hoje), já que o dia isolado costuma vir sem venda lançada ainda.
+  const defaultFlashRange = useMemo(() => {
+    const today = new Date();
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    return { start: firstDayOfMonth, end: lastDayOfMonth };
+  }, []);
+  const [startDate, setStartDate] = useState(defaultFlashRange.start);
+  const [endDate, setEndDate] = useState(defaultFlashRange.end);
   const [openPicker, setOpenPicker] = useState<'start' | 'end' | null>(null);
 
   const postos = useDiretoriaPostos();
