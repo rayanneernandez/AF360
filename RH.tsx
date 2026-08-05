@@ -2593,6 +2593,7 @@ function RHFilterPill({
   label,
   onPress,
   prefix,
+  compact,
 }: {
   label: string;
   onPress: () => void;
@@ -2600,13 +2601,19 @@ function RHFilterPill({
   // usado quando vários pills ficam juntos e "Todas"/"Todos" sozinho não diz
   // a que filtro pertence.
   prefix?: string;
+  // Pill mais enxuto (menos padding, fonte menor) — pra fileiras com 3+
+  // filtros juntos, onde o tamanho padrão deixa muito espaçado/quebra linha.
+  compact?: boolean;
 }) {
   return (
-    <Pressable style={rhStyles.filterPill} onPress={onPress}>
-      <Text style={rhStyles.filterPillText} numberOfLines={1}>
+    <Pressable style={[rhStyles.filterPill, compact ? rhStyles.filterPillCompact : null]} onPress={onPress}>
+      <Text
+        style={[rhStyles.filterPillText, compact ? rhStyles.filterPillTextCompact : null]}
+        numberOfLines={1}
+      >
         {prefix ? `${prefix}: ${label}` : label}
       </Text>
-      <Feather name="chevron-down" size={14} color="#5E667D" />
+      <Feather name="chevron-down" size={compact ? 12 : 14} color="#5E667D" />
     </Pressable>
   );
 }
@@ -7601,11 +7608,21 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
           />
         </View>
 
-        <View style={rhStyles.filterPillRow}>
-          <RHFilterPill label={unidadeFilter} prefix="Unidade" onPress={() => setIsUnidadeFilterOpen(true)} />
-          <RHFilterPill label={responsavelFilter} prefix="Responsável" onPress={() => setIsResponsavelFilterOpen(true)} />
-          <RHFilterPill label={etapaFilter} prefix="Etapa" onPress={() => setIsEtapaFilterOpen(true)} />
-          <RHFilterPill label={statusFilter} prefix="Status" onPress={() => setIsStatusFilterOpen(true)} />
+        <View style={[rhStyles.filterPillRow, { gap: 6 }]}>
+          <RHFilterPill
+            label={unidadeFilter}
+            prefix="Unidade"
+            compact
+            onPress={() => setIsUnidadeFilterOpen(true)}
+          />
+          <RHFilterPill
+            label={responsavelFilter}
+            prefix="Responsável"
+            compact
+            onPress={() => setIsResponsavelFilterOpen(true)}
+          />
+          <RHFilterPill label={etapaFilter} prefix="Etapa" compact onPress={() => setIsEtapaFilterOpen(true)} />
+          <RHFilterPill label={statusFilter} prefix="Status" compact onPress={() => setIsStatusFilterOpen(true)} />
         </View>
 
         <View style={rhStyles.conformidadeKpiRow}>
@@ -9860,6 +9877,17 @@ const rhStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     maxWidth: 150,
+  },
+  // Variante menor pra fileiras com vários pills juntos (ex.: Conformidade
+  // de Admissões) — mesmo visual, só mais enxuto pra caber mais por linha.
+  filterPillCompact: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    gap: 4,
+  },
+  filterPillTextCompact: {
+    fontSize: 11,
+    maxWidth: 108,
   },
   headerActionsRow: {
     flexDirection: 'row',
