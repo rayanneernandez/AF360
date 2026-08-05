@@ -7628,35 +7628,65 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
         <View style={rhStyles.conformidadeKpiRow}>
           <Pressable style={rhStyles.conformidadeKpiPill} onPress={() => setStatusFilter('Em andamento')}>
             <Text style={rhStyles.conformidadeKpiValue}>{kpis.iniciadas}</Text>
-            <Text style={rhStyles.conformidadeKpiLabel}>Iniciadas</Text>
+            <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+              Iniciadas
+            </Text>
           </Pressable>
           <Pressable
             style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#EDF1FF' }]}
             onPress={() => setStatusFilter('Aguardando documentos')}
           >
             <Text style={[rhStyles.conformidadeKpiValue, { color: '#3457D5' }]}>{kpis.emAberto}</Text>
-            <Text style={[rhStyles.conformidadeKpiLabel, { color: '#3457D5' }]}>Em aberto</Text>
+            <Text
+              style={[rhStyles.conformidadeKpiLabel, { color: '#3457D5' }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              Em aberto
+            </Text>
           </Pressable>
           <Pressable
             style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#FCE8EC' }]}
             onPress={() => setStatusFilter('Todos')}
           >
             <Text style={[rhStyles.conformidadeKpiValue, { color: '#E6213D' }]}>{kpis.atrasadas}</Text>
-            <Text style={[rhStyles.conformidadeKpiLabel, { color: '#E6213D' }]}>Atrasadas</Text>
+            <Text
+              style={[rhStyles.conformidadeKpiLabel, { color: '#E6213D' }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              Atrasadas
+            </Text>
           </Pressable>
           <Pressable
             style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#E3F5EA' }]}
             onPress={() => setStatusFilter('Admitidos')}
           >
             <Text style={[rhStyles.conformidadeKpiValue, { color: '#18955A' }]}>{kpis.concluidas}</Text>
-            <Text style={[rhStyles.conformidadeKpiLabel, { color: '#18955A' }]}>Concluídas</Text>
+            <Text
+              style={[rhStyles.conformidadeKpiLabel, { color: '#18955A' }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              Concluídas
+            </Text>
           </Pressable>
           <Pressable
             style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#FCF4DE' }]}
             onPress={() => setStatusFilter('Todos')}
           >
             <Text style={[rhStyles.conformidadeKpiValue, { color: '#B07A1E' }]}>{kpis.pendenciasAbertas}</Text>
-            <Text style={[rhStyles.conformidadeKpiLabel, { color: '#B07A1E' }]}>Pendências</Text>
+            <Text
+              style={[rhStyles.conformidadeKpiLabel, { color: '#B07A1E' }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              Pendências
+            </Text>
           </Pressable>
         </View>
 
@@ -9838,21 +9868,22 @@ const rhStyles = StyleSheet.create({
     backgroundColor: '#F1F2F7',
     borderRadius: 10,
     paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     alignItems: 'center',
   },
   conformidadeKpiValue: {
     color: '#15203E',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
   },
   conformidadeKpiLabel: {
     marginTop: 2,
     color: '#5E667D',
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '700',
     textTransform: 'uppercase',
     textAlign: 'center',
+    width: '100%',
   },
   filterPillRow: {
     flexDirection: 'row',
