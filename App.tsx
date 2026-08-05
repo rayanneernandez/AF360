@@ -7949,16 +7949,120 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
   const [selectedStations, setSelectedStations] = useState<string[]>([]);
   const [isStationPickerOpen, setIsStationPickerOpen] = useState(false);
   const hasStationFilter = selectedStations.length > 0;
+
+  const postos = useDiretoriaPostos();
+  const stockStationOptions = useMemo(() => ['Toda a rede', ...postos.map((p) => p.nome)], [postos]);
+
+  const {
+    dados: estoques,
+    periodo: estoquesPeriodo,
+    isLoading: isLoadingEstoques,
+    errorMessage: estoquesError,
+  } = useDiretoriaPainelRecurso('estoques', {});
+  // Confirmado pela Lovable em 04/08/2026: tanques ficam em tanquesTodos/
+  // tanquesAlerta, produtos de loja (o que alimenta a seção abaixo) em
+  // "produtos" — por isso "produtos" não entra mais na busca de tanques
+  // (antes podia colidir com a lista de produtos por engano).
+  const estoqueItems = pickArr(estoques, ['tanquesTodos', 'tanquesAlerta', 'tanques', 'familias']);
+  const estoquesPeriodoLabel = estoquesPeriodo.de
+    ? formatDateBR(new Date(estoquesPeriodo.de + 'T00:00:00'))
+    : formatDateBR(new Date());
+
+  const mapEstoqueStatus = (raw: string | null): StockTankItem['status'] => {
+    const value = (raw ?? '').toLowerCase();
+    if (value.includes('crit')) return 'critical';
+    if (value.includes('monitor') || value.includes('aten') || value.includes('warn')) return 'warning';
+    return 'ok';
+  };
+  const estoqueStatusLabel: Record<StockTankItem['status'], string> = {
+    ok: 'OK',
+    warning: 'Monitorar',
+    critical: 'Crítico',
+  };
+
+  // --- Produtos de Loja e Pista (ProdutoLinha, confirmado pela Lovable em
+  // 04/08/2026 — mesmo recurso=estoques, campo "produtos"). Regra de
+  // "zerados com giro ativo" dela: saldo_estimado <= 0 && volume_7d > 0;
+  // volume_7d === 0 é "sem giro" e só aparece com o toggle ligado. ---
+  const produtosLojaRaw: any[] = pickArr(estoques, ['produtos']);
+
+  const mapProdutoStatus = (raw: string | null): { status: 'critical' | 'warning'; label: string } => {
+    const value = (raw ?? '').toLowerCase();
+    if (value === 'red') return { status: 'critical', label: 'Crítico' };
+    if (value === 'orange') return { status: 'warning', label: 'Atenção' };
+    if (value === 'yellow') return { status: 'warning', label: 'Monitorar' };
+    return { status: 'warning', label: 'OK' };
+  };
+
+  const zerosFiltrados = useMemo(() => {
+    return produtosLojaRaw.filter((item) => {
+      const saldo = pickNum(item, ['saldo_estimado']) ?? 0;
+      const volume7d = pickNum(item, ['volume_7d']) ?? 0;
+      if (saldo > 0) return false;
+      return showItemsWithoutTurnover || volume7d > 0;
+    });
+  }, [produtosLojaRaw, showItemsWithoutTurnover]);
+
+  const lowStockProductsReal: LowStockProductItem[] = useMemo(() => {
+    return zerosFiltrados.map((item, index) => {
+      const unidade = pickStr(item, ['unidade_venda']) ?? '';
+      const saldo = pickNum(item, ['saldo_estimado']) ?? 0;
+      const volume7d = pickNum(item, ['volume_7d']) ?? 0;
+      const consumoMedio = pickNum(item, ['consumo_medio_dia']);
+      const receitaPerdida = pickNum(item, ['receita_perdida_dia']);
+      const coberturaDias = pickNum(item, ['cobertura_dias']);
+      const { status, label: statusLabel } = mapProdutoStatus(pickStr(item, ['status']));
+      const empresaCodigo = pickNum(item, ['empresa_codigo']);
+      const produtoCodigo = pickNum(item, ['produto_codigo']);
+
+      return {
+        id: `${empresaCodigo ?? 'e'}-${produtoCodigo ?? 'p'}-${index}`,
+        station: pickStr(item, ['posto_nome']) ?? '—',
+        product: pickStr(item, ['produto_nome']) ?? '—',
+        category: pickStr(item, ['categoria']) === 'loja_conv' ? 'Conveniência' : 'Loja Pista',
+        balanceLabel: `${saldo.toLocaleString('pt-BR')} ${unidade}`.trim(),
+        last7DaysLabel: `${volume7d.toLocaleString('pt-BR')} ${unidade}`.trim(),
+        dailyConsumptionLabel:
+          consumoMedio === null ? '—' : consumoMedio.toLocaleString('pt-BR', { maximumFractionDigits: 1 }),
+        dailyRevenueLabel: fmtBRLOrDash(receitaPerdida),
+        coverageLabel:
+          coberturaDias === null ? 'Sem giro' : `${coberturaDias.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} d`,
+        status,
+        statusLabel,
+      };
+    });
+  }, [zerosFiltrados]);
+
+  const lowStockSummaryReal = useMemo(() => {
+    const porCategoria = new Map<string, number>();
+    let revenueAtRisk = 0;
+    zerosFiltrados.forEach((item) => {
+      const categoria = pickStr(item, ['categoria']) === 'loja_conv' ? 'Conveniência' : 'Loja Pista';
+      porCategoria.set(categoria, (porCategoria.get(categoria) ?? 0) + 1);
+      revenueAtRisk += pickNum(item, ['receita_perdida_dia']) ?? 0;
+    });
+    const topCategoriesLabel =
+      Array.from(porCategoria.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, count]) => `${label} (${count})`)
+        .join(' · ') || '—';
+    return {
+      totalCount: zerosFiltrados.length,
+      revenueAtRiskLabel: formatBRL(revenueAtRisk),
+      topCategoriesLabel,
+    };
+  }, [zerosFiltrados]);
+
   const stationFilterLabel =
     selectedStations.length === 0
-      ? directorStockStationOptions[0]
+      ? stockStationOptions[0]
       : selectedStations.length === 1
       ? selectedStations[0]
       : `${selectedStations.length} postos`;
   const [lowStockPage, setLowStockPage] = useState(1);
   const LOW_STOCK_PAGE_SIZE = 20;
 
-  const visibleLowStockItems = lowStockProducts.filter((item) => {
+  const visibleLowStockItems = lowStockProductsReal.filter((item) => {
     if (dismissedProductIds[item.id]) {
       return false;
     }
@@ -8003,29 +8107,6 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
   const handleSelectAllStations = () => {
     setSelectedStations([]);
     setLowStockPage(1);
-  };
-
-  const {
-    dados: estoques,
-    periodo: estoquesPeriodo,
-    isLoading: isLoadingEstoques,
-    errorMessage: estoquesError,
-  } = useDiretoriaPainelRecurso('estoques', {});
-  const estoqueItems = pickArr(estoques, ['tanques', 'produtos', 'itens', 'familias']);
-  const estoquesPeriodoLabel = estoquesPeriodo.de
-    ? formatDateBR(new Date(estoquesPeriodo.de + 'T00:00:00'))
-    : formatDateBR(new Date());
-
-  const mapEstoqueStatus = (raw: string | null): StockTankItem['status'] => {
-    const value = (raw ?? '').toLowerCase();
-    if (value.includes('crit')) return 'critical';
-    if (value.includes('monitor') || value.includes('aten') || value.includes('warn')) return 'warning';
-    return 'ok';
-  };
-  const estoqueStatusLabel: Record<StockTankItem['status'], string> = {
-    ok: 'OK',
-    warning: 'Monitorar',
-    critical: 'Crítico',
   };
 
   return (
@@ -8158,11 +8239,11 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
           </Pressable>
 
           <Text style={styles.lowStockSummaryText}>
-            {lowStockSummary.totalCount} produtos zerados com giro ativo · Receita diária em risco:{' '}
-            <Text style={styles.lowStockSummaryDanger}>{lowStockSummary.revenueAtRiskLabel}</Text>
+            {lowStockSummaryReal.totalCount} produtos zerados{showItemsWithoutTurnover ? '' : ' com giro ativo'} · Receita
+            diária em risco: <Text style={styles.lowStockSummaryDanger}>{lowStockSummaryReal.revenueAtRiskLabel}</Text>
           </Text>
           <Text style={styles.lowStockTopCategoriesText}>
-            Top categorias: {lowStockSummary.topCategoriesLabel}
+            Top categorias: {lowStockSummaryReal.topCategoriesLabel}
           </Text>
         </View>
 
@@ -8346,13 +8427,13 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
           </View>
         ) : null}
 
-        <Text style={styles.directorUpdatedAt}>{stockUpdatedAtLabel}</Text>
+        <Text style={styles.directorUpdatedAt}>Período: {estoquesPeriodoLabel}</Text>
       </ScrollView>
 
       <StationMultiSelectModal
         visible={isStationPickerOpen}
-        allLabel={directorStockStationOptions[0]}
-        options={directorStockStationOptions.slice(1)}
+        allLabel={stockStationOptions[0]}
+        options={stockStationOptions.slice(1)}
         selectedStations={selectedStations}
         onToggleStation={handleToggleStation}
         onSelectAll={handleSelectAllStations}
