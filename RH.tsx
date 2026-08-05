@@ -7678,66 +7678,38 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
           <RHFilterSelectField label="Status" value={statusFilter} onPress={() => setIsStatusFilterOpen(true)} />
         </View>
 
-        <View style={rhStyles.conformidadeKpiRow}>
-          <Pressable style={rhStyles.conformidadeKpiPill} onPress={() => setStatusFilter('Em andamento')}>
+        <View style={rhStyles.conformidadeKpiCard}>
+          <Pressable style={rhStyles.conformidadeKpiItem} onPress={() => setStatusFilter('Em andamento')}>
             <Text style={rhStyles.conformidadeKpiValue}>{kpis.iniciadas}</Text>
             <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               Iniciadas
             </Text>
           </Pressable>
-          <Pressable
-            style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#EDF1FF' }]}
-            onPress={() => setStatusFilter('Aguardando documentos')}
-          >
-            <Text style={[rhStyles.conformidadeKpiValue, { color: '#3457D5' }]}>{kpis.emAberto}</Text>
-            <Text
-              style={[rhStyles.conformidadeKpiLabel, { color: '#3457D5' }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.7}
-            >
+          <View style={rhStyles.conformidadeKpiDivider} />
+          <Pressable style={rhStyles.conformidadeKpiItem} onPress={() => setStatusFilter('Aguardando documentos')}>
+            <Text style={rhStyles.conformidadeKpiValue}>{kpis.emAberto}</Text>
+            <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               Em aberto
             </Text>
           </Pressable>
-          <Pressable
-            style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#FCE8EC' }]}
-            onPress={() => setStatusFilter('Todos')}
-          >
-            <Text style={[rhStyles.conformidadeKpiValue, { color: '#E6213D' }]}>{kpis.atrasadas}</Text>
-            <Text
-              style={[rhStyles.conformidadeKpiLabel, { color: '#E6213D' }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.7}
-            >
+          <View style={rhStyles.conformidadeKpiDivider} />
+          <Pressable style={rhStyles.conformidadeKpiItem} onPress={() => setStatusFilter('Todos')}>
+            <Text style={rhStyles.conformidadeKpiValue}>{kpis.atrasadas}</Text>
+            <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               Atrasadas
             </Text>
           </Pressable>
-          <Pressable
-            style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#E3F5EA' }]}
-            onPress={() => setStatusFilter('Admitidos')}
-          >
-            <Text style={[rhStyles.conformidadeKpiValue, { color: '#18955A' }]}>{kpis.concluidas}</Text>
-            <Text
-              style={[rhStyles.conformidadeKpiLabel, { color: '#18955A' }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.7}
-            >
+          <View style={rhStyles.conformidadeKpiDivider} />
+          <Pressable style={rhStyles.conformidadeKpiItem} onPress={() => setStatusFilter('Admitidos')}>
+            <Text style={rhStyles.conformidadeKpiValue}>{kpis.concluidas}</Text>
+            <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               Concluídas
             </Text>
           </Pressable>
-          <Pressable
-            style={[rhStyles.conformidadeKpiPill, { backgroundColor: '#FCF4DE' }]}
-            onPress={() => setStatusFilter('Todos')}
-          >
-            <Text style={[rhStyles.conformidadeKpiValue, { color: '#B07A1E' }]}>{kpis.pendenciasAbertas}</Text>
-            <Text
-              style={[rhStyles.conformidadeKpiLabel, { color: '#B07A1E' }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.7}
-            >
+          <View style={rhStyles.conformidadeKpiDivider} />
+          <Pressable style={rhStyles.conformidadeKpiItem} onPress={() => setStatusFilter('Todos')}>
+            <Text style={rhStyles.conformidadeKpiValue}>{kpis.pendenciasAbertas}</Text>
+            <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               Pendências
             </Text>
           </Pressable>
@@ -9921,30 +9893,34 @@ const rhStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
-  // Fileira densa de KPI que precisa caber tudo numa linha só (5 itens) —
-  // por isso sem flexWrap e com fonte bem menor que o statsPill genérico.
-  conformidadeKpiRow: {
+  // Fileira de KPI num card só (sem cor) — 5 itens com traço fino entre
+  // eles, igual à lógica do "Por etapa", pra combinar visualmente.
+  conformidadeKpiCard: {
     flexDirection: 'row',
-    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    paddingVertical: 12,
     marginBottom: 14,
   },
-  conformidadeKpiPill: {
+  conformidadeKpiItem: {
     flex: 1,
-    backgroundColor: '#F1F2F7',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 2,
     alignItems: 'center',
+  },
+  conformidadeKpiDivider: {
+    width: 1,
+    backgroundColor: '#EEF0F5',
   },
   conformidadeKpiValue: {
     color: '#15203E',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
   },
   conformidadeKpiLabel: {
     marginTop: 2,
-    color: '#5E667D',
-    fontSize: 8,
+    color: '#9AA1B5',
+    fontSize: 9,
     fontWeight: '700',
     textTransform: 'uppercase',
     textAlign: 'center',
