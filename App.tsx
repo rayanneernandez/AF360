@@ -7749,6 +7749,80 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
   const categoriasLoja = pickArr(margem, ['categorias_loja', 'ofensores_loja', 'loja']);
   const alertasCusto = pickArr(margem, ['alertas_custo', 'custos_nao_reconhecidos', 'alertasCusto']);
 
+  // Cards de resumo iguais ao topo do painel web — nomes de campo ainda não
+  // confirmados pela Lovable pra recurso=margem (pedido enviado em
+  // 05/08/2026), então ficam em "—" até ela confirmar o shape real.
+  const resumoMargem = (margem as any)?.resumo ?? margem ?? null;
+  const lojaPistaResumo = categoriasLoja.find((item: any) =>
+    (pickStr(item, ['titulo', 'title']) ?? '').toUpperCase().includes('PISTA')
+  );
+  const lojaConvenienciaResumo = categoriasLoja.find((item: any) =>
+    (pickStr(item, ['titulo', 'title']) ?? '').toUpperCase().includes('CONVEN')
+  );
+  const topCards: Array<{ id: string; label: string; value: string; meta?: string | null }> = [
+    {
+      id: 'margem-combustiveis-litro',
+      label: 'Margem combustíveis (R$/L)',
+      value: fmtBRLOrDash(pickNum(resumoMargem, ['margem_combustiveis_rs_litro', 'margem_combustiveis_rs_l'])),
+      meta:
+        pickNum(resumoMargem, ['margem_combustiveis_pct_venda', 'margem_combustiveis_pct']) !== null
+          ? `${fmtPercentOrDash(pickNum(resumoMargem, ['margem_combustiveis_pct_venda', 'margem_combustiveis_pct']))} sobre a venda`
+          : null,
+    },
+    {
+      id: 'combustiveis-litro',
+      label: 'Combustíveis (R$/L)',
+      value: fmtBRLOrDash(pickNum(resumoMargem, ['combustiveis_rs_litro', 'combustiveis_rs_l'])),
+      meta: null,
+    },
+    {
+      id: 'loja-pista-margem',
+      label: 'Loja pista',
+      value: fmtPercentOrDash(pickNum(lojaPistaResumo, ['media_rede_pct', 'media_rede', 'percentual_atual'])),
+      meta: null,
+    },
+    {
+      id: 'loja-conveniencia-margem',
+      label: 'Loja conveniência',
+      value: fmtPercentOrDash(pickNum(lojaConvenienciaResumo, ['media_rede_pct', 'media_rede', 'percentual_atual'])),
+      meta: null,
+    },
+  ];
+  const totalOfensoresCombustivel = categoriasCombustivel.reduce(
+    (sum, item) => sum + pickArr(item, ['ofensores', 'postos', 'stations']).length,
+    0
+  );
+  const totalOfensoresLoja = categoriasLoja.reduce(
+    (sum, item) => sum + pickArr(item, ['ofensores', 'postos', 'stations']).length,
+    0
+  );
+  const statCards: Array<{ id: string; label: string; value: string; meta?: string | null }> = [
+    {
+      id: 'postos-ofensores',
+      label: 'Postos ofensores',
+      value: fmtNumOrDash(totalOfensoresCombustivel + totalOfensoresLoja || null),
+      meta: 'Ocorrência(s) posto × categoria',
+    },
+    {
+      id: 'postos-criticos',
+      label: 'Postos críticos',
+      value: fmtNumOrDash(pickNum(resumoMargem, ['postos_criticos', 'postos_criticos_count'])),
+      meta: 'Desvio maior que 3pp da média da rede',
+    },
+    {
+      id: 'ofensores-por-area',
+      label: 'Ofensores por área',
+      value: `${totalOfensoresCombustivel} comb. / ${totalOfensoresLoja} loja`,
+      meta: 'Postos distintos em cada área',
+    },
+    {
+      id: 'perda-estimada',
+      label: 'Perda estimada no período',
+      value: fmtBRLOrDash(pickNum(resumoMargem, ['perda_estimada_periodo', 'perda_estimada'])),
+      meta: totalOfensoresCombustivel + totalOfensoresLoja === 0 ? 'Sem ofensores no período' : null,
+    },
+  ];
+
   const periodoLabel = periodo.de
     ? periodo.ate && periodo.ate !== periodo.de
       ? `${formatDateBR(new Date(periodo.de + 'T00:00:00'))} a ${formatDateBR(new Date(periodo.ate + 'T00:00:00'))}`
@@ -7793,6 +7867,27 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
           <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
         ) : (
           <>
+            <Text style={styles.directorSectionTitle}>RESUMO</Text>
+            {topCards.map((card) => (
+              <View key={card.id} style={styles.directorSummaryCard}>
+                <View style={styles.directorSummaryLeft}>
+                  <Text style={styles.directorSummaryLabel}>{card.label.toUpperCase()}</Text>
+                  <Text style={styles.directorSummaryValue}>{card.value}</Text>
+                  {card.meta ? <Text style={styles.directorSummaryMeta}>{card.meta}</Text> : null}
+                </View>
+              </View>
+            ))}
+
+            {statCards.map((card) => (
+              <View key={card.id} style={styles.directorSummaryCard}>
+                <View style={styles.directorSummaryLeft}>
+                  <Text style={styles.directorSummaryLabel}>{card.label.toUpperCase()}</Text>
+                  <Text style={styles.directorSummaryValue}>{card.value}</Text>
+                  {card.meta ? <Text style={styles.directorSummaryMeta}>{card.meta}</Text> : null}
+                </View>
+              </View>
+            ))}
+
             <Text style={[styles.directorSectionTitle, styles.spacingTop]}>
               COMBUSTÍVEIS — POSTOS OFENSORES
             </Text>
