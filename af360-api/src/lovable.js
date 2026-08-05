@@ -595,6 +595,16 @@ function getDiretoriaVendas({ recurso, de, ate, posto } = {}, actorId) {
   return lovableGet('/api/public/internal/diretoria-vendas', { recurso, de, ate, posto }, actorId);
 }
 
+// --- Diretoria: Mapa de Processos (gst_processos + gst_processo_etapas) —
+// endpoint confirmado pela Lovable em 04/08/2026: /api/public/internal/
+// gst-processos, só leitura (escrita continua só master, pelo site).
+// GET sem id = lista (aceita departamento, status, q); GET ?id= = detalhe
+// (processo + etapas). Não devolve fluxograma_json de propósito.
+
+function getGstProcessos({ departamento, status, q, id } = {}, actorId) {
+  return lovableGet('/api/public/internal/gst-processos', { departamento, status, q, id }, actorId);
+}
+
 // --- Colaborador: Reembolsos (tabela rh_reembolsos, endpoint confirmado pela
 // Lovable em 03/08/2026). Enum rh_reembolso_status: rascunho | enviado |
 // aprovado | pago | recusado. PATCH com status=aprovado/recusado preenche
@@ -919,6 +929,7 @@ module.exports = {
   getDashboardPerformance,
   getDashboardKpis,
   getDiretoriaVendas,
+  getGstProcessos,
   getRhReembolsos,
   postRhReembolso,
   patchRhReembolso,

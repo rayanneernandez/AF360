@@ -135,6 +135,10 @@ import {
   marcarComunicadoLido,
   fetchDiretoriaPainel,
   type DiretoriaPainelRecurso,
+  fetchDiretoriaProcessos,
+  fetchDiretoriaProcessoDetalhe,
+  type DiretoriaProcessoRow,
+  type DiretoriaProcessoEtapaRow,
 } from './api';
 
 export type RootStackParamList = {
@@ -9121,8 +9125,166 @@ const PROCESS_ALL_AREAS_LABEL = 'Todas as áreas';
 const PROCESS_ALL_STATUS_LABEL = 'Todos os status';
 const PROCESS_ALL_OWNERS_LABEL = 'Todos os responsáveis';
 
+const PROCESS_STATUS_LABELS: Record<DiretoriaProcessoRow['status'], string> = {
+  rascunho: 'Rascunho',
+  ativo: 'Ativo',
+  em_revisao: 'Em revisão',
+  descontinuado: 'Descontinuado',
+};
+
+const PROCESS_STATUS_TONES: Record<DiretoriaProcessoRow['status'], { tint: string; text: string }> = {
+  rascunho: { tint: '#F1F2F7', text: '#5E667D' },
+  ativo: { tint: '#E2F4EA', text: '#18955A' },
+  em_revisao: { tint: '#FCF4DE', text: '#B7791F' },
+  descontinuado: { tint: '#FCE8EC', text: '#E6213D' },
+};
+
+// Diretoria só lê o Mapa de Processos pelo app — criar/editar continua sendo
+// feito pelo site (RLS de escrita é só master), confirmado pela Lovable em
+// 04/08/2026.
+function ProcessDetailModal({
+  visible,
+  processoId,
+  onClose,
+}: {
+  visible: boolean;
+  processoId: string | null;
+  onClose: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [processo, setProcesso] = useState<DiretoriaProcessoRow | null>(null);
+  const [etapas, setEtapas] = useState<DiretoriaProcessoEtapaRow[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible || !processoId) {
+      return;
+    }
+
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchDiretoriaProcessoDetalhe(processoId, identity?.profileId)
+      .then((data) => {
+        if (!isActive) return;
+        setProcesso(data.processo);
+        setEtapas(data.etapas);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setProcesso(null);
+          setEtapas([]);
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar o processo.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [visible, processoId, identity?.profileId]);
+
+  const tone = processo ? PROCESS_STATUS_TONES[processo.status] : null;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle} numberOfLines={1}>
+              {processo?.nome ?? 'Processo'}
+            </Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {isLoading ? (
+              <Text style={styles.conversaEmptyText}>Carregando processo...</Text>
+            ) : errorMessage ? (
+              <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+            ) : !processo ? (
+              <Text style={styles.conversaEmptyText}>Processo não encontrado.</Text>
+            ) : (
+              <>
+                {tone ? (
+                  <View
+                    style={[
+                      styles.processStatusPill,
+                      { backgroundColor: tone.tint, alignSelf: 'flex-start', marginBottom: 12 },
+                    ]}
+                  >
+                    <Text style={[styles.processStatusPillText, { color: tone.text }]}>
+                      {PROCESS_STATUS_LABELS[processo.status]}
+                    </Text>
+                  </View>
+                ) : null}
+                <Text style={styles.processDescription}>{processo.descricao || 'Sem descrição.'}</Text>
+
+                <View style={styles.processFooterRow}>
+                  <View style={styles.processFooterLeft}>
+                    <Feather name="folder" size={13} color="#3457D5" />
+                    <Text style={styles.processDepartment}>
+                      {processo.departamento ?? processo.area ?? '—'}
+                    </Text>
+                    <Text style={styles.processOwner}>{processo.responsavel_nome ?? '—'}</Text>
+                  </View>
+                  <Text style={styles.processUpdatedAt}>v{processo.versao ?? '1'}</Text>
+                </View>
+
+                {processo.documentacao ? (
+                  <>
+                    <Text style={[styles.directorSectionTitle, styles.spacingTop]}>DOCUMENTAÇÃO</Text>
+                    <Text style={styles.processDescription}>{processo.documentacao}</Text>
+                  </>
+                ) : null}
+
+                <Text style={[styles.directorSectionTitle, styles.spacingTop]}>ETAPAS · {etapas.length}</Text>
+                {etapas.length === 0 ? (
+                  <Text style={styles.conversaEmptyText}>Nenhuma etapa cadastrada.</Text>
+                ) : (
+                  etapas.map((etapa, index) => (
+                    <View key={etapa.id} style={styles.processCard}>
+                      <View style={styles.processTopRow}>
+                        <Text style={styles.processTitle}>
+                          {etapa.ordem ?? index + 1}. {etapa.titulo}
+                        </Text>
+                      </View>
+                      {etapa.descricao ? <Text style={styles.processDescription}>{etapa.descricao}</Text> : null}
+                      <View style={styles.processFooterRow}>
+                        <Text style={styles.processOwner}>{etapa.responsavel_nome ?? 'Sem responsável'}</Text>
+                        <Text style={styles.processUpdatedAt}>
+                          {etapa.prazo_dias !== null && etapa.prazo_dias !== undefined
+                            ? `Prazo: ${etapa.prazo_dias} dia${etapa.prazo_dias === 1 ? '' : 's'}`
+                            : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+
+                <Text style={[styles.conversaEmptyText, styles.spacingTop]}>
+                  Para criar ou editar processos, use o painel da Diretoria no site.
+                </Text>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
-  const [processes, setProcesses] = useState<ProcessMapItem[]>([]);
+  const { identity } = useContext(AuthIdentityContext);
+  const [processosRaw, setProcessosRaw] = useState<DiretoriaProcessoRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [areaFilter, setAreaFilter] = useState(PROCESS_ALL_AREAS_LABEL);
   const [statusFilter, setStatusFilter] = useState(PROCESS_ALL_STATUS_LABEL);
@@ -9130,8 +9292,45 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
   const [isAreaFilterOpen, setIsAreaFilterOpen] = useState(false);
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
   const [isOwnerFilterOpen, setIsOwnerFilterOpen] = useState(false);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingProcess, setEditingProcess] = useState<ProcessMapItem | null>(null);
+  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchDiretoriaProcessos({}, identity?.profileId)
+      .then((data) => {
+        if (isActive) setProcessosRaw(data.processos);
+      })
+      .catch((err) => {
+        if (isActive) {
+          setProcessosRaw([]);
+          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os processos.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [identity?.profileId]);
+
+  const processes = useMemo(
+    () =>
+      processosRaw.map((item) => ({
+        id: item.id,
+        title: item.nome,
+        description: item.descricao ?? '',
+        department: item.departamento ?? item.area ?? 'Sem área',
+        owner: item.responsavel_nome ?? 'Sem responsável',
+        status: item.status,
+        statusLabel: PROCESS_STATUS_LABELS[item.status] ?? item.status,
+        tags: item.tags ?? [],
+        updatedAtLabel: item.updated_at ? formatDateBR(new Date(item.updated_at)) : '—',
+      })),
+    [processosRaw]
+  );
 
   const areaFilterOptions = [
     PROCESS_ALL_AREAS_LABEL,
@@ -9173,35 +9372,6 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
     return true;
   });
 
-  const statusColors: Record<ProcessMapItem['status'], { tint: string; text: string }> = {
-    published: { tint: '#E2F4EA', text: '#18955A' },
-    review: { tint: '#FCF4DE', text: '#B7791F' },
-    draft: { tint: '#F1F2F7', text: '#5E667D' },
-  };
-
-  const openCreateModal = () => {
-    setEditingProcess(null);
-    setIsFormOpen(true);
-  };
-
-  const openEditModal = (process: ProcessMapItem) => {
-    setEditingProcess(process);
-    setIsFormOpen(true);
-  };
-
-  const handleSaveProcess = (process: ProcessMapItem) => {
-    setProcesses((current) => {
-      const exists = current.some((item) => item.id === process.id);
-
-      if (exists) {
-        return current.map((item) => (item.id === process.id ? process : item));
-      }
-
-      return [process, ...current];
-    });
-    setIsFormOpen(false);
-  };
-
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -9223,15 +9393,9 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
               Mapa de Processos
             </Text>
           </View>
-          <Pressable style={styles.processNewButton} onPress={openCreateModal}>
-            <Feather name="plus" size={13} color="#FFFFFF" />
-            <Text style={styles.processNewButtonText} numberOfLines={1}>
-              Novo processo
-            </Text>
-          </Pressable>
         </View>
         <Text style={styles.pageSubtitle}>
-          Cadastre fluxos, etapas e documentação dos processos da empresa.
+          Fluxos e etapas cadastrados pela Diretoria — a criação e edição continuam pelo site.
         </Text>
 
         <View style={styles.processSearchRow}>
@@ -9266,16 +9430,24 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
           </Pressable>
         </View>
 
-        {filteredProcesses.length === 0 ? (
+        {isLoading && processes.length === 0 ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Carregando processos...</Text>
+          </View>
+        ) : errorMessage ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>{errorMessage}</Text>
+          </View>
+        ) : filteredProcesses.length === 0 ? (
           <View style={styles.processEmptyCard}>
             <Text style={styles.processEmptyText}>Nenhum processo cadastrado.</Text>
           </View>
         ) : (
           filteredProcesses.map((item) => {
-            const colors = statusColors[item.status];
+            const colors = PROCESS_STATUS_TONES[item.status];
 
             return (
-              <Pressable key={item.id} style={styles.processCard} onPress={() => openEditModal(item)}>
+              <Pressable key={item.id} style={styles.processCard} onPress={() => setSelectedProcessId(item.id)}>
                 <View style={styles.processTopRow}>
                   <Text style={styles.processTitle}>{item.title}</Text>
                   <View style={[styles.processStatusPill, { backgroundColor: colors.tint }]}>
@@ -9284,14 +9456,13 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
                     </Text>
                   </View>
                 </View>
-                <Text style={styles.processDescription}>{item.description}</Text>
+                <Text style={styles.processDescription}>{item.description || 'Sem descrição.'}</Text>
                 <View style={styles.processFooterRow}>
                   <View style={styles.processFooterLeft}>
                     <Feather name="folder" size={13} color="#3457D5" />
                     <Text style={styles.processDepartment}>{item.department}</Text>
                     <Text style={styles.processOwner}>{item.owner}</Text>
                   </View>
-                  <Text style={styles.processSteps}>{item.steps.length} etapas</Text>
                 </View>
                 <View style={styles.processFooterRow}>
                   <Text style={styles.processUpdatedAt}>Atualizado em {item.updatedAtLabel}</Text>
@@ -9303,11 +9474,10 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
         )}
       </ScrollView>
 
-      <ProcessFormModal
-        visible={isFormOpen}
-        initialProcess={editingProcess}
-        onClose={() => setIsFormOpen(false)}
-        onSave={handleSaveProcess}
+      <ProcessDetailModal
+        visible={selectedProcessId !== null}
+        processoId={selectedProcessId}
+        onClose={() => setSelectedProcessId(null)}
       />
 
       <SimpleListModal

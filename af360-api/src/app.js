@@ -12,6 +12,7 @@ const rhHistoricoContratacoesRoutes = require('./routes/rhHistoricoContratacoes'
 const rhDashboardRoutes = require('./routes/rhDashboard');
 const diretoriaRoutes = require('./routes/diretoria');
 const diretoriaPainelRoutes = require('./routes/diretoriaPainel');
+const diretoriaProcessosRoutes = require('./routes/diretoriaProcessos');
 const conversasRoutes = require('./routes/conversas');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
@@ -44,6 +45,7 @@ app.use('/api/rh/historico-contratacoes', rhHistoricoContratacoesRoutes);
 app.use('/api/rh/dashboard', rhDashboardRoutes);
 app.use('/api/diretoria', diretoriaRoutes);
 app.use('/api/diretoria-painel', diretoriaPainelRoutes);
+app.use('/api/diretoria-processos', diretoriaProcessosRoutes);
 app.use('/api/diretoria/conversas', conversasRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);

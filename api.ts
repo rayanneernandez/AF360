@@ -2667,6 +2667,65 @@ export async function fetchDiretoriaPainel<T = any>(
   return { recurso: json.recurso ?? recurso, de: json.de, ate: json.ate, postos: json.postos, dados: json.dados as T };
 }
 
+// --- Diretoria: Mapa de Processos (gst_processos + gst_processo_etapas) —
+// endpoint confirmado pela Lovable em 04/08/2026 (/api/public/internal/
+// gst-processos, via proxy /api/diretoria-processos). Só leitura — a
+// Diretoria continua criando/editando os fluxos pelo site (RLS de escrita é
+// só master). Não vem fluxograma_json de propósito.
+
+export type DiretoriaProcessoStatus = 'rascunho' | 'ativo' | 'em_revisao' | 'descontinuado';
+
+export type DiretoriaProcessoRow = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  area: string | null;
+  departamento: string | null;
+  modulo_slug: string | null;
+  responsavel_id: string | null;
+  responsavel_nome: string | null;
+  status: DiretoriaProcessoStatus;
+  tags: string[] | null;
+  versao: string | null;
+  created_at: string;
+  updated_at: string;
+  documentacao?: string | null;
+};
+
+export type DiretoriaProcessoEtapaRow = {
+  id: string;
+  processo_id: string;
+  ordem: number;
+  titulo: string;
+  descricao: string | null;
+  responsavel_id: string | null;
+  responsavel_nome: string | null;
+  prazo_dias: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchDiretoriaProcessos(
+  params: { departamento?: string; status?: DiretoriaProcessoStatus; q?: string } = {},
+  actorId?: string | null
+): Promise<{ total: number; processos: DiretoriaProcessoRow[] }> {
+  const search = new URLSearchParams();
+  if (params.departamento) search.set('departamento', params.departamento);
+  if (params.status) search.set('status', params.status);
+  if (params.q) search.set('q', params.q);
+  const qs = search.toString();
+  const json = await api.get(withActorId(`/api/diretoria-processos${qs ? `?${qs}` : ''}`, actorId));
+  return { total: json.total ?? 0, processos: json.processos ?? [] };
+}
+
+export async function fetchDiretoriaProcessoDetalhe(
+  id: string,
+  actorId?: string | null
+): Promise<{ processo: DiretoriaProcessoRow | null; etapas: DiretoriaProcessoEtapaRow[] }> {
+  const json = await api.get(withActorId(`/api/diretoria-processos?id=${encodeURIComponent(id)}`, actorId));
+  return { processo: json.processo ?? null, etapas: json.etapas ?? [] };
+}
+
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---
 
 export type AdminUsuarioItem = {
