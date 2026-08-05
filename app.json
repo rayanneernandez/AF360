@@ -4,7 +4,7 @@
     "slug": "AF360",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/icon-1024.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
@@ -14,12 +14,12 @@
       "package": "br.com.af360",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/logo.png"
+        "foregroundImage": "./assets/icon-1024.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/logo.png"
+      "favicon": "./assets/icon-1024.png"
     },
     "plugins": [
       "expo-font",
