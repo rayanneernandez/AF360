@@ -7724,9 +7724,7 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
             style={[rhStyles.etapaCard, item.atrasadas > 0 ? rhStyles.etapaCardAlert : null]}
           >
             <View style={rhStyles.etapaCardHeader}>
-              <View style={rhStyles.etapaCardIconShell}>
-                <Feather name={item.icon} size={15} color="#3457D5" />
-              </View>
+              <Feather name={item.icon} size={13} color="#5E667D" />
               <Text style={rhStyles.etapaCardTitle} numberOfLines={1}>
                 {item.etapa}
               </Text>
@@ -10020,14 +10018,6 @@ const rhStyles = StyleSheet.create({
     gap: 10,
     marginBottom: 14,
   },
-  etapaCardIconShell: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
-    backgroundColor: '#EDF1FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   etapaCardTitle: {
     flex: 1,
     color: '#15203E',
@@ -10037,12 +10027,12 @@ const rhStyles = StyleSheet.create({
   etapaSlaPill: {
     backgroundColor: '#E3F5EA',
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
   },
   etapaSlaPillText: {
     color: '#18955A',
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '800',
   },
   etapaStatsRow: {
