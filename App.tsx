@@ -7745,68 +7745,102 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
   const filtros = useMemo(() => getCurrentMonthRange(), []);
   const { dados: margem, periodo, isLoading, errorMessage } = useDiretoriaPainelRecurso('margem', filtros);
 
-  const categoriasCombustivel = pickArr(margem, ['categorias_combustivel', 'ofensores_combustivel', 'combustiveis']);
-  const categoriasLoja = pickArr(margem, ['categorias_loja', 'ofensores_loja', 'loja']);
-  const alertasCusto = pickArr(margem, ['alertas_custo', 'custos_nao_reconhecidos', 'alertasCusto']);
+  // Shape real de recurso=margem confirmado pela Lovable em 05/08/2026: não
+  // existe categorias_combustivel/categorias_loja — são "blocos" separados:
+  // combLiquidosBlocos[] + gnvBlocos[] (um por categoria: GASOLINA/ETANOL/
+  // DIESEL/GNV), e lojaPistaBloco/lojaConvBloco (objetos únicos, mesmo shape
+  // de bloco). Cada bloco: { chave, rede_pct, rede_rs_unit, unidade,
+  // volume_rede, fat_total_rede, impacto_total, ofensores_count,
+  // ofensores_top5: [{ posto_nome, margem_posto_pct, desvio_pp, impacto_rs,
+  // faturamento, volume, severidade, puxado_por? }] } — já ordenado por
+  // desvio_pp. alertasCusto[] não é filtrado por período (é por data de
+  // entrada de compra). divisoes[] e resumoOfensores alimentam os cards de
+  // resumo do topo.
+  const combLiquidosBlocos = pickArr(margem, ['combLiquidosBlocos']);
+  const gnvBlocos = pickArr(margem, ['gnvBlocos']);
+  const categoriasCombustivel = [...combLiquidosBlocos, ...gnvBlocos];
+  const lojaPistaBloco = (margem as any)?.lojaPistaBloco ?? null;
+  const lojaConvBloco = (margem as any)?.lojaConvBloco ?? null;
+  const categoriasLoja = [lojaPistaBloco, lojaConvBloco].filter(Boolean);
+  const alertasCusto = pickArr(margem, ['alertasCusto']);
+  const divisoes = pickArr(margem, ['divisoes']);
+  const resumoOfensores = (margem as any)?.resumoOfensores ?? null;
+  const margemRsLitroCombustivel = pickNum(margem, ['margemRsLitroCombustivel']);
 
-  // Cards de resumo iguais ao topo do painel web — nomes de campo ainda não
-  // confirmados pela Lovable pra recurso=margem (pedido enviado em
-  // 05/08/2026), então ficam em "—" até ela confirmar o shape real.
-  const resumoMargem = (margem as any)?.resumo ?? margem ?? null;
-  const lojaPistaResumo = categoriasLoja.find((item: any) =>
-    (pickStr(item, ['titulo', 'title']) ?? '').toUpperCase().includes('PISTA')
-  );
-  const lojaConvenienciaResumo = categoriasLoja.find((item: any) =>
-    (pickStr(item, ['titulo', 'title']) ?? '').toUpperCase().includes('CONVEN')
-  );
-  const topCards: Array<{ id: string; label: string; value: string; meta?: string | null }> = [
+  const findDivisao = (keyword: string) =>
+    divisoes.find((item: any) => (pickStr(item, ['divisao', 'label']) ?? '').toUpperCase().includes(keyword));
+  const divisaoCombustivel = findDivisao('COMB');
+  const divisaoPista = findDivisao('PISTA');
+  const divisaoLoja = findDivisao('LOJA') ?? findDivisao('CONVEN');
+
+  const pctDeltaLabel = (deltaPp: number | null) => (deltaPp === null ? '—' : `${deltaPp > 0 ? '+' : ''}${fmtPercentOrDash(deltaPp)}pp`);
+
+  // Combustíveis (R$/L): média ponderada por volume dos rede_rs_unit dos
+  // blocos líquidos (sem GNV, que tem unidade própria em m³).
+  const combustiveisRsLitroPonderado = (() => {
+    let volumeTotal = 0;
+    let somaPonderada = 0;
+    for (const bloco of combLiquidosBlocos) {
+      const rsUnit = pickNum(bloco, ['rede_rs_unit']);
+      const volume = pickNum(bloco, ['volume_rede']);
+      if (rsUnit === null || volume === null) continue;
+      volumeTotal += volume;
+      somaPonderada += rsUnit * volume;
+    }
+    return volumeTotal > 0 ? somaPonderada / volumeTotal : null;
+  })();
+
+  const topCards: Array<{ id: string; label: string; value: string; badge?: string | null; meta?: string | null }> = [
     {
       id: 'margem-combustiveis-litro',
       label: 'Margem combustíveis (R$/L)',
-      value: fmtBRLOrDash(pickNum(resumoMargem, ['margem_combustiveis_rs_litro', 'margem_combustiveis_rs_l'])),
+      value: fmtBRLOrDash(margemRsLitroCombustivel),
       meta:
-        pickNum(resumoMargem, ['margem_combustiveis_pct_venda', 'margem_combustiveis_pct']) !== null
-          ? `${fmtPercentOrDash(pickNum(resumoMargem, ['margem_combustiveis_pct_venda', 'margem_combustiveis_pct']))} sobre a venda`
+        divisaoCombustivel && pickNum(divisaoCombustivel, ['margem_pct']) !== null
+          ? `${fmtPercentOrDash(pickNum(divisaoCombustivel, ['margem_pct']))} sobre a venda`
           : null,
     },
     {
       id: 'combustiveis-litro',
       label: 'Combustíveis (R$/L)',
-      value: fmtBRLOrDash(pickNum(resumoMargem, ['combustiveis_rs_litro', 'combustiveis_rs_l'])),
-      meta: null,
+      value: fmtBRLOrDash(combustiveisRsLitroPonderado),
+      badge: divisaoCombustivel ? pctDeltaLabel(pickNum(divisaoCombustivel, ['delta_pp'])) : null,
+      meta: divisaoCombustivel
+        ? `${fmtPercentOrDash(pickNum(divisaoCombustivel, ['margem_pct']))} · ${fmtBRLOrDash(pickNum(divisaoCombustivel, ['faturamento']))} · ${pctDeltaLabel(pickNum(divisaoCombustivel, ['delta_pp']))}`
+        : null,
     },
     {
       id: 'loja-pista-margem',
       label: 'Loja pista',
-      value: fmtPercentOrDash(pickNum(lojaPistaResumo, ['media_rede_pct', 'media_rede', 'percentual_atual'])),
-      meta: null,
+      value: fmtPercentOrDash(pickNum(lojaPistaBloco, ['rede_pct'])),
+      badge: divisaoPista ? pctDeltaLabel(pickNum(divisaoPista, ['delta_pp'])) : null,
+      meta: `${fmtBRLOrDash(pickNum(lojaPistaBloco, ['fat_total_rede']))} · ${pctDeltaLabel(pickNum(divisaoPista, ['delta_pp']))}`,
     },
     {
       id: 'loja-conveniencia-margem',
       label: 'Loja conveniência',
-      value: fmtPercentOrDash(pickNum(lojaConvenienciaResumo, ['media_rede_pct', 'media_rede', 'percentual_atual'])),
-      meta: null,
+      value: fmtPercentOrDash(pickNum(lojaConvBloco, ['rede_pct'])),
+      badge: divisaoLoja ? pctDeltaLabel(pickNum(divisaoLoja, ['delta_pp'])) : null,
+      meta: `${fmtBRLOrDash(pickNum(lojaConvBloco, ['fat_total_rede']))} · ${pctDeltaLabel(pickNum(divisaoLoja, ['delta_pp']))}`,
     },
   ];
+
   const totalOfensoresCombustivel = categoriasCombustivel.reduce(
-    (sum, item) => sum + pickArr(item, ['ofensores', 'postos', 'stations']).length,
+    (sum, bloco) => sum + (pickNum(bloco, ['ofensores_count']) ?? 0),
     0
   );
-  const totalOfensoresLoja = categoriasLoja.reduce(
-    (sum, item) => sum + pickArr(item, ['ofensores', 'postos', 'stations']).length,
-    0
-  );
+  const totalOfensoresLoja = categoriasLoja.reduce((sum, bloco) => sum + (pickNum(bloco, ['ofensores_count']) ?? 0), 0);
   const statCards: Array<{ id: string; label: string; value: string; meta?: string | null }> = [
     {
       id: 'postos-ofensores',
       label: 'Postos ofensores',
-      value: fmtNumOrDash(totalOfensoresCombustivel + totalOfensoresLoja || null),
+      value: fmtNumOrDash(pickNum(resumoOfensores, ['postos_unicos'])),
       meta: 'Ocorrência(s) posto × categoria',
     },
     {
       id: 'postos-criticos',
       label: 'Postos críticos',
-      value: fmtNumOrDash(pickNum(resumoMargem, ['postos_criticos', 'postos_criticos_count'])),
+      value: fmtNumOrDash(pickNum(resumoOfensores, ['postos_criticos'])),
       meta: 'Desvio maior que 3pp da média da rede',
     },
     {
@@ -7818,10 +7852,76 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
     {
       id: 'perda-estimada',
       label: 'Perda estimada no período',
-      value: fmtBRLOrDash(pickNum(resumoMargem, ['perda_estimada_periodo', 'perda_estimada'])),
-      meta: totalOfensoresCombustivel + totalOfensoresLoja === 0 ? 'Sem ofensores no período' : null,
+      value: fmtBRLOrDash(pickNum(resumoOfensores, ['impacto_total'])),
+      meta:
+        totalOfensoresCombustivel + totalOfensoresLoja === 0
+          ? 'Sem ofensores no período'
+          : pickStr(resumoOfensores, ['pior_posto'])
+          ? `Pior posto: ${pickStr(resumoOfensores, ['pior_posto'])}`
+          : null,
     },
   ];
+
+  const renderBlocoCard = (bloco: any) => {
+    const titulo = pickStr(bloco, ['chave']) ?? '—';
+    const mediaRede = pickNum(bloco, ['rede_pct']);
+    const impacto = pickNum(bloco, ['impacto_total']);
+    const ofensoresCount = pickNum(bloco, ['ofensores_count']) ?? 0;
+    const ofensoresTop5 = pickArr(bloco, ['ofensores_top5']);
+
+    return (
+      <View key={titulo} style={styles.marginCategoryCard}>
+        <View style={styles.marginCategoryHeader}>
+          <Text style={styles.marginCategoryTitle}>{titulo.toUpperCase()}</Text>
+          <Text style={styles.marginCategoryAverage}>Média rede: {fmtPercentOrDash(mediaRede)}</Text>
+        </View>
+
+        {ofensoresCount === 0 ? (
+          <Text style={styles.conversaEmptyText}>Todos os postos estão acima da média da rede.</Text>
+        ) : (
+          ofensoresTop5.map((station: any, stationIndex: number) => {
+            const severidade = pickStr(station, ['severidade']);
+            const percentual = pickNum(station, ['margem_posto_pct']);
+            const delta = pickNum(station, ['desvio_pp']);
+            const puxadoPor = pickArr(station, ['puxado_por'])
+              .map((entry: any) => pickStr(entry, ['label']))
+              .filter((label): label is string => !!label)
+              .join(', ');
+
+            return (
+              <View key={pickStr(station, ['posto_id']) ?? stationIndex} style={styles.marginStationRow}>
+                <Text style={styles.marginRank}>#{stationIndex + 1}</Text>
+                <View style={styles.marginStationTextBlock}>
+                  <Text style={styles.marginStationName}>{pickStr(station, ['posto_nome']) ?? '—'}</Text>
+                  {puxadoPor ? <Text style={styles.marginStationPulledBy}>{puxadoPor}</Text> : null}
+                </View>
+                <View style={styles.marginStationRight}>
+                  <View style={styles.marginStationPercentRow}>
+                    <View
+                      style={[
+                        styles.marginStationDot,
+                        { backgroundColor: severidade === 'critico' ? '#E6213D' : '#D79A22' },
+                      ]}
+                    />
+                    <Text style={styles.marginStationPercent}>{fmtPercentOrDash(percentual)}</Text>
+                  </View>
+                  <Text style={styles.marginStationDelta}>{pctDeltaLabel(delta)}</Text>
+                </View>
+              </View>
+            );
+          })
+        )}
+
+        <View style={styles.marginCategoryFooter}>
+          <Text style={styles.marginCategoryFooterOffenders}>
+            {ofensoresCount} ofensor{ofensoresCount === 1 ? '' : 'es'}
+            {ofensoresCount > ofensoresTop5.length ? ` (top ${ofensoresTop5.length} exibidos)` : ''}
+          </Text>
+          <Text style={styles.marginCategoryFooterImpact}>Impacto: {fmtBRLOrDash(impacto)}</Text>
+        </View>
+      </View>
+    );
+  };
 
   const periodoLabel = periodo.de
     ? periodo.ate && periodo.ate !== periodo.de
@@ -7875,6 +7975,23 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
                   <Text style={styles.directorSummaryValue}>{card.value}</Text>
                   {card.meta ? <Text style={styles.directorSummaryMeta}>{card.meta}</Text> : null}
                 </View>
+                {card.badge ? (
+                  <View
+                    style={[
+                      styles.directorSummaryPill,
+                      { backgroundColor: card.badge.startsWith('-') ? '#FCE8EC' : '#E2F4EA' },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.directorSummaryPillText,
+                        { color: card.badge.startsWith('-') ? '#E6213D' : '#18955A' },
+                      ]}
+                    >
+                      {card.badge}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             ))}
 
@@ -7895,145 +8012,63 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
             {categoriasCombustivel.length === 0 ? (
               <Text style={styles.conversaEmptyText}>Sem ofensores de combustível no período.</Text>
             ) : (
-              categoriasCombustivel.map((category, categoryIndex) => {
-                const ofensores = pickArr(category, ['ofensores', 'postos', 'stations']);
-                const titulo = pickStr(category, ['titulo', 'produto', 'title']) ?? `Categoria ${categoryIndex + 1}`;
-                const mediaRede = pickNum(category, ['media_rede_pct', 'media_rede']);
-                const impacto = pickNum(category, ['impacto_valor', 'impacto']);
-
-                return (
-                  <View key={titulo} style={styles.marginCategoryCard}>
-                    <View style={styles.marginCategoryHeader}>
-                      <Text style={styles.marginCategoryTitle}>{titulo.toUpperCase()}</Text>
-                      <Text style={styles.marginCategoryAverage}>Média rede: {fmtPercentOrDash(mediaRede)}</Text>
-                    </View>
-
-                    {ofensores.map((station: any, stationIndex: number) => {
-                      const severidade = pickStr(station, ['severidade', 'severity']);
-                      const percentual = pickNum(station, ['percentual_atual', 'percent', 'percentual']);
-                      const delta = pickNum(station, ['delta_pct', 'delta']);
-
-                      return (
-                        <View key={pickStr(station, ['id']) ?? stationIndex} style={styles.marginStationRow}>
-                          <Text style={styles.marginRank}>
-                            #{pickNum(station, ['rank']) ?? stationIndex + 1}
-                          </Text>
-                          <View style={styles.marginStationTextBlock}>
-                            <Text style={styles.marginStationName}>
-                              {pickStr(station, ['nome', 'posto', 'name']) ?? '—'}
-                            </Text>
-                            <Text style={styles.marginStationPulledBy}>
-                              {pickStr(station, ['pulled_by', 'motivo']) ?? ''}
-                            </Text>
-                          </View>
-                          <View style={styles.marginStationRight}>
-                            <View style={styles.marginStationPercentRow}>
-                              <View
-                                style={[
-                                  styles.marginStationDot,
-                                  { backgroundColor: severidade === 'critical' || severidade === 'critico' ? '#E6213D' : '#D79A22' },
-                                ]}
-                              />
-                              <Text style={styles.marginStationPercent}>{fmtPercentOrDash(percentual)}</Text>
-                            </View>
-                            <Text style={styles.marginStationDelta}>
-                              {delta === null ? '—' : `${delta > 0 ? '+' : ''}${fmtPercentOrDash(delta)}`}
-                            </Text>
-                          </View>
-                        </View>
-                      );
-                    })}
-
-                    <View style={styles.marginCategoryFooter}>
-                      <Text style={styles.marginCategoryFooterOffenders}>{ofensores.length} ofensores</Text>
-                      <Text style={styles.marginCategoryFooterImpact}>Impacto: {fmtBRLOrDash(impacto)}</Text>
-                    </View>
-                  </View>
-                );
-              })
+              categoriasCombustivel.map(renderBlocoCard)
             )}
 
             <Text style={styles.directorSectionTitle}>LOJAS — POSTOS OFENSORES</Text>
             {categoriasLoja.length === 0 ? (
               <Text style={styles.conversaEmptyText}>Sem ofensores de loja no período.</Text>
             ) : (
-              categoriasLoja.map((item, index) => {
-                const titulo = pickStr(item, ['titulo', 'title']) ?? `Loja ${index + 1}`;
-                const mediaRede = pickNum(item, ['media_rede_pct', 'media_rede']);
-                const percentual = pickNum(item, ['percentual_atual', 'percent']);
-                const delta = pickNum(item, ['delta_pct', 'delta']);
-
-                return (
-                  <View key={titulo} style={styles.marginCategoryCard}>
-                    <View style={styles.marginCategoryHeader}>
-                      <Text style={styles.marginCategoryTitle}>{titulo.toUpperCase()}</Text>
-                      <Text style={styles.marginCategoryAverage}>Média rede: {fmtPercentOrDash(mediaRede)}</Text>
-                    </View>
-                    <View style={styles.marginStationRow}>
-                      <View style={styles.marginStationTextBlock}>
-                        <Text style={styles.marginStationName}>
-                          {pickStr(item, ['nome', 'posto', 'stationName']) ?? '—'}
-                        </Text>
-                      </View>
-                      <View style={styles.marginStationRight}>
-                        <View style={styles.marginStationPercentRow}>
-                          <Feather name="arrow-down-right" size={12} color="#E6213D" />
-                          <Text style={styles.marginStationPercent}>{fmtPercentOrDash(percentual)}</Text>
-                        </View>
-                        <Text style={styles.marginStationDelta}>
-                          {delta === null ? '—' : `${delta > 0 ? '+' : ''}${fmtPercentOrDash(delta)}`}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })
+              categoriasLoja.map(renderBlocoCard)
             )}
 
             <Text style={styles.directorSectionTitle}>Custos que ofendem a margem</Text>
             <Text style={styles.unrecognizedSectionSubtitle}>
-              {alertasCusto.length} não reconhecido{alertasCusto.length === 1 ? '' : 's'}
+              {alertasCusto.length} não reconhecido{alertasCusto.length === 1 ? '' : 's'} · não filtrado pelo
+              período (é por data de entrada de compra)
             </Text>
 
             {alertasCusto.length === 0 ? (
               <Text style={styles.conversaEmptyText}>Nenhum custo não reconhecido no período.</Text>
             ) : (
               alertasCusto.map((item, index) => {
-                const severidade = pickStr(item, ['severidade', 'severity']) ?? '';
-                const isCritico = severidade.toLowerCase().includes('crit');
+                const status = pickStr(item, ['status']) ?? '';
+                const isCritico = status === 'CRITICO';
+                const statusLabel = status === 'CRITICO' ? 'Crítico' : status === 'ATENCAO' ? 'Atenção' : status === 'OK' ? 'OK' : status || '—';
+                const dataEntrada = pickStr(item, ['data_entrada']);
+                const reconhecido = (item as any)?.reconhecido === true;
+                const reconhecidoPor = pickStr(item, ['reconhecido_por']);
 
                 return (
                   <View key={pickStr(item, ['id']) ?? index} style={styles.unrecognizedCard}>
-                    <Text style={styles.unrecognizedStationName}>
-                      {pickStr(item, ['posto', 'stationName']) ?? '—'}
-                    </Text>
+                    <Text style={styles.unrecognizedStationName}>{pickStr(item, ['posto_nome']) ?? '—'}</Text>
                     <Text style={styles.unrecognizedProductLabel}>
-                      {pickStr(item, ['produto', 'productLabel']) ?? '—'} ·{' '}
-                      {pickStr(item, ['data', 'dateLabel']) ?? '—'}
+                      {pickStr(item, ['produto_nome']) ?? '—'} ·{' '}
+                      {dataEntrada ? formatDateBR(new Date(dataEntrada + 'T00:00:00')) : '—'}
                     </Text>
                     <View style={styles.unrecognizedStatsRow}>
                       <View style={styles.unrecognizedStatBlock}>
                         <Text style={styles.unrecognizedStatLabel}>Custo</Text>
                         <Text style={styles.unrecognizedStatValue}>
-                          {fmtBRLOrDash(pickNum(item, ['custo']))}
+                          {fmtBRLOrDash(pickNum(item, ['preco_custo_novo']))}
                         </Text>
                       </View>
                       <View style={styles.unrecognizedStatBlock}>
                         <Text style={styles.unrecognizedStatLabel}>Preço Ref</Text>
                         <Text style={styles.unrecognizedStatValue}>
-                          {fmtBRLOrDash(pickNum(item, ['preco_referencia']))}
+                          {fmtBRLOrDash(pickNum(item, ['preco_venda_ref']))}
                         </Text>
                       </View>
                       <View style={styles.unrecognizedStatBlock}>
                         <Text style={styles.unrecognizedStatLabel}>Margem</Text>
                         <Text style={[styles.unrecognizedStatValue, styles.unrecognizedStatValueDanger]}>
-                          {fmtPercentOrDash(pickNum(item, ['margem']))}
+                          {fmtPercentOrDash(pickNum(item, ['margem_resultante']))}
                         </Text>
                       </View>
                       <View style={styles.unrecognizedStatBlock}>
                         <Text style={styles.unrecognizedStatLabel}>Meta</Text>
                         <Text style={styles.unrecognizedStatValue}>
-                          {fmtPercentOrDash(pickNum(item, ['meta']))}
+                          {fmtPercentOrDash(pickNum(item, ['margem_meta']))}
                         </Text>
                       </View>
                       <View style={styles.unrecognizedStatBlock}>
@@ -8046,11 +8081,16 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
                             ]}
                           />
                           <Text style={[styles.unrecognizedStatValue, styles.unrecognizedStatValueDanger]}>
-                            {severidade || '—'}
+                            {statusLabel}
                           </Text>
                         </View>
                       </View>
                     </View>
+                    {reconhecido ? (
+                      <Text style={styles.conversaEmptyText}>
+                        Reconhecido{reconhecidoPor ? ` por ${reconhecidoPor}` : ''}
+                      </Text>
+                    ) : null}
                   </View>
                 );
               })
