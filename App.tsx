@@ -2720,11 +2720,11 @@ async function goToTargetOrTwoFactor(
   targetRoute: keyof RootStackParamList,
   role: UserRole
 ) {
-  // TEMPORÁRIO (pedido da Rayanne em 07/08/2026): o painel Administrador
-  // hoje só existe pra ela testar o app — não pede 2FA por enquanto. Tirar
-  // essa exceção quando existirem administradores "de verdade" usando isso
-  // em produção.
-  if (role === 'administrador') {
+  // TEMPORÁRIO (pedido da Rayanne em 07/08/2026): os perfis Administrador e
+  // Diretoria hoje são só os dela mesma pra testar o app — não pedem 2FA
+  // por enquanto. Tirar essa exceção quando existirem contas "de verdade"
+  // desses dois perfis em produção.
+  if (role === 'administrador' || role === 'diretoria') {
     navigation.replace(targetRoute);
     return;
   }
