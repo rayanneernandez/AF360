@@ -2717,8 +2717,18 @@ async function goToTargetOrTwoFactor(
   navigation: NativeStackNavigationProp<RootStackParamList, any>,
   identity: AuthIdentity | null,
   isTwoFactorEnabled: boolean,
-  targetRoute: keyof RootStackParamList
+  targetRoute: keyof RootStackParamList,
+  role: UserRole
 ) {
+  // TEMPORÁRIO (pedido da Rayanne em 07/08/2026): o painel Administrador
+  // hoje só existe pra ela testar o app — não pede 2FA por enquanto. Tirar
+  // essa exceção quando existirem administradores "de verdade" usando isso
+  // em produção.
+  if (role === 'administrador') {
+    navigation.replace(targetRoute);
+    return;
+  }
+
   if (!isTwoFactorEnabled || !identity?.profileId) {
     navigation.replace(targetRoute);
     return;
@@ -2762,7 +2772,7 @@ async function proceedAfterRoleChosen(
     return;
   }
 
-  await goToTargetOrTwoFactor(navigation, identity, isTwoFactorEnabled, getDashboardRouteForRole(role));
+  await goToTargetOrTwoFactor(navigation, identity, isTwoFactorEnabled, getDashboardRouteForRole(role), role);
 }
 
 function LoginScreen({ navigation }: ScreenProps<'Login'>) {
@@ -3092,7 +3102,7 @@ function DeviceAuthScreen({ navigation }: ScreenProps<'DeviceAuth'>) {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   const proceedAfterDeviceAuth = () => {
-    goToTargetOrTwoFactor(navigation, identity, isTwoFactorEnabled, getDashboardRouteForRole(activeRole));
+    goToTargetOrTwoFactor(navigation, identity, isTwoFactorEnabled, getDashboardRouteForRole(activeRole), activeRole);
   };
 
   const handleAuthenticate = () => {
