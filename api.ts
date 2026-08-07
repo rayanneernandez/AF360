@@ -611,6 +611,90 @@ export async function login(email: string, password: string): Promise<AuthIdenti
   return json.data as AuthIdentity;
 }
 
+// --- Verificação em duas etapas (2FA) por e-mail — endpoints confirmados
+// pela Lovable em 07/08/2026 (código de 6 dígitos, validade 10min, máx. 5
+// tentativas erradas, 1 reenvio a cada 30s). "codigo_invalido"/"expirado"/
+// "tentativas_excedidas" são resultados normais da verificação (a tela
+// decide o que mostrar), não exceções — só erro de rede/servidor lança.
+
+export type Send2faResult =
+  | {
+      ok: true;
+      profileId: string;
+      canais: string[];
+      destinoEmail: string | null;
+      expiraEmSegundos: number | null;
+      reenvioEmSegundos: number | null;
+    }
+  | { ok: false; rateLimited: true; retryAposSegundos: number };
+
+export async function send2faCode(params: { profileId?: string; email?: string }): Promise<Send2faResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/auth/2fa/enviar`, {
+      method: 'POST',
+      headers: { 'x-api-key': API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(params.profileId ? { profileId: params.profileId } : { email: params.email }),
+    });
+  } catch {
+    throw new ApiError('Não foi possível conectar ao servidor. Verifique sua internet.', 'network_error', 0);
+  }
+  const json = await response.json().catch(() => null);
+
+  if (response.ok && json?.ok) {
+    const data = json.data ?? json;
+    return {
+      ok: true,
+      profileId: data.profile_id,
+      canais: data.canais ?? [],
+      destinoEmail: data.destino?.email ?? null,
+      expiraEmSegundos: data.expira_em_segundos ?? null,
+      reenvioEmSegundos: data.reenvio_em_segundos ?? null,
+    };
+  }
+
+  if (response.status === 429) {
+    return { ok: false, rateLimited: true, retryAposSegundos: json?.retry_apos_segundos ?? 30 };
+  }
+
+  const message = json?.message || json?.error || `Erro ${response.status}`;
+  throw new ApiError(message, json?.error ?? null, response.status);
+}
+
+export type Verify2faResult =
+  | { ok: true; profileId: string; verificadoEm: string }
+  | {
+      ok: false;
+      motivo: 'codigo_invalido' | 'expirado' | 'nao_encontrado' | 'tentativas_excedidas';
+      tentativasRestantes: number | null;
+    };
+
+export async function verify2faCode(profileId: string, codigo: string): Promise<Verify2faResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/auth/2fa/verificar`, {
+      method: 'POST',
+      headers: { 'x-api-key': API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId, codigo }),
+    });
+  } catch {
+    throw new ApiError('Não foi possível conectar ao servidor. Verifique sua internet.', 'network_error', 0);
+  }
+  const json = await response.json().catch(() => null);
+
+  if (response.ok && json?.ok) {
+    const data = json.data ?? json;
+    return { ok: true, profileId: data.profile_id, verificadoEm: data.verificado_em };
+  }
+
+  if (json?.motivo) {
+    return { ok: false, motivo: json.motivo, tentativasRestantes: json.tentativas_restantes ?? null };
+  }
+
+  const message = json?.message || json?.error || `Erro ${response.status}`;
+  throw new ApiError(message, json?.error ?? null, response.status);
+}
+
 // --- Meu Painel (colaborador): agregado de comunicados/chamados/treinamentos/contracheque ---
 
 export type ColaboradorHomeComunicado = { id: string; titulo: string; tempoLabel: string };

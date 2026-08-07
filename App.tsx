@@ -3,6 +3,7 @@ import { useEventListener } from 'expo';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as ScreenCapture from 'expo-screen-capture';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
@@ -148,6 +149,8 @@ import {
   type DiretoriaProcessoWriteBody,
   fetchAdminModulos,
   fetchAdminUsuarios,
+  send2faCode,
+  verify2faCode,
 } from './api';
 
 export type RootStackParamList = {
@@ -156,7 +159,11 @@ export type RootStackParamList = {
   ForgotPassword: undefined;
   SelectPanel: undefined;
   DeviceAuth: undefined;
-  TwoFactorVerification: undefined;
+  TwoFactorVerification: {
+    profileId: string;
+    email: string | null;
+    targetRoute: keyof RootStackParamList;
+  };
   Dashboard: undefined;
   Trainings: undefined;
   TrainingDetail: { courseId: string };
@@ -872,6 +879,39 @@ export const ColaboradorPerfilContext = createContext<{
   isLoading: false,
   errorMessage: null,
 });
+
+// Verificação em duas etapas (2FA) — controle de "pedir só a cada 30 dias"
+// guardado no aparelho (AsyncStorage), por profileId. Feito assim porque o
+// endpoint da Lovable só cuida de gerar/enviar/conferir o código; quem
+// decide se PRECISA pedir de novo é o app, olhando a última vez que essa
+// conta verificou com sucesso NESTE aparelho.
+const TWO_FACTOR_ENABLED_STORAGE_KEY = '@af360/2fa-enabled';
+const TWO_FACTOR_VERIFIED_AT_PREFIX = '@af360/2fa-verified-at:';
+const TWO_FACTOR_VALIDITY_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
+
+async function getLastTwoFactorVerifiedAt(profileId: string): Promise<number | null> {
+  try {
+    const raw = await AsyncStorage.getItem(`${TWO_FACTOR_VERIFIED_AT_PREFIX}${profileId}`);
+    return raw ? Number(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function setLastTwoFactorVerifiedNow(profileId: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(`${TWO_FACTOR_VERIFIED_AT_PREFIX}${profileId}`, String(Date.now()));
+  } catch {
+    // Se falhar ao salvar, sem problema — só significa que vai pedir de novo
+    // na próxima vez, nunca menos seguro do que deveria ser.
+  }
+}
+
+async function needsTwoFactorVerification(profileId: string): Promise<boolean> {
+  const lastVerifiedAt = await getLastTwoFactorVerifiedAt(profileId);
+  if (!lastVerifiedAt) return true;
+  return Date.now() - lastVerifiedAt > TWO_FACTOR_VALIDITY_MS;
+}
 
 const SecurityPreferencesContext = createContext<{
   isTwoFactorEnabled: boolean;
@@ -2264,7 +2304,21 @@ export default function App() {
   const [receivedUniformIds, setReceivedUniformIds] = useState<Record<string, boolean>>({});
   const [acknowledgedPayslipIds, setAcknowledgedPayslipIds] = useState<Record<string, boolean>>({});
   const [readNotificationIds, setReadNotificationIds] = useState<Record<string, boolean>>({});
-  const [isTwoFactorEnabled, setIsTwoFactorEnabled] = useState(true);
+  // Preferência persistida de verdade (AsyncStorage) — antes resetava pra
+  // `true` toda vez que o app abria, porque não tinha AsyncStorage instalado
+  // no projeto. Adicionado em 07/08/2026 junto com a 2FA de verdade.
+  const [isTwoFactorEnabled, setIsTwoFactorEnabledState] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem(TWO_FACTOR_ENABLED_STORAGE_KEY)
+      .then((value) => {
+        if (value !== null) setIsTwoFactorEnabledState(value === '1');
+      })
+      .catch(() => {});
+  }, []);
+  const setIsTwoFactorEnabled = useCallback((value: boolean) => {
+    setIsTwoFactorEnabledState(value);
+    AsyncStorage.setItem(TWO_FACTOR_ENABLED_STORAGE_KEY, value ? '1' : '0').catch(() => {});
+  }, []);
   const [isBiometricLoginEnabled, setIsBiometricLoginEnabled] = useState(false);
   const [courseProgress, setCourseProgress] = useState<Record<string, TrainingCourseProgress>>({});
 
@@ -2644,11 +2698,50 @@ function SplashScreen({ navigation }: ScreenProps<'Splash'>) {
   );
 }
 
+function getDashboardRouteForRole(role: UserRole): keyof RootStackParamList {
+  return role === 'diretoria'
+    ? 'DirectorDashboard'
+    : role === 'rh'
+    ? 'RHDashboard'
+    : role === 'administrador'
+    ? 'AdminDashboard'
+    : 'Dashboard';
+}
+
+// Decide se pede o código de 2FA (só se a preferência estiver ligada E a
+// última verificação com sucesso NESTE aparelho já passou de 30 dias, ou
+// nunca aconteceu) e navega de acordo — senão vai direto pro destino.
+// Compartilhado entre LoginScreen/SelectPanelScreen (via proceedAfterRoleChosen)
+// e DeviceAuthScreen (depois da biometria).
+async function goToTargetOrTwoFactor(
+  navigation: NativeStackNavigationProp<RootStackParamList, any>,
+  identity: AuthIdentity | null,
+  isTwoFactorEnabled: boolean,
+  targetRoute: keyof RootStackParamList
+) {
+  if (!isTwoFactorEnabled || !identity?.profileId) {
+    navigation.replace(targetRoute);
+    return;
+  }
+
+  const precisaVerificar = await needsTwoFactorVerification(identity.profileId);
+  if (!precisaVerificar) {
+    navigation.replace(targetRoute);
+    return;
+  }
+
+  navigation.replace('TwoFactorVerification', {
+    profileId: identity.profileId,
+    email: identity.email ?? null,
+    targetRoute,
+  });
+}
+
 // Compartilhado entre LoginScreen (quando só existe 1 painel disponível) e
 // SelectPanelScreen (depois que a pessoa escolhe qual painel abrir) — mantém
 // o mesmo fluxo de biometria/2FA que já existia, só que agora o "papel"
 // (activeRole) pode vir de uma escolha explícita em vez de sempre automático.
-function proceedAfterRoleChosen(
+async function proceedAfterRoleChosen(
   role: UserRole,
   // Tipado solto (route name "any") de propósito: esta função é chamada a
   // partir de mais de uma tela (Login, SelectPanel), cada uma com seu
@@ -2659,7 +2752,8 @@ function proceedAfterRoleChosen(
   navigation: NativeStackNavigationProp<RootStackParamList, any>,
   setActiveRole: (role: UserRole) => void,
   isBiometricLoginEnabled: boolean,
-  isTwoFactorEnabled: boolean
+  isTwoFactorEnabled: boolean,
+  identity: AuthIdentity | null
 ) {
   setActiveRole(role);
 
@@ -2668,20 +2762,7 @@ function proceedAfterRoleChosen(
     return;
   }
 
-  if (isTwoFactorEnabled) {
-    navigation.replace('TwoFactorVerification');
-    return;
-  }
-
-  navigation.replace(
-    role === 'diretoria'
-      ? 'DirectorDashboard'
-      : role === 'rh'
-      ? 'RHDashboard'
-      : role === 'administrador'
-      ? 'AdminDashboard'
-      : 'Dashboard'
-  );
+  await goToTargetOrTwoFactor(navigation, identity, isTwoFactorEnabled, getDashboardRouteForRole(role));
 }
 
 function LoginScreen({ navigation }: ScreenProps<'Login'>) {
@@ -2726,7 +2807,7 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
         return;
       }
 
-      proceedAfterRoleChosen(availableRoles[0], navigation, setActiveRole, isBiometricLoginEnabled, isTwoFactorEnabled);
+      proceedAfterRoleChosen(availableRoles[0], navigation, setActiveRole, isBiometricLoginEnabled, isTwoFactorEnabled, identity);
     } catch (err) {
       // Mensagem amigável fixa por tipo de erro — nunca mostra o texto cru
       // que vem do backend/Supabase (tipo "Invalid login credentials"), que
@@ -2870,7 +2951,7 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
   const roles = identity?.availableRoles ?? [];
 
   const handleSelect = (role: UserRole) => {
-    proceedAfterRoleChosen(role, navigation, setActiveRole, isBiometricLoginEnabled, isTwoFactorEnabled);
+    proceedAfterRoleChosen(role, navigation, setActiveRole, isBiometricLoginEnabled, isTwoFactorEnabled, identity);
   };
 
   return (
@@ -3007,23 +3088,11 @@ function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword'>) {
 function DeviceAuthScreen({ navigation }: ScreenProps<'DeviceAuth'>) {
   const { isTwoFactorEnabled } = useContext(SecurityPreferencesContext);
   const { activeRole } = useContext(UserRoleContext);
+  const { identity } = useContext(AuthIdentityContext);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   const proceedAfterDeviceAuth = () => {
-    if (isTwoFactorEnabled) {
-      navigation.replace('TwoFactorVerification');
-      return;
-    }
-
-    navigation.replace(
-      activeRole === 'diretoria'
-        ? 'DirectorDashboard'
-        : activeRole === 'rh'
-        ? 'RHDashboard'
-        : activeRole === 'administrador'
-        ? 'AdminDashboard'
-        : 'Dashboard'
-    );
+    goToTargetOrTwoFactor(navigation, identity, isTwoFactorEnabled, getDashboardRouteForRole(activeRole));
   };
 
   const handleAuthenticate = () => {
@@ -3065,50 +3134,101 @@ function DeviceAuthScreen({ navigation }: ScreenProps<'DeviceAuth'>) {
   );
 }
 
-function TwoFactorVerificationScreen({ navigation }: ScreenProps<'TwoFactorVerification'>) {
-  const { activeRole } = useContext(UserRoleContext);
-  const dashboardRoute =
-    activeRole === 'diretoria'
-      ? 'DirectorDashboard'
-      : activeRole === 'rh'
-      ? 'RHDashboard'
-      : activeRole === 'administrador'
-      ? 'AdminDashboard'
-      : 'Dashboard';
-  const verificationEmail =
-    activeRole === 'diretoria'
-      ? directorUser.email
-      : activeRole === 'rh'
-      ? rhUser.email
-      : activeRole === 'administrador'
-      ? adminUser.email
-      : currentUser.email;
+function TwoFactorVerificationScreen({ navigation, route }: ScreenProps<'TwoFactorVerification'>) {
+  const { profileId, email, targetRoute } = route.params;
+
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
-  const [autoFilled, setAutoFilled] = useState(false);
   const codeInputRefs = useRef<Array<TextInput | null>>([]);
+
+  const [isSending, setIsSending] = useState(true);
+  const [sendErrorMessage, setSendErrorMessage] = useState<string | null>(null);
+  const [destinoEmail, setDestinoEmail] = useState<string | null>(email);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyErrorMessage, setVerifyErrorMessage] = useState<string | null>(null);
+  const [tentativasRestantes, setTentativasRestantes] = useState<number | null>(null);
 
   const isCodeComplete = digits.every((digit) => digit.length === 1);
 
+  // Reenvio: countdown de 1 em 1s até poder reenviar de novo.
   useEffect(() => {
-    const notificationTimer = setTimeout(() => {
-      setDigits(Array.from({ length: 6 }, () => String(Math.floor(Math.random() * 10))));
-      setAutoFilled(true);
-    }, 1800);
+    if (resendCooldown <= 0) return;
+    const timer = setTimeout(() => setResendCooldown((current) => current - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
 
-    return () => clearTimeout(notificationTimer);
-  }, []);
+  const handleSendCode = useCallback(async () => {
+    setIsSending(true);
+    setSendErrorMessage(null);
+    setVerifyErrorMessage(null);
+    setTentativasRestantes(null);
+    setDigits(['', '', '', '', '', '']);
 
-  useEffect(() => {
-    if (!autoFilled) {
-      return;
+    try {
+      const result = await send2faCode({ profileId });
+      if (result.ok) {
+        setDestinoEmail(result.destinoEmail ?? email);
+        setResendCooldown(result.reenvioEmSegundos ?? 30);
+        codeInputRefs.current[0]?.focus();
+      } else {
+        setResendCooldown(result.retryAposSegundos);
+        setSendErrorMessage(`Aguarde ${result.retryAposSegundos}s para reenviar.`);
+      }
+    } catch (err) {
+      setSendErrorMessage(
+        err instanceof Error ? err.message : 'Não foi possível enviar o código. Tente novamente.'
+      );
+    } finally {
+      setIsSending(false);
     }
+  }, [profileId, email]);
 
-    const redirectTimer = setTimeout(() => {
-      navigation.replace(dashboardRoute);
-    }, 900);
+  // Envia o primeiro código assim que a tela abre.
+  useEffect(() => {
+    handleSendCode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileId]);
 
-    return () => clearTimeout(redirectTimer);
-  }, [autoFilled, navigation, dashboardRoute]);
+  const handleVerify = useCallback(
+    async (codigo: string) => {
+      setIsVerifying(true);
+      setVerifyErrorMessage(null);
+
+      try {
+        const result = await verify2faCode(profileId, codigo);
+        if (result.ok) {
+          await setLastTwoFactorVerifiedNow(profileId);
+          navigation.replace(targetRoute);
+          return;
+        }
+
+        setTentativasRestantes(result.tentativasRestantes);
+        if (result.motivo === 'codigo_invalido') {
+          setVerifyErrorMessage(
+            result.tentativasRestantes !== null
+              ? `Código incorreto. ${result.tentativasRestantes} tentativa${result.tentativasRestantes === 1 ? '' : 's'} restante${result.tentativasRestantes === 1 ? '' : 's'}.`
+              : 'Código incorreto.'
+          );
+        } else if (result.motivo === 'expirado') {
+          setVerifyErrorMessage('Esse código expirou. Toque em "Reenviar código" pra pedir um novo.');
+        } else if (result.motivo === 'tentativas_excedidas') {
+          setVerifyErrorMessage('Muitas tentativas erradas. Toque em "Reenviar código" pra pedir um novo.');
+        } else {
+          setVerifyErrorMessage('Não foi possível confirmar o código. Tente novamente.');
+        }
+        setDigits(['', '', '', '', '', '']);
+        codeInputRefs.current[0]?.focus();
+      } catch (err) {
+        setVerifyErrorMessage(
+          err instanceof Error ? err.message : 'Não foi possível confirmar o código. Tente novamente.'
+        );
+      } finally {
+        setIsVerifying(false);
+      }
+    },
+    [profileId, navigation, targetRoute]
+  );
 
   const handleChangeDigit = (text: string, index: number) => {
     const sanitized = text.replace(/[^0-9]/g, '').slice(-1);
@@ -3116,6 +3236,11 @@ function TwoFactorVerificationScreen({ navigation }: ScreenProps<'TwoFactorVerif
     setDigits((current) => {
       const next = [...current];
       next[index] = sanitized;
+
+      if (sanitized && index === next.length - 1 && next.every((digit) => digit.length === 1)) {
+        handleVerify(next.join(''));
+      }
+
       return next;
     });
 
@@ -3130,12 +3255,6 @@ function TwoFactorVerificationScreen({ navigation }: ScreenProps<'TwoFactorVerif
     }
   };
 
-  const handleResendCode = () => {
-    setDigits(['', '', '', '', '', '']);
-    setAutoFilled(false);
-    codeInputRefs.current[0]?.focus();
-  };
-
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <StatusBar style="dark" />
@@ -3146,8 +3265,9 @@ function TwoFactorVerificationScreen({ navigation }: ScreenProps<'TwoFactorVerif
           </View>
           <Text style={styles.twoFactorTitle}>Verificação em duas etapas</Text>
           <Text style={styles.twoFactorSubtitle}>
-            Enviamos um código de 6 dígitos para{'\n'}
-            {verificationEmail}
+            {isSending && !destinoEmail
+              ? 'Enviando o código...'
+              : `Enviamos um código de 6 dígitos para${'\n'}${destinoEmail ?? 'seu e-mail'}`}
           </Text>
         </View>
 
@@ -3163,35 +3283,45 @@ function TwoFactorVerificationScreen({ navigation }: ScreenProps<'TwoFactorVerif
               onChangeText={(text) => handleChangeDigit(text, index)}
               onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
               keyboardType="number-pad"
+              textContentType="oneTimeCode"
+              autoComplete="sms-otp"
               maxLength={1}
               textAlign="center"
+              editable={!isSending && !isVerifying}
             />
           ))}
         </View>
 
         <View style={styles.twoFactorStatusRow}>
-          {autoFilled ? (
-            <>
-              <Feather name="check-circle" size={14} color="#18955A" />
-              <Text style={styles.twoFactorStatusTextSuccess}>
-                Código preenchido automaticamente pela notificação
-              </Text>
-            </>
+          {isVerifying ? (
+            <Text style={styles.twoFactorStatusText}>Conferindo código...</Text>
+          ) : verifyErrorMessage ? (
+            <Text style={[styles.twoFactorStatusText, { color: '#E6213D' }]}>{verifyErrorMessage}</Text>
+          ) : sendErrorMessage ? (
+            <Text style={[styles.twoFactorStatusText, { color: '#E6213D' }]}>{sendErrorMessage}</Text>
+          ) : isSending ? (
+            <Text style={styles.twoFactorStatusText}>Enviando código...</Text>
           ) : (
-            <Text style={styles.twoFactorStatusText}>Aguardando o código chegar no seu e-mail...</Text>
+            <Text style={styles.twoFactorStatusText}>Digite o código que chegou no seu e-mail.</Text>
           )}
         </View>
 
         <Pressable
-          style={[styles.primaryButton, !isCodeComplete ? styles.trainingDisabledButton : null]}
-          disabled={!isCodeComplete}
-          onPress={() => navigation.replace(dashboardRoute)}
+          style={[styles.primaryButton, !isCodeComplete || isVerifying ? styles.trainingDisabledButton : null]}
+          disabled={!isCodeComplete || isVerifying}
+          onPress={() => handleVerify(digits.join(''))}
         >
-          <Text style={styles.primaryButtonText}>Confirmar código</Text>
+          <Text style={styles.primaryButtonText}>{isVerifying ? 'Confirmando...' : 'Confirmar código'}</Text>
         </Pressable>
 
-        <Pressable style={styles.twoFactorResendButton} onPress={handleResendCode}>
-          <Text style={styles.twoFactorResendText}>Não recebeu? Reenviar código</Text>
+        <Pressable
+          style={[styles.twoFactorResendButton, resendCooldown > 0 || isSending ? { opacity: 0.5 } : null]}
+          onPress={handleSendCode}
+          disabled={resendCooldown > 0 || isSending}
+        >
+          <Text style={styles.twoFactorResendText}>
+            {resendCooldown > 0 ? `Reenviar código (${resendCooldown}s)` : 'Não recebeu? Reenviar código'}
+          </Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
