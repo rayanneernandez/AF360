@@ -29,6 +29,9 @@ import {
   rhUser,
   rhUserInitials,
   AuthIdentityContext,
+  ColaboradorPerfilContext,
+  buildColaboradorProfileSummary,
+  getInitials,
   NotificationRoutineFormModal,
   TemplateFormModal,
   notificationAudienceOptions,
@@ -1950,6 +1953,10 @@ function DemissoesDetailModal({ visible, onClose }: { visible: boolean; onClose:
 // ---------- Dashboard ----------
 
 export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const { perfil } = useContext(ColaboradorPerfilContext);
+  const greetingFirstName = (perfil?.nome_completo || identity?.fullName || '').trim().split(' ')[0] || 'você';
+
   const monthYearLabel = useMemo(() => {
     const monthNames = [
       'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -2030,7 +2037,7 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <LinearGradient colors={['#1B6E3A', '#2A9D51']} style={rhStyles.heroCard}>
-          <Text style={rhStyles.heroGreeting}>Bom dia, {rhUser.fullName.split(' ')[0]}</Text>
+          <Text style={rhStyles.heroGreeting}>Bom dia, {greetingFirstName}</Text>
           <Text style={rhStyles.heroTitle}>Dashboard de RH</Text>
           <Text style={rhStyles.heroSubtitle}>KPIs de pessoas · {monthYearLabel}</Text>
         </LinearGradient>
@@ -2263,48 +2270,60 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
 
 export function RHProfileScreen({ navigation }: ScreenProps<'RHProfile'>) {
   const { identity } = useContext(AuthIdentityContext);
+  const { perfil, isLoading, errorMessage } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
+  const colaboradorId = identity?.colaboradorId ?? null;
 
-  const rhProfileFields = [
-    { label: 'Cargo', value: rhUser.role },
-    { label: 'Área', value: rhUser.area },
-    { label: 'E-mail', value: rhUser.email },
-    { label: 'Telefone', value: rhUser.phone },
-    { label: 'Acesso', value: rhUser.accessLabel },
-  ];
+  const displayName = perfil?.nome_completo || identity?.fullName || '—';
+  const displayRoleAndUnit =
+    [perfil?.cargo, perfil?.posto_trabalho].filter((part): part is string => Boolean(part)).join(' · ') ||
+    'Recursos Humanos';
+  const initials = getInitials(perfil?.nome_completo || identity?.fullName || 'RH');
+  const rhProfileFields = buildColaboradorProfileSummary(perfil, identity);
 
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.topBarContainer}>
-        <TopBar initials={rhUserInitials} variant="rh" />
+        <TopBar initials={initials} variant="rh" />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <LinearGradient colors={['#1B6E3A', '#2A9D51']} style={styles.directorProfileHero}>
           <View style={styles.directorProfileBadge}>
-            <Text style={styles.directorProfileBadgeText}>{rhUserInitials}</Text>
+            <Text style={styles.directorProfileBadgeText}>{initials}</Text>
           </View>
           <View>
-            <Text style={styles.directorProfileName}>{rhUser.fullName}</Text>
-            <Text style={styles.directorProfileRole}>{rhUser.roleAndUnit}</Text>
+            <Text style={styles.directorProfileName}>{displayName}</Text>
+            <Text style={styles.directorProfileRole}>{displayRoleAndUnit}</Text>
           </View>
         </LinearGradient>
 
-        <View style={styles.directorProfileCard}>
-          {rhProfileFields.map((item, index) => (
-            <View
-              key={item.label}
-              style={[
-                styles.directorProfileRow,
-                index < rhProfileFields.length - 1 ? styles.directorProfileRowBorder : null,
-              ]}
-            >
-              <Text style={styles.directorProfileLabel}>{item.label}</Text>
-              <Text style={styles.directorProfileValue}>{item.value}</Text>
-            </View>
-          ))}
-        </View>
+        {!colaboradorId ? (
+          <Text style={styles.conversaEmptyText}>
+            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar seu perfil
+            completo.
+          </Text>
+        ) : isLoading && !perfil ? (
+          <Text style={styles.conversaEmptyText}>Carregando seu perfil...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : (
+          <View style={styles.directorProfileCard}>
+            {rhProfileFields.map((item, index) => (
+              <View
+                key={item.label}
+                style={[
+                  styles.directorProfileRow,
+                  index < rhProfileFields.length - 1 ? styles.directorProfileRowBorder : null,
+                ]}
+              >
+                <Text style={styles.directorProfileLabel}>{item.label}</Text>
+                <Text style={styles.directorProfileValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {hasMultiplePanels ? (
           <Pressable style={styles.switchPanelButton} onPress={() => navigation.replace('SelectPanel')}>

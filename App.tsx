@@ -863,7 +863,7 @@ const ColaboradorNotificationsContext = createContext<{
 // mesma chamada. Fica null quando identity.colaboradorId é null (usuário sem
 // vínculo no RH) — nesse caso as telas mostram o estado vazio, nunca dado
 // fabricado.
-const ColaboradorPerfilContext = createContext<{
+export const ColaboradorPerfilContext = createContext<{
   perfil: RhColaboradorRaw | null;
   isLoading: boolean;
   errorMessage: string | null;
@@ -6210,14 +6210,20 @@ function formatDiaMesBR(raw: unknown): string {
   return `${day}/${month}`;
 }
 
-function buildColaboradorProfileSummary(row: RhColaboradorRaw | null): ProfileField[] {
+export function buildColaboradorProfileSummary(
+  row: RhColaboradorRaw | null,
+  identity?: AuthIdentity | null
+): ProfileField[] {
   const f = profileFieldValue;
   return [
     { label: 'Matrícula', value: f(row?.matricula) },
     { label: 'Cargo', value: f(row?.cargo) },
     { label: 'Unidade', value: f(row?.posto_trabalho) },
     { label: 'Admissão', value: formatDateOnlyBR(row?.data_admissao) },
-    { label: 'E-mail', value: f(row?.email_corporativo ?? row?.email_pessoal) },
+    // Se o cadastro do RH não tiver e-mail preenchido, cai pro e-mail usado
+    // no login (identity.email) — sempre existe, já que é com ele que a
+    // pessoa entrou no app.
+    { label: 'E-mail', value: f(row?.email_corporativo ?? row?.email_pessoal ?? identity?.email) },
     { label: 'Telefone', value: f(row?.telefone ?? row?.celular) },
   ];
 }
@@ -6312,7 +6318,7 @@ function ProfileScreen({ navigation }: ScreenProps<'Profile'>) {
   const displayRoleAndUnit =
     [perfil?.cargo, perfil?.posto_trabalho].filter((part): part is string => Boolean(part)).join(' · ') || '—';
   const initials = getInitials(perfil?.nome_completo || identity?.fullName || 'Colaborador');
-  const summaryFields = buildColaboradorProfileSummary(perfil);
+  const summaryFields = buildColaboradorProfileSummary(perfil, identity);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -7125,7 +7131,7 @@ function DirectorProfileScreen({ navigation }: ScreenProps<'DirectorProfile'>) {
   const displayRoleAndUnit =
     [perfil?.cargo, perfil?.posto_trabalho].filter((part): part is string => Boolean(part)).join(' · ') || '—';
   const initials = getInitials(perfil?.nome_completo || identity?.fullName || 'Diretoria');
-  const directorProfileFields = buildColaboradorProfileSummary(perfil);
+  const directorProfileFields = buildColaboradorProfileSummary(perfil, identity);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -11749,7 +11755,7 @@ function getUnlockedRealLessonIds(lessonIds: string[], progress?: TrainingCourse
   return Array.from(unlockedIds);
 }
 
-function getInitials(fullName: string) {
+export function getInitials(fullName: string) {
   return fullName
     .split(' ')
     .filter(Boolean)
