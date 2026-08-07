@@ -6981,17 +6981,24 @@ function DirectorDashboardScreen({ navigation }: ScreenProps<'DirectorDashboard'
 
   const postos = useDiretoriaPostos();
 
-  // "hoje" — mesmo recurso=rede usado na tela Vendas, só que fixo no dia
-  // atual (o card acima diz "Faturamento total · hoje").
-  const todayFiltros = useMemo(() => {
-    const hoje = toApiDateOnly(new Date());
-    return { de: hoje, ate: hoje };
-  }, []);
+  // Sem de/ate, a API devolve o mês corrente até a ÚLTIMA DATA COM
+  // MOVIMENTO (não necessariamente o dia calendário de hoje — a coleta de
+  // vendas pode atrasar). Usamos essa 1ª chamada só pra descobrir qual é
+  // essa data real...
+  const { periodo: redePeriodoMes } = useDiretoriaPainelRecurso('rede', {});
+  const ultimaDataComMovimento = redePeriodoMes?.ate ?? null;
 
-  const { dados: rede, periodo: redePeriodo } = useDiretoriaPainelRecurso('rede', todayFiltros);
+  // ...e então buscamos de novo, só esse dia, pra ter o total "do dia" de
+  // verdade (em vez de forçar a data de calendário de hoje, que pode vir
+  // zerada se o flash do dia ainda não foi processado).
+  const diaFiltros = useMemo(
+    () => (ultimaDataComMovimento ? { de: ultimaDataComMovimento, ate: ultimaDataComMovimento } : {}),
+    [ultimaDataComMovimento]
+  );
+  const { dados: rede, periodo: redePeriodo } = useDiretoriaPainelRecurso('rede', diaFiltros);
   // alertasCusto não é filtrado por período (é por data de entrada de
   // compra) — mesmo recurso=margem usado na tela Margem.
-  const { dados: margemHoje } = useDiretoriaPainelRecurso('margem', todayFiltros);
+  const { dados: margemHoje } = useDiretoriaPainelRecurso('margem', diaFiltros);
 
   const redeTotal = (rede as any)?.total ?? null;
   const segmentos = (rede as any)?.segmentos ?? null;
@@ -7006,9 +7013,11 @@ function DirectorDashboardScreen({ navigation }: ScreenProps<'DirectorDashboard'
   const alertasCriticos = alertasCusto.filter((item: any) => pickStr(item, ['status']) === 'CRITICO');
   const primeiroAlertaCritico = alertasCriticos[0] ?? null;
 
-  const flashDateLabel = redePeriodo?.de
-    ? formatDateBR(new Date(`${redePeriodo.de}T00:00:00`))
+  const flashDateLabel = redePeriodo?.ate
+    ? formatDateBR(new Date(`${redePeriodo.ate}T00:00:00`))
     : formatDateBR(new Date());
+  const isFlashHoje = redePeriodo?.ate === toApiDateOnly(new Date());
+  const faturamentoCardLabel = `Faturamento total · ${isFlashHoje ? 'hoje' : `flash de ${flashDateLabel}`}`;
 
   const managementPanels: Array<{
     id: string;
@@ -7103,7 +7112,7 @@ function DirectorDashboardScreen({ navigation }: ScreenProps<'DirectorDashboard'
         </LinearGradient>
 
         <View style={styles.directorTotalCard}>
-          <Text style={styles.directorTotalLabel}>Faturamento total · hoje</Text>
+          <Text style={styles.directorTotalLabel}>{faturamentoCardLabel}</Text>
           <Text style={styles.directorTotalValue}>
             {faturamentoTotal !== null ? fmtBRLOrDash(faturamentoTotal) : 'Sem venda lançada hoje ainda'}
           </Text>
