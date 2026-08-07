@@ -2669,9 +2669,10 @@ export async function fetchDiretoriaPainel<T = any>(
 
 // --- Diretoria: Mapa de Processos (gst_processos + gst_processo_etapas) —
 // endpoint confirmado pela Lovable em 04/08/2026 (/api/public/internal/
-// gst-processos, via proxy /api/diretoria-processos). Só leitura — a
-// Diretoria continua criando/editando os fluxos pelo site (RLS de escrita é
-// só master). Não vem fluxograma_json de propósito.
+// gst-processos, via proxy /api/diretoria-processos). Não vem fluxograma_json
+// na leitura de propósito. Escrita confirmada em 07/08/2026: o endpoint
+// interno (x-internal-secret + x-actor-id validado como master) permite
+// criar/editar/excluir mesmo com a RLS continuando master-only.
 
 export type DiretoriaProcessoStatus = 'rascunho' | 'ativo' | 'em_revisao' | 'descontinuado';
 
@@ -2724,6 +2725,53 @@ export async function fetchDiretoriaProcessoDetalhe(
 ): Promise<{ processo: DiretoriaProcessoRow | null; etapas: DiretoriaProcessoEtapaRow[] }> {
   const json = await api.get(withActorId(`/api/diretoria-processos?id=${encodeURIComponent(id)}`, actorId));
   return { processo: json.processo ?? null, etapas: json.etapas ?? [] };
+}
+
+export type DiretoriaProcessoEtapaWrite = {
+  ordem: number;
+  titulo: string;
+  descricao?: string;
+  responsavel_id?: string | null;
+  prazo_dias?: number | null;
+};
+
+export type DiretoriaProcessoBlocoWrite = {
+  tipo: 'inicio' | 'processo' | 'decisao' | 'fim';
+  rotulo: string;
+};
+
+export type DiretoriaProcessoWriteBody = {
+  nome?: string;
+  descricao?: string;
+  departamento?: string;
+  modulo_vinculado?: string;
+  responsavel_id?: string | null;
+  status?: DiretoriaProcessoStatus;
+  versao?: number;
+  tags?: string[];
+  documentacao?: string;
+  etapas?: DiretoriaProcessoEtapaWrite[];
+  blocos?: DiretoriaProcessoBlocoWrite[];
+};
+
+export async function createDiretoriaProcesso(
+  body: DiretoriaProcessoWriteBody,
+  actorId?: string | null
+): Promise<{ id: string }> {
+  const json = await api.post(withActorId('/api/diretoria-processos', actorId), body);
+  return { id: json.id };
+}
+
+export async function updateDiretoriaProcesso(
+  id: string,
+  body: DiretoriaProcessoWriteBody,
+  actorId?: string | null
+): Promise<void> {
+  await api.patch(withActorId(`/api/diretoria-processos?id=${encodeURIComponent(id)}`, actorId), body);
+}
+
+export async function deleteDiretoriaProcesso(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/diretoria-processos?id=${encodeURIComponent(id)}`, actorId));
 }
 
 // --- Admin: Usuários (profiles + roles + rh_colaboradores/empresas) ---

@@ -139,8 +139,13 @@ import {
   type DiretoriaPainelRecurso,
   fetchDiretoriaProcessos,
   fetchDiretoriaProcessoDetalhe,
+  createDiretoriaProcesso,
+  updateDiretoriaProcesso,
+  deleteDiretoriaProcesso,
   type DiretoriaProcessoRow,
   type DiretoriaProcessoEtapaRow,
+  type DiretoriaProcessoStatus,
+  type DiretoriaProcessoWriteBody,
 } from './api';
 
 export type RootStackParamList = {
@@ -529,7 +534,7 @@ type ProcessMapItem = {
   id: string;
   title: string;
   description: string;
-  status: 'published' | 'review' | 'draft';
+  status: DiretoriaProcessoStatus;
   statusLabel: string;
   department: string;
   linkedModule: string;
@@ -2061,9 +2066,10 @@ const processModuleOptions = [
 ];
 
 const processStatusOptions: Array<{ value: ProcessMapItem['status']; label: string }> = [
-  { value: 'draft', label: 'Rascunho' },
-  { value: 'review', label: 'Revisão' },
-  { value: 'published', label: 'Publicado' },
+  { value: 'rascunho', label: 'Rascunho' },
+  { value: 'em_revisao', label: 'Em revisão' },
+  { value: 'ativo', label: 'Ativo' },
+  { value: 'descontinuado', label: 'Descontinuado' },
 ];
 
 const processFlowNodeTypeMeta: Record<ProcessFlowNodeType, { label: string; color: string; tint: string }> = {
@@ -2072,178 +2078,6 @@ const processFlowNodeTypeMeta: Record<ProcessFlowNodeType, { label: string; colo
   decisao: { label: 'Decisão', color: '#B7791F', tint: '#FCF4DE' },
   fim: { label: 'Fim', color: '#E6213D', tint: '#FCE8EC' },
 };
-
-const processMapItems: ProcessMapItem[] = [
-  {
-    id: 'price-adjustment',
-    title: 'Reajuste de preços na bomba',
-    description: 'Fluxo de aprovação e disparo de preço para a rede.',
-    status: 'published',
-    statusLabel: 'Publicado',
-    department: 'Comercial',
-    linkedModule: 'Vendas',
-    owner: 'A. Ramos',
-    version: '2',
-    tags: ['preço', 'aprovação'],
-    updatedAtLabel: '28/06/2026',
-    steps: [
-      {
-        id: 'price-adjustment-1',
-        title: 'Solicitação de reajuste',
-        description: 'Comercial abre a solicitação com o novo preço sugerido.',
-        owner: 'A. Ramos',
-        deadlineDays: '1',
-      },
-      {
-        id: 'price-adjustment-2',
-        title: 'Aprovação da gerência',
-        description: '',
-        owner: '— Sem responsável —',
-        deadlineDays: '1',
-      },
-      {
-        id: 'price-adjustment-3',
-        title: 'Validação financeira',
-        description: '',
-        owner: '— Sem responsável —',
-        deadlineDays: '1',
-      },
-      {
-        id: 'price-adjustment-4',
-        title: 'Atualização na bomba',
-        description: '',
-        owner: '— Sem responsável —',
-        deadlineDays: '',
-      },
-      {
-        id: 'price-adjustment-5',
-        title: 'Comunicado à rede',
-        description: '',
-        owner: '— Sem responsável —',
-        deadlineDays: '',
-      },
-      {
-        id: 'price-adjustment-6',
-        title: 'Registro no histórico',
-        description: '',
-        owner: '— Sem responsável —',
-        deadlineDays: '',
-      },
-    ],
-    documentation:
-      '# Procedimento Operacional Padrão\n\n## Objetivo\nPadronizar o reajuste de preços na bomba.\n\n## Pré-requisitos\nAprovação da diretoria comercial.\n\n## Passo a passo\n1. Solicitar reajuste via sistema\n2. Validar com financeiro\n3. Atualizar preços na bomba\n\n## Observações\nComunicar a rede com antecedência.',
-    flow: [
-      { id: 'price-adjustment-flow-1', type: 'inicio', label: 'Início' },
-      { id: 'price-adjustment-flow-2', type: 'processo', label: 'Solicitação de reajuste' },
-      { id: 'price-adjustment-flow-3', type: 'decisao', label: 'Aprovado?' },
-      { id: 'price-adjustment-flow-4', type: 'fim', label: 'Fim' },
-    ],
-  },
-  {
-    id: 'tank-supply',
-    title: 'Abastecimento de tanques',
-    description: 'Pedido, recebimento e conferência de carga.',
-    status: 'published',
-    statusLabel: 'Publicado',
-    department: 'Operações',
-    linkedModule: 'Estoques',
-    owner: 'C. Dias',
-    version: '3',
-    tags: ['tanque', 'carga'],
-    updatedAtLabel: '30/06/2026',
-    steps: [
-      {
-        id: 'tank-supply-1',
-        title: 'Solicitação de pedido',
-        description: '',
-        owner: 'C. Dias',
-        deadlineDays: '1',
-      },
-      { id: 'tank-supply-2', title: 'Confirmação com fornecedor', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      { id: 'tank-supply-3', title: 'Agendamento da entrega', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      { id: 'tank-supply-4', title: 'Recebimento da carga', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      { id: 'tank-supply-5', title: 'Conferência de volume', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      { id: 'tank-supply-6', title: 'Lançamento no estoque', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      { id: 'tank-supply-7', title: 'Conferência fiscal', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      { id: 'tank-supply-8', title: 'Arquivamento da nota', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-    ],
-    documentation:
-      '# Procedimento Operacional Padrão\n\n## Objetivo\nGarantir o abastecimento seguro dos tanques.\n\n## Pré-requisitos\nEstoque abaixo do nível mínimo.\n\n## Passo a passo\n1. Emitir pedido de carga\n2. Confirmar agendamento\n3. Conferir volume na chegada\n\n## Observações\nRegistrar qualquer divergência de volume.',
-    flow: [
-      { id: 'tank-supply-flow-1', type: 'inicio', label: 'Início' },
-      { id: 'tank-supply-flow-2', type: 'processo', label: 'Pedido de carga' },
-      { id: 'tank-supply-flow-3', type: 'processo', label: 'Recebimento e conferência' },
-      { id: 'tank-supply-flow-4', type: 'fim', label: 'Fim' },
-    ],
-  },
-  {
-    id: 'cash-closing',
-    title: 'Fechamento de caixa diário',
-    description: 'Conferência de sangria e depósito por posto.',
-    status: 'review',
-    statusLabel: 'Revisão',
-    department: 'Financeiro',
-    linkedModule: 'Margem',
-    owner: 'M. Reis',
-    version: '1',
-    tags: ['caixa', 'financeiro'],
-    updatedAtLabel: '25/06/2026',
-    steps: [
-      {
-        id: 'cash-closing-1',
-        title: 'Conferência de sangria',
-        description: '',
-        owner: 'M. Reis',
-        deadlineDays: '1',
-      },
-      { id: 'cash-closing-2', title: 'Conciliação de cartões', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      { id: 'cash-closing-3', title: 'Conferência de depósito', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      { id: 'cash-closing-4', title: 'Registro no sistema', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      { id: 'cash-closing-5', title: 'Envio ao financeiro', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-    ],
-    documentation:
-      '# Procedimento Operacional Padrão\n\n## Objetivo\nPadronizar o fechamento de caixa diário por posto.\n\n## Pré-requisitos\nTurno encerrado.\n\n## Passo a passo\n1. Conferir sangrias\n2. Conciliar cartões e dinheiro\n3. Registrar o depósito\n\n## Observações\nDivergências devem ser reportadas no mesmo dia.',
-    flow: [
-      { id: 'cash-closing-flow-1', type: 'inicio', label: 'Início' },
-      { id: 'cash-closing-flow-2', type: 'processo', label: 'Conferência de sangria' },
-      { id: 'cash-closing-flow-3', type: 'decisao', label: 'Bateu com o sistema?' },
-      { id: 'cash-closing-flow-4', type: 'fim', label: 'Fim' },
-    ],
-  },
-  {
-    id: 'pump-maintenance',
-    title: 'Manutenção preventiva de bombas',
-    description: 'Checklist e agendamento por unidade.',
-    status: 'draft',
-    statusLabel: 'Rascunho',
-    department: 'Manutenção',
-    linkedModule: '— Nenhum —',
-    owner: 'P. Lima',
-    version: '1',
-    tags: ['manutenção'],
-    updatedAtLabel: '20/06/2026',
-    steps: [
-      {
-        id: 'pump-maintenance-1',
-        title: 'Agendamento da visita técnica',
-        description: '',
-        owner: 'P. Lima',
-        deadlineDays: '2',
-      },
-      { id: 'pump-maintenance-2', title: 'Checklist de inspeção', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      { id: 'pump-maintenance-3', title: 'Execução da manutenção', description: '', owner: '— Sem responsável —', deadlineDays: '' },
-      {
-        id: 'pump-maintenance-4',
-        title: 'Registro no histórico do equipamento',
-        description: '',
-        owner: '— Sem responsável —',
-        deadlineDays: '',
-      },
-    ],
-    documentation: '',
-    flow: [],
-  },
-];
 
 export const notificationCargoOptions = [
   'ANALISTA DE RECURSOS HUMANOS',
@@ -9247,7 +9081,7 @@ const emptyProcessForm: ProcessFormValues = {
   department: processDepartmentOptions[0],
   linkedModule: processModuleOptions[0],
   owner: '',
-  status: 'draft',
+  status: 'rascunho',
   version: '1',
   tags: [],
   steps: [],
@@ -9264,11 +9098,12 @@ function ProcessFormModal({
   visible: boolean;
   initialProcess: ProcessMapItem | null;
   onClose: () => void;
-  onSave: (process: ProcessMapItem) => void;
+  onSave: (process: ProcessMapItem) => void | Promise<void>;
 }) {
   const [activeTab, setActiveTab] = useState<'geral' | 'etapas' | 'documentacao' | 'fluxograma'>('geral');
   const [form, setForm] = useState<ProcessFormValues>(emptyProcessForm);
   const [newTagText, setNewTagText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDepartmentPickerOpen, setIsDepartmentPickerOpen] = useState(false);
   const [isModulePickerOpen, setIsModulePickerOpen] = useState(false);
   const [isStatusPickerOpen, setIsStatusPickerOpen] = useState(false);
@@ -9383,7 +9218,7 @@ function ProcessFormModal({
     }));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.title.trim()) {
       Alert.alert('Nome obrigatório', 'Informe o nome do processo antes de salvar.');
       setActiveTab('geral');
@@ -9408,6 +9243,14 @@ function ProcessFormModal({
       documentation: form.documentation,
       flow: form.flow,
     };
+
+    setIsSubmitting(true);
+    try {
+      await onSave(process);
+    } finally {
+      setIsSubmitting(false);
+    }
+    return;
 
     onSave(process);
   };
@@ -9708,15 +9551,20 @@ function ProcessFormModal({
               ) : null}
 
               <View style={styles.processFooterActionsRow}>
-                <Pressable style={styles.unrecognizedActionButton} onPress={onClose}>
+                <Pressable style={styles.unrecognizedActionButton} onPress={onClose} disabled={isSubmitting}>
                   <Text style={styles.unrecognizedActionButtonText}>Cancelar</Text>
                 </Pressable>
                 <Pressable
-                  style={[styles.unrecognizedActionButton, styles.processSubmitButton]}
+                  style={[
+                    styles.unrecognizedActionButton,
+                    styles.processSubmitButton,
+                    isSubmitting ? { opacity: 0.6 } : null,
+                  ]}
                   onPress={handleSubmit}
+                  disabled={isSubmitting}
                 >
                   <Text style={[styles.unrecognizedActionButtonText, styles.processSubmitButtonText]}>
-                    {initialProcess ? 'Salvar alterações' : 'Criar processo'}
+                    {isSubmitting ? 'Salvando...' : initialProcess ? 'Salvar alterações' : 'Criar processo'}
                   </Text>
                 </Pressable>
               </View>
@@ -9933,15 +9781,7 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  const handleSaveNewProcess = () => {
-    setIsCreateModalOpen(false);
-    Alert.alert(
-      'Criação ainda não disponível',
-      'A escrita de processos pelo app depende de confirmação da Lovable sobre permissão do perfil Diretoria (hoje só o perfil master pode criar/editar). Assim que confirmado, esse botão passa a salvar de verdade. Por enquanto, continue criando pelo site.'
-    );
-  };
-
-  useEffect(() => {
+  const loadProcessos = useCallback(() => {
     let isActive = true;
     setIsLoading(true);
     setErrorMessage(null);
@@ -9962,6 +9802,53 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
       isActive = false;
     };
   }, [identity?.profileId]);
+
+  const handleSaveNewProcess = async (process: ProcessMapItem) => {
+    const body: DiretoriaProcessoWriteBody = {
+      nome: process.title,
+      descricao: process.description || undefined,
+      departamento: process.department === processDepartmentOptions[0] ? undefined : process.department,
+      modulo_vinculado: process.linkedModule === processModuleOptions[0] ? undefined : process.linkedModule,
+      // responsavel_id precisa ser o uuid de um profile (FK), mas o app hoje só
+      // coleta o nome do responsável em texto livre — por isso não é enviado
+      // ainda. O texto digitado no campo "Responsável" não é salvo no backend
+      // até existir um seletor de perfis reais no app.
+      status: process.status,
+      versao: Number(process.version) || 1,
+      tags: process.tags,
+      documentacao: process.documentation || undefined,
+      etapas: process.steps
+        .filter((step) => step.title.trim().length > 0)
+        .map((step, index) => ({
+          ordem: index + 1,
+          titulo: step.title.trim(),
+          descricao: step.description || undefined,
+          responsavel_id: null,
+          prazo_dias: step.deadlineDays ? Number(step.deadlineDays) || null : null,
+        })),
+      blocos: process.flow.map((node) => ({ tipo: node.type, rotulo: node.label })),
+    };
+
+    try {
+      await createDiretoriaProcesso(body, identity?.profileId);
+      setIsCreateModalOpen(false);
+      loadProcessos();
+      Alert.alert(
+        'Processo criado',
+        'O processo foi salvo. O responsável digitado ainda não é persistido — assim que houver um seletor de perfis reais, isso será ligado.'
+      );
+    } catch (err) {
+      Alert.alert(
+        'Não foi possível criar o processo',
+        err instanceof Error ? err.message : 'Tente novamente em instantes.'
+      );
+    }
+  };
+
+  useEffect(() => {
+    const cleanup = loadProcessos();
+    return cleanup;
+  }, [loadProcessos]);
 
   const processes = useMemo(
     () =>
