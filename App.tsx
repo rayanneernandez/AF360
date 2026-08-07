@@ -2048,12 +2048,14 @@ const gnvRiskStations: GnvRiskStation[] = [
 
 const processDepartmentOptions = [
   '— Não definida —',
-  'Comercial',
-  'Operações',
-  'Financeiro',
-  'Manutenção',
   'RH',
+  'Financeiro',
+  'Operação',
+  'Comercial',
   'TI',
+  'Diretoria',
+  'Marketing',
+  'Outro',
 ];
 
 const processModuleOptions = [
@@ -9286,7 +9288,7 @@ function ProcessFormModal({
                     style={[styles.processTab, isActive ? styles.processTabActive : null]}
                     onPress={() => setActiveTab(tab.id)}
                   >
-                    <Feather name={tab.icon} size={13} color={isActive ? '#E6213D' : '#5E667D'} />
+                    <Feather name={tab.icon} size={11} color={isActive ? '#E6213D' : '#5E667D'} />
                     <Text
                       style={[styles.processTabText, isActive ? styles.processTabTextActive : null]}
                       numberOfLines={1}
@@ -9868,11 +9870,16 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
 
   const areaFilterOptions = [
     PROCESS_ALL_AREAS_LABEL,
-    ...Array.from(new Set(processes.map((item) => item.department))),
+    ...Array.from(
+      new Set([
+        ...processDepartmentOptions.slice(1),
+        ...processes.map((item) => item.department),
+      ])
+    ),
   ];
   const statusFilterOptions = [
     PROCESS_ALL_STATUS_LABEL,
-    ...Array.from(new Set(processes.map((item) => item.statusLabel))),
+    ...processStatusOptions.map((option) => option.label),
   ];
   const ownerFilterOptions = [
     PROCESS_ALL_OWNERS_LABEL,
@@ -16288,17 +16295,19 @@ export const styles = StyleSheet.create({
   },
   processTabsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    flexWrap: 'nowrap',
+    gap: 4,
     marginBottom: 16,
   },
   processTab: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 999,
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+    borderRadius: 10,
     backgroundColor: '#F1F2F7',
   },
   processTabActive: {
@@ -16306,7 +16315,7 @@ export const styles = StyleSheet.create({
   },
   processTabText: {
     color: '#5E667D',
-    fontSize: 12,
+    fontSize: 10.5,
     fontWeight: '700',
   },
   processTabTextActive: {
