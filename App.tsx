@@ -9580,72 +9580,76 @@ function ProcessFormModal({
                 </Pressable>
               </View>
             </ScrollView>
+
+            <SimpleListModal
+              visible={isDepartmentPickerOpen}
+              title="Área / Departamento"
+              options={processDepartmentOptions}
+              selectedValue={form.department}
+              onSelect={(value) => setForm((current) => ({ ...current, department: value }))}
+              onClose={() => setIsDepartmentPickerOpen(false)}
+              inline
+            />
+            <SimpleListModal
+              visible={isModulePickerOpen}
+              title="Módulo vinculado"
+              options={moduloPickerOptions}
+              selectedValue={form.linkedModule}
+              onSelect={(value) => setForm((current) => ({ ...current, linkedModule: value }))}
+              onClose={() => setIsModulePickerOpen(false)}
+              inline
+            />
+            <SimpleListModal
+              visible={isOwnerPickerOpen}
+              title="Responsável"
+              options={responsavelPickerOptions}
+              selectedValue={form.owner || '— Sem responsável —'}
+              onSelect={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  owner: value === '— Sem responsável —' ? '' : value,
+                }))
+              }
+              onClose={() => setIsOwnerPickerOpen(false)}
+              inline
+            />
+            <SimpleListModal
+              visible={editingStepOwnerId !== null}
+              title="Responsável da etapa"
+              options={responsavelPickerOptions}
+              selectedValue={
+                (editingStepOwnerId
+                  ? form.steps.find((step) => step.id === editingStepOwnerId)?.owner
+                  : '') || '— Sem responsável —'
+              }
+              onSelect={(value) => {
+                if (editingStepOwnerId) {
+                  handleUpdateStep(editingStepOwnerId, {
+                    owner: value === '— Sem responsável —' ? '' : value,
+                  });
+                }
+              }}
+              onClose={() => setEditingStepOwnerId(null)}
+              inline
+            />
+            <SimpleListModal
+              visible={isStatusPickerOpen}
+              title="Status"
+              options={processStatusOptions.map((option) => option.label)}
+              selectedValue={statusLabel}
+              onSelect={(label) => {
+                const match = processStatusOptions.find((option) => option.label === label);
+
+                if (match) {
+                  setForm((current) => ({ ...current, status: match.value }));
+                }
+              }}
+              onClose={() => setIsStatusPickerOpen(false)}
+              inline
+            />
           </View>
         </View>
       </Modal>
-
-      <SimpleListModal
-        visible={isDepartmentPickerOpen}
-        title="Área / Departamento"
-        options={processDepartmentOptions}
-        selectedValue={form.department}
-        onSelect={(value) => setForm((current) => ({ ...current, department: value }))}
-        onClose={() => setIsDepartmentPickerOpen(false)}
-      />
-      <SimpleListModal
-        visible={isModulePickerOpen}
-        title="Módulo vinculado"
-        options={moduloPickerOptions}
-        selectedValue={form.linkedModule}
-        onSelect={(value) => setForm((current) => ({ ...current, linkedModule: value }))}
-        onClose={() => setIsModulePickerOpen(false)}
-      />
-      <SimpleListModal
-        visible={isOwnerPickerOpen}
-        title="Responsável"
-        options={responsavelPickerOptions}
-        selectedValue={form.owner || '— Sem responsável —'}
-        onSelect={(value) =>
-          setForm((current) => ({
-            ...current,
-            owner: value === '— Sem responsável —' ? '' : value,
-          }))
-        }
-        onClose={() => setIsOwnerPickerOpen(false)}
-      />
-      <SimpleListModal
-        visible={editingStepOwnerId !== null}
-        title="Responsável da etapa"
-        options={responsavelPickerOptions}
-        selectedValue={
-          (editingStepOwnerId
-            ? form.steps.find((step) => step.id === editingStepOwnerId)?.owner
-            : '') || '— Sem responsável —'
-        }
-        onSelect={(value) => {
-          if (editingStepOwnerId) {
-            handleUpdateStep(editingStepOwnerId, {
-              owner: value === '— Sem responsável —' ? '' : value,
-            });
-          }
-        }}
-        onClose={() => setEditingStepOwnerId(null)}
-        inline
-      />
-      <SimpleListModal
-        visible={isStatusPickerOpen}
-        title="Status"
-        options={processStatusOptions.map((option) => option.label)}
-        selectedValue={statusLabel}
-        onSelect={(label) => {
-          const match = processStatusOptions.find((option) => option.label === label);
-
-          if (match) {
-            setForm((current) => ({ ...current, status: match.value }));
-          }
-        }}
-        onClose={() => setIsStatusPickerOpen(false)}
-      />
     </>
   );
 }
