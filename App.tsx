@@ -6975,6 +6975,41 @@ function SecuritySettingsScreen({ navigation }: ScreenProps<'SecuritySettings'>)
 }
 
 function DirectorDashboardScreen({ navigation }: ScreenProps<'DirectorDashboard'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const { perfil } = useContext(ColaboradorPerfilContext);
+  const greetingFirstName = (perfil?.nome_completo || identity?.fullName || '').trim().split(' ')[0] || 'você';
+
+  const postos = useDiretoriaPostos();
+
+  // "hoje" — mesmo recurso=rede usado na tela Vendas, só que fixo no dia
+  // atual (o card acima diz "Faturamento total · hoje").
+  const todayFiltros = useMemo(() => {
+    const hoje = toApiDateOnly(new Date());
+    return { de: hoje, ate: hoje };
+  }, []);
+
+  const { dados: rede, periodo: redePeriodo } = useDiretoriaPainelRecurso('rede', todayFiltros);
+  // alertasCusto não é filtrado por período (é por data de entrada de
+  // compra) — mesmo recurso=margem usado na tela Margem.
+  const { dados: margemHoje } = useDiretoriaPainelRecurso('margem', todayFiltros);
+
+  const redeTotal = (rede as any)?.total ?? null;
+  const segmentos = (rede as any)?.segmentos ?? null;
+  const combLiq = segmentos?.COMB_LIQ ?? null;
+  const gnv = segmentos?.GNV ?? null;
+
+  const faturamentoTotal = pickNum(redeTotal, ['faturamento']);
+  const margemTotalPct = pickNum(redeTotal, ['margem_pct']);
+  const marginTone = margemTotalPct !== null ? getMarginTone(margemTotalPct) : null;
+
+  const alertasCusto = pickArr(margemHoje, ['alertasCusto']);
+  const alertasCriticos = alertasCusto.filter((item: any) => pickStr(item, ['status']) === 'CRITICO');
+  const primeiroAlertaCritico = alertasCriticos[0] ?? null;
+
+  const flashDateLabel = redePeriodo?.de
+    ? formatDateBR(new Date(`${redePeriodo.de}T00:00:00`))
+    : formatDateBR(new Date());
+
   const managementPanels: Array<{
     id: string;
     route: DirectorSideMenuRoute;
@@ -7058,48 +7093,71 @@ function DirectorDashboardScreen({ navigation }: ScreenProps<'DirectorDashboard'
             style={styles.panelWatermarkLogo}
             resizeMode="contain"
           />
-          <Text style={styles.directorHeroGreeting}>Bom dia, {directorUserFirstName}</Text>
+          <Text style={styles.directorHeroGreeting}>Bom dia, {greetingFirstName}</Text>
           <Text style={styles.directorHeroTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.9}>
             Visão da rede
           </Text>
-          <Text style={styles.directorHeroSubtitle}>Rede completa · 56 postos · Flash de 01/07/2026</Text>
+          <Text style={styles.directorHeroSubtitle}>
+            Rede completa · {postos.length} posto{postos.length === 1 ? '' : 's'} · Flash de {flashDateLabel}
+          </Text>
         </LinearGradient>
 
         <View style={styles.directorTotalCard}>
           <Text style={styles.directorTotalLabel}>Faturamento total · hoje</Text>
-          <Text style={styles.directorTotalValue}>R$ 2.531.027</Text>
-          <View style={styles.directorTotalMetaRow}>
-            <View style={styles.directorTotalMetaBadge}>
-              <Feather name="arrow-up-right" size={13} color="#18955A" />
-              <Text style={styles.directorTotalMetaBadgeText}>Margem 19,4%</Text>
+          <Text style={styles.directorTotalValue}>
+            {faturamentoTotal !== null ? fmtBRLOrDash(faturamentoTotal) : 'Sem venda lançada hoje ainda'}
+          </Text>
+          {marginTone ? (
+            <View style={styles.directorTotalMetaRow}>
+              <View style={styles.directorTotalMetaBadge}>
+                <Feather
+                  name={margemTotalPct !== null && margemTotalPct < MARGIN_WARNING_THRESHOLD ? 'arrow-down-right' : 'arrow-up-right'}
+                  size={13}
+                  color={marginTone.color}
+                />
+                <Text style={[styles.directorTotalMetaBadgeText, { color: marginTone.color }]}>
+                  {marginTone.label}
+                </Text>
+              </View>
+              <Text style={styles.directorTotalMetaNote}>vs. meta {MARGIN_WARNING_THRESHOLD}%</Text>
             </View>
-            <Text style={styles.directorTotalMetaNote}>vs. meta 18%</Text>
-          </View>
+          ) : null}
         </View>
 
         <View style={styles.directorSplitRow}>
           <View style={styles.directorSplitCard}>
             <Text style={styles.directorSplitLabel}>Combustíveis líq.</Text>
-            <Text style={styles.directorSplitValue}>R$ 1,66 mi</Text>
-            <Text style={styles.directorSplitMeta}>266.126 L · 17,6%</Text>
+            <Text style={styles.directorSplitValue}>{fmtBRLOrDash(pickNum(combLiq, ['faturamento']))}</Text>
+            <Text style={styles.directorSplitMeta}>
+              {fmtNumOrDash(pickNum(combLiq, ['volume']), ' L')} · {fmtPercentOrDash(pickNum(combLiq, ['margem_pct']))}
+            </Text>
           </View>
           <View style={styles.directorSplitCard}>
             <Text style={styles.directorSplitLabel}>GNV</Text>
-            <Text style={styles.directorSplitValue}>R$ 820 mil</Text>
-            <Text style={styles.directorSplitMeta}>192.354 m³ · 20,9%</Text>
+            <Text style={styles.directorSplitValue}>{fmtBRLOrDash(pickNum(gnv, ['faturamento']))}</Text>
+            <Text style={styles.directorSplitMeta}>
+              {fmtNumOrDash(pickNum(gnv, ['volume']), ' m³')} · {fmtPercentOrDash(pickNum(gnv, ['margem_pct']))}
+            </Text>
           </View>
         </View>
 
-        <Pressable style={styles.directorAlertBanner} onPress={() => navigation.navigate('Margin')}>
-          <Feather name="alert-triangle" size={18} color="#E6213D" />
-          <View style={styles.directorAlertTextBlock}>
-            <Text style={styles.directorAlertTitle}>1 alerta de custo crítico</Text>
-            <Text style={styles.directorAlertSubtitle}>Posto Boa Viagem · gasolina aditivada</Text>
-          </View>
-          <View style={styles.directorAlertButton}>
-            <Text style={styles.directorAlertButtonText}>Ver</Text>
-          </View>
-        </Pressable>
+        {alertasCriticos.length > 0 ? (
+          <Pressable style={styles.directorAlertBanner} onPress={() => navigation.navigate('Margin')}>
+            <Feather name="alert-triangle" size={18} color="#E6213D" />
+            <View style={styles.directorAlertTextBlock}>
+              <Text style={styles.directorAlertTitle}>
+                {alertasCriticos.length} alerta{alertasCriticos.length === 1 ? '' : 's'} de custo crítico
+              </Text>
+              <Text style={styles.directorAlertSubtitle}>
+                {pickStr(primeiroAlertaCritico, ['posto_nome']) ?? '—'} ·{' '}
+                {pickStr(primeiroAlertaCritico, ['produto_nome']) ?? '—'}
+              </Text>
+            </View>
+            <View style={styles.directorAlertButton}>
+              <Text style={styles.directorAlertButtonText}>Ver</Text>
+            </View>
+          </Pressable>
+        ) : null}
 
         <Text style={styles.directorSectionTitle}>PAINÉIS DE GESTÃO</Text>
 
@@ -11374,21 +11432,12 @@ export function SideMenuOverlay({
     : isAdmin
     ? adminSideMenuSections
     : sideMenuSections;
-  // Colaborador: nome/cargo reais (rh_colaboradores, via ColaboradorPerfilContext) —
-  // nunca o mock "Bruno Lima". Sem vínculo no RH, avisa em vez de fabricar cargo.
-  const headerName = isDirector
-    ? directorUser.fullName
-    : isRH
-    ? rhUser.fullName
-    : isAdmin
-    ? adminUser.fullName
-    : colaboradorPerfil?.nome_completo || identity?.fullName || '—';
-  const headerRole = isDirector
-    ? directorUser.role
-    : isRH
-    ? rhUser.role
-    : isAdmin
-    ? adminUser.role
+  // Nome/cargo reais (rh_colaboradores, via ColaboradorPerfilContext) em
+  // todos os painéis — nunca os mocks "Bruno Lyra"/"Marina Costa"/etc. Sem
+  // vínculo no RH, avisa em vez de fabricar cargo.
+  const headerName = colaboradorPerfil?.nome_completo || identity?.fullName || '—';
+  const headerRole = isAdmin
+    ? 'Administrador'
     : (colaboradorPerfil?.cargo as string | undefined) ||
       (isLoadingColaboradorPerfil ? 'Carregando…' : identity?.colaboradorId ? '—' : 'Sem vínculo no RH');
   const headerGradientColors: [string, string] = isDirector
