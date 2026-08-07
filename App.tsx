@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as ImagePicker from 'expo-image-picker';
 import * as ScreenCapture from 'expo-screen-capture';
+import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 import {
   NavigationContainer,
   createNavigationContainerRef,
@@ -8781,8 +8782,57 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
 
 function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
   const postos = useDiretoriaPostos();
-  const filtros = useMemo(() => getCurrentMonthRange(), []);
-  const { dados: gnv, periodo, isLoading, errorMessage } = useDiretoriaPainelRecurso('gnv', filtros);
+  const stationOptions = useMemo(() => ['Todos os Postos', ...postos.map((p) => p.nome)], [postos]);
+  const [selectedStation, setSelectedStation] = useState('Todos os Postos');
+  const [isStationPickerOpen, setIsStationPickerOpen] = useState(false);
+  const selectedPostoId = useMemo(
+    () => postos.find((p) => p.nome === selectedStation)?.id,
+    [postos, selectedStation]
+  );
+
+  const [gnvViewMode, setGnvViewMode] = useState<'mes' | 'ano'>('mes');
+  const [gnvAnchorDate, setGnvAnchorDate] = useState(() => new Date());
+
+  const handleGnvPrevPeriod = () => {
+    setGnvAnchorDate((current) =>
+      gnvViewMode === 'mes'
+        ? new Date(current.getFullYear(), current.getMonth() - 1, 1)
+        : new Date(current.getFullYear() - 1, current.getMonth(), 1)
+    );
+  };
+  const handleGnvNextPeriod = () => {
+    setGnvAnchorDate((current) =>
+      gnvViewMode === 'mes'
+        ? new Date(current.getFullYear(), current.getMonth() + 1, 1)
+        : new Date(current.getFullYear() + 1, current.getMonth(), 1)
+    );
+  };
+  const handleGnvResetPeriod = () => setGnvAnchorDate(new Date());
+
+  const gnvPeriodLabel =
+    gnvViewMode === 'mes'
+      ? `${MARGIN_MONTH_NAMES[gnvAnchorDate.getMonth()]} / ${gnvAnchorDate.getFullYear()}`
+      : `${gnvAnchorDate.getFullYear()}`;
+
+  const filtros = useMemo(() => {
+    const de =
+      gnvViewMode === 'mes'
+        ? new Date(gnvAnchorDate.getFullYear(), gnvAnchorDate.getMonth(), 1)
+        : new Date(gnvAnchorDate.getFullYear(), 0, 1);
+    const ate =
+      gnvViewMode === 'mes'
+        ? new Date(gnvAnchorDate.getFullYear(), gnvAnchorDate.getMonth() + 1, 0)
+        : new Date(gnvAnchorDate.getFullYear(), 11, 31);
+    return { de: toApiDateOnly(de), ate: toApiDateOnly(ate), posto: selectedPostoId };
+  }, [gnvViewMode, gnvAnchorDate, selectedPostoId]);
+  const { dados: gnv, isLoading, errorMessage } = useDiretoriaPainelRecurso('gnv', filtros);
+
+  const handleOpenApelidos = () => {
+    Alert.alert(
+      'Apelidos dos postos',
+      'A edição de apelidos de postos ainda não está disponível no app — em breve.'
+    );
+  };
 
   // Confirmado pela Lovable em 05/08/2026 — shape real do recurso=gnv:
   // dados.resumo.{total_faturado_gnv,faturamento_desconto_gnv,faturamento_pdv,
@@ -8806,10 +8856,32 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
   const faturamentoDesconto = pickNum(resumo, ['faturamento_desconto_gnv']);
   const percentualDesconto = pickNum(resumo, ['pct_desconto_gnv']);
   const volumeM3 = pickNum(resumo, ['volume_total_m3']);
-  const margemPct = pickNum(resumo, ['margem_pct']);
   const economiaIcms = pickNum(resumo, ['economia_icms']);
+  // "X posto(s) fora de 35-45%" no painel web é uma contagem literal (faixa
+  // padrão fixa), diferente da classificação Risco/Atenção/Ideal (que
+  // respeita a faixa alternativa de cada posto) — por isso é calculada aqui
+  // direto sobre pct_desconto_gnv, sem depender de faixa_status.
+  const postosForaDaFaixaPadrao = gnvPostosTodos.filter((station: any) => {
+    const pct = pickNum(station, ['pct_desconto_gnv']);
+    return pct !== null && (pct < 35 || pct > 45);
+  }).length;
+  const economiaIcmsPct =
+    economiaIcms !== null && faturamentoDesconto ? (economiaIcms / faturamentoDesconto) * 100 : null;
 
-  const periodoLabel = periodo.de ? formatDateBR(new Date(periodo.de + 'T00:00:00')) : formatDateBR(new Date());
+  // dados.evolucao[] — chart diário do painel web ("Evolução Diária — %
+  // Desconto GNV"). Nomes de campo ainda não confirmados pela Lovable;
+  // tentando os candidatos mais óbvios e caindo em vazio (sem inventar
+  // pontos) se nada bater.
+  const evolucaoDiaria = pickArr(gnv, ['evolucao']);
+  const evolucaoPontos = evolucaoDiaria
+    .map((ponto: any) => {
+      const dataStr = pickStr(ponto, ['data', 'dia', 'date']);
+      const pct = pickNum(ponto, ['pct_desconto_gnv', 'percentual', 'pct', 'valor']);
+      return dataStr && pct !== null ? { data: dataStr, pct } : null;
+    })
+    .filter((item): item is { data: string; pct: number } => item !== null);
+
+  const periodoLabel = gnvPeriodLabel;
 
   const renderPostoRow = (station: any, index: number) => {
     const volume = pickNum(station, ['volume_total']);
@@ -8851,7 +8923,51 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
             </View>
             <Text style={styles.pageTitle}>Métricas GNV</Text>
           </View>
-          <Text style={styles.pageSubtitle}>{periodoLabel} · Todos os postos</Text>
+          <Text style={styles.pageSubtitle}>Indicadores operacionais e comerciais do GNV.</Text>
+        </View>
+
+        <View style={[styles.directorFilterRow, { marginBottom: 8 }]}>
+          <View style={[styles.lowStockTabsRow, { flex: 0, marginTop: 0, width: 108 }]}>
+            {(['mes', 'ano'] as const).map((mode) => (
+              <Pressable
+                key={mode}
+                style={[styles.lowStockTab, gnvViewMode === mode ? styles.lowStockTabActive : null]}
+                onPress={() => setGnvViewMode(mode)}
+              >
+                <Text style={[styles.lowStockTabText, gnvViewMode === mode ? styles.lowStockTabTextActive : null]}>
+                  {mode === 'mes' ? 'Mês' : 'Ano'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}>
+            <Pressable onPress={handleGnvPrevPeriod}>
+              <Feather name="chevron-left" size={16} color="#5E667D" />
+            </Pressable>
+            <Pressable onPress={handleGnvResetPeriod} style={styles.marginPeriodLabelWrap}>
+              <Text style={styles.directorFilterPillText} numberOfLines={1}>
+                {gnvPeriodLabel}
+              </Text>
+            </Pressable>
+            <Pressable onPress={handleGnvNextPeriod}>
+              <Feather name="chevron-right" size={16} color="#5E667D" />
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.directorFilterRow}>
+          <Pressable
+            style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}
+            onPress={() => setIsStationPickerOpen(true)}
+          >
+            <Text style={styles.directorFilterPillText}>{selectedStation}</Text>
+            <Feather name="chevron-down" size={14} color="#5E667D" />
+          </Pressable>
+          <Pressable style={styles.directorFilterPill} onPress={handleOpenApelidos}>
+            <Feather name="tag" size={14} color="#5E667D" />
+            <Text style={styles.directorFilterPillText}>Apelidos</Text>
+          </Pressable>
         </View>
 
         {isLoading && !gnv ? (
@@ -8860,28 +8976,42 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
           <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
         ) : (
           <>
-            <View style={styles.gnvStatsRow}>
-              <View style={styles.gnvStatCard}>
-                <Text style={[styles.gnvStatLabel, { color: '#18955A' }]}>TOTAL FATURADO</Text>
+            <View style={styles.stockSummaryGrid}>
+              <View style={[styles.stockSummaryCard, { borderLeftWidth: 3, borderLeftColor: '#18955A' }]}>
+                <Text style={[styles.gnvStatLabel, { color: '#18955A' }]}>TOTAL FATURADO GNV</Text>
                 <Text style={styles.gnvStatValue}>{fmtBRLOrDash(totalFaturado)}</Text>
                 <Text style={styles.gnvStatMeta}>Volume: {fmtNumOrDash(volumeM3, ' m³')}</Text>
-                {economiaIcms !== null ? (
-                  <Text style={styles.gnvStatMeta}>Economia ICMS: {fmtBRLOrDash(economiaIcms)}</Text>
-                ) : null}
-                {margemPct !== null ? (
-                  <Text style={[styles.gnvStatMeta, styles.gnvStatMetaStrong]}>
-                    Margem {fmtPercentOrDash(margemPct)}
-                  </Text>
-                ) : null}
               </View>
-              <View style={styles.gnvStatCard}>
+              <View style={[styles.stockSummaryCard, { borderLeftWidth: 3, borderLeftColor: '#3457D5' }]}>
+                <Text style={[styles.gnvStatLabel, { color: '#3457D5' }]}>VOLUME TOTAL</Text>
+                <Text style={styles.gnvStatValue}>{fmtNumOrDash(volumeM3, ' m³')}</Text>
+                <Text style={styles.gnvStatMeta}>Vendido no período</Text>
+              </View>
+              <View style={[styles.stockSummaryCard, { borderLeftWidth: 3, borderLeftColor: '#B7791F' }]}>
+                <Text style={[styles.gnvStatLabel, { color: '#B7791F' }]}>ECONOMIA ICMS</Text>
+                <Text style={styles.gnvStatValue}>{fmtBRLOrDash(economiaIcms)}</Text>
+                <Text style={styles.gnvStatMeta}>
+                  {fmtPercentOrDash(economiaIcmsPct)} × faturamento com desconto
+                </Text>
+              </View>
+              <View style={[styles.stockSummaryCard, { borderLeftWidth: 3, borderLeftColor: '#E6213D' }]}>
                 <Text style={[styles.gnvStatLabel, { color: '#E6213D' }]}>% DESCONTO GNV</Text>
                 <Text style={[styles.gnvStatValue, { color: '#E6213D' }]}>{fmtPercentOrDash(percentualDesconto)}</Text>
                 <Text style={styles.gnvStatMeta}>
-                  Faturamento com desconto: {fmtBRLOrDash(faturamentoDesconto)}
+                  {postosForaDaFaixaPadrao} posto{postosForaDaFaixaPadrao === 1 ? '' : 's'} fora de 35-45%
                 </Text>
               </View>
             </View>
+
+            {evolucaoPontos.length > 1 ? (
+              <View style={styles.gnvChartCard}>
+                <Text style={styles.gnvChartTitle}>Evolução Diária — % Desconto GNV</Text>
+                <Text style={styles.gnvChartSubtitle}>
+                  linha do % com referência à meta (35-45%)
+                </Text>
+                <GnvEvolutionChart pontos={evolucaoPontos} />
+              </View>
+            ) : null}
 
             <View style={styles.gnvReportCard}>
               <View style={styles.gnvReportHeaderRow}>
@@ -8958,7 +9088,83 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
           </>
         )}
       </ScrollView>
+
+      <SimpleListModal
+        visible={isStationPickerOpen}
+        title="Selecionar posto"
+        options={stationOptions}
+        selectedValue={selectedStation}
+        onSelect={setSelectedStation}
+        onClose={() => setIsStationPickerOpen(false)}
+      />
     </SafeAreaView>
+  );
+}
+
+// Line chart simples (sem libs de gráfico) pra "Evolução Diária — % Desconto
+// GNV": eixo X = dias do período, eixo Y = 0-60% com linhas de referência em
+// 35% e 45% (faixa padrão). Usa react-native-svg, já presente no projeto.
+function GnvEvolutionChart({ pontos }: { pontos: { data: string; pct: number }[] }) {
+  const width = 320;
+  const height = 160;
+  const paddingLeft = 34;
+  const paddingBottom = 20;
+  const paddingTop = 10;
+  const chartWidth = width - paddingLeft - 8;
+  const chartHeight = height - paddingTop - paddingBottom;
+  const maxY = 60;
+
+  const xFor = (index: number) =>
+    paddingLeft + (pontos.length <= 1 ? 0 : (index / (pontos.length - 1)) * chartWidth);
+  const yFor = (pct: number) => paddingTop + chartHeight - (Math.min(pct, maxY) / maxY) * chartHeight;
+
+  const linePath = pontos
+    .map((ponto, index) => `${index === 0 ? 'M' : 'L'} ${xFor(index)} ${yFor(ponto.pct)}`)
+    .join(' ');
+
+  const dayLabel = (iso: string) => {
+    const parts = iso.split('-');
+    return parts.length === 3 ? `${parts[2]}/${parts[1]}` : iso;
+  };
+
+  return (
+    <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+      {[0, 15, 30, 45, 60].map((tick) => (
+        <Line
+          key={tick}
+          x1={paddingLeft}
+          x2={width - 8}
+          y1={yFor(tick)}
+          y2={yFor(tick)}
+          stroke={tick === 35 || tick === 45 ? '#E6213D' : '#E2E6F0'}
+          strokeDasharray={tick === 35 || tick === 45 ? '4,4' : undefined}
+          strokeWidth={1}
+        />
+      ))}
+      {[0, 15, 30, 45, 60].map((tick) => (
+        <SvgText key={`label-${tick}`} x={4} y={yFor(tick) + 4} fontSize={9} fill="#8992A8">
+          {tick}%
+        </SvgText>
+      ))}
+      <Path d={linePath} stroke="#3457D5" strokeWidth={2} fill="none" />
+      {pontos.map((ponto, index) => (
+        <Circle key={ponto.data} cx={xFor(index)} cy={yFor(ponto.pct)} r={3} fill="#3457D5" />
+      ))}
+      {pontos
+        .filter((_, index) => index === 0 || index === pontos.length - 1 || index % Math.ceil(pontos.length / 6) === 0)
+        .map((ponto) => (
+          <SvgText
+            key={`x-${ponto.data}`}
+            x={xFor(pontos.indexOf(ponto))}
+            y={height - 4}
+            fontSize={9}
+            fill="#8992A8"
+            textAnchor="middle"
+          >
+            {dayLabel(ponto.data)}
+          </SvgText>
+        ))}
+    </Svg>
   );
 }
 
