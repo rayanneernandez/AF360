@@ -8021,35 +8021,41 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
           Postos ofensores · Toda a rede ({postos.length} postos)
         </Text>
 
-        <View style={styles.lowStockTabsRow}>
-          {(['mes', 'ano'] as const).map((mode) => (
-            <Pressable
-              key={mode}
-              style={[styles.lowStockTab, viewMode === mode ? styles.lowStockTabActive : null]}
-              onPress={() => setViewMode(mode)}
-            >
-              <Text style={[styles.lowStockTabText, viewMode === mode ? styles.lowStockTabTextActive : null]}>
-                {mode === 'mes' ? 'Mês' : 'Ano'}
+        <View style={[styles.directorFilterRow, { marginBottom: 8 }]}>
+          <View style={[styles.lowStockTabsRow, { flex: 0, marginTop: 0, width: 108 }]}>
+            {(['mes', 'ano'] as const).map((mode) => (
+              <Pressable
+                key={mode}
+                style={[styles.lowStockTab, viewMode === mode ? styles.lowStockTabActive : null]}
+                onPress={() => setViewMode(mode)}
+              >
+                <Text style={[styles.lowStockTabText, viewMode === mode ? styles.lowStockTabTextActive : null]}>
+                  {mode === 'mes' ? 'Mês' : 'Ano'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}>
+            <Pressable onPress={handlePrevPeriod}>
+              <Feather name="chevron-left" size={16} color="#5E667D" />
+            </Pressable>
+            <Pressable onPress={handleResetPeriod} style={styles.marginPeriodLabelWrap}>
+              <Text style={styles.directorFilterPillText} numberOfLines={1}>
+                {periodLabel}
               </Text>
             </Pressable>
-          ))}
+            <Pressable onPress={handleNextPeriod}>
+              <Feather name="chevron-right" size={16} color="#5E667D" />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.directorFilterRow}>
-          <Pressable style={styles.directorFilterPill} onPress={handlePrevPeriod}>
-            <Feather name="chevron-left" size={14} color="#5E667D" />
-          </Pressable>
-          <Pressable style={styles.directorFilterPill} onPress={handleResetPeriod}>
-            <Feather name="calendar" size={14} color="#5E667D" />
-            <Text style={styles.directorFilterPillText}>{periodLabel}</Text>
-          </Pressable>
-          <Pressable style={styles.directorFilterPill} onPress={handleNextPeriod}>
-            <Feather name="chevron-right" size={14} color="#5E667D" />
-          </Pressable>
-        </View>
-
-        <View style={styles.directorFilterRow}>
-          <Pressable style={styles.directorFilterPill} onPress={() => setIsStationPickerOpen(true)}>
+          <Pressable
+            style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}
+            onPress={() => setIsStationPickerOpen(true)}
+          >
             <Text style={styles.directorFilterPillText}>{selectedStation}</Text>
             <Feather name="chevron-down" size={14} color="#5E667D" />
           </Pressable>
@@ -15279,6 +15285,10 @@ export const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '800',
+  },
+  marginPeriodLabelWrap: {
+    flex: 1,
+    alignItems: 'center',
   },
   marginCategoryCard: {
     marginTop: 12,
