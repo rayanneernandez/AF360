@@ -146,6 +146,8 @@ import {
   type DiretoriaProcessoEtapaRow,
   type DiretoriaProcessoStatus,
   type DiretoriaProcessoWriteBody,
+  fetchAdminModulos,
+  fetchAdminUsuarios,
 } from './api';
 
 export type RootStackParamList = {
@@ -9096,11 +9098,15 @@ function ProcessFormModal({
   initialProcess,
   onClose,
   onSave,
+  moduloOptions,
+  responsavelOptions,
 }: {
   visible: boolean;
   initialProcess: ProcessMapItem | null;
   onClose: () => void;
   onSave: (process: ProcessMapItem) => void | Promise<void>;
+  moduloOptions: string[];
+  responsavelOptions: string[];
 }) {
   const [activeTab, setActiveTab] = useState<'geral' | 'etapas' | 'documentacao' | 'fluxograma'>('geral');
   const [form, setForm] = useState<ProcessFormValues>(emptyProcessForm);
@@ -9109,6 +9115,11 @@ function ProcessFormModal({
   const [isDepartmentPickerOpen, setIsDepartmentPickerOpen] = useState(false);
   const [isModulePickerOpen, setIsModulePickerOpen] = useState(false);
   const [isStatusPickerOpen, setIsStatusPickerOpen] = useState(false);
+  const [isOwnerPickerOpen, setIsOwnerPickerOpen] = useState(false);
+  const [editingStepOwnerId, setEditingStepOwnerId] = useState<string | null>(null);
+
+  const moduloPickerOptions = ['— Nenhum —', ...moduloOptions];
+  const responsavelPickerOptions = ['— Sem responsável —', ...responsavelOptions];
 
   useEffect(() => {
     if (!visible) {
@@ -9336,13 +9347,10 @@ function ProcessFormModal({
                   </Pressable>
 
                   <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Responsável</Text>
-                  <TextInput
-                    style={styles.processTextInput}
-                    value={form.owner}
-                    onChangeText={(text) => setForm((current) => ({ ...current, owner: text }))}
-                    placeholder="Nome do responsável"
-                    placeholderTextColor="#A7AEC2"
-                  />
+                  <Pressable style={styles.requestSelectBox} onPress={() => setIsOwnerPickerOpen(true)}>
+                    <Text style={styles.requestSelectText}>{form.owner || '— Sem responsável —'}</Text>
+                    <Feather name="chevron-down" size={18} color="#7A8299" />
+                  </Pressable>
 
                   <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Status</Text>
                   <Pressable style={styles.requestSelectBox} onPress={() => setIsStatusPickerOpen(true)}>
@@ -9449,13 +9457,14 @@ function ProcessFormModal({
                         />
 
                         <View style={styles.processStepCardBottomRow}>
-                          <TextInput
+                          <Pressable
                             style={[styles.processTextInput, styles.processStepOwnerBox]}
-                            value={step.owner}
-                            onChangeText={(text) => handleUpdateStep(step.id, { owner: text })}
-                            placeholder="Responsável"
-                            placeholderTextColor="#A7AEC2"
-                          />
+                            onPress={() => setEditingStepOwnerId(step.id)}
+                          >
+                            <Text style={step.owner ? undefined : { color: '#A7AEC2' }} numberOfLines={1}>
+                              {step.owner || 'Responsável'}
+                            </Text>
+                          </Pressable>
                           <TextInput
                             style={[styles.processTextInput, styles.processStepDeadlineInput]}
                             value={step.deadlineDays}
@@ -9586,10 +9595,42 @@ function ProcessFormModal({
       <SimpleListModal
         visible={isModulePickerOpen}
         title="Módulo vinculado"
-        options={processModuleOptions}
+        options={moduloPickerOptions}
         selectedValue={form.linkedModule}
         onSelect={(value) => setForm((current) => ({ ...current, linkedModule: value }))}
         onClose={() => setIsModulePickerOpen(false)}
+      />
+      <SimpleListModal
+        visible={isOwnerPickerOpen}
+        title="Responsável"
+        options={responsavelPickerOptions}
+        selectedValue={form.owner || '— Sem responsável —'}
+        onSelect={(value) =>
+          setForm((current) => ({
+            ...current,
+            owner: value === '— Sem responsável —' ? '' : value,
+          }))
+        }
+        onClose={() => setIsOwnerPickerOpen(false)}
+      />
+      <SimpleListModal
+        visible={editingStepOwnerId !== null}
+        title="Responsável da etapa"
+        options={responsavelPickerOptions}
+        selectedValue={
+          (editingStepOwnerId
+            ? form.steps.find((step) => step.id === editingStepOwnerId)?.owner
+            : '') || '— Sem responsável —'
+        }
+        onSelect={(value) => {
+          if (editingStepOwnerId) {
+            handleUpdateStep(editingStepOwnerId, {
+              owner: value === '— Sem responsável —' ? '' : value,
+            });
+          }
+        }}
+        onClose={() => setEditingStepOwnerId(null)}
+        inline
       />
       <SimpleListModal
         visible={isStatusPickerOpen}
@@ -9782,6 +9823,43 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
   const [isOwnerFilterOpen, setIsOwnerFilterOpen] = useState(false);
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [moduloOptions, setModuloOptions] = useState<Array<{ label: string; slug: string | null }>>([]);
+  const [responsavelOptions, setResponsavelOptions] = useState<Array<{ label: string; id: string }>>([]);
+
+  useEffect(() => {
+    let isActive = true;
+    fetchAdminModulos()
+      .then((modulos) => {
+        if (!isActive) return;
+        setModuloOptions(
+          modulos
+            .filter((item) => item.name)
+            .map((item) => ({ label: item.name as string, slug: item.slug }))
+        );
+      })
+      .catch(() => {
+        // Silencioso: se não der pra carregar os módulos reais, o picker
+        // fica só com "— Nenhum —" (sem inventar opções).
+      });
+
+    fetchAdminUsuarios()
+      .then((data) => {
+        if (!isActive) return;
+        setResponsavelOptions(
+          data.usuarios
+            .filter((item) => item.fullName)
+            .map((item) => ({ label: item.fullName as string, id: item.id }))
+        );
+      })
+      .catch(() => {
+        // Idem: sem lista real de usuários, o picker fica só com "— Sem
+        // responsável —".
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const loadProcessos = useCallback(() => {
     let isActive = true;
@@ -9806,15 +9884,15 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
   }, [identity?.profileId]);
 
   const handleSaveNewProcess = async (process: ProcessMapItem) => {
+    const moduloMatch = moduloOptions.find((item) => item.label === process.linkedModule);
+    const responsavelMatch = responsavelOptions.find((item) => item.label === process.owner);
+
     const body: DiretoriaProcessoWriteBody = {
       nome: process.title,
       descricao: process.description || undefined,
       departamento: process.department === processDepartmentOptions[0] ? undefined : process.department,
-      modulo_vinculado: process.linkedModule === processModuleOptions[0] ? undefined : process.linkedModule,
-      // responsavel_id precisa ser o uuid de um profile (FK), mas o app hoje só
-      // coleta o nome do responsável em texto livre — por isso não é enviado
-      // ainda. O texto digitado no campo "Responsável" não é salvo no backend
-      // até existir um seletor de perfis reais no app.
+      modulo_vinculado: moduloMatch?.slug ?? undefined,
+      responsavel_id: responsavelMatch?.id ?? null,
       status: process.status,
       versao: Number(process.version) || 1,
       tags: process.tags,
@@ -9825,7 +9903,7 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
           ordem: index + 1,
           titulo: step.title.trim(),
           descricao: step.description || undefined,
-          responsavel_id: null,
+          responsavel_id: responsavelOptions.find((item) => item.label === step.owner)?.id ?? null,
           prazo_dias: step.deadlineDays ? Number(step.deadlineDays) || null : null,
         })),
       blocos: process.flow.map((node) => ({ tipo: node.type, rotulo: node.label })),
@@ -9835,10 +9913,7 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
       await createDiretoriaProcesso(body, identity?.profileId);
       setIsCreateModalOpen(false);
       loadProcessos();
-      Alert.alert(
-        'Processo criado',
-        'O processo foi salvo. O responsável digitado ainda não é persistido — assim que houver um seletor de perfis reais, isso será ligado.'
-      );
+      Alert.alert('Processo criado', 'O processo foi salvo com sucesso.');
     } catch (err) {
       Alert.alert(
         'Não foi possível criar o processo',
@@ -10030,6 +10105,8 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
         initialProcess={null}
         onClose={() => setIsCreateModalOpen(false)}
         onSave={handleSaveNewProcess}
+        moduloOptions={moduloOptions.map((item) => item.label)}
+        responsavelOptions={responsavelOptions.map((item) => item.label)}
       />
 
       <SimpleListModal
