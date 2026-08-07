@@ -30,6 +30,7 @@ import {
   Linking,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -8825,7 +8826,7 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
         : new Date(gnvAnchorDate.getFullYear(), 11, 31);
     return { de: toApiDateOnly(de), ate: toApiDateOnly(ate), posto: selectedPostoId };
   }, [gnvViewMode, gnvAnchorDate, selectedPostoId]);
-  const { dados: gnv, isLoading, errorMessage } = useDiretoriaPainelRecurso('gnv', filtros);
+  const { dados: gnv, isLoading, errorMessage, refresh: refreshGnv } = useDiretoriaPainelRecurso('gnv', filtros);
 
   const handleOpenApelidos = () => {
     Alert.alert(
@@ -8915,7 +8916,13 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
         />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={isLoading} onRefresh={refreshGnv} tintColor="#E6213D" />
+        }
+      >
         <View style={styles.pageHeader}>
           <View style={styles.directorPageTitleRow}>
             <View style={[styles.iconShell, styles.iconAccentRed]}>
@@ -9105,7 +9112,9 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
 // GNV": eixo X = dias do período, eixo Y = 0-60% com linhas de referência em
 // 35% e 45% (faixa padrão). Usa react-native-svg, já presente no projeto.
 function GnvEvolutionChart({ pontos }: { pontos: { data: string; pct: number }[] }) {
-  const width = 320;
+  const [containerWidth, setContainerWidth] = useState(320);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const width = containerWidth;
   const height = 160;
   const paddingLeft = 34;
   const paddingBottom = 20;
@@ -9127,44 +9136,103 @@ function GnvEvolutionChart({ pontos }: { pontos: { data: string; pct: number }[]
     return parts.length === 3 ? `${parts[2]}/${parts[1]}` : iso;
   };
 
+  const selected = selectedIndex !== null ? pontos[selectedIndex] : null;
+  const tooltipWidth = 168;
+  const tooltipLeft =
+    selected !== null
+      ? Math.min(Math.max(xFor(selectedIndex!) - tooltipWidth / 2, 0), Math.max(width - tooltipWidth, 0))
+      : 0;
+
   return (
-    <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-      {[0, 15, 30, 45, 60].map((tick) => (
-        <Line
-          key={tick}
-          x1={paddingLeft}
-          x2={width - 8}
-          y1={yFor(tick)}
-          y2={yFor(tick)}
-          stroke={tick === 35 || tick === 45 ? '#E6213D' : '#E2E6F0'}
-          strokeDasharray={tick === 35 || tick === 45 ? '4,4' : undefined}
-          strokeWidth={1}
-        />
-      ))}
-      {[0, 15, 30, 45, 60].map((tick) => (
-        <SvgText key={`label-${tick}`} x={4} y={yFor(tick) + 4} fontSize={9} fill="#8992A8">
-          {tick}%
-        </SvgText>
-      ))}
-      <Path d={linePath} stroke="#3457D5" strokeWidth={2} fill="none" />
-      {pontos.map((ponto, index) => (
-        <Circle key={ponto.data} cx={xFor(index)} cy={yFor(ponto.pct)} r={3} fill="#3457D5" />
-      ))}
-      {pontos
-        .filter((_, index) => index === 0 || index === pontos.length - 1 || index % Math.ceil(pontos.length / 6) === 0)
-        .map((ponto) => (
-          <SvgText
-            key={`x-${ponto.data}`}
-            x={xFor(pontos.indexOf(ponto))}
-            y={height - 4}
-            fontSize={9}
-            fill="#8992A8"
-            textAnchor="middle"
-          >
-            {dayLabel(ponto.data)}
+    <View
+      style={{ width: '100%' }}
+      onLayout={(event) => setContainerWidth(event.nativeEvent.layout.width)}
+    >
+      <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        {[0, 15, 30, 45, 60].map((tick) => (
+          <Line
+            key={tick}
+            x1={paddingLeft}
+            x2={width - 8}
+            y1={yFor(tick)}
+            y2={yFor(tick)}
+            stroke={tick === 35 || tick === 45 ? '#E6213D' : '#E2E6F0'}
+            strokeDasharray={tick === 35 || tick === 45 ? '4,4' : undefined}
+            strokeWidth={1}
+          />
+        ))}
+        {[0, 15, 30, 45, 60].map((tick) => (
+          <SvgText key={`label-${tick}`} x={4} y={yFor(tick) + 4} fontSize={9} fill="#8992A8">
+            {tick}%
           </SvgText>
         ))}
-    </Svg>
+        <Path d={linePath} stroke="#3457D5" strokeWidth={2} fill="none" />
+        {selected !== null ? (
+          <Line
+            x1={xFor(selectedIndex!)}
+            x2={xFor(selectedIndex!)}
+            y1={paddingTop}
+            y2={height - paddingBottom}
+            stroke="#3457D5"
+            strokeWidth={1}
+            strokeDasharray="3,3"
+          />
+        ) : null}
+        {pontos.map((ponto, index) => (
+          <Circle
+            key={ponto.data}
+            cx={xFor(index)}
+            cy={yFor(ponto.pct)}
+            r={selectedIndex === index ? 5 : 3}
+            fill={selectedIndex === index ? '#15203E' : '#3457D5'}
+          />
+        ))}
+        {pontos
+          .filter((_, index) => index === 0 || index === pontos.length - 1 || index % Math.ceil(pontos.length / 6) === 0)
+          .map((ponto) => (
+            <SvgText
+              key={`x-${ponto.data}`}
+              x={xFor(pontos.indexOf(ponto))}
+              y={height - 4}
+              fontSize={9}
+              fill="#8992A8"
+              textAnchor="middle"
+            >
+              {dayLabel(ponto.data)}
+            </SvgText>
+          ))}
+      </Svg>
+
+      {pontos.map((ponto, index) => (
+        <Pressable
+          key={`hit-${ponto.data}`}
+          hitSlop={4}
+          style={{
+            position: 'absolute',
+            left: xFor(index) - 12,
+            top: yFor(ponto.pct) - 12,
+            width: 24,
+            height: 24,
+          }}
+          onPress={() => setSelectedIndex((current) => (current === index ? null : index))}
+        />
+      ))}
+
+      {selected !== null ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.gnvChartTooltip,
+            { left: tooltipLeft, top: Math.max(yFor(selected.pct) - 54, 0), width: tooltipWidth },
+          ]}
+        >
+          <Text style={styles.gnvChartTooltipTitle}>Dia {dayLabel(selected.data)}</Text>
+          <Text style={styles.gnvChartTooltipValue}>
+            % Desconto GNV: <Text style={styles.gnvChartTooltipValueNumber}>{fmtPercentOrDash(selected.pct)}</Text>
+          </Text>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -11840,12 +11908,20 @@ function useDiretoriaPainelRecurso(
   filtros: { de?: string; ate?: string; posto?: string }
 ) {
   const { identity } = useContext(AuthIdentityContext);
+  // Refaz a busca sempre que a tela volta a ficar em foco (ex.: usuária sai
+  // pra outra aba da Diretoria e volta) — sem isso a tela ficava com os
+  // últimos dados carregados, parecendo "atrasada" em relação ao site (que
+  // recarrega a cada visita). Também expõe refresh() pra puxar de novo sob
+  // demanda (pull-to-refresh).
+  const isFocused = useIsFocused();
   const [dados, setDados] = useState<any>(null);
   const [periodo, setPeriodo] = useState<{ de?: string; ate?: string }>({});
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    if (!isFocused) return;
     let isActive = true;
     setIsLoading(true);
     setErrorMessage(null);
@@ -11869,9 +11945,11 @@ function useDiretoriaPainelRecurso(
       isActive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recurso, filtros.de, filtros.ate, filtros.posto, identity?.profileId]);
+  }, [recurso, filtros.de, filtros.ate, filtros.posto, identity?.profileId, isFocused, refreshKey]);
 
-  return { dados, periodo, isLoading, errorMessage };
+  const refresh = useCallback(() => setRefreshKey((current) => current + 1), []);
+
+  return { dados, periodo, isLoading, errorMessage, refresh };
 }
 
 export function getCalendarWeeks(year: number, monthIndex: number) {
@@ -16062,6 +16140,34 @@ export const styles = StyleSheet.create({
     marginTop: 2,
     color: '#9AA1B5',
     fontSize: 11,
+  },
+  gnvChartTooltip: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    shadowColor: '#0C1736',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  gnvChartTooltipTitle: {
+    color: '#15203E',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  gnvChartTooltipValue: {
+    marginTop: 2,
+    color: '#5E667D',
+    fontSize: 11,
+  },
+  gnvChartTooltipValueNumber: {
+    color: '#3457D5',
+    fontWeight: '800',
   },
   gnvChartArea: {
     marginTop: 18,
