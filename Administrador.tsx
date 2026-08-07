@@ -16,6 +16,7 @@
 // ============================================================================
 
 import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -10497,6 +10498,7 @@ function NotificationsPanelScreen({ kind, navigation }: { kind: NotificationsPan
   const modulo = kind === 'diretoria' ? 'diretoria' : ADMIN_NOTIF_MODULO;
   const { identity } = useContext(AuthIdentityContext);
   const actorId = identity?.profileId;
+  const isFocused = useIsFocused();
 
   const [activeTab, setActiveTab] = useState<'routines' | 'templates'>('routines');
 
@@ -10535,12 +10537,14 @@ function NotificationsPanelScreen({ kind, navigation }: { kind: NotificationsPan
   }, [modulo]);
 
   useEffect(() => {
+    if (!isFocused) return;
     loadTemplates();
-  }, [loadTemplates]);
+  }, [loadTemplates, isFocused]);
 
   useEffect(() => {
+    if (!isFocused) return;
     loadRoutines();
-  }, [loadRoutines]);
+  }, [loadRoutines, isFocused]);
 
   const templates = useMemo(() => realTemplates.map(adminNotifTemplateToLocal), [realTemplates]);
   const routines = useMemo(
