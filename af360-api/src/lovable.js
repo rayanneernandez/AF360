@@ -595,6 +595,21 @@ function getDiretoriaVendas({ recurso, de, ate, posto } = {}, actorId) {
   return lovableGet('/api/public/internal/diretoria-vendas', { recurso, de, ate, posto }, actorId);
 }
 
+// --- Autenticação: verificação em duas etapas (2FA) por e-mail — endpoints
+// confirmados pela Lovable em 07/08/2026. Código de 6 dígitos, validade
+// 10min, máx. 5 tentativas erradas, 1 reenvio a cada 30s, cada novo envio
+// invalida o código anterior, código guardado só como hash do lado deles.
+// Aceita "canal": "whatsapp"/"ambos" via Z-API no futuro, mas por ora só
+// usamos e-mail (decisão da Rayanne em 07/08/2026, sem custo). ---
+
+function postAuth2faEnviar(body) {
+  return lovablePost('/api/public/internal/auth/2fa/enviar', {}, body);
+}
+
+function postAuth2faVerificar(body) {
+  return lovablePost('/api/public/internal/auth/2fa/verificar', {}, body);
+}
+
 // --- Diretoria: Mapa de Processos (gst_processos + gst_processo_etapas) —
 // endpoint confirmado pela Lovable em 04/08/2026: /api/public/internal/
 // gst-processos. GET sem id = lista (aceita departamento, status, q); GET
@@ -946,6 +961,8 @@ module.exports = {
   getDashboardPerformance,
   getDashboardKpis,
   getDiretoriaVendas,
+  postAuth2faEnviar,
+  postAuth2faVerificar,
   getGstProcessos,
   postGstProcesso,
   patchGstProcesso,
