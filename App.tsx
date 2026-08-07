@@ -3146,6 +3146,17 @@ function DeviceAuthScreen({ navigation }: ScreenProps<'DeviceAuth'>) {
 
 function TwoFactorVerificationScreen({ navigation, route }: ScreenProps<'TwoFactorVerification'>) {
   const { profileId, email, targetRoute } = route.params;
+  const { identity } = useContext(AuthIdentityContext);
+
+  // Pra quando a pessoa clicou no painel errado por engano (ex.: tinha mais
+  // de 1 painel disponível e queria ter escolhido outro) — deixa voltar em
+  // vez de ficar travada tendo que digitar um código que nem devia ter sido
+  // enviado. Volta pra tela de escolha de painel se houver mais de 1 opção,
+  // senão volta pro login.
+  const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
+  const handleGoBack = () => {
+    navigation.replace(hasMultiplePanels ? 'SelectPanel' : 'Login');
+  };
 
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const codeInputRefs = useRef<Array<TextInput | null>>([]);
@@ -3269,6 +3280,13 @@ function TwoFactorVerificationScreen({ navigation, route }: ScreenProps<'TwoFact
     <SafeAreaView style={styles.screen} edges={['top']}>
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <Pressable onPress={handleGoBack} hitSlop={8} style={styles.twoFactorBackButton}>
+          <Feather name="arrow-left" size={20} color="#29448D" />
+          <Text style={styles.twoFactorBackButtonText}>
+            {hasMultiplePanels ? 'Voltar e escolher outro painel' : 'Voltar pro login'}
+          </Text>
+        </Pressable>
+
         <View style={styles.twoFactorHeader}>
           <View style={styles.twoFactorIconShell}>
             <Feather name="mail" size={24} color="#29448D" />
@@ -12709,6 +12727,18 @@ export const styles = StyleSheet.create({
   },
   deviceAuthCancelText: {
     color: '#7C8397',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  twoFactorBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    alignSelf: 'flex-start',
+  },
+  twoFactorBackButtonText: {
+    color: '#29448D',
     fontSize: 14,
     fontWeight: '700',
   },
