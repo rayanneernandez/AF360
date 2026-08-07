@@ -460,7 +460,7 @@ type UnrecognizedCostItem = {
 type StockTankItem = {
   id: string;
   title: string;
-  status: 'ok' | 'warning' | 'critical';
+  status: 'ok' | 'warning' | 'attention' | 'critical';
   statusLabel: string;
   subtitle: string;
   valueLabel: string;
@@ -8071,6 +8071,7 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
   > = {
     ok: { border: '#18955A', tint: '#E4F5EE', text: '#18955A', fill: '#2FAE72' },
     warning: { border: '#D79A22', tint: '#FCF4DE', text: '#B7791F', fill: '#E0AC3C' },
+    attention: { border: '#D97E22', tint: '#FCEEDE', text: '#B7631F', fill: '#E08C3C' },
     critical: { border: '#E6213D', tint: '#FCE8EC', text: '#E6213D', fill: '#E6213D' },
   };
 
@@ -8085,10 +8086,43 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
   const postos = useDiretoriaPostos();
   const stockStationOptions = useMemo(() => ['Toda a rede', ...postos.map((p) => p.nome)], [postos]);
 
-  const estoquesFiltros = useMemo(() => getCurrentMonthRange(), []);
+  const [stockViewMode, setStockViewMode] = useState<'mes' | 'ano'>('mes');
+  const [stockAnchorDate, setStockAnchorDate] = useState(() => new Date());
+
+  const handleStockPrevPeriod = () => {
+    setStockAnchorDate((current) =>
+      stockViewMode === 'mes'
+        ? new Date(current.getFullYear(), current.getMonth() - 1, 1)
+        : new Date(current.getFullYear() - 1, current.getMonth(), 1)
+    );
+  };
+  const handleStockNextPeriod = () => {
+    setStockAnchorDate((current) =>
+      stockViewMode === 'mes'
+        ? new Date(current.getFullYear(), current.getMonth() + 1, 1)
+        : new Date(current.getFullYear() + 1, current.getMonth(), 1)
+    );
+  };
+  const handleStockResetPeriod = () => setStockAnchorDate(new Date());
+
+  const stockPeriodLabel =
+    stockViewMode === 'mes'
+      ? `${MARGIN_MONTH_NAMES[stockAnchorDate.getMonth()]} / ${stockAnchorDate.getFullYear()}`
+      : `${stockAnchorDate.getFullYear()}`;
+
+  const estoquesFiltros = useMemo(() => {
+    const de =
+      stockViewMode === 'mes'
+        ? new Date(stockAnchorDate.getFullYear(), stockAnchorDate.getMonth(), 1)
+        : new Date(stockAnchorDate.getFullYear(), 0, 1);
+    const ate =
+      stockViewMode === 'mes'
+        ? new Date(stockAnchorDate.getFullYear(), stockAnchorDate.getMonth() + 1, 0)
+        : new Date(stockAnchorDate.getFullYear(), 11, 31);
+    return { de: toApiDateOnly(de), ate: toApiDateOnly(ate) };
+  }, [stockViewMode, stockAnchorDate]);
   const {
     dados: estoques,
-    periodo: estoquesPeriodo,
     isLoading: isLoadingEstoques,
     errorMessage: estoquesError,
   } = useDiretoriaPainelRecurso('estoques', estoquesFiltros);
@@ -8099,20 +8133,21 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
   const produtosTanque = pickArr(estoques, ['produtosTanque']);
   const estoquesResumo = (estoques as any)?.resumo ?? null;
   const [expandedTankIds, setExpandedTankIds] = useState<Record<string, boolean>>({});
-  const estoquesPeriodoLabel = estoquesPeriodo.de
-    ? formatDateBR(new Date(estoquesPeriodo.de + 'T00:00:00'))
-    : formatDateBR(new Date());
 
-  // status real: "green" = OK, "yellow" = Monitorar, "orange"/"red" = Crítico.
+  // status real: "green" = OK, "yellow" = Monitorar, "orange" = Atenção,
+  // "red" = Crítico (confirmado nas telas de Loja/Pista pela Lovable —
+  // aplicamos a mesma escala de 4 níveis aos tanques de combustível).
   const mapEstoqueStatus = (raw: string | null): StockTankItem['status'] => {
     const value = (raw ?? '').toLowerCase();
-    if (value === 'orange' || value === 'red' || value.includes('crit')) return 'critical';
-    if (value === 'yellow' || value.includes('monitor') || value.includes('aten')) return 'warning';
+    if (value === 'red' || value.includes('crit')) return 'critical';
+    if (value === 'orange' || value.includes('aten')) return 'attention';
+    if (value === 'yellow' || value.includes('monitor')) return 'warning';
     return 'ok';
   };
   const estoqueStatusLabel: Record<StockTankItem['status'], string> = {
     ok: 'OK',
     warning: 'Monitorar',
+    attention: 'Atenção',
     critical: 'Crítico',
   };
 
@@ -8266,12 +8301,43 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
           </View>
         </View>
 
-        <View style={styles.directorFilterRow}>
-          <View style={styles.directorFilterPill}>
-            <Feather name="calendar" size={14} color="#5E667D" />
-            <Text style={styles.directorFilterPillText}>{estoquesPeriodoLabel}</Text>
+        <View style={[styles.directorFilterRow, { marginBottom: 8 }]}>
+          <View style={[styles.lowStockTabsRow, { flex: 0, marginTop: 0, width: 108 }]}>
+            {(['mes', 'ano'] as const).map((mode) => (
+              <Pressable
+                key={mode}
+                style={[styles.lowStockTab, stockViewMode === mode ? styles.lowStockTabActive : null]}
+                onPress={() => setStockViewMode(mode)}
+              >
+                <Text
+                  style={[styles.lowStockTabText, stockViewMode === mode ? styles.lowStockTabTextActive : null]}
+                >
+                  {mode === 'mes' ? 'Mês' : 'Ano'}
+                </Text>
+              </Pressable>
+            ))}
           </View>
-          <Pressable style={styles.directorFilterPill} onPress={() => setIsStationPickerOpen(true)}>
+
+          <View style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}>
+            <Pressable onPress={handleStockPrevPeriod}>
+              <Feather name="chevron-left" size={16} color="#5E667D" />
+            </Pressable>
+            <Pressable onPress={handleStockResetPeriod} style={styles.marginPeriodLabelWrap}>
+              <Text style={styles.directorFilterPillText} numberOfLines={1}>
+                {stockPeriodLabel}
+              </Text>
+            </Pressable>
+            <Pressable onPress={handleStockNextPeriod}>
+              <Feather name="chevron-right" size={16} color="#5E667D" />
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.directorFilterRow}>
+          <Pressable
+            style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}
+            onPress={() => setIsStationPickerOpen(true)}
+          >
             <Text style={styles.directorFilterPillText}>{stationFilterLabel}</Text>
             <Feather name="chevron-down" size={14} color="#5E667D" />
           </Pressable>
@@ -8340,11 +8406,20 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
             const autonomiaHoras = pickNum(item, ['autonomia_horas']);
             const consumoMedioDia = pickNum(item, ['consumo_medio_dia']);
             const mediaRedeAutonomia = pickNum(item, ['media_rede_autonomia_horas']);
+            // status_label vem pronto da API — sempre confiar nele; só cai no
+            // fallback calculado se por algum motivo vier ausente.
             const statusLabel = pickStr(item, ['status_label']) ?? estoqueStatusLabel[statusKey];
             const titulo = pickStr(item, ['produto_nome']) ?? `Produto ${index + 1}`;
             const postosCriticos = pickArr(item, ['postos_criticos']);
-            const itemId = pickStr(item, ['familia']) ?? titulo;
+            // Chave única por card: familia se repete entre vários produtos
+            // (ex.: GASOLINA cobre ADITIVADA/COMUM/GRID/PODIUM/...), causando
+            // "two children with the same key" — produto_nome é único.
+            const itemId = titulo;
             const isExpanded = Boolean(expandedTankIds[itemId]);
+            // sem_dados_hoje = true: sem leitura recente, autonomia/consumo
+            // não são confiáveis (podem vir com valores absurdos) — mostrar
+            // "—" e o aviso, igual ao painel web.
+            const semDadosHoje = Boolean((item as any)?.sem_dados_hoje);
 
             return (
               <View key={itemId} style={[styles.stockCard, { borderLeftColor: colors.border }]}>
@@ -8373,12 +8448,22 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
                 </View>
                 <View style={styles.stockConsumptionRow}>
                   <Text style={styles.stockConsumptionLabel}>Autonomia</Text>
-                  <Text style={styles.stockConsumptionValue}>{fmtAutonomiaHoras(autonomiaHoras)}</Text>
+                  <Text style={styles.stockConsumptionValue}>
+                    {semDadosHoje ? '—' : fmtAutonomiaHoras(autonomiaHoras)}
+                  </Text>
                 </View>
                 <View style={styles.stockConsumptionRow}>
                   <Text style={styles.stockConsumptionLabel}>Consumo médio/dia</Text>
-                  <Text style={styles.stockConsumptionValue}>{fmtNumOrDash(consumoMedioDia, ` ${unidade}`)}</Text>
+                  <Text style={styles.stockConsumptionValue}>
+                    {semDadosHoje ? '—' : fmtNumOrDash(consumoMedioDia, ` ${unidade}`)}
+                  </Text>
                 </View>
+
+                {semDadosHoje ? (
+                  <View style={styles.stockSnapshotBadge}>
+                    <Text style={styles.stockSnapshotBadgeText}>snapshot anterior</Text>
+                  </View>
+                ) : null}
 
                 {postosCriticos.length > 0 ? (
                   <>
@@ -8678,7 +8763,7 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
           </View>
         ) : null}
 
-        <Text style={styles.directorUpdatedAt}>Período: {estoquesPeriodoLabel}</Text>
+        <Text style={styles.directorUpdatedAt}>Período: {stockPeriodLabel}</Text>
       </ScrollView>
 
       <StationMultiSelectModal
@@ -15558,6 +15643,19 @@ export const styles = StyleSheet.create({
     color: '#9AA1B5',
     fontSize: 12,
     fontWeight: '700',
+  },
+  stockSnapshotBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FCF4DE',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 8,
+  },
+  stockSnapshotBadgeText: {
+    color: '#B7791F',
+    fontSize: 10,
+    fontWeight: '800',
   },
   stockSummaryGrid: {
     flexDirection: 'row',
