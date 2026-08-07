@@ -6612,12 +6612,12 @@ function SimpleListModal({
       <Pressable style={styles.simpleListCard} onPress={() => {}}>
         <Text style={styles.simpleListTitle}>{title}</Text>
         <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
-          {options.map((option) => {
+          {options.map((option, index) => {
             const isSelected = option === selectedValue;
 
             return (
               <Pressable
-                key={option}
+                key={`${option}-${index}`}
                 style={styles.simpleListOptionRow}
                 onPress={() => {
                   onSelect(option);
@@ -9845,10 +9845,21 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
     fetchAdminUsuarios()
       .then((data) => {
         if (!isActive) return;
+        const usuarios = data.usuarios.filter((item) => item.fullName);
+        const nameCounts = usuarios.reduce<Record<string, number>>((acc, item) => {
+          const name = item.fullName as string;
+          acc[name] = (acc[name] ?? 0) + 1;
+          return acc;
+        }, {});
         setResponsavelOptions(
-          data.usuarios
-            .filter((item) => item.fullName)
-            .map((item) => ({ label: item.fullName as string, id: item.id }))
+          usuarios.map((item) => {
+            const name = item.fullName as string;
+            // Duas pessoas podem ter o mesmo nome completo — nesse caso,
+            // acrescenta o e-mail pra não misturar o id de uma com o rótulo
+            // exibido da outra.
+            const label = nameCounts[name] > 1 && item.email ? `${name} (${item.email})` : name;
+            return { label, id: item.id };
+          })
         );
       })
       .catch(() => {
