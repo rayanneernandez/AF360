@@ -1563,152 +1563,6 @@ const unrecognizedCosts: UnrecognizedCostItem[] = [
   },
 ];
 
-const stockTanks: StockTankItem[] = [
-  {
-    id: 'gasoline-additivated',
-    title: 'Gasolina aditivada',
-    status: 'ok',
-    statusLabel: 'OK',
-    subtitle: '38 tanques · 38 postos',
-    valueLabel: '233.958 L / 570.514 L (41%)',
-    progress: 0.41,
-  },
-  {
-    id: 'gasoline-common',
-    title: 'Gasolina comum',
-    status: 'warning',
-    statusLabel: 'Monitorar',
-    subtitle: '66 tanques · 55 postos',
-    valueLabel: '396.614 L / 1.245.000 L (31,9%)',
-    progress: 0.319,
-  },
-  {
-    id: 'gasoline-grid',
-    title: 'Gasolina grid',
-    status: 'ok',
-    statusLabel: 'OK',
-    subtitle: '11 tanques · 11 postos',
-    valueLabel: '71.725 L / 170.000 L (42,2%)',
-    progress: 0.422,
-  },
-  {
-    id: 'gasoline-podium',
-    title: 'Gasolina podium',
-    status: 'warning',
-    statusLabel: 'Monitorar',
-    subtitle: '3 tanques · 3 postos',
-    valueLabel: '14.770 L / 50.000 L (29,5%)',
-    progress: 0.295,
-  },
-  {
-    id: 'diesel-s10',
-    title: 'Diesel S-10',
-    status: 'ok',
-    statusLabel: 'OK',
-    subtitle: '44 tanques · 40 postos',
-    valueLabel: '512.300 L / 980.000 L (52,3%)',
-    progress: 0.523,
-  },
-  {
-    id: 'ethanol',
-    title: 'Etanol',
-    status: 'critical',
-    statusLabel: 'Crítico',
-    subtitle: '29 tanques · 27 postos',
-    valueLabel: '41.230 L / 610.000 L (6,8%)',
-    progress: 0.068,
-  },
-];
-
-const directorStockStationOptions = [
-  'Toda a rede',
-  'Posto Av. Paulista',
-  'Posto Boa Viagem',
-  'Petromasa Copacabana',
-  'Petromasa Irajá',
-  'Posto de Gasolina Jana',
-  'Mega Nova Iguaçu',
-  'Auto Posto de Serviços Via Dutra 1',
-];
-
-const stationTankDetails: StationTankItem[] = [
-  {
-    id: '001',
-    code: '001',
-    name: 'DIESEL S10 ORIGINAL',
-    category: 'DIESEL',
-    status: 'warning',
-    statusLabel: 'Monitorar',
-    valueLabel: '4.551 L',
-    capacityLabel: 'Capacidade 15.000 · Lastro 0',
-    progress: 0.303,
-    levelLabel: '30,3%',
-    autonomyLabel: '—',
-    averageConsumptionLabel: '0,0 L/dia',
-    lastReadingLabel: '01/07/2026 02:55',
-  },
-  {
-    id: '002',
-    code: '002',
-    name: 'DIESEL COMUM S500',
-    category: 'DIESEL',
-    status: 'ok',
-    statusLabel: 'OK',
-    valueLabel: '6.378 L',
-    capacityLabel: 'Capacidade 15.000 · Lastro 0',
-    progress: 0.425,
-    levelLabel: '42,5%',
-    autonomyLabel: '—',
-    averageConsumptionLabel: '0,0 L/dia',
-    lastReadingLabel: '01/07/2026 02:55',
-  },
-  {
-    id: '003',
-    code: '003',
-    name: 'GASOLINA COMUM',
-    category: 'GASOLINA',
-    status: 'warning',
-    statusLabel: 'Atenção',
-    valueLabel: '2.411 L',
-    capacityLabel: 'Capacidade 15.000 · Lastro 0',
-    progress: 0.161,
-    levelLabel: '16,1%',
-    autonomyLabel: '—',
-    averageConsumptionLabel: '0,0 L/dia',
-    lastReadingLabel: '01/07/2026 02:55',
-  },
-  {
-    id: '004',
-    code: '004',
-    name: 'GASOLINA ADITIVADA',
-    category: 'GASOLINA',
-    status: 'ok',
-    statusLabel: 'OK',
-    valueLabel: '7.501 L',
-    capacityLabel: 'Capacidade 15.000 · Lastro 0',
-    progress: 0.5,
-    levelLabel: '50,0%',
-    autonomyLabel: '—',
-    averageConsumptionLabel: '0,0 L/dia',
-    lastReadingLabel: '01/07/2026 02:55',
-  },
-  {
-    id: '005',
-    code: '005',
-    name: 'ETANOL HIDRATADO',
-    category: 'ETANOL',
-    status: 'ok',
-    statusLabel: 'OK',
-    valueLabel: '6.553 L',
-    capacityLabel: 'Capacidade 15.000 · Lastro 0',
-    progress: 0.437,
-    levelLabel: '43,7%',
-    autonomyLabel: '—',
-    averageConsumptionLabel: '0,0 L/dia',
-    lastReadingLabel: '01/07/2026 02:55',
-  },
-];
-
 const lowStockSummary = {
   totalCount: 1133,
   revenueAtRiskLabel: 'R$ 28.866,40',
@@ -8238,19 +8092,22 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
     isLoading: isLoadingEstoques,
     errorMessage: estoquesError,
   } = useDiretoriaPainelRecurso('estoques', estoquesFiltros);
-  // Confirmado pela Lovable em 04/08/2026: tanques ficam em tanquesTodos/
-  // tanquesAlerta, produtos de loja (o que alimenta a seção abaixo) em
-  // "produtos" — por isso "produtos" não entra mais na busca de tanques
-  // (antes podia colidir com a lista de produtos por engano).
-  const estoqueItems = pickArr(estoques, ['tanquesTodos', 'tanquesAlerta', 'tanques', 'familias']);
+  // Confirmado pela Lovable em 07/08/2026: cards de produto (um por
+  // combustível) vêm em dados.produtosTanque[], e os 4 cards de resumo do
+  // topo em dados.resumo — substituindo os nomes adivinhados antes
+  // (tanquesTodos/tanquesAlerta/tanques/familias) que nunca bateram.
+  const produtosTanque = pickArr(estoques, ['produtosTanque']);
+  const estoquesResumo = (estoques as any)?.resumo ?? null;
+  const [expandedTankIds, setExpandedTankIds] = useState<Record<string, boolean>>({});
   const estoquesPeriodoLabel = estoquesPeriodo.de
     ? formatDateBR(new Date(estoquesPeriodo.de + 'T00:00:00'))
     : formatDateBR(new Date());
 
+  // status real: "green" = OK, "yellow" = Monitorar, "orange"/"red" = Crítico.
   const mapEstoqueStatus = (raw: string | null): StockTankItem['status'] => {
     const value = (raw ?? '').toLowerCase();
-    if (value.includes('crit')) return 'critical';
-    if (value.includes('monitor') || value.includes('aten') || value.includes('warn')) return 'warning';
+    if (value === 'orange' || value === 'red' || value.includes('crit')) return 'critical';
+    if (value === 'yellow' || value.includes('monitor') || value.includes('aten')) return 'warning';
     return 'ok';
   };
   const estoqueStatusLabel: Record<StockTankItem['status'], string> = {
@@ -8420,6 +8277,44 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
           </Pressable>
         </View>
 
+        {estoquesResumo ? (
+          <>
+            <Text style={styles.directorSectionTitle}>RESUMO</Text>
+            <View style={styles.stockSummaryGrid}>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>TANQUES CRÍTICOS</Text>
+                <Text style={styles.directorSummaryValue}>
+                  {fmtNumOrDash(pickNum(estoquesResumo, ['tanques_criticos']))}
+                </Text>
+                <Text style={styles.directorSummaryMeta}>
+                  de {fmtNumOrDash(pickNum(estoquesResumo, ['tanques_monitorados']))} monitorados
+                </Text>
+              </View>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>AUTONOMIA MÉDIA</Text>
+                <Text style={styles.directorSummaryValue}>
+                  {fmtAutonomiaHoras(pickNum(estoquesResumo, ['autonomia_media_horas']))}
+                </Text>
+                <Text style={styles.directorSummaryMeta}>Média ponderada de tanques ativos</Text>
+              </View>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>PRODUTOS ZERADOS</Text>
+                <Text style={styles.directorSummaryValue}>
+                  {fmtNumOrDash(pickNum(estoquesResumo, ['produtos_zerados_com_giro']))}
+                </Text>
+                <Text style={styles.directorSummaryMeta}>Com giro nos últimos 7 dias</Text>
+              </View>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>RECEITA/DIA EM RISCO</Text>
+                <Text style={styles.directorSummaryValue}>
+                  {fmtBRLOrDash(pickNum(estoquesResumo, ['receita_risco_dia']))}
+                </Text>
+                <Text style={styles.directorSummaryMeta}>Perda estimada por ruptura</Text>
+              </View>
+            </View>
+          </>
+        ) : null}
+
         <View style={styles.stockSectionHeaderRow}>
           <Feather name="droplet" size={15} color="#E6213D" />
           <Text style={styles.stockSectionTitle}>Tanques de combustível</Text>
@@ -8429,28 +8324,34 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
           <Text style={styles.conversaEmptyText}>Carregando estoques...</Text>
         ) : estoquesError ? (
           <Text style={styles.conversaEmptyText}>{estoquesError}</Text>
-        ) : estoqueItems.length === 0 ? (
+        ) : produtosTanque.length === 0 ? (
           <Text style={styles.conversaEmptyText}>Sem dados de estoque no período.</Text>
         ) : (
-          estoqueItems.map((item: any, index: number) => {
+          produtosTanque.map((item: any, index: number) => {
             const statusKey = mapEstoqueStatus(pickStr(item, ['status']));
             const colors = statusColors[statusKey];
-            const volumeAtual = pickNum(item, ['volume_atual', 'volume']);
-            const capacidade = pickNum(item, ['capacidade_total', 'capacidade']);
-            const progress = volumeAtual !== null && capacidade ? volumeAtual / capacidade : 0;
-            const qtdTanques = pickNum(item, ['qtd_tanques', 'quantidade_tanques']);
-            const qtdPostos = pickNum(item, ['qtd_postos', 'quantidade_postos']);
-            const coberturaDias = pickNum(item, ['cobertura_dias', 'cobertura']);
-            const titulo = pickStr(item, ['titulo', 'produto', 'nome']) ?? `Produto ${index + 1}`;
+            const unidade = pickStr(item, ['unidade']) ?? 'L';
+            const volumeAtual = pickNum(item, ['estoque_total']);
+            const capacidade = pickNum(item, ['capacidade_total']);
+            const nivelPct = pickNum(item, ['nivel_pct']);
+            const progress = nivelPct !== null ? nivelPct / 100 : volumeAtual !== null && capacidade ? volumeAtual / capacidade : 0;
+            const qtdTanques = pickNum(item, ['tanques_count']);
+            const qtdPostos = pickNum(item, ['postos_count']);
+            const autonomiaHoras = pickNum(item, ['autonomia_horas']);
+            const consumoMedioDia = pickNum(item, ['consumo_medio_dia']);
+            const mediaRedeAutonomia = pickNum(item, ['media_rede_autonomia_horas']);
+            const statusLabel = pickStr(item, ['status_label']) ?? estoqueStatusLabel[statusKey];
+            const titulo = pickStr(item, ['produto_nome']) ?? `Produto ${index + 1}`;
+            const postosCriticos = pickArr(item, ['postos_criticos']);
+            const itemId = pickStr(item, ['familia']) ?? titulo;
+            const isExpanded = Boolean(expandedTankIds[itemId]);
 
             return (
-              <View key={titulo} style={[styles.stockCard, { borderLeftColor: colors.border }]}>
+              <View key={itemId} style={[styles.stockCard, { borderLeftColor: colors.border }]}>
                 <View style={styles.stockCardTopRow}>
                   <Text style={styles.stockCardTitle}>{titulo}</Text>
                   <View style={[styles.stockStatusPill, { backgroundColor: colors.tint }]}>
-                    <Text style={[styles.stockStatusPillText, { color: colors.text }]}>
-                      {estoqueStatusLabel[statusKey]}
-                    </Text>
+                    <Text style={[styles.stockStatusPillText, { color: colors.text }]}>{statusLabel}</Text>
                   </View>
                 </View>
                 <Text style={styles.stockCardSubtitle}>
@@ -8458,8 +8359,9 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
                   {qtdPostos !== null ? ` · ${qtdPostos} posto${qtdPostos === 1 ? '' : 's'}` : ''}
                 </Text>
                 <Text style={styles.stockCardValue}>
-                  {fmtNumOrDash(volumeAtual, ' L')}
-                  {capacidade !== null ? ` / ${fmtNumOrDash(capacidade, ' L')}` : ''}
+                  {fmtNumOrDash(volumeAtual, ` ${unidade}`)}
+                  {capacidade !== null ? ` / ${fmtNumOrDash(capacidade, ` ${unidade}`)}` : ''}
+                  {nivelPct !== null ? ` (${fmtPercentOrDash(nivelPct)})` : ''}
                 </Text>
                 <View style={styles.stockProgressTrack}>
                   <View
@@ -8470,11 +8372,81 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
                   />
                 </View>
                 <View style={styles.stockConsumptionRow}>
-                  <Text style={styles.stockConsumptionLabel}>Cobertura</Text>
-                  <Text style={styles.stockConsumptionValue}>
-                    {coberturaDias === null ? '—' : `${coberturaDias} dia${coberturaDias === 1 ? '' : 's'}`}
-                  </Text>
+                  <Text style={styles.stockConsumptionLabel}>Autonomia</Text>
+                  <Text style={styles.stockConsumptionValue}>{fmtAutonomiaHoras(autonomiaHoras)}</Text>
                 </View>
+                <View style={styles.stockConsumptionRow}>
+                  <Text style={styles.stockConsumptionLabel}>Consumo médio/dia</Text>
+                  <Text style={styles.stockConsumptionValue}>{fmtNumOrDash(consumoMedioDia, ` ${unidade}`)}</Text>
+                </View>
+
+                {postosCriticos.length > 0 ? (
+                  <>
+                    <Pressable
+                      style={styles.stockToggleRow}
+                      onPress={() =>
+                        setExpandedTankIds((current) => ({ ...current, [itemId]: !current[itemId] }))
+                      }
+                    >
+                      <Text style={styles.stockToggleRowText}>
+                        {titulo.toUpperCase()} — {postosCriticos.length} posto{postosCriticos.length === 1 ? '' : 's'} mais crítico
+                        {postosCriticos.length === 1 ? '' : 's'}
+                      </Text>
+                      <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={15} color="#3457D5" />
+                    </Pressable>
+
+                    {isExpanded ? (
+                      <View style={styles.stockCriticalTable}>
+                        <Text style={styles.stockCriticalTableMeta}>
+                          Média da rede: {fmtAutonomiaHoras(mediaRedeAutonomia)}
+                        </Text>
+                        {postosCriticos.map((posto: any, postoIndex: number) => {
+                          const postoStatusKey = mapEstoqueStatus(pickStr(posto, ['status']));
+                          const postoColors = statusColors[postoStatusKey];
+                          const postoStatusLabel = pickStr(posto, ['status_label']) ?? estoqueStatusLabel[postoStatusKey];
+                          const desvioHoras = pickNum(posto, ['desvio_horas']);
+
+                          return (
+                            <View
+                              key={pickStr(posto, ['posto_id']) ?? postoIndex}
+                              style={styles.stockCriticalRow}
+                            >
+                              <Text style={styles.stockCriticalRank}>#{postoIndex + 1}</Text>
+                              <View style={styles.stockCriticalTextBlock}>
+                                <Text style={styles.stockCriticalName}>
+                                  {pickStr(posto, ['posto_nome']) ?? '—'}
+                                </Text>
+                                <Text style={styles.stockCriticalMeta}>
+                                  {fmtNumOrDash(pickNum(posto, ['estoque']), ` ${unidade}`)} /{' '}
+                                  {fmtNumOrDash(pickNum(posto, ['capacidade']), ` ${unidade}`)} ·{' '}
+                                  {fmtPercentOrDash(pickNum(posto, ['nivel_pct']))}
+                                </Text>
+                              </View>
+                              <View style={styles.stockCriticalRight}>
+                                <View style={styles.stockCriticalStatusRow}>
+                                  <View
+                                    style={[styles.marginStationDot, { backgroundColor: postoColors.border }]}
+                                  />
+                                  <Text style={[styles.stockCriticalStatusText, { color: postoColors.text }]}>
+                                    {postoStatusLabel}
+                                  </Text>
+                                </View>
+                                <Text style={styles.stockCriticalAutonomy}>
+                                  {fmtAutonomiaHoras(pickNum(posto, ['autonomia_horas']))}
+                                </Text>
+                                <Text style={styles.stockCriticalDelta}>
+                                  {desvioHoras === null
+                                    ? '—'
+                                    : `${desvioHoras > 0 ? '+' : ''}${fmtAutonomiaHoras(Math.abs(desvioHoras))}`}
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                  </>
+                ) : null}
               </View>
             );
           })
@@ -11525,6 +11497,15 @@ function fmtPercentOrDash(value: number | null): string {
 }
 function fmtNumOrDash(value: number | null, suffix = ''): string {
   return value === null ? '—' : `${value.toLocaleString('pt-BR')}${suffix}`;
+}
+// Converte horas (float) em "Xd Yh", igual ao painel web (autonomia de tanques).
+function fmtAutonomiaHoras(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '—';
+  const totalHoras = Math.max(0, value);
+  const dias = Math.floor(totalHoras / 24);
+  const horas = Math.round(totalHoras % 24);
+  if (dias === 0) return `${horas}h`;
+  return `${dias}d ${horas}h`;
 }
 
 type DiretoriaPosto = { id: string; nome: string };
@@ -15577,6 +15558,97 @@ export const styles = StyleSheet.create({
     color: '#9AA1B5',
     fontSize: 12,
     fontWeight: '700',
+  },
+  stockSummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 6,
+  },
+  stockSummaryCard: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 12,
+  },
+  stockToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF0F6',
+  },
+  stockToggleRowText: {
+    flex: 1,
+    color: '#3457D5',
+    fontSize: 11,
+    fontWeight: '800',
+    marginRight: 8,
+  },
+  stockCriticalTable: {
+    marginTop: 8,
+  },
+  stockCriticalTableMeta: {
+    color: '#8992A8',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  stockCriticalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F2F3F8',
+    gap: 8,
+  },
+  stockCriticalRank: {
+    color: '#9AA1B5',
+    fontSize: 11,
+    fontWeight: '800',
+    width: 22,
+  },
+  stockCriticalTextBlock: {
+    flex: 1,
+  },
+  stockCriticalName: {
+    color: '#15203E',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stockCriticalMeta: {
+    color: '#8992A8',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  stockCriticalRight: {
+    alignItems: 'flex-end',
+  },
+  stockCriticalStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  stockCriticalStatusText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  stockCriticalAutonomy: {
+    color: '#15203E',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  stockCriticalDelta: {
+    color: '#E6213D',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
   },
   stationTankSectionTitle: {
     marginTop: 6,
