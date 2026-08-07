@@ -7740,9 +7740,59 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
   );
 }
 
+const MARGIN_MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
 function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
   const postos = useDiretoriaPostos();
-  const filtros = useMemo(() => getCurrentMonthRange(), []);
+  const stationOptions = useMemo(() => ['Todos os Postos', ...postos.map((p) => p.nome)], [postos]);
+  const [selectedStation, setSelectedStation] = useState('Todos os Postos');
+  const [isStationPickerOpen, setIsStationPickerOpen] = useState(false);
+  const selectedPostoId = useMemo(
+    () => postos.find((p) => p.nome === selectedStation)?.id,
+    [postos, selectedStation]
+  );
+
+  // Igual ao filtro do painel web: alterna Mês/Ano e navega com < / > a
+  // partir de um mês/ano-âncora (default: hoje).
+  const [viewMode, setViewMode] = useState<'mes' | 'ano'>('mes');
+  const [anchorDate, setAnchorDate] = useState(() => new Date());
+
+  const handlePrevPeriod = () => {
+    setAnchorDate((current) =>
+      viewMode === 'mes'
+        ? new Date(current.getFullYear(), current.getMonth() - 1, 1)
+        : new Date(current.getFullYear() - 1, current.getMonth(), 1)
+    );
+  };
+  const handleNextPeriod = () => {
+    setAnchorDate((current) =>
+      viewMode === 'mes'
+        ? new Date(current.getFullYear(), current.getMonth() + 1, 1)
+        : new Date(current.getFullYear() + 1, current.getMonth(), 1)
+    );
+  };
+  const handleResetPeriod = () => setAnchorDate(new Date());
+
+  const periodLabel =
+    viewMode === 'mes'
+      ? `${MARGIN_MONTH_NAMES[anchorDate.getMonth()]} / ${anchorDate.getFullYear()}`
+      : `${anchorDate.getFullYear()}`;
+
+  const filtros = useMemo(() => {
+    const de =
+      viewMode === 'mes'
+        ? new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1)
+        : new Date(anchorDate.getFullYear(), 0, 1);
+    const ate =
+      viewMode === 'mes'
+        ? new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 0)
+        : new Date(anchorDate.getFullYear(), 11, 31);
+    return { de: toApiDateOnly(de), ate: toApiDateOnly(ate), posto: selectedPostoId };
+  }, [viewMode, anchorDate, selectedPostoId]);
+
   const { dados: margem, periodo, isLoading, errorMessage } = useDiretoriaPainelRecurso('margem', filtros);
 
   // Shape real de recurso=margem confirmado pela Lovable em 05/08/2026: não
@@ -7775,21 +7825,6 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
 
   const pctDeltaLabel = (deltaPp: number | null) => (deltaPp === null ? '—' : `${deltaPp > 0 ? '+' : ''}${fmtPercentOrDash(deltaPp)}pp`);
 
-  // Combustíveis (R$/L): média ponderada por volume dos rede_rs_unit dos
-  // blocos líquidos (sem GNV, que tem unidade própria em m³).
-  const combustiveisRsLitroPonderado = (() => {
-    let volumeTotal = 0;
-    let somaPonderada = 0;
-    for (const bloco of combLiquidosBlocos) {
-      const rsUnit = pickNum(bloco, ['rede_rs_unit']);
-      const volume = pickNum(bloco, ['volume_rede']);
-      if (rsUnit === null || volume === null) continue;
-      volumeTotal += volume;
-      somaPonderada += rsUnit * volume;
-    }
-    return volumeTotal > 0 ? somaPonderada / volumeTotal : null;
-  })();
-
   const topCards: Array<{ id: string; label: string; value: string; badge?: string | null; meta?: string | null }> = [
     {
       id: 'margem-combustiveis-litro',
@@ -7801,9 +7836,11 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
           : null,
     },
     {
+      // No painel web esse card mostra o mesmo valor do "Margem combustíveis
+      // (R$/L)" — só acrescenta a variação/meta ao lado.
       id: 'combustiveis-litro',
       label: 'Combustíveis (R$/L)',
-      value: fmtBRLOrDash(combustiveisRsLitroPonderado),
+      value: fmtBRLOrDash(margemRsLitroCombustivel),
       badge: divisaoCombustivel ? pctDeltaLabel(pickNum(divisaoCombustivel, ['delta_pp'])) : null,
       meta: divisaoCombustivel
         ? `${fmtPercentOrDash(pickNum(divisaoCombustivel, ['margem_pct']))} · ${fmtBRLOrDash(pickNum(divisaoCombustivel, ['faturamento']))} · ${pctDeltaLabel(pickNum(divisaoCombustivel, ['delta_pp']))}`
@@ -7865,16 +7902,33 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
   const renderBlocoCard = (bloco: any) => {
     const titulo = pickStr(bloco, ['chave']) ?? '—';
     const mediaRede = pickNum(bloco, ['rede_pct']);
+    const mediaRedeRsUnit = pickNum(bloco, ['rede_rs_unit']);
+    const unidade = pickStr(bloco, ['unidade']);
     const impacto = pickNum(bloco, ['impacto_total']);
     const ofensoresCount = pickNum(bloco, ['ofensores_count']) ?? 0;
     const ofensoresTop5 = pickArr(bloco, ['ofensores_top5']);
+    const criticosCount = ofensoresTop5.filter((station: any) => pickStr(station, ['severidade']) === 'critico').length;
 
     return (
       <View key={titulo} style={styles.marginCategoryCard}>
         <View style={styles.marginCategoryHeader}>
           <Text style={styles.marginCategoryTitle}>{titulo.toUpperCase()}</Text>
-          <Text style={styles.marginCategoryAverage}>Média rede: {fmtPercentOrDash(mediaRede)}</Text>
+          <Text style={styles.marginCategoryAverage}>
+            Média rede: {mediaRedeRsUnit !== null && unidade ? `${fmtBRLOrDash(mediaRedeRsUnit)}/${unidade} · ` : ''}
+            {fmtPercentOrDash(mediaRede)}
+          </Text>
         </View>
+
+        {ofensoresCount > 0 ? (
+          <View style={styles.marginCategoryFooter}>
+            <Text style={styles.marginCategoryFooterOffenders}>{ofensoresCount} ofensores</Text>
+            {criticosCount > 0 ? (
+              <Text style={[styles.marginCategoryFooterOffenders, { color: '#E6213D' }]}>
+                {criticosCount} crítico{criticosCount === 1 ? '' : 's'}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         {ofensoresCount === 0 ? (
           <Text style={styles.conversaEmptyText}>Todos os postos estão acima da média da rede.</Text>
@@ -7883,6 +7937,9 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
             const severidade = pickStr(station, ['severidade']);
             const percentual = pickNum(station, ['margem_posto_pct']);
             const delta = pickNum(station, ['desvio_pp']);
+            const margemRsUnit = pickNum(station, ['margem_rs_unit']);
+            const desvioRsUnit = pickNum(station, ['desvio_rs_unit']);
+            const impactoPosto = pickNum(station, ['impacto_rs']);
             const puxadoPor = pickArr(station, ['puxado_por'])
               .map((entry: any) => pickStr(entry, ['label']))
               .filter((label): label is string => !!label)
@@ -7893,7 +7950,16 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
                 <Text style={styles.marginRank}>#{stationIndex + 1}</Text>
                 <View style={styles.marginStationTextBlock}>
                   <Text style={styles.marginStationName}>{pickStr(station, ['posto_nome']) ?? '—'}</Text>
+                  {margemRsUnit !== null && unidade ? (
+                    <Text style={styles.marginStationPulledBy}>
+                      {fmtBRLOrDash(margemRsUnit)}/{unidade}
+                      {desvioRsUnit !== null ? ` · ${desvioRsUnit > 0 ? '+' : ''}${fmtBRLOrDash(desvioRsUnit)}/${unidade}` : ''}
+                    </Text>
+                  ) : null}
                   {puxadoPor ? <Text style={styles.marginStationPulledBy}>{puxadoPor}</Text> : null}
+                  {impactoPosto !== null ? (
+                    <Text style={styles.marginStationPulledBy}>Perda: {fmtBRLOrDash(impactoPosto)}</Text>
+                  ) : null}
                 </View>
                 <View style={styles.marginStationRight}>
                   <View style={styles.marginStationPercentRow}>
@@ -7922,12 +7988,6 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
       </View>
     );
   };
-
-  const periodoLabel = periodo.de
-    ? periodo.ate && periodo.ate !== periodo.de
-      ? `${formatDateBR(new Date(periodo.de + 'T00:00:00'))} a ${formatDateBR(new Date(periodo.ate + 'T00:00:00'))}`
-      : formatDateBR(new Date(periodo.de + 'T00:00:00'))
-    : null;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -7958,8 +8018,42 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
           ) : null}
         </View>
         <Text style={styles.pageSubtitle}>
-          Postos ofensores{periodoLabel ? ` · ${periodoLabel}` : ''} · Toda a rede ({postos.length} postos)
+          Postos ofensores · Toda a rede ({postos.length} postos)
         </Text>
+
+        <View style={styles.lowStockTabsRow}>
+          {(['mes', 'ano'] as const).map((mode) => (
+            <Pressable
+              key={mode}
+              style={[styles.lowStockTab, viewMode === mode ? styles.lowStockTabActive : null]}
+              onPress={() => setViewMode(mode)}
+            >
+              <Text style={[styles.lowStockTabText, viewMode === mode ? styles.lowStockTabTextActive : null]}>
+                {mode === 'mes' ? 'Mês' : 'Ano'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.directorFilterRow}>
+          <Pressable style={styles.directorFilterPill} onPress={handlePrevPeriod}>
+            <Feather name="chevron-left" size={14} color="#5E667D" />
+          </Pressable>
+          <Pressable style={styles.directorFilterPill} onPress={handleResetPeriod}>
+            <Feather name="calendar" size={14} color="#5E667D" />
+            <Text style={styles.directorFilterPillText}>{periodLabel}</Text>
+          </Pressable>
+          <Pressable style={styles.directorFilterPill} onPress={handleNextPeriod}>
+            <Feather name="chevron-right" size={14} color="#5E667D" />
+          </Pressable>
+        </View>
+
+        <View style={styles.directorFilterRow}>
+          <Pressable style={styles.directorFilterPill} onPress={() => setIsStationPickerOpen(true)}>
+            <Text style={styles.directorFilterPillText}>{selectedStation}</Text>
+            <Feather name="chevron-down" size={14} color="#5E667D" />
+          </Pressable>
+        </View>
 
         {isLoading && !margem ? (
           <Text style={styles.conversaEmptyText}>Carregando margem...</Text>
@@ -8005,17 +8099,16 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
               </View>
             ))}
 
-            <Text style={[styles.directorSectionTitle, styles.spacingTop]}>
-              COMBUSTÍVEIS — POSTOS OFENSORES
-            </Text>
+            {totalOfensoresCombustivel > 0 ? (
+              <>
+                <Text style={[styles.directorSectionTitle, styles.spacingTop]}>
+                  COMBUSTÍVEIS — POSTOS OFENSORES
+                </Text>
+                {categoriasCombustivel.map(renderBlocoCard)}
+              </>
+            ) : null}
 
-            {categoriasCombustivel.length === 0 ? (
-              <Text style={styles.conversaEmptyText}>Sem ofensores de combustível no período.</Text>
-            ) : (
-              categoriasCombustivel.map(renderBlocoCard)
-            )}
-
-            <Text style={styles.directorSectionTitle}>LOJAS — POSTOS OFENSORES</Text>
+            <Text style={[styles.directorSectionTitle, styles.spacingTop]}>LOJAS — POSTOS OFENSORES</Text>
             {categoriasLoja.length === 0 ? (
               <Text style={styles.conversaEmptyText}>Sem ofensores de loja no período.</Text>
             ) : (
@@ -8098,6 +8191,15 @@ function MarginScreen({ navigation }: ScreenProps<'Margin'>) {
           </>
         )}
       </ScrollView>
+
+      <SimpleListModal
+        visible={isStationPickerOpen}
+        title="Selecionar posto"
+        options={stationOptions}
+        selectedValue={selectedStation}
+        onSelect={setSelectedStation}
+        onClose={() => setIsStationPickerOpen(false)}
+      />
     </SafeAreaView>
   );
 }
