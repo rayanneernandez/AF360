@@ -2060,15 +2060,6 @@ const processModuleOptions = [
   'Notificações',
 ];
 
-const processOwnerOptions = [
-  '— Sem responsável —',
-  'A. Ramos',
-  'C. Dias',
-  'M. Reis',
-  'P. Lima',
-  'B. Lyra',
-];
-
 const processStatusOptions: Array<{ value: ProcessMapItem['status']; label: string }> = [
   { value: 'draft', label: 'Rascunho' },
   { value: 'review', label: 'Revisão' },
@@ -9255,7 +9246,7 @@ const emptyProcessForm: ProcessFormValues = {
   description: '',
   department: processDepartmentOptions[0],
   linkedModule: processModuleOptions[0],
-  owner: processOwnerOptions[0],
+  owner: '',
   status: 'draft',
   version: '1',
   tags: [],
@@ -9280,9 +9271,7 @@ function ProcessFormModal({
   const [newTagText, setNewTagText] = useState('');
   const [isDepartmentPickerOpen, setIsDepartmentPickerOpen] = useState(false);
   const [isModulePickerOpen, setIsModulePickerOpen] = useState(false);
-  const [isOwnerPickerOpen, setIsOwnerPickerOpen] = useState(false);
   const [isStatusPickerOpen, setIsStatusPickerOpen] = useState(false);
-  const [editingStepOwnerId, setEditingStepOwnerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) {
@@ -9309,7 +9298,6 @@ function ProcessFormModal({
 
     setActiveTab('geral');
     setNewTagText('');
-    setEditingStepOwnerId(null);
   }, [visible, initialProcess]);
 
   const statusLabel =
@@ -9340,7 +9328,7 @@ function ProcessFormModal({
           id: `step-${Date.now()}`,
           title: '',
           description: '',
-          owner: processOwnerOptions[0],
+          owner: '',
           deadlineDays: '',
         },
       ],
@@ -9503,10 +9491,13 @@ function ProcessFormModal({
                   </Pressable>
 
                   <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Responsável</Text>
-                  <Pressable style={styles.requestSelectBox} onPress={() => setIsOwnerPickerOpen(true)}>
-                    <Text style={styles.requestSelectText}>{form.owner}</Text>
-                    <Feather name="chevron-down" size={18} color="#7A8299" />
-                  </Pressable>
+                  <TextInput
+                    style={styles.processTextInput}
+                    value={form.owner}
+                    onChangeText={(text) => setForm((current) => ({ ...current, owner: text }))}
+                    placeholder="Nome do responsável"
+                    placeholderTextColor="#A7AEC2"
+                  />
 
                   <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Status</Text>
                   <Pressable style={styles.requestSelectBox} onPress={() => setIsStatusPickerOpen(true)}>
@@ -9613,15 +9604,13 @@ function ProcessFormModal({
                         />
 
                         <View style={styles.processStepCardBottomRow}>
-                          <Pressable
-                            style={[styles.requestSelectBox, styles.processStepOwnerBox]}
-                            onPress={() => setEditingStepOwnerId(step.id)}
-                          >
-                            <Text style={styles.requestSelectText} numberOfLines={1}>
-                              {step.owner}
-                            </Text>
-                            <Feather name="chevron-down" size={16} color="#7A8299" />
-                          </Pressable>
+                          <TextInput
+                            style={[styles.processTextInput, styles.processStepOwnerBox]}
+                            value={step.owner}
+                            onChangeText={(text) => handleUpdateStep(step.id, { owner: text })}
+                            placeholder="Responsável"
+                            placeholderTextColor="#A7AEC2"
+                          />
                           <TextInput
                             style={[styles.processTextInput, styles.processStepDeadlineInput]}
                             value={step.deadlineDays}
@@ -9753,14 +9742,6 @@ function ProcessFormModal({
         onClose={() => setIsModulePickerOpen(false)}
       />
       <SimpleListModal
-        visible={isOwnerPickerOpen}
-        title="Responsável"
-        options={processOwnerOptions}
-        selectedValue={form.owner}
-        onSelect={(value) => setForm((current) => ({ ...current, owner: value }))}
-        onClose={() => setIsOwnerPickerOpen(false)}
-      />
-      <SimpleListModal
         visible={isStatusPickerOpen}
         title="Status"
         options={processStatusOptions.map((option) => option.label)}
@@ -9773,20 +9754,6 @@ function ProcessFormModal({
           }
         }}
         onClose={() => setIsStatusPickerOpen(false)}
-      />
-      <SimpleListModal
-        visible={editingStepOwnerId !== null}
-        title="Responsável pela etapa"
-        options={processOwnerOptions}
-        selectedValue={
-          form.steps.find((step) => step.id === editingStepOwnerId)?.owner ?? processOwnerOptions[0]
-        }
-        onSelect={(value) => {
-          if (editingStepOwnerId) {
-            handleUpdateStep(editingStepOwnerId, { owner: value });
-          }
-        }}
-        onClose={() => setEditingStepOwnerId(null)}
       />
     </>
   );
@@ -9964,6 +9931,15 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
   const [isOwnerFilterOpen, setIsOwnerFilterOpen] = useState(false);
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
+  const handleSaveNewProcess = () => {
+    setIsCreateModalOpen(false);
+    Alert.alert(
+      'Criação ainda não disponível',
+      'A escrita de processos pelo app depende de confirmação da Lovable sobre permissão do perfil Diretoria (hoje só o perfil master pode criar/editar). Assim que confirmado, esse botão passa a salvar de verdade. Por enquanto, continue criando pelo site.'
+    );
+  };
 
   useEffect(() => {
     let isActive = true;
@@ -10064,9 +10040,13 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
               Mapa de Processos
             </Text>
           </View>
+          <Pressable style={styles.processNewButton} onPress={() => setIsCreateModalOpen(true)}>
+            <Feather name="plus" size={14} color="#FFFFFF" />
+            <Text style={styles.processNewButtonText}>Novo processo</Text>
+          </Pressable>
         </View>
         <Text style={styles.pageSubtitle}>
-          Fluxos e etapas cadastrados pela Diretoria — a criação e edição continuam pelo site.
+          Cadastre fluxos, etapas e documentação dos processos da empresa.
         </Text>
 
         <View style={styles.processSearchRow}>
@@ -10149,6 +10129,13 @@ function ProcessMapScreen({ navigation }: ScreenProps<'ProcessMap'>) {
         visible={selectedProcessId !== null}
         processoId={selectedProcessId}
         onClose={() => setSelectedProcessId(null)}
+      />
+
+      <ProcessFormModal
+        visible={isCreateModalOpen}
+        initialProcess={null}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSave={handleSaveNewProcess}
       />
 
       <SimpleListModal
