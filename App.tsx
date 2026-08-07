@@ -3197,9 +3197,21 @@ function TwoFactorVerificationScreen({ navigation, route }: ScreenProps<'TwoFact
         setSendErrorMessage(`Aguarde ${result.retryAposSegundos}s para reenviar.`);
       }
     } catch (err) {
-      setSendErrorMessage(
-        err instanceof Error ? err.message : 'Não foi possível enviar o código. Tente novamente.'
-      );
+      if (err instanceof ApiError && err.status === 422) {
+        setSendErrorMessage('Esse perfil não tem e-mail cadastrado. Peça pro RH atualizar o cadastro.');
+      } else if (err instanceof ApiError && err.status === 404) {
+        setSendErrorMessage('Perfil não encontrado. Fale com o suporte.');
+      } else if (err instanceof ApiError && err.status === 403) {
+        setSendErrorMessage('Esse perfil está inativo.');
+      } else if (err instanceof ApiError && err.status === 502) {
+        setSendErrorMessage(
+          'Não conseguimos enviar o e-mail agora (o servidor de e-mail recusou o envio — o endereço cadastrado pode não existir de verdade). Tente novamente ou avise o suporte.'
+        );
+      } else {
+        setSendErrorMessage(
+          err instanceof Error ? err.message : 'Não foi possível enviar o código. Tente novamente.'
+        );
+      }
     } finally {
       setIsSending(false);
     }
