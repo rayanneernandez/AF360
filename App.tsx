@@ -2721,10 +2721,18 @@ async function goToTargetOrTwoFactor(
   role: UserRole
 ) {
   // TEMPORÁRIO (pedido da Rayanne em 07/08/2026): os perfis Administrador e
-  // Diretoria hoje são só os dela mesma pra testar o app — não pedem 2FA
-  // por enquanto. Tirar essa exceção quando existirem contas "de verdade"
-  // desses dois perfis em produção.
-  if (role === 'administrador' || role === 'diretoria') {
+  // Diretoria hoje são só dela mesma pra testar o app — não pedem 2FA por
+  // enquanto. Isso vale pra CONTA (se ela tem acesso de administrador em
+  // qualquer painel), não só pro painel que está entrando agora — então se
+  // essa mesma conta administradora entrar no painel Colaborador pra testar,
+  // também não pede 2FA. Tirar essa exceção quando existirem contas "de
+  // verdade" desses perfis em produção.
+  const contaEhDeTeste =
+    role === 'administrador' ||
+    role === 'diretoria' ||
+    identity?.role === 'administrador' ||
+    identity?.availableRoles?.includes('administrador');
+  if (contaEhDeTeste) {
     navigation.replace(targetRoute);
     return;
   }
