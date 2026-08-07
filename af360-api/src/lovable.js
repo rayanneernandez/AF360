@@ -597,12 +597,29 @@ function getDiretoriaVendas({ recurso, de, ate, posto } = {}, actorId) {
 
 // --- Diretoria: Mapa de Processos (gst_processos + gst_processo_etapas) —
 // endpoint confirmado pela Lovable em 04/08/2026: /api/public/internal/
-// gst-processos, só leitura (escrita continua só master, pelo site).
-// GET sem id = lista (aceita departamento, status, q); GET ?id= = detalhe
-// (processo + etapas). Não devolve fluxograma_json de propósito.
+// gst-processos. GET sem id = lista (aceita departamento, status, q); GET
+// ?id= = detalhe (processo + etapas). Não devolve fluxograma_json na leitura
+// de propósito. Escrita confirmada em 07/08/2026: RLS continua master-only,
+// mas o endpoint interno (x-internal-secret + x-actor-id validado como
+// master) permite criar/editar/excluir pelo app. status real: rascunho|
+// ativo|em_revisao|descontinuado. etapas[] faz full replace (delete+insert)
+// em gst_processo_etapas. blocos[] simplificado ({tipo,rotulo}) é convertido
+// pela Lovable em fluxograma jsonb {nodes,edges}.
 
 function getGstProcessos({ departamento, status, q, id } = {}, actorId) {
   return lovableGet('/api/public/internal/gst-processos', { departamento, status, q, id }, actorId);
+}
+
+function postGstProcesso(body, actorId) {
+  return lovablePost('/api/public/internal/gst-processos', {}, body, actorId);
+}
+
+function patchGstProcesso(id, body, actorId) {
+  return lovablePatch('/api/public/internal/gst-processos', { id }, body, actorId);
+}
+
+function deleteGstProcesso(id, actorId) {
+  return lovableDelete('/api/public/internal/gst-processos', { id }, actorId);
 }
 
 // --- Colaborador: Reembolsos (tabela rh_reembolsos, endpoint confirmado pela
@@ -930,6 +947,9 @@ module.exports = {
   getDashboardKpis,
   getDiretoriaVendas,
   getGstProcessos,
+  postGstProcesso,
+  patchGstProcesso,
+  deleteGstProcesso,
   getRhReembolsos,
   postRhReembolso,
   patchRhReembolso,
