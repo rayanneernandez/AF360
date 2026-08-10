@@ -63,6 +63,62 @@ app.get('/', (req, res) => {
   res.json({ ok: true, service: 'af360-api', message: 'Veja /api/health' });
 });
 
+// Página de Política de Privacidade do app AF360, exigida pela Apple App Store
+// e pelo Google Play. Fica fora do prefixo /api de propósito, para não exigir
+// x-api-key (precisa ser acessível publicamente pelos times de revisão).
+app.get('/privacidade', (req, res) => {
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Política de Privacidade - AF360</title>
+  <style>
+    body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+    h1 { font-size: 24px; margin-bottom: 4px; }
+    h2 { font-size: 18px; margin-top: 32px; }
+    p, li { font-size: 15px; }
+    .updated { color: #666; font-size: 13px; margin-bottom: 32px; }
+  </style>
+</head>
+<body>
+  <h1>Política de Privacidade do AF360</h1>
+  <p class="updated">Última atualização: 10 de agosto de 2026</p>
+
+  <p>O AF360 é um aplicativo corporativo interno da American Fuel, destinado exclusivamente a colaboradores, gestores, diretoria e administração da empresa. Esta política explica como tratamos os dados pessoais dos usuários do app, em conformidade com a Lei Geral de Proteção de Dados (LGPD).</p>
+
+  <h2>1. Quem trata os dados</h2>
+  <p>A American Fuel é a controladora dos dados coletados pelo AF360. O acesso ao app é restrito a contas corporativas cadastradas pela própria empresa.</p>
+
+  <h2>2. Quais dados coletamos</h2>
+  <ul>
+    <li>Dados de identificação: nome completo, e-mail corporativo e/ou pessoal, cargo, setor e unidade</li>
+    <li>Dados de autenticação: credenciais de login e código de verificação em duas etapas enviado por e-mail</li>
+    <li>Conteúdo gerado pelo usuário: solicitações internas de RH (reembolsos, férias, uniformes), mensagens trocadas no canal "Fale com a Diretoria" e anexos (fotos/documentos) enviados nessas solicitações</li>
+    <li>Dados de uso do app, como notificações lidas e interação com processos internos</li>
+  </ul>
+
+  <h2>3. Para que usamos os dados</h2>
+  <p>Os dados são utilizados exclusivamente para viabilizar as funcionalidades do app: autenticação segura, gestão de RH, acompanhamento de processos internos, comunicação entre colaboradores e diretoria, e envio de notificações relevantes ao trabalho do usuário.</p>
+
+  <h2>4. Compartilhamento de dados</h2>
+  <p>Os dados não são vendidos nem compartilhados com terceiros para fins de publicidade. O armazenamento é feito em infraestrutura de banco de dados própria da American Fuel, com acesso restrito às áreas internas da empresa.</p>
+
+  <h2>5. Segurança</h2>
+  <p>Utilizamos autenticação em duas etapas (verificação por e-mail) para proteger o acesso às contas, além de controle de permissões por perfil (colaborador, RH, diretoria, administrador).</p>
+
+  <h2>6. Retenção e exclusão de dados</h2>
+  <p>Os dados são mantidos enquanto o usuário mantiver vínculo ativo com a empresa. Solicitações de exclusão ou correção de dados podem ser feitas diretamente ao RH da American Fuel.</p>
+
+  <h2>7. Direitos do usuário</h2>
+  <p>Nos termos da LGPD, o usuário pode solicitar acesso, correção ou exclusão de seus dados pessoais a qualquer momento, entrando em contato com a American Fuel.</p>
+
+  <h2>8. Contato</h2>
+  <p>Em caso de dúvidas sobre esta política, entre em contato pelo e-mail: <a href="mailto:rayanne.ernandez@globaltera.com.br">rayanne.ernandez@globaltera.com.br</a></p>
+</body>
+</html>`);
+});
+
 app.use((req, res) => {
   res.status(404).json({ ok: false, error: 'not_found', path: req.path });
 });
