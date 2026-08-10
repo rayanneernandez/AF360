@@ -119,6 +119,48 @@ app.get('/privacidade', (req, res) => {
 </html>`);
 });
 
+// Página de solicitação de exclusão de dados do app AF360, exigida pelo
+// Google Play na declaração de Segurança dos Dados.
+app.get('/exclusao-de-dados', (req, res) => {
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exclusão de Dados - AF360</title>
+  <style>
+    body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+    h1 { font-size: 24px; margin-bottom: 4px; }
+    h2 { font-size: 18px; margin-top: 32px; }
+    p, li { font-size: 15px; }
+    .updated { color: #666; font-size: 13px; margin-bottom: 32px; }
+  </style>
+</head>
+<body>
+  <h1>Solicitação de Exclusão de Dados do AF360</h1>
+  <p class="updated">Última atualização: 10 de agosto de 2026</p>
+
+  <p>O AF360 é o aplicativo corporativo interno da American Fuel. Esta página explica como um colaborador pode solicitar a exclusão de seus dados pessoais coletados pelo app.</p>
+
+  <h2>Como solicitar a exclusão</h2>
+  <p>Para solicitar a exclusão dos seus dados, envie um e-mail para <a href="mailto:rayanne.ernandez@globaltera.com.br">rayanne.ernandez@globaltera.com.br</a> a partir do e-mail cadastrado na empresa, informando seu nome completo e solicitando a exclusão da sua conta e dados no AF360.</p>
+
+  <h2>O que é excluído</h2>
+  <ul>
+    <li>Dados de identificação (nome, e-mail, cargo, setor e unidade)</li>
+    <li>Histórico de solicitações de RH (reembolsos, férias, uniformes)</li>
+    <li>Mensagens enviadas no canal "Fale com a Diretoria" e anexos enviados no app</li>
+  </ul>
+
+  <h2>O que pode ser mantido</h2>
+  <p>Registros que a American Fuel precisa manter por obrigação legal, trabalhista ou fiscal (por exemplo, histórico funcional exigido por lei) podem ser retidos mesmo após a exclusão da conta, pelo período exigido pela legislação aplicável.</p>
+
+  <h2>Prazo</h2>
+  <p>As solicitações são processadas em até 30 dias após a confirmação do vínculo do solicitante com a conta.</p>
+</body>
+</html>`);
+});
+
 app.use((req, res) => {
   res.status(404).json({ ok: false, error: 'not_found', path: req.path });
 });
