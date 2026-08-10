@@ -161,6 +161,29 @@ app.get('/exclusao-de-dados', (req, res) => {
 </html>`);
 });
 
+// Página de suporte do app AF360, usada como "URL de suporte" na App Store
+// Connect e Google Play.
+app.get('/suporte', (req, res) => {
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Suporte - AF360</title>
+  <style>
+    body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+    h1 { font-size: 24px; margin-bottom: 4px; }
+    p { font-size: 15px; }
+  </style>
+</head>
+<body>
+  <h1>Suporte do AF360</h1>
+  <p>O AF360 é o aplicativo corporativo interno da American Fuel.</p>
+  <p>Em caso de dúvidas, problemas técnicos ou solicitações relacionadas ao app, entre em contato pelo e-mail: <a href="mailto:rayanne.ernandez@globaltera.com.br">rayanne.ernandez@globaltera.com.br</a></p>
+</body>
+</html>`);
+});
+
 app.use((req, res) => {
   res.status(404).json({ ok: false, error: 'not_found', path: req.path });
 });
