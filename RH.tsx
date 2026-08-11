@@ -5844,7 +5844,17 @@ function DocumentosModal({
           <>
             <View style={rhStyles.docStatsRow}>
               <Text style={rhStyles.docStatsText}>0 total · {totalPendentes} pendentes · 0 vencidos</Text>
-              <Pressable style={rhStyles.primaryButtonGreenSmall} onPress={showUploadNotAvailable}>
+              <Pressable
+                style={rhStyles.primaryButtonGreenSmall}
+                onPress={() => {
+                  // Antes pulava direto pro aviso de "ainda não disponível" —
+                  // agora abre o mesmo formulário que se chega clicando numa
+                  // categoria (com "Outros" pré-selecionado), pra não ter
+                  // dois comportamentos diferentes pro mesmo botão "Enviar".
+                  setSelectedCategory('outros');
+                  setIsUploadFormOpen(true);
+                }}
+              >
                 <Feather name="plus" size={13} color="#FFFFFF" />
                 <Text style={rhStyles.primaryButtonSmallText}>Enviar</Text>
               </Pressable>
