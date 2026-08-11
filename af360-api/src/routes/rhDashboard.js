@@ -67,6 +67,26 @@ function isActiveAt(colaborador, atMs) {
   return true;
 }
 
+// Headcount "instantâneo" — quantos colaboradores estão ativos exatamente no
+// instante atMs. Usado pelo gráfico "Evolução do headcount", que precisa
+// representar o quadro ao FINAL de cada mês (não no primeiro dia, que é a
+// convenção usada por computeTurnoverForRange para as métricas de turnover).
+function headcountAt(colaboradores, atMs) {
+  return colaboradores.filter((c) => isActiveAt(c, atMs)).length;
+}
+
+// "Agora", truncado pra meia-noite UTC do dia corrente. Usado nas contagens
+// "vence em N dias" (experiência) pra comparar por DIA (não por instante
+// exato), do mesmo jeito que uma subtração de datas no Postgres (DATE -
+// CURRENT_DATE) faria — evita que o resultado mude conforme a hora exata em
+// que a página é carregada (ex.: alguém cujo vencimento cai "daqui a 30 dias
+// e meio" contava ou não dependendo do minuto do dia em que a query rodava).
+function todayUTCMidnightMs() {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+}
+
+
 function isVendaEstabelecimento(motivoRaw) {
   return (motivoRaw ?? '').trim().toLowerCase() === 'venda_estabelecimento';
 }
@@ -354,7 +374,10 @@ router.get('/ferias', async (req, res) => {
 router.get('/experiencia', async (req, res) => {
   try {
     const { colaboradores } = await loadColaboradoresEEmpresas();
-    const nowMs = Date.now();
+    // Comparação por DIA (meia-noite UTC), não por instante exato — mesma
+    // correção aplicada em /resumo (exp30d), pra manter os dois números
+    // consistentes entre si e com o painel web.
+    const todayMs = todayUTCMidnightMs();
 
     const emExperiencia = colaboradores.filter(
       (c) => (c.status ?? '').trim().toLowerCase() === 'ativo' && c.vencimentoExperienciaMs !== null
@@ -362,7 +385,7 @@ router.get('/experiencia', async (req, res) => {
 
     const itens = emExperiencia
       .map((c) => {
-        const remainingDays = Math.round((c.vencimentoExperienciaMs - nowMs) / MS_PER_DAY);
+        const remainingDays = Math.round((c.vencimentoExperienciaMs - todayMs) / MS_PER_DAY);
         const totalDays =
           c.admissaoMs !== null
             ? Math.max(1, Math.round((c.vencimentoExperienciaMs - c.admissaoMs) / MS_PER_DAY))
@@ -609,12 +632,17 @@ router.get('/resumo', async (req, res) => {
       .map((c) => (nowMs - c.admissaoMs) / (365.25 * MS_PER_DAY));
     const tempoCasaMedio = temposCasa.length > 0 ? temposCasa.reduce((a, b) => a + b, 0) / temposCasa.length : 0;
 
+    // Corrigido: comparação por DIA (meia-noite UTC), não por instante exato
+    // de `nowMs` — reportado pela Rayanne como 10 no app vs 11 no web
+    // (checados quase ao mesmo tempo); a comparação por milissegundo exato
+    // fazia o resultado flutuar conforme a hora do dia em que a rota rodava.
+    const todayMs = todayUTCMidnightMs();
     const exp30d = colaboradores.filter(
       (c) =>
         (c.status ?? '').trim().toLowerCase() === 'ativo' &&
         c.vencimentoExperienciaMs !== null &&
-        c.vencimentoExperienciaMs >= nowMs &&
-        c.vencimentoExperienciaMs <= nowMs + 30 * MS_PER_DAY
+        c.vencimentoExperienciaMs >= todayMs &&
+        c.vencimentoExperienciaMs <= todayMs + 30 * MS_PER_DAY
     ).length;
 
     const demissoesRescisao = colaboradores
@@ -633,7 +661,12 @@ router.get('/resumo', async (req, res) => {
       const [s, e] = monthRangeUTC(y, m);
       const r = computeTurnoverForRange(colaboradores, regiaoById, s, e);
       admissoesDemissoesChart.push({ label: MONTH_NAMES_SHORT[m - 1], adm: r.raw.admissoes, dem: r.raw.geral });
-      headcountEvolution.push(r.raw.hc);
+      // Corrigido: "Evolução do headcount" precisa mostrar o quadro ao FINAL
+      // de cada mês (snapshot em `e`, o primeiro instante do mês seguinte),
+      // não no primeiro dia do próprio mês (r.raw.hc, convenção usada pelas
+      // métricas de turnover) — reportado pela Rayanne como Mar/998 no app
+      // vs Mar/990 no web (o app estava, na prática, um mês "adiantado").
+      headcountEvolution.push(headcountAt(colaboradores, e));
       headcountMonths.push(MONTH_NAMES_SHORT[m - 1]);
     });
 
