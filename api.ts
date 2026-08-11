@@ -230,6 +230,58 @@ export async function updateRhColaborador(
   return json.data as RhColaboradorRaw;
 }
 
+// POST real em rh_colaboradores (cria um colaborador novo) — endpoint
+// confirmado pelo Lovable em 10/08/2026. Obrigatórios no body: nome_completo
+// e empresa_id (o resto tem default no Postgres — ver comentário em
+// af360-api/src/lovable.js). CPF repetido devolve 409 com o registro
+// existente, tratado aqui como resultado (não exceção) pra tela poder
+// oferecer "abrir cadastro existente" em vez de só mostrar um erro genérico
+// — mesmo padrão usado em send2faCode/verify2faCode.
+export type CreateRhColaboradorResult =
+  | { ok: true; data: RhColaboradorRaw }
+  | {
+      ok: false;
+      conflict: true;
+      message: string;
+      existente: { id: string; nome_completo: string; status: string } | null;
+    };
+
+export async function createRhColaborador(
+  body: Record<string, unknown>
+): Promise<CreateRhColaboradorResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/rh/colaboradores`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError('Não foi possível conectar ao servidor. Verifique sua internet.', 'network_error', 0);
+  }
+
+  const json = await response.json().catch(() => null);
+
+  if (response.status === 409) {
+    return {
+      ok: false,
+      conflict: true,
+      message: json?.message || 'Já existe um colaborador cadastrado com esse CPF.',
+      existente: json?.existente ?? null,
+    };
+  }
+
+  if (!response.ok || !json || json.ok === false) {
+    const message = json?.message || json?.error || `Erro ${response.status}`;
+    throw new ApiError(message, json?.error ?? null, response.status);
+  }
+
+  return { ok: true, data: json.data as RhColaboradorRaw };
+}
+
 // --- RH: benefícios do colaborador (rh_beneficios_colaborador — VR/VA/
 // seguro de vida/plano de saúde/odontológico, 1:1 via colaborador_id) ---
 

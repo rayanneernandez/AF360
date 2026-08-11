@@ -1,5 +1,5 @@
 const express = require('express');
-const { fetchTable, fetchAllRows, fetchRhStats, patchRhColaborador, putRhBeneficios } = require('../lovable');
+const { fetchTable, fetchAllRows, fetchRhStats, postRhColaborador, patchRhColaborador, putRhBeneficios } = require('../lovable');
 
 const router = express.Router();
 
@@ -32,6 +32,36 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error('[rh/colaboradores] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/rh/colaboradores -> cria um colaborador novo em rh_colaboradores
+// (endpoint confirmado pelo Lovable em 10/08/2026). Obrigatórios no body:
+// nome_completo e empresa_id — o resto tem default no Postgres. CPF repetido
+// devolve 409 com { existente: { id, nome_completo, status } } no corpo (pra
+// a tela oferecer abrir o cadastro já existente em vez de duplicar).
+router.post('/', async (req, res) => {
+  try {
+    const json = await postRhColaborador(req.body ?? {});
+    res.status(201).json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/colaboradores POST] erro:', err.message);
+    if (err.lovableStatus === 409) {
+      let parsedBody = null;
+      try {
+        parsedBody = err.lovableBody ? JSON.parse(err.lovableBody) : null;
+      } catch (parseErr) {
+        parsedBody = null;
+      }
+      return res.status(409).json({
+        ok: false,
+        error: 'cpf_duplicado',
+        message: err.message,
+        existente: parsedBody?.existente ?? null,
+      });
+    }
+    const status = err.lovableStatus && err.lovableStatus >= 400 && err.lovableStatus < 500 ? 400 : 500;
+    res.status(status).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
 

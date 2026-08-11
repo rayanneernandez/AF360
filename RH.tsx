@@ -8,6 +8,7 @@ import * as Sharing from 'expo-sharing';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { Feather } from '@expo/vector-icons';
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Modal,
@@ -59,6 +60,7 @@ import {
   fetchRhCargos,
   fetchRhSetores,
   updateRhColaborador,
+  createRhColaborador,
   fetchRhBeneficios,
   updateRhBeneficios,
   fetchRhHistoricoContratacoes,
@@ -2735,48 +2737,72 @@ function NovoColaboradorModal({
   onSave,
   cargoOptions,
   unidadeOptions,
+  unidadesReais,
 }: {
   visible: boolean;
   onClose: () => void;
   onSave: (employee: Employee) => void;
   cargoOptions: string[];
   unidadeOptions: string[];
+  unidadesReais: RhUnidadeItem[];
 }) {
   const [form, setForm] = useState<NovoColaboradorForm>(emptyNovoColaboradorForm);
   const [isCargoPickerOpen, setIsCargoPickerOpen] = useState(false);
   const [isUnidadePickerOpen, setIsUnidadePickerOpen] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setForm(emptyNovoColaboradorForm);
+      setIsSaving(false);
     }
   }, [visible]);
 
+  // POST real em rh_colaboradores — endpoint confirmado pelo Lovable em
+  // 10/08/2026 (ver createRhColaborador em api.ts). Obrigatórios lá:
+  // nome_completo e empresa_id (por isso "Unidade" é obrigatória no form —
+  // é o campo que resolve pra empresa_id).
   const handleSubmit = () => {
     if (!form.fullName.trim() || !form.unit.trim()) {
       Alert.alert('Campos obrigatórios', 'Preencha ao menos o nome completo e a unidade.');
       return;
     }
 
-    const newEmployee: Employee = {
-      id: `emp-${Date.now()}`,
-      fullName: form.fullName.trim(),
-      role: form.role || 'Não informado',
-      unit: form.unit,
-      setor: 'Sem setor',
-      registration: form.registration || '—',
-      codigoInterno: `AF${Math.floor(Math.random() * 900000 + 100000)}`,
-      cpf: form.cpf || '000.000.000-00',
-      admissionLabel: form.admissionLabel || formatDateBR(new Date()),
-      status: 'ativo',
-      email: '',
-      celular: '',
-      salario: 0,
-      pendentesCount: 6,
+    const empresa = unidadesReais.find((item) => item.nome === form.unit);
+    if (!empresa) {
+      Alert.alert('Unidade inválida', 'Selecione uma unidade da lista.');
+      return;
+    }
+
+    setIsSaving(true);
+    const cpfDigits = form.cpf.replace(/\D/g, '');
+    const body: Record<string, unknown> = {
+      nome_completo: form.fullName.trim(),
+      empresa_id: empresa.id,
+      cpf: cpfDigits || undefined,
+      matricula: form.registration.trim() || undefined,
+      cargo: form.role || undefined,
+      data_admissao: brDateLabelToIso(form.admissionLabel) ?? undefined,
     };
 
-    onSave(newEmployee);
+    createRhColaborador(body)
+      .then((result) => {
+        if (!result.ok) {
+          const existenteLabel = result.existente
+            ? `${result.existente.nome_completo} (${result.existente.status})`
+            : 'outro colaborador';
+          Alert.alert(
+            'CPF já cadastrado',
+            `${result.message}\n\nColaborador existente: ${existenteLabel}. Procure pelo nome na lista em vez de cadastrar de novo.`
+          );
+          return;
+        }
+        const empresaNomeById = new Map(unidadesReais.map((item) => [item.id, item.nome]));
+        onSave(mapRhColaboradorToEmployee(result.data, empresaNomeById));
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível cadastrar o colaborador.'))
+      .finally(() => setIsSaving(false));
   };
 
   return (
@@ -2845,8 +2871,16 @@ function NovoColaboradorModal({
                 icon="calendar"
               />
 
-              <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={handleSubmit}>
-                <Text style={styles.primaryButtonText}>Cadastrar</Text>
+              <Pressable
+                style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? { opacity: 0.6 } : null]}
+                onPress={handleSubmit}
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Cadastrar</Text>
+                )}
               </Pressable>
             </ScrollView>
 
@@ -3221,6 +3255,7 @@ export function RHColaboradoresScreen({ navigation }: ScreenProps<'RHColaborador
         onSave={handleSaveNewEmployee}
         cargoOptions={cargoOptions}
         unidadeOptions={unidadeOptions}
+        unidadesReais={unidadesReais}
       />
       <RHImportEmployeesModal
         visible={isImportModalOpen}

@@ -171,6 +171,16 @@ async function patchDirContato(phone, body) {
 
 // --- RH ---
 
+// Cadastro de colaborador confirmado pelo Lovable em 10/08/2026. Obrigatórios
+// no body: nome_completo e empresa_id — o resto tem default no Postgres
+// (status='ativo', portal_status='nao_ativado', grau_insalubridade='nenhum',
+// tem_periculosidade=false, usa_vt=true, dependentes_irrf=0,
+// celular_whatsapp=false). CPF repetido devolve 409 (corpo com o registro
+// existente em err.lovableBody, tratado na rota).
+function postRhColaborador(body) {
+  return lovablePost('/api/public/internal/rh-colaborador', {}, body);
+}
+
 function patchRhColaborador(id, body) {
   return lovablePatch('/api/public/internal/rh-colaborador', { id }, body);
 }
@@ -887,6 +897,7 @@ module.exports = {
   fetchAllRows,
   fetchRhStats,
   patchDirContato,
+  postRhColaborador,
   patchRhColaborador,
   putRhBeneficios,
   postRhHistoricoContratacao,
