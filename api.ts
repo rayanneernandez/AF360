@@ -362,12 +362,10 @@ export async function deleteRhHistoricoContratacao(id: string): Promise<void> {
   await api.delete(`/api/rh/historico-contratacoes/${encodeURIComponent(id)}`);
 }
 
-// --- RH: sub-recursos do colaborador que hoje só têm leitura (GET) no
-// backend — ainda sem endpoint de escrita confirmado pela Lovable pras
-// tabelas rh_dependentes, rh_salario_historico, rh_premiacoes e
-// rh_transferencias (pedido em 11/08/2026). As telas usam isso pra mostrar o
-// histórico real; o "salvar" fica bloqueado com aviso até a escrita ser
-// liberada. ---
+// --- RH: sub-recursos do colaborador (dependentes, promoções/salário
+// histórico, premiações, transferências). Leitura via GET já existia;
+// escrita confirmada pela Lovable em 11/08/2026 (endpoints dedicados abaixo
+// de cada fetch). ---
 
 export type RhDependenteItem = {
   id: string;
@@ -390,6 +388,11 @@ export async function fetchRhDependentes(colaboradorId: string): Promise<RhDepen
   return (json.data as RhDependenteItem[]) ?? [];
 }
 
+export async function createRhDependente(body: Record<string, unknown>): Promise<RhDependenteItem> {
+  const json = await api.post('/api/rh/dependentes', body);
+  return json.data as RhDependenteItem;
+}
+
 export type RhSalarioHistoricoItem = {
   id: string;
   colaborador_id: string;
@@ -405,6 +408,13 @@ export type RhSalarioHistoricoItem = {
 export async function fetchRhPromocoes(colaboradorId: string): Promise<RhSalarioHistoricoItem[]> {
   const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/promocoes`);
   return (json.data as RhSalarioHistoricoItem[]) ?? [];
+}
+
+export async function createRhPromocao(
+  body: Record<string, unknown>
+): Promise<{ data: RhSalarioHistoricoItem; colaboradorAtualizado?: boolean }> {
+  const json = await api.post('/api/rh/promocoes', body);
+  return { data: json.data as RhSalarioHistoricoItem, colaboradorAtualizado: json.colaboradorAtualizado };
 }
 
 export type RhPremiacaoItem = {
@@ -427,6 +437,11 @@ export async function fetchRhPremiacoes(colaboradorId: string): Promise<RhPremia
   return (json.data as RhPremiacaoItem[]) ?? [];
 }
 
+export async function createRhPremiacao(body: Record<string, unknown>): Promise<RhPremiacaoItem> {
+  const json = await api.post('/api/rh/premiacoes-escrita', body);
+  return json.data as RhPremiacaoItem;
+}
+
 export type RhTransferenciaColaboradorItem = {
   id: string;
   colaborador_id: string;
@@ -447,6 +462,13 @@ export async function fetchRhTransferenciasColaborador(
 ): Promise<RhTransferenciaColaboradorItem[]> {
   const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/transferencias`);
   return (json.data as RhTransferenciaColaboradorItem[]) ?? [];
+}
+
+export async function createRhTransferencia(
+  body: Record<string, unknown>
+): Promise<{ data: RhTransferenciaColaboradorItem; colaboradorAtualizado?: boolean }> {
+  const json = await api.post('/api/rh/transferencias-escrita', body);
+  return { data: json.data as RhTransferenciaColaboradorItem, colaboradorAtualizado: json.colaboradorAtualizado };
 }
 
 // --- RH: unidades reais (tabela empresas no Supabase do Lovable) ---

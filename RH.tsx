@@ -100,6 +100,10 @@ import {
   type RhPremiacaoItem,
   fetchRhTransferenciasColaborador,
   type RhTransferenciaColaboradorItem,
+  createRhDependente,
+  createRhPromocao,
+  createRhPremiacao,
+  createRhTransferencia,
 } from './api';
 
 // ---------- Types ----------
@@ -581,7 +585,34 @@ const rhDesligamentoMotivos: string[] = [
 
 const rhPromocaoMotivos: string[] = ['Promoção', 'Reajuste salarial', 'Mérito', 'Equiparação'];
 
+// Enum motivo de rh_salario_historico confirmado pela Lovable em 11/08/2026
+// (admissao, dissidio, promocao, merito, equiparacao, reajuste, outro,
+// enquadramento, correcao) — mapeando só as opções que a tela oferece.
+const rhPromocaoMotivoLabelToEnum: Record<string, string> = {
+  Promoção: 'promocao',
+  'Reajuste salarial': 'reajuste',
+  Mérito: 'merito',
+  Equiparação: 'equiparacao',
+};
+
 const rhRateioOptions: string[] = ['Proporcional (dias)', 'Integral no mês', 'Próximo mês'];
+
+// Enums de rh_transferencias confirmados pela Lovable em 11/08/2026.
+const rhTransferMotivoLabelToEnum: Record<string, string> = {
+  Realocação: 'realocacao',
+  'Solicitação do colaborador': 'pedido_colaborador',
+  'Necessidade operacional': 'necessidade_operacional',
+  Outro: 'outro',
+};
+// rateio_folha só tem 3 valores (proporcional/origem_mes_todo/destino_mes_todo)
+// pra 3 opções de tela — "Integral no mês" = fica tudo no destino,
+// "Próximo mês" = mês corrente fica todo com a origem, muda a partir do
+// próximo. Ajustar aqui se a Lovable confirmar semântica diferente.
+const rhRateioLabelToEnum: Record<string, string> = {
+  'Proporcional (dias)': 'proporcional',
+  'Integral no mês': 'destino_mes_todo',
+  'Próximo mês': 'origem_mes_todo',
+};
 
 // A tela de Transferências (RHTransferenciasScreen) agora busca dados reais
 // via fetchRhTransferenciasDetalhe (rh_transferencias) — o mock antigo
@@ -3571,6 +3602,25 @@ const rhGrauParentescoOptions: string[] = [
   'Outro',
 ];
 
+// Enum grau_parentesco confirmado pela Lovable em 11/08/2026.
+const rhGrauParentescoLabelToEnum: Record<string, string> = {
+  Filho: 'filho',
+  Enteado: 'enteado',
+  Enteada: 'enteada',
+  Cônjuge: 'conjuge',
+  'Companheiro(a)': 'companheiro',
+  Pai: 'pai',
+  Mãe: 'mae',
+  Avô: 'avo',
+  Avó: 'ava',
+  'Menor sob guarda': 'menor_guarda',
+  Irmão: 'irmao',
+  Irmã: 'irma',
+  Neto: 'neto',
+  Neta: 'neta',
+  Outro: 'outro',
+};
+
 function mapRhDependenteToItem(raw: RhDependenteItem): RHDependentItem {
   return {
     id: raw.id,
@@ -4251,19 +4301,34 @@ function DadosPessoaisModal({
       .finally(() => setIsSavingPassagem(false));
   };
 
+  const [isSavingDependent, setIsSavingDependent] = useState(false);
+
   const handleSaveDependent = () => {
     if (!dependentForm.fullName.trim() || !dependentForm.birthDate.trim() || !dependentForm.kinship.trim()) {
       Alert.alert('Campos obrigatórios', 'Preencha nome, data de nascimento e grau de parentesco.');
       return;
     }
 
-    // Ainda não existe endpoint de escrita confirmado pela Lovable pra
-    // rh_dependentes (só leitura) — em vez de fingir que salvou, avisa e
-    // mantém o formulário aberto com os dados preenchidos.
-    Alert.alert(
-      'Cadastro de dependente ainda não disponível',
-      'O envio de novos dependentes depende de um endpoint de escrita no Lovable que ainda não foi liberado. A lista acima já mostra os dependentes reais cadastrados no banco.'
-    );
+    setIsSavingDependent(true);
+    const body: Record<string, unknown> = {
+      colaborador_id: employee.id,
+      nome: dependentForm.fullName.trim(),
+      grau_parentesco: rhGrauParentescoLabelToEnum[dependentForm.kinship] ?? undefined,
+      data_nascimento: brDateLabelToIso(dependentForm.birthDate) ?? undefined,
+      cpf: dependentForm.cpf.replace(/\D/g, '') || undefined,
+      estudante_universitario: dependentForm.universityStudent,
+      incapacitado: dependentForm.disabled,
+      ativo: dependentForm.active,
+      observacao: dependentForm.notes || undefined,
+    };
+    createRhDependente(body)
+      .then(() => {
+        setDependentForm(createEmptyDependentForm());
+        setIsDependentFormOpen(false);
+        loadDependentes();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível cadastrar o dependente.'))
+      .finally(() => setIsSavingDependent(false));
   };
 
   const activeIrffDependents = dependents.filter((item) => item.active).length;
@@ -5521,9 +5586,19 @@ function DadosPessoaisModal({
                 textAlignVertical="top"
               />
 
-              <Pressable style={[rhStyles.detailSaveButton, styles.spacingTop]} onPress={handleSaveDependent}>
-                <Feather name="save" size={14} color="#FFFFFF" />
-                <Text style={rhStyles.detailSaveButtonText}>Salvar</Text>
+              <Pressable
+                style={[rhStyles.detailSaveButton, styles.spacingTop, isSavingDependent ? { opacity: 0.6 } : null]}
+                disabled={isSavingDependent}
+                onPress={handleSaveDependent}
+              >
+                {isSavingDependent ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Feather name="save" size={14} color="#FFFFFF" />
+                    <Text style={rhStyles.detailSaveButtonText}>Salvar</Text>
+                  </>
+                )}
               </Pressable>
             </ScrollView>
 
@@ -6673,23 +6748,39 @@ function PromocoesModal({
   const [isFormOpen, setIsFormOpen] = useState(false);
   const currentSalario = promotions.length > 0 ? Number(promotions[0].salario_novo) || employee.salario : employee.salario;
 
-  useEffect(() => {
-    if (!visible) return;
+  const reloadPromocoes = useCallback(() => {
     setIsLoading(true);
     setLoadError(null);
-    fetchRhPromocoes(employee.id)
+    return fetchRhPromocoes(employee.id)
       .then(setPromotions)
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Erro ao carregar promoções.'))
       .finally(() => setIsLoading(false));
-  }, [visible, employee.id]);
+  }, [employee.id]);
 
-  const handleSave = () => {
-    // Ainda não existe endpoint de escrita confirmado pela Lovable pra
-    // rh_salario_historico — em vez de fingir que salvou localmente, avisa.
-    Alert.alert(
-      'Registro ainda não disponível',
-      'Registrar promoção/aumento depende de um endpoint de escrita no Lovable que ainda não foi liberado. O histórico acima já mostra os registros reais.'
-    );
+  useEffect(() => {
+    if (visible) reloadPromocoes();
+  }, [visible, reloadPromocoes]);
+
+  const handleSave = (record: PromotionRecord) => {
+    const body: Record<string, unknown> = {
+      colaborador_id: employee.id,
+      salario_novo: record.novoSalario,
+      vigencia_inicio: brDateLabelToIso(record.vigenciaLabel) ?? undefined,
+      percentual_reajuste: record.percentual ? Number(record.percentual.replace(',', '.')) : undefined,
+      motivo: rhPromocaoMotivoLabelToEnum[record.motivo] ?? undefined,
+      observacao: record.observacao || undefined,
+    };
+    createRhPromocao(body)
+      .then(async () => {
+        if (record.novoCargo) {
+          await updateRhColaborador(employee.id, { cargo: record.novoCargo });
+        }
+      })
+      .then(() => {
+        setIsFormOpen(false);
+        reloadPromocoes();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível registrar a promoção.'));
   };
 
   return (
@@ -6880,29 +6971,39 @@ function PremiacoesModal({
   const [isFormOpen, setIsFormOpen] = useState(false);
   const currentYear = new Date().getFullYear();
   const totalPago = premiacoes
-    .filter((item) => item.status === 'pago' || item.pago_em_folha)
+    .filter((item) => item.status === 'paga' || item.pago_em_folha)
     .reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
   const totalPendente = premiacoes
-    .filter((item) => item.status && item.status !== 'pago' && !item.pago_em_folha)
+    .filter((item) => item.status && item.status !== 'paga' && !item.pago_em_folha)
     .reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
 
-  useEffect(() => {
-    if (!visible) return;
+  const reloadPremiacoes = useCallback(() => {
     setIsLoading(true);
     setLoadError(null);
-    fetchRhPremiacoes(employee.id)
+    return fetchRhPremiacoes(employee.id)
       .then(setPremiacoes)
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Erro ao carregar premiações.'))
       .finally(() => setIsLoading(false));
-  }, [visible, employee.id]);
+  }, [employee.id]);
 
-  const handleSave = () => {
-    // Ainda não existe endpoint de escrita confirmado pela Lovable pra
-    // rh_premiacoes — em vez de fingir que salvou localmente, avisa.
-    Alert.alert(
-      'Registro ainda não disponível',
-      'Registrar premiação depende de um endpoint de escrita no Lovable que ainda não foi liberado. O histórico acima já mostra os registros reais.'
-    );
+  useEffect(() => {
+    if (visible) reloadPremiacoes();
+  }, [visible, reloadPremiacoes]);
+
+  const handleSave = (record: PremiacaoRecord) => {
+    const body: Record<string, unknown> = {
+      colaborador_id: employee.id,
+      valor: record.valor,
+      tipo: record.tipo,
+      data_pagamento: brDateLabelToIso(record.dataLabel) ?? undefined,
+      observacoes: record.observacao || undefined,
+    };
+    createRhPremiacao(body)
+      .then(() => {
+        setIsFormOpen(false);
+        reloadPremiacoes();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível registrar a premiação.'));
   };
 
   return (
@@ -7196,39 +7297,61 @@ function TransferenciasEmployeeModal({
   onClose,
   cargoOptions,
   unidadeOptions,
+  unidadesReais,
 }: {
   visible: boolean;
   employee: Employee;
   onClose: () => void;
   cargoOptions: string[];
   unidadeOptions: string[];
+  unidadesReais: RhUnidadeItem[];
 }) {
   const [records, setRecords] = useState<RhTransferenciaColaboradorItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
 
-  useEffect(() => {
-    if (!visible) return;
+  const reloadTransferencias = useCallback(() => {
     setIsLoading(true);
     setLoadError(null);
-    fetchRhTransferenciasColaborador(employee.id)
+    return fetchRhTransferenciasColaborador(employee.id)
       .then(setRecords)
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Erro ao carregar transferências.'))
       .finally(() => setIsLoading(false));
-  }, [visible, employee.id]);
+  }, [employee.id]);
+
+  useEffect(() => {
+    if (visible) reloadTransferencias();
+  }, [visible, reloadTransferencias]);
 
   const pendentes = records.filter((item) => item.status === 'pendente').length;
   const aprovadas = records.filter((item) => item.status === 'aprovada').length;
   const efetivadas = records.filter((item) => item.status === 'efetivada').length;
 
-  const handleSave = () => {
-    // Ainda não existe endpoint de escrita confirmado pela Lovable pra
-    // rh_transferencias — em vez de fingir que salvou localmente, avisa.
-    Alert.alert(
-      'Registro ainda não disponível',
-      'Registrar transferência depende de um endpoint de escrita no Lovable que ainda não foi liberado. O histórico acima já mostra os registros reais.'
-    );
+  const handleSave = (record: EmployeeTransferRecord) => {
+    const empresaDestino = unidadesReais.find((item) => item.nome === record.toUnit);
+    if (!empresaDestino) {
+      Alert.alert('Unidade não encontrada', 'Não foi possível identificar a unidade de destino selecionada.');
+      return;
+    }
+    const body: Record<string, unknown> = {
+      colaborador_id: employee.id,
+      empresa_destino_id: empresaDestino.id,
+      data_vigencia: brDateLabelToIso(record.vigenciaLabel) ?? undefined,
+      setor_destino: record.novoSetor || undefined,
+      cargo_destino: record.novoCargo || undefined,
+      salario_novo: record.novoSalario || undefined,
+      motivo: rhTransferMotivoLabelToEnum[record.motivo] ?? undefined,
+      rateio_folha: rhRateioLabelToEnum[record.rateio] ?? undefined,
+      observacao: record.observacao || undefined,
+      efetivar: record.status === 'aprovada',
+    };
+    createRhTransferencia(body)
+      .then(() => {
+        setIsFormOpen(false);
+        reloadTransferencias();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível registrar a transferência.'));
   };
 
   return (
@@ -8120,6 +8243,7 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
         onClose={() => setActiveQuickAction(null)}
         cargoOptions={cargoOptions}
         unidadeOptions={unidadeOptions}
+        unidadesReais={unidadesReais}
       />
       <DesligamentoModal
         visible={activeQuickAction === 'desligamento'}

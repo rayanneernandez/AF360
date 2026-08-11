@@ -201,6 +201,72 @@ function deleteRhHistoricoContratacao(id) {
   return lovableDelete('/api/public/internal/rh-historico-contratacoes', { id });
 }
 
+// --- RH: Dependentes, Promoções (salário histórico), Premiações e
+// Transferências — 4 endpoints de escrita confirmados pela Lovable em
+// 11/08/2026, mesmo padrão x-internal-secret dos demais. ---
+
+function postRhDependente(body) {
+  return lovablePost('/api/public/internal/rh-dependente', {}, body);
+}
+
+function patchRhDependente(id, body) {
+  return lovablePatch('/api/public/internal/rh-dependente', { id }, body);
+}
+
+function deleteRhDependente(id) {
+  return lovableDelete('/api/public/internal/rh-dependente', { id });
+}
+
+// salario_novo/vigencia_inicio obrigatórios; salario_anterior/percentual são
+// calculados do lado deles se omitidos; "atualizar_colaborador" (default
+// true) já grava o novo salário em rh_colaboradores.salario_base — resposta
+// traz colaborador_atualizado.
+function postRhSalarioHistorico(body) {
+  return lovablePost('/api/public/internal/rh-salario-historico', {}, body);
+}
+
+function patchRhSalarioHistorico(id, body) {
+  return lovablePatch('/api/public/internal/rh-salario-historico', { id }, body);
+}
+
+function deleteRhSalarioHistorico(id) {
+  return lovableDelete('/api/public/internal/rh-salario-historico', { id });
+}
+
+// tipo_id é FK NOT NULL — mandar "tipo": "Nome" que a Lovable resolve/cria em
+// rh_premiacao_tipos. competencia é NOT NULL (default dia 1 do mês corrente
+// se omitida).
+function postRhPremiacao(body) {
+  return lovablePost('/api/public/internal/rh-premiacao', {}, body);
+}
+
+function patchRhPremiacao(id, body) {
+  return lovablePatch('/api/public/internal/rh-premiacao', { id }, body);
+}
+
+function deleteRhPremiacao(id) {
+  return lovableDelete('/api/public/internal/rh-premiacao', { id });
+}
+
+// Campos de origem (empresa_origem_id, setor_origem, cargo_origem,
+// salario_anterior, gestor_direto_anterior_id) são preenchidos do lado deles
+// com o snapshot atual do colaborador se vierem vazios. Por padrão fica
+// "pendente"; "efetivar": true (no POST ou no PATCH) já aplica no cadastro
+// (empresa_id/cargo/setor/salario_base/gestor_direto_id) e carimba
+// aprovado/efetivado a partir do x-actor-id — resposta traz
+// colaborador_atualizado.
+function postRhTransferencia(body, actorId) {
+  return lovablePost('/api/public/internal/rh-transferencia', {}, body, actorId);
+}
+
+function patchRhTransferencia(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-transferencia', { id }, body, actorId);
+}
+
+function deleteRhTransferencia(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-transferencia', { id }, actorId);
+}
+
 // --- Admin ---
 
 function postAdminUsuario(body, actorId) {
@@ -903,6 +969,18 @@ module.exports = {
   postRhHistoricoContratacao,
   patchRhHistoricoContratacao,
   deleteRhHistoricoContratacao,
+  postRhDependente,
+  patchRhDependente,
+  deleteRhDependente,
+  postRhSalarioHistorico,
+  patchRhSalarioHistorico,
+  deleteRhSalarioHistorico,
+  postRhPremiacao,
+  patchRhPremiacao,
+  deleteRhPremiacao,
+  postRhTransferencia,
+  patchRhTransferencia,
+  deleteRhTransferencia,
   postAdminUsuario,
   postAdminUsuarioResetSenha,
   postAdminUsuarioToggleAtivo,
