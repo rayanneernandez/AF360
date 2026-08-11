@@ -150,6 +150,10 @@ const subResources = [
   { path: 'premiacoes', table: 'rh_premiacoes' },
   { path: 'transferencias', table: 'rh_transferencias' },
   { path: 'ferias', table: 'rh_ferias' },
+  // Dependentes (rh_dependentes) — só leitura por enquanto. Ainda não existe
+  // endpoint de escrita confirmado pela Lovable pra essa tabela (pedido em
+  // 11/08/2026, ver mensagem-lovable-*.txt).
+  { path: 'dependentes', table: 'rh_dependentes' },
 ];
 
 subResources.forEach(({ path, table }) => {

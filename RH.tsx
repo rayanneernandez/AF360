@@ -84,6 +84,22 @@ import {
   fetchRhComunicados,
   createRhComunicado,
   type RhComunicadoItem,
+  fetchColaboradorContracheques,
+  type ColaboradorContrachequeItem,
+  fetchColaboradorReembolsos,
+  createColaboradorReembolso,
+  type ColaboradorReembolsoItem,
+  fetchColaboradorFerias,
+  createColaboradorFerias,
+  type ColaboradorFeriasItem,
+  fetchRhDependentes,
+  type RhDependenteItem,
+  fetchRhPromocoes,
+  type RhSalarioHistoricoItem,
+  fetchRhPremiacoes,
+  type RhPremiacaoItem,
+  fetchRhTransferenciasColaborador,
+  type RhTransferenciaColaboradorItem,
 } from './api';
 
 // ---------- Types ----------
@@ -3555,6 +3571,20 @@ const rhGrauParentescoOptions: string[] = [
   'Outro',
 ];
 
+function mapRhDependenteToItem(raw: RhDependenteItem): RHDependentItem {
+  return {
+    id: raw.id,
+    fullName: raw.nome ?? '',
+    cpf: raw.cpf ?? '',
+    birthDate: formatDateOnlyBR(raw.data_nascimento),
+    kinship: raw.grau_parentesco ?? raw.parentesco ?? '',
+    universityStudent: !!raw.estudante_universitario,
+    disabled: !!raw.incapacitado,
+    active: raw.ativo !== false,
+    notes: raw.observacao ?? '',
+  };
+}
+
 const createEmptyDependentForm = (): Omit<RHDependentItem, 'id'> => ({
   fullName: '',
   cpf: '',
@@ -3683,6 +3713,8 @@ function DadosPessoaisModal({
 }) {
   const [activeTab, setActiveTab] = useState<DadosPessoaisTab>('pessoais');
   const [dependents, setDependents] = useState<RHDependentItem[]>([]);
+  const [isLoadingDependents, setIsLoadingDependents] = useState(false);
+  const [dependentsError, setDependentsError] = useState<string | null>(null);
   const [isDependentFormOpen, setIsDependentFormOpen] = useState(false);
   const [dependentForm, setDependentForm] = useState(createEmptyDependentForm());
   const [isDataNascimentoPickerOpen, setIsDataNascimentoPickerOpen] = useState(false);
@@ -3808,6 +3840,24 @@ function DadosPessoaisModal({
   useEffect(() => {
     if (!visible) return;
     loadPassagensAnteriores();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, employee.id]);
+
+  // Lê rh_dependentes de verdade (leitura via GET /:id/dependentes, adicionada
+  // em 11/08/2026). Escrita ainda não confirmada pela Lovable — handleSaveDependent
+  // avisa isso em vez de fingir que salvou.
+  const loadDependentes = () => {
+    setIsLoadingDependents(true);
+    setDependentsError(null);
+    return fetchRhDependentes(employee.id)
+      .then((items) => setDependents(items.map(mapRhDependenteToItem)))
+      .catch((err) => setDependentsError(err instanceof Error ? err.message : 'Erro ao carregar dependentes.'))
+      .finally(() => setIsLoadingDependents(false));
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    loadDependentes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, employee.id]);
 
@@ -4207,15 +4257,13 @@ function DadosPessoaisModal({
       return;
     }
 
-    setDependents((current) => [
-      {
-        id: `dependent-${Date.now()}`,
-        ...dependentForm,
-      },
-      ...current,
-    ]);
-    setDependentForm(createEmptyDependentForm());
-    setIsDependentFormOpen(false);
+    // Ainda não existe endpoint de escrita confirmado pela Lovable pra
+    // rh_dependentes (só leitura) — em vez de fingir que salvou, avisa e
+    // mantém o formulário aberto com os dados preenchidos.
+    Alert.alert(
+      'Cadastro de dependente ainda não disponível',
+      'O envio de novos dependentes depende de um endpoint de escrita no Lovable que ainda não foi liberado. A lista acima já mostra os dependentes reais cadastrados no banco.'
+    );
   };
 
   const activeIrffDependents = dependents.filter((item) => item.active).length;
@@ -4736,7 +4784,13 @@ function DadosPessoaisModal({
             </Pressable>
           </View>
 
-          {dependents.length === 0 ? (
+          {isLoadingDependents ? (
+            <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+          ) : dependentsError ? (
+            <View style={rhStyles.dependentEmptyCard}>
+              <Text style={rhStyles.dependentEmptyText}>Não foi possível carregar: {dependentsError}</Text>
+            </View>
+          ) : dependents.length === 0 ? (
             <View style={rhStyles.dependentEmptyCard}>
               <Text style={rhStyles.dependentEmptyText}>Nenhum dependente cadastrado.</Text>
             </View>
@@ -5390,8 +5444,13 @@ function DadosPessoaisModal({
                   <TextInput
                     style={styles.processTextInput}
                     value={dependentForm.cpf}
-                    onChangeText={(text) => setDependentForm((current) => ({ ...current, cpf: text }))}
+                    onChangeText={(text) =>
+                      setDependentForm((current) => ({ ...current, cpf: formatCpfMask(text) }))
+                    }
+                    placeholder="000.000.000-00"
                     placeholderTextColor="#A7AEC2"
+                    keyboardType="number-pad"
+                    maxLength={14}
                   />
                 </View>
                 <View style={rhStyles.formRowItem}>
@@ -5871,10 +5930,516 @@ function ContrachequesModal({
   employee: Employee;
   onClose: () => void;
 }) {
+  const [items, setItems] = useState<ColaboradorContrachequeItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError(null);
+    fetchColaboradorContracheques(employee.id)
+      .then((detalhe) => {
+        if (!cancelled) setItems(detalhe.items);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Erro ao carregar contracheques.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, employee.id]);
+
   return (
     <RHSmallModal visible={visible} title={`Contracheques — ${employee.fullName}`} onClose={onClose}>
-      <RHEmptyTabState message="Nenhum contracheque emitido ainda." />
+      {isLoading ? (
+        <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+      ) : loadError ? (
+        <RHEmptyTabState message={`Não foi possível carregar: ${loadError}`} />
+      ) : items.length === 0 ? (
+        <RHEmptyTabState message="Nenhum contracheque emitido ainda." />
+      ) : (
+        items.map((item) => (
+          <View key={item.id} style={rhStyles.historyCard}>
+            <Text style={rhStyles.historyCardTitle}>{item.competenciaLabel}</Text>
+            <Text style={rhStyles.historyCardMeta}>
+              Líquido: {item.valorLiquido} · Bruto: {item.valorBruto} · Descontos: {item.valorDescontos}
+            </Text>
+          </View>
+        ))
+      )}
     </RHSmallModal>
+  );
+}
+
+const rhReembolsoCategorias: string[] = ['Transporte', 'Alimentação', 'Hospedagem', 'Material', 'Outros'];
+
+const rhReembolsoStatusMeta: Record<string, { label: string; color: string; tint: string }> = {
+  rascunho: { label: 'Rascunho', color: '#5E667D', tint: '#EFF1F5' },
+  enviado: { label: 'Enviado', color: '#B07A1E', tint: '#FCEFDA' },
+  aprovado: { label: 'Aprovado', color: '#3457D5', tint: '#EDF1FF' },
+  pago: { label: 'Pago', color: '#18955A', tint: '#E3F5EA' },
+  recusado: { label: 'Recusado', color: '#B3261E', tint: '#FBEAEA' },
+};
+
+function RegistrarReembolsoFormModal({
+  visible,
+  onClose,
+  onSaved,
+  colaboradorId,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSaved: (item: ColaboradorReembolsoItem) => void;
+  colaboradorId: string;
+}) {
+  const [descricao, setDescricao] = useState('');
+  const [categoria, setCategoria] = useState(rhReembolsoCategorias[0]);
+  const [isCategoriaPickerOpen, setIsCategoriaPickerOpen] = useState(false);
+  const [dataDespesaLabel, setDataDespesaLabel] = useState(formatDateBR(new Date()));
+  const [isDataPickerOpen, setIsDataPickerOpen] = useState(false);
+  const [valor, setValor] = useState('');
+  const [observacoes, setObservacoes] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setDescricao('');
+      setCategoria(rhReembolsoCategorias[0]);
+      setDataDespesaLabel(formatDateBR(new Date()));
+      setValor('');
+      setObservacoes('');
+      setIsSaving(false);
+    }
+  }, [visible]);
+
+  const handleSubmit = () => {
+    const parsedValor = Number(valor.replace(/\./g, '').replace(',', '.'));
+    if (!descricao.trim()) {
+      Alert.alert('Campo obrigatório', 'Descreva a despesa.');
+      return;
+    }
+    if (!parsedValor || parsedValor <= 0) {
+      Alert.alert('Campo obrigatório', 'Informe o valor do reembolso.');
+      return;
+    }
+    setIsSaving(true);
+    createColaboradorReembolso({
+      colaborador_id: colaboradorId,
+      descricao: descricao.trim(),
+      categoria,
+      data_despesa: brDateLabelToIso(dataDespesaLabel) ?? undefined,
+      valor: parsedValor,
+      observacoes: observacoes.trim() || undefined,
+    })
+      .then((item) => {
+        onSaved(item);
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível registrar o reembolso.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <>
+      <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+        <View style={styles.requestModalBackdrop}>
+          <View style={styles.requestModalCard}>
+            <View style={styles.requestModalHeader}>
+              <Text style={styles.requestModalTitle}>Registrar reembolso</Text>
+              <Pressable onPress={onClose} hitSlop={8}>
+                <Feather name="x" size={20} color="#677089" />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={styles.requestFieldLabel}>Descrição *</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={descricao}
+                onChangeText={setDescricao}
+                placeholder="Ex.: Corrida de app até a filial"
+                placeholderTextColor="#A7AEC2"
+              />
+
+              <RHSelectField
+                label="Categoria"
+                value={categoria}
+                onPress={() => setIsCategoriaPickerOpen(true)}
+              />
+
+              <View style={rhStyles.formRow}>
+                <View style={rhStyles.formRowItem}>
+                  <RHSelectField
+                    label="Data da despesa"
+                    value={dataDespesaLabel}
+                    icon="calendar"
+                    onPress={() => setIsDataPickerOpen(true)}
+                  />
+                </View>
+                <View style={rhStyles.formRowItem}>
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Valor (R$) *</Text>
+                  <TextInput
+                    style={styles.processTextInput}
+                    value={valor}
+                    onChangeText={setValor}
+                    placeholder="0,00"
+                    placeholderTextColor="#A7AEC2"
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Observações</Text>
+              <TextInput
+                style={[styles.processTextInput, styles.processDocumentationArea]}
+                value={observacoes}
+                onChangeText={setObservacoes}
+                placeholderTextColor="#A7AEC2"
+                multiline
+                textAlignVertical="top"
+              />
+
+              <Pressable
+                style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? { opacity: 0.6 } : null]}
+                disabled={isSaving}
+                onPress={handleSubmit}
+              >
+                {isSaving ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Feather name="save" size={15} color="#FFFFFF" />
+                    <Text style={styles.primaryButtonText}>Salvar</Text>
+                  </>
+                )}
+              </Pressable>
+            </ScrollView>
+
+            <RHDatePickerModal
+              inline
+              visible={isDataPickerOpen}
+              title="Data da despesa"
+              value={dataDespesaLabel}
+              onSelect={setDataDespesaLabel}
+              onClose={() => setIsDataPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isCategoriaPickerOpen}
+              title="Categoria"
+              options={rhReembolsoCategorias}
+              selectedValue={categoria}
+              onSelect={setCategoria}
+              onClose={() => setIsCategoriaPickerOpen(false)}
+            />
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+function ReembolsosEmployeeModal({
+  visible,
+  employee,
+  onClose,
+}: {
+  visible: boolean;
+  employee: Employee;
+  onClose: () => void;
+}) {
+  const [items, setItems] = useState<ColaboradorReembolsoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const reload = useCallback(() => {
+    setIsLoading(true);
+    setLoadError(null);
+    fetchColaboradorReembolsos(employee.id)
+      .then(setItems)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Erro ao carregar reembolsos.'))
+      .finally(() => setIsLoading(false));
+  }, [employee.id]);
+
+  useEffect(() => {
+    if (visible) reload();
+  }, [visible, reload]);
+
+  return (
+    <>
+      <RHSmallModal visible={visible} title={`Reembolsos — ${employee.fullName}`} onClose={onClose}>
+        <Pressable style={rhStyles.primaryButtonGreenSmall} onPress={() => setIsFormOpen(true)}>
+          <Feather name="plus" size={13} color="#FFFFFF" />
+          <Text style={rhStyles.primaryButtonSmallText}>Registrar reembolso</Text>
+        </Pressable>
+
+        <Text style={[rhStyles.detailSectionHeading, styles.spacingTop]}>Histórico</Text>
+        {isLoading ? (
+          <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+        ) : loadError ? (
+          <RHEmptyTabState message={`Não foi possível carregar: ${loadError}`} />
+        ) : items.length === 0 ? (
+          <RHEmptyTabState message="Nenhum reembolso registrado." />
+        ) : (
+          items.map((item) => {
+            const statusMeta = rhReembolsoStatusMeta[item.status] ?? rhReembolsoStatusMeta.rascunho;
+            return (
+              <View key={item.id} style={rhStyles.historyCard}>
+                <View style={rhStyles.docCardTopRow}>
+                  <Text style={rhStyles.historyCardTitle}>{item.descricao}</Text>
+                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: statusMeta.tint }]}>
+                    <Text style={[rhStyles.employeeStatusText, { color: statusMeta.color }]}>
+                      {statusMeta.label}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={rhStyles.historyCardMeta}>
+                  R$ {Number(item.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  {item.categoria ? ` · ${item.categoria}` : ''}
+                  {item.data_despesa ? ` · ${formatDateOnlyBR(item.data_despesa)}` : ''}
+                </Text>
+              </View>
+            );
+          })
+        )}
+      </RHSmallModal>
+
+      <RegistrarReembolsoFormModal
+        visible={isFormOpen}
+        colaboradorId={employee.id}
+        onClose={() => setIsFormOpen(false)}
+        onSaved={() => {
+          setIsFormOpen(false);
+          reload();
+        }}
+      />
+    </>
+  );
+}
+
+const rhFeriasStatusMeta: Record<string, { label: string; color: string; tint: string }> = {
+  programada: { label: 'Programada', color: '#B07A1E', tint: '#FCEFDA' },
+  em_andamento: { label: 'Em andamento', color: '#3457D5', tint: '#EDF1FF' },
+  concluida: { label: 'Concluída', color: '#18955A', tint: '#E3F5EA' },
+  cancelada: { label: 'Cancelada', color: '#B3261E', tint: '#FBEAEA' },
+};
+
+function RegistrarFeriasFormModal({
+  visible,
+  onClose,
+  onSaved,
+  colaboradorId,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSaved: (item: ColaboradorFeriasItem) => void;
+  colaboradorId: string;
+}) {
+  const [dataInicioLabel, setDataInicioLabel] = useState('');
+  const [dataFimLabel, setDataFimLabel] = useState('');
+  const [isInicioPickerOpen, setIsInicioPickerOpen] = useState(false);
+  const [isFimPickerOpen, setIsFimPickerOpen] = useState(false);
+  const [observacoes, setObservacoes] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setDataInicioLabel('');
+      setDataFimLabel('');
+      setObservacoes('');
+      setIsSaving(false);
+    }
+  }, [visible]);
+
+  const handleSubmit = () => {
+    const inicioIso = brDateLabelToIso(dataInicioLabel);
+    const fimIso = brDateLabelToIso(dataFimLabel);
+    if (!inicioIso || !fimIso) {
+      Alert.alert('Campos obrigatórios', 'Informe a data de início e a data de fim.');
+      return;
+    }
+    const dias = Math.round((Date.parse(fimIso) - Date.parse(inicioIso)) / (24 * 60 * 60 * 1000)) + 1;
+    if (dias <= 0) {
+      Alert.alert('Datas inválidas', 'A data de fim precisa ser depois da data de início.');
+      return;
+    }
+    setIsSaving(true);
+    createColaboradorFerias({
+      colaborador_id: colaboradorId,
+      data_inicio: inicioIso,
+      data_fim: fimIso,
+      dias_planejados: dias,
+      observacoes: observacoes.trim() || undefined,
+    })
+      .then((item) => onSaved(item))
+      .catch((err) => showRhSaveError(err, 'Não foi possível registrar as férias.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Nova solicitação de férias</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <View style={rhStyles.formRow}>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Data de início"
+                  required
+                  value={dataInicioLabel}
+                  placeholder="Selecione a data"
+                  icon="calendar"
+                  onPress={() => setIsInicioPickerOpen(true)}
+                />
+              </View>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Data de fim"
+                  required
+                  value={dataFimLabel}
+                  placeholder="Selecione a data"
+                  icon="calendar"
+                  onPress={() => setIsFimPickerOpen(true)}
+                />
+              </View>
+            </View>
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Observações</Text>
+            <TextInput
+              style={[styles.processTextInput, styles.processDocumentationArea]}
+              value={observacoes}
+              onChangeText={setObservacoes}
+              placeholderTextColor="#A7AEC2"
+              multiline
+              textAlignVertical="top"
+            />
+
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? { opacity: 0.6 } : null]}
+              disabled={isSaving}
+              onPress={handleSubmit}
+            >
+              {isSaving ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Feather name="save" size={15} color="#FFFFFF" />
+                  <Text style={styles.primaryButtonText}>Salvar</Text>
+                </>
+              )}
+            </Pressable>
+          </ScrollView>
+
+          <RHDatePickerModal
+            inline
+            visible={isInicioPickerOpen}
+            title="Data de início"
+            value={dataInicioLabel}
+            onSelect={setDataInicioLabel}
+            onClose={() => setIsInicioPickerOpen(false)}
+          />
+          <RHDatePickerModal
+            inline
+            visible={isFimPickerOpen}
+            title="Data de fim"
+            value={dataFimLabel}
+            onSelect={setDataFimLabel}
+            onClose={() => setIsFimPickerOpen(false)}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function FeriasEmployeeModal({
+  visible,
+  employee,
+  onClose,
+}: {
+  visible: boolean;
+  employee: Employee;
+  onClose: () => void;
+}) {
+  const [items, setItems] = useState<ColaboradorFeriasItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const reload = useCallback(() => {
+    setIsLoading(true);
+    setLoadError(null);
+    fetchColaboradorFerias(employee.id)
+      .then(setItems)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Erro ao carregar férias.'))
+      .finally(() => setIsLoading(false));
+  }, [employee.id]);
+
+  useEffect(() => {
+    if (visible) reload();
+  }, [visible, reload]);
+
+  return (
+    <>
+      <RHSmallModal visible={visible} title={`Férias — ${employee.fullName}`} onClose={onClose}>
+        <Pressable style={rhStyles.primaryButtonGreenSmall} onPress={() => setIsFormOpen(true)}>
+          <Feather name="plus" size={13} color="#FFFFFF" />
+          <Text style={rhStyles.primaryButtonSmallText}>Nova solicitação</Text>
+        </Pressable>
+
+        <Text style={[rhStyles.detailSectionHeading, styles.spacingTop]}>Histórico</Text>
+        {isLoading ? (
+          <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+        ) : loadError ? (
+          <RHEmptyTabState message={`Não foi possível carregar: ${loadError}`} />
+        ) : items.length === 0 ? (
+          <RHEmptyTabState message="Nenhuma férias registrada." />
+        ) : (
+          items.map((item) => {
+            const statusMeta = rhFeriasStatusMeta[item.status] ?? rhFeriasStatusMeta.programada;
+            return (
+              <View key={item.id} style={rhStyles.historyCard}>
+                <View style={rhStyles.docCardTopRow}>
+                  <Text style={rhStyles.historyCardTitle}>
+                    {formatDateOnlyBR(item.data_inicio)} → {formatDateOnlyBR(item.data_fim)}
+                  </Text>
+                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: statusMeta.tint }]}>
+                    <Text style={[rhStyles.employeeStatusText, { color: statusMeta.color }]}>
+                      {statusMeta.label}
+                    </Text>
+                  </View>
+                </View>
+                {item.dias_planejados ? (
+                  <Text style={rhStyles.historyCardMeta}>{item.dias_planejados} dia(s)</Text>
+                ) : null}
+              </View>
+            );
+          })
+        )}
+      </RHSmallModal>
+
+      <RegistrarFeriasFormModal
+        visible={isFormOpen}
+        colaboradorId={employee.id}
+        onClose={() => setIsFormOpen(false)}
+        onSaved={() => {
+          setIsFormOpen(false);
+          reload();
+        }}
+      />
+    </>
   );
 }
 
@@ -6102,13 +6667,29 @@ function PromocoesModal({
   onClose: () => void;
   cargoOptions: string[];
 }) {
-  const [promotions, setPromotions] = useState<PromotionRecord[]>([]);
+  const [promotions, setPromotions] = useState<RhSalarioHistoricoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const currentSalario = promotions.length > 0 ? promotions[0].novoSalario : employee.salario;
+  const currentSalario = promotions.length > 0 ? Number(promotions[0].salario_novo) || employee.salario : employee.salario;
 
-  const handleSave = (record: PromotionRecord) => {
-    setPromotions((current) => [record, ...current]);
-    setIsFormOpen(false);
+  useEffect(() => {
+    if (!visible) return;
+    setIsLoading(true);
+    setLoadError(null);
+    fetchRhPromocoes(employee.id)
+      .then(setPromotions)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Erro ao carregar promoções.'))
+      .finally(() => setIsLoading(false));
+  }, [visible, employee.id]);
+
+  const handleSave = () => {
+    // Ainda não existe endpoint de escrita confirmado pela Lovable pra
+    // rh_salario_historico — em vez de fingir que salvou localmente, avisa.
+    Alert.alert(
+      'Registro ainda não disponível',
+      'Registrar promoção/aumento depende de um endpoint de escrita no Lovable que ainda não foi liberado. O histórico acima já mostra os registros reais.'
+    );
   };
 
   return (
@@ -6136,20 +6717,24 @@ function PromocoesModal({
           </View>
         </View>
 
-        {promotions.length === 0 ? (
+        {isLoading ? (
+          <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+        ) : loadError ? (
+          <RHEmptyTabState message={`Não foi possível carregar: ${loadError}`} />
+        ) : promotions.length === 0 ? (
           <RHEmptyTabState message="Nenhum registro ainda." />
         ) : (
           promotions.map((record) => (
             <View key={record.id} style={rhStyles.historyCard}>
-              <Text style={rhStyles.historyCardTitle}>{record.motivo}</Text>
+              <Text style={rhStyles.historyCardTitle}>{record.motivo ?? 'Reajuste'}</Text>
               <Text style={rhStyles.historyCardMeta}>
-                Novo salário: R$ {record.novoSalario.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                {record.percentual ? ` (${record.percentual}%)` : ''}
+                Novo salário: R${' '}
+                {(Number(record.salario_novo) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                {record.percentual_reajuste ? ` (${record.percentual_reajuste}%)` : ''}
               </Text>
-              {record.novoCargo ? (
-                <Text style={rhStyles.historyCardMeta}>Novo cargo: {record.novoCargo}</Text>
-              ) : null}
-              <Text style={rhStyles.historyCardMeta}>Vigência: {record.vigenciaLabel}</Text>
+              <Text style={rhStyles.historyCardMeta}>
+                Vigência: {formatDateOnlyBR(record.vigencia_inicio)}
+              </Text>
             </View>
           ))
         )}
@@ -6289,14 +6874,35 @@ function PremiacoesModal({
   employee: Employee;
   onClose: () => void;
 }) {
-  const [premiacoes, setPremiacoes] = useState<PremiacaoRecord[]>([]);
+  const [premiacoes, setPremiacoes] = useState<RhPremiacaoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const currentYear = new Date().getFullYear();
-  const totalPago = premiacoes.reduce((sum, item) => sum + item.valor, 0);
+  const totalPago = premiacoes
+    .filter((item) => item.status === 'pago' || item.pago_em_folha)
+    .reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
+  const totalPendente = premiacoes
+    .filter((item) => item.status && item.status !== 'pago' && !item.pago_em_folha)
+    .reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
 
-  const handleSave = (record: PremiacaoRecord) => {
-    setPremiacoes((current) => [record, ...current]);
-    setIsFormOpen(false);
+  useEffect(() => {
+    if (!visible) return;
+    setIsLoading(true);
+    setLoadError(null);
+    fetchRhPremiacoes(employee.id)
+      .then(setPremiacoes)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Erro ao carregar premiações.'))
+      .finally(() => setIsLoading(false));
+  }, [visible, employee.id]);
+
+  const handleSave = () => {
+    // Ainda não existe endpoint de escrita confirmado pela Lovable pra
+    // rh_premiacoes — em vez de fingir que salvou localmente, avisa.
+    Alert.alert(
+      'Registro ainda não disponível',
+      'Registrar premiação depende de um endpoint de escrita no Lovable que ainda não foi liberado. O histórico acima já mostra os registros reais.'
+    );
   };
 
   return (
@@ -6311,7 +6917,9 @@ function PremiacoesModal({
           </View>
           <View style={[rhStyles.trainingStatItem, { flex: 1 }]}>
             <Text style={rhStyles.trainingStatLabel}>PENDENTE / APROVADO</Text>
-            <Text style={[rhStyles.trainingStatValue, { color: '#B07A1E' }]}>R$ 0,00</Text>
+            <Text style={[rhStyles.trainingStatValue, { color: '#B07A1E' }]}>
+              R$ {totalPendente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </Text>
           </View>
         </View>
 
@@ -6324,14 +6932,19 @@ function PremiacoesModal({
         </View>
 
         <Text style={rhStyles.detailSectionHeading}>Histórico de premiações</Text>
-        {premiacoes.length === 0 ? (
+        {isLoading ? (
+          <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+        ) : loadError ? (
+          <RHEmptyTabState message={`Não foi possível carregar: ${loadError}`} />
+        ) : premiacoes.length === 0 ? (
           <RHEmptyTabState message={`Nenhuma premiação em ${currentYear}.`} />
         ) : (
           premiacoes.map((record) => (
             <View key={record.id} style={rhStyles.historyCard}>
-              <Text style={rhStyles.historyCardTitle}>{record.tipo}</Text>
+              <Text style={rhStyles.historyCardTitle}>{record.motivo ?? 'Premiação'}</Text>
               <Text style={rhStyles.historyCardMeta}>
-                R$ {record.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} · {record.dataLabel}
+                R$ {(Number(record.valor) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ·{' '}
+                {formatDateOnlyBR(record.data_pagamento ?? record.competencia)}
               </Text>
             </View>
           ))
@@ -6590,16 +7203,32 @@ function TransferenciasEmployeeModal({
   cargoOptions: string[];
   unidadeOptions: string[];
 }) {
-  const [records, setRecords] = useState<EmployeeTransferRecord[]>([]);
+  const [records, setRecords] = useState<RhTransferenciaColaboradorItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    setIsLoading(true);
+    setLoadError(null);
+    fetchRhTransferenciasColaborador(employee.id)
+      .then(setRecords)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Erro ao carregar transferências.'))
+      .finally(() => setIsLoading(false));
+  }, [visible, employee.id]);
 
   const pendentes = records.filter((item) => item.status === 'pendente').length;
   const aprovadas = records.filter((item) => item.status === 'aprovada').length;
   const efetivadas = records.filter((item) => item.status === 'efetivada').length;
 
-  const handleSave = (record: EmployeeTransferRecord) => {
-    setRecords((current) => [record, ...current]);
-    setIsFormOpen(false);
+  const handleSave = () => {
+    // Ainda não existe endpoint de escrita confirmado pela Lovable pra
+    // rh_transferencias — em vez de fingir que salvou localmente, avisa.
+    Alert.alert(
+      'Registro ainda não disponível',
+      'Registrar transferência depende de um endpoint de escrita no Lovable que ainda não foi liberado. O histórico acima já mostra os registros reais.'
+    );
   };
 
   return (
@@ -6623,17 +7252,19 @@ function TransferenciasEmployeeModal({
         </Pressable>
 
         <View style={styles.spacingTop}>
-          {records.length === 0 ? (
+          {isLoading ? (
+            <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+          ) : loadError ? (
+            <RHEmptyTabState message={`Não foi possível carregar: ${loadError}`} />
+          ) : records.length === 0 ? (
             <RHEmptyTabState message="Nenhuma transferência registrada." />
           ) : (
             records.map((record) => {
-              const statusMeta = rhTransferStatusMeta[record.status];
+              const statusMeta = rhTransferStatusMeta[(record.status as TransferStatus) ?? 'pendente'] ?? rhTransferStatusMeta.pendente;
               return (
                 <View key={record.id} style={rhStyles.historyCard}>
                   <View style={rhStyles.docCardTopRow}>
-                    <Text style={rhStyles.historyCardTitle}>
-                      {employee.unit} → {record.toUnit}
-                    </Text>
+                    <Text style={rhStyles.historyCardTitle}>{record.cargo_destino ?? 'Transferência'}</Text>
                     <View style={[rhStyles.employeeStatusPill, { backgroundColor: statusMeta.tint }]}>
                       <Text style={[rhStyles.employeeStatusText, { color: statusMeta.color }]}>
                         {statusMeta.label}
@@ -6641,11 +7272,11 @@ function TransferenciasEmployeeModal({
                     </View>
                   </View>
                   <Text style={rhStyles.historyCardMeta}>
-                    {record.novoCargo} · {record.novoSetor} · R${' '}
-                    {record.novoSalario.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    {record.setor_destino ?? '—'} · R${' '}
+                    {(Number(record.salario_novo) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </Text>
                   <Text style={rhStyles.historyCardMeta}>
-                    Vigência: {record.vigenciaLabel} · Motivo: {record.motivo}
+                    Vigência: {formatDateOnlyBR(record.data_vigencia)} · Motivo: {record.motivo ?? '—'}
                   </Text>
                 </View>
               );
@@ -7446,10 +8077,9 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
         employeeName={employee.fullName}
         onClose={() => setActiveQuickAction(null)}
       />
-      <EmBreveModal
+      <FeriasEmployeeModal
         visible={activeQuickAction === 'ferias'}
-        title="Férias"
-        employeeName={employee.fullName}
+        employee={employee}
         onClose={() => setActiveQuickAction(null)}
       />
       <ContrachequesModal
@@ -7468,10 +8098,9 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
         employee={employee}
         onClose={() => setActiveQuickAction(null)}
       />
-      <EmBreveModal
+      <ReembolsosEmployeeModal
         visible={activeQuickAction === 'reembolsos'}
-        title="Reembolsos"
-        employeeName={employee.fullName}
+        employee={employee}
         onClose={() => setActiveQuickAction(null)}
       />
       <EmBreveModal

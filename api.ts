@@ -362,6 +362,93 @@ export async function deleteRhHistoricoContratacao(id: string): Promise<void> {
   await api.delete(`/api/rh/historico-contratacoes/${encodeURIComponent(id)}`);
 }
 
+// --- RH: sub-recursos do colaborador que hoje só têm leitura (GET) no
+// backend — ainda sem endpoint de escrita confirmado pela Lovable pras
+// tabelas rh_dependentes, rh_salario_historico, rh_premiacoes e
+// rh_transferencias (pedido em 11/08/2026). As telas usam isso pra mostrar o
+// histórico real; o "salvar" fica bloqueado com aviso até a escrita ser
+// liberada. ---
+
+export type RhDependenteItem = {
+  id: string;
+  colaborador_id: string;
+  nome: string;
+  parentesco: string | null;
+  grau_parentesco: string | null;
+  data_nascimento: string | null;
+  cpf: string | null;
+  e_dependente_ir: boolean | null;
+  estudante_universitario: boolean | null;
+  incapacitado: boolean | null;
+  ativo: boolean | null;
+  observacao: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRhDependentes(colaboradorId: string): Promise<RhDependenteItem[]> {
+  const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/dependentes`);
+  return (json.data as RhDependenteItem[]) ?? [];
+}
+
+export type RhSalarioHistoricoItem = {
+  id: string;
+  colaborador_id: string;
+  vigencia_inicio: string | null;
+  salario_anterior: number | null;
+  salario_novo: number | null;
+  percentual_reajuste: number | null;
+  motivo: string | null;
+  observacao: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRhPromocoes(colaboradorId: string): Promise<RhSalarioHistoricoItem[]> {
+  const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/promocoes`);
+  return (json.data as RhSalarioHistoricoItem[]) ?? [];
+}
+
+export type RhPremiacaoItem = {
+  id: string;
+  colaborador_id: string;
+  tipo_id: string | null;
+  competencia: string | null;
+  data_pagamento: string | null;
+  valor: number | null;
+  motivo: string | null;
+  meta_descricao: string | null;
+  status: string | null;
+  pago_em_folha: boolean | null;
+  observacoes: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRhPremiacoes(colaboradorId: string): Promise<RhPremiacaoItem[]> {
+  const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/premiacoes`);
+  return (json.data as RhPremiacaoItem[]) ?? [];
+}
+
+export type RhTransferenciaColaboradorItem = {
+  id: string;
+  colaborador_id: string;
+  data_vigencia: string | null;
+  empresa_origem_id: string | null;
+  empresa_destino_id: string | null;
+  setor_destino: string | null;
+  cargo_destino: string | null;
+  salario_novo: number | null;
+  motivo: string | null;
+  observacao: string | null;
+  status: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRhTransferenciasColaborador(
+  colaboradorId: string
+): Promise<RhTransferenciaColaboradorItem[]> {
+  const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/transferencias`);
+  return (json.data as RhTransferenciaColaboradorItem[]) ?? [];
+}
+
 // --- RH: unidades reais (tabela empresas no Supabase do Lovable) ---
 // NÃO confundir com o endpoint /api/empresas (esse lê "postos" de um
 // Postgres self-hosted diferente, usado por Vendas/Margem/Estoque).
@@ -955,6 +1042,42 @@ export async function updateRhFeriasStatus(
   const json = await api.patch(`/api/rh/ferias/${encodeURIComponent(id)}`, { status });
   return json.data;
 }
+
+// --- Colaborador: Férias (lista individual + criação, tela de detalhe do RH).
+// GET usa o subrecurso que já existe em colaboradores.js (rh_ferias filtrado
+// por colaborador_id). POST usa o endpoint de escrita confirmado pela Lovable
+// em 03/08/2026 (mesmo de cima). ---
+
+export type ColaboradorFeriasItem = {
+  id: string;
+  colaborador_id: string;
+  data_inicio: string | null;
+  data_fim: string | null;
+  dias_planejados: number | null;
+  status: 'programada' | 'em_andamento' | 'concluida' | 'cancelada';
+  observacoes: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchColaboradorFerias(colaboradorId: string): Promise<ColaboradorFeriasItem[]> {
+  const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/ferias`);
+  return (json.data as ColaboradorFeriasItem[]) ?? [];
+}
+
+export async function createColaboradorFerias(body: {
+  colaborador_id: string;
+  data_inicio: string;
+  data_fim: string;
+  dias_planejados?: number;
+  observacoes?: string;
+}): Promise<ColaboradorFeriasItem> {
+  const json = await api.post('/api/rh/ferias', body);
+  return json.data as ColaboradorFeriasItem;
+}
+
+// --- Colaborador: Contracheques por id (reaproveita fetchColaboradorContracheques
+// acima, exportado com esse alias mais claro pra tela de detalhe do RH). ---
+export const fetchContrachequesDoColaborador = fetchColaboradorContracheques;
 
 // --- Colaborador (self-service): Minhas Solicitações — criação/resposta
 // (leitura da lista simples já existe em fetchColaboradorSolicitacoes acima).
