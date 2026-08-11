@@ -3304,9 +3304,12 @@ type QuickActionKey =
   | 'desligamento'
   | 'acessoLogin';
 
+// "Acesso ao Portal" (acessoLogin) foi removido do grid a pedido da Rayanne
+// em 10/08/2026 — não existe no web, só no app. O componente que vincula/
+// desvincula login (LinkLoginModal) e o QuickActionKey continuam existindo
+// no código, só não têm mais um botão que os acione.
 const rhQuickActions: Array<{ key: QuickActionKey; label: string; icon: keyof typeof Feather.glyphMap }> = [
   { key: 'dadosPessoais', label: 'Dados Pessoais', icon: 'check-circle' },
-  { key: 'acessoLogin', label: 'Acesso ao Portal', icon: 'link' },
   { key: 'documentos', label: 'Documentos', icon: 'file-text' },
   { key: 'ponto', label: 'Ponto', icon: 'clock' },
   { key: 'afastamentos', label: 'Afastamentos', icon: 'shield' },
