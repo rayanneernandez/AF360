@@ -2664,6 +2664,53 @@ function RHFilterSelectField({
 
 // ---------- Colaboradores ----------
 
+// Remove tudo que não for dígito e formata como 000.000.000-00, cortando em
+// 11 dígitos. Usado no campo de CPF para impedir letras e manter a máscara
+// enquanto o usuário digita.
+function formatCpfMask(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 11);
+  const part1 = digits.slice(0, 3);
+  const part2 = digits.slice(3, 6);
+  const part3 = digits.slice(6, 9);
+  const part4 = digits.slice(9, 11);
+  let result = part1;
+  if (part2) result += `.${part2}`;
+  if (part3) result += `.${part3}`;
+  if (part4) result += `-${part4}`;
+  return result;
+}
+
+// Traduz erros crus do backend (ex: "forbidden: master required", "Lovable
+// API respondeu 404") pra mensagens que dá pra entender, em vez do texto
+// técnico direto. Compartilhada por todos os formulários de RH que fazem
+// PATCH em rh_colaboradores (Dados Pessoais, Contrato, Encargos, Benefícios,
+// vínculo de login etc.) — antes era redeclarada dentro de um único
+// componente e outros componentes que também precisavam dela (ex.: o modal
+// de vincular login) quebravam em runtime com "showRhSaveError is not
+// defined".
+function showRhSaveError(err: unknown, fallback: string) {
+  const raw = err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
+  const normalized = raw.toLowerCase();
+
+  if (normalized.includes('forbidden') && normalized.includes('master')) {
+    Alert.alert(
+      'Precisa de conta master',
+      'Essa ação só pode ser feita por uma conta marcada como "master". A conta logada agora não tem esse selo.'
+    );
+    return;
+  }
+
+  if (normalized.includes('404')) {
+    Alert.alert(
+      'Ainda não disponível no servidor',
+      'O servidor não reconheceu essa ação agora (erro 404) — provavelmente a atualização mais recente ainda não foi publicada. Tente de novo em alguns minutos; se continuar, avise quem cuida do backend.'
+    );
+    return;
+  }
+
+  Alert.alert('Não foi possível salvar', raw);
+}
+
 type NovoColaboradorForm = {
   fullName: string;
   cpf: string;
@@ -2763,9 +2810,11 @@ function NovoColaboradorModal({
                   <TextInput
                     style={styles.processTextInput}
                     value={form.cpf}
-                    onChangeText={(text) => setForm((current) => ({ ...current, cpf: text }))}
+                    onChangeText={(text) => setForm((current) => ({ ...current, cpf: formatCpfMask(text) }))}
                     placeholder="000.000.000-00"
                     placeholderTextColor="#A7AEC2"
+                    keyboardType="number-pad"
+                    maxLength={14}
                   />
                 </View>
                 <View style={rhStyles.formRowItem}>
@@ -2800,33 +2849,36 @@ function NovoColaboradorModal({
                 <Text style={styles.primaryButtonText}>Cadastrar</Text>
               </Pressable>
             </ScrollView>
+
+            <RHSimplePickerModal
+              visible={isCargoPickerOpen}
+              title="Cargo"
+              options={cargoOptions}
+              selectedValue={form.role}
+              onSelect={(value) => setForm((current) => ({ ...current, role: value }))}
+              onClose={() => setIsCargoPickerOpen(false)}
+              inline
+            />
+            <RHSimplePickerModal
+              visible={isUnidadePickerOpen}
+              title="Unidade"
+              options={unidadeOptions}
+              selectedValue={form.unit}
+              onSelect={(value) => setForm((current) => ({ ...current, unit: value }))}
+              onClose={() => setIsUnidadePickerOpen(false)}
+              inline
+            />
+            <RHDatePickerModal
+              visible={isDatePickerOpen}
+              title="Data de admissão"
+              value={form.admissionLabel}
+              onSelect={(dateLabel) => setForm((current) => ({ ...current, admissionLabel: dateLabel }))}
+              onClose={() => setIsDatePickerOpen(false)}
+              inline
+            />
           </View>
         </View>
       </Modal>
-
-      <RHSimplePickerModal
-        visible={isCargoPickerOpen}
-        title="Cargo"
-        options={cargoOptions}
-        selectedValue={form.role}
-        onSelect={(value) => setForm((current) => ({ ...current, role: value }))}
-        onClose={() => setIsCargoPickerOpen(false)}
-      />
-      <RHSimplePickerModal
-        visible={isUnidadePickerOpen}
-        title="Unidade"
-        options={unidadeOptions}
-        selectedValue={form.unit}
-        onSelect={(value) => setForm((current) => ({ ...current, unit: value }))}
-        onClose={() => setIsUnidadePickerOpen(false)}
-      />
-      <RHDatePickerModal
-        visible={isDatePickerOpen}
-        title="Data de admissão"
-        value={form.admissionLabel}
-        onSelect={(dateLabel) => setForm((current) => ({ ...current, admissionLabel: dateLabel }))}
-        onClose={() => setIsDatePickerOpen(false)}
-      />
     </>
   );
 }
@@ -3971,32 +4023,6 @@ function DadosPessoaisModal({
 
   const saveSimpleAlert = (title: string, message: string) => {
     Alert.alert(title, message);
-  };
-
-  // Traduz erros crus do backend (ex: "forbidden: master required", "Lovable
-  // API respondeu 404") pra mensagens que dá pra entender, em vez do texto
-  // técnico direto.
-  const showRhSaveError = (err: unknown, fallback: string) => {
-    const raw = err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
-    const normalized = raw.toLowerCase();
-
-    if (normalized.includes('forbidden') && normalized.includes('master')) {
-      Alert.alert(
-        'Precisa de conta master',
-        'Essa ação só pode ser feita por uma conta marcada como "master". A conta logada agora não tem esse selo.'
-      );
-      return;
-    }
-
-    if (normalized.includes('404')) {
-      Alert.alert(
-        'Ainda não disponível no servidor',
-        'O servidor não reconheceu essa ação agora (erro 404) — provavelmente a atualização mais recente ainda não foi publicada. Tente de novo em alguns minutos; se continuar, avise quem cuida do backend.'
-      );
-      return;
-    }
-
-    Alert.alert('Não foi possível salvar', raw);
   };
 
   // PATCH real em rh_colaboradores (endpoint confirmado pelo Lovable em
