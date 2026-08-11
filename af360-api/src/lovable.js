@@ -267,6 +267,26 @@ function deleteRhTransferencia(id, actorId) {
   return lovableDelete('/api/public/internal/rh-transferencia', { id }, actorId);
 }
 
+// --- RH: Documentos — upload/download/exclusão de arquivo (bucket privado
+// documentos-colaboradores, mesmo do painel web). Endpoint confirmado pela
+// Lovable em 11/08/2026: /api/public/internal/rh-documento-upload. Mandamos
+// sempre em JSON com arquivo_base64 (mais simples que multipart num proxy
+// Express); limite deles é 10MB/arquivo, mimes application/pdf, image/jpeg,
+// image/png, image/webp. GET ?id= devolve { data, url } (link assinado,
+// válido 1h); DELETE ?id= apaga arquivo + registro.
+
+function postRhDocumentoUpload(body, actorId) {
+  return lovablePost('/api/public/internal/rh-documento-upload', {}, body, actorId);
+}
+
+function getRhDocumento(id, actorId) {
+  return lovableGet('/api/public/internal/rh-documento-upload', { id }, actorId);
+}
+
+function deleteRhDocumentoUpload(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-documento-upload', { id }, actorId);
+}
+
 // --- Admin ---
 
 function postAdminUsuario(body, actorId) {
@@ -981,6 +1001,9 @@ module.exports = {
   postRhTransferencia,
   patchRhTransferencia,
   deleteRhTransferencia,
+  postRhDocumentoUpload,
+  getRhDocumento,
+  deleteRhDocumentoUpload,
   postAdminUsuario,
   postAdminUsuarioResetSenha,
   postAdminUsuarioToggleAtivo,

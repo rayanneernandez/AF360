@@ -28,11 +28,14 @@ const rhDependentesRoutes = require('./routes/rhDependentes');
 const rhPromocoesRoutes = require('./routes/rhPromocoes');
 const rhPremiacoesEscritaRoutes = require('./routes/rhPremiacoesEscrita');
 const rhTransferenciasEscritaRoutes = require('./routes/rhTransferenciasEscrita');
+const rhDocumentosUploadRoutes = require('./routes/rhDocumentosUpload');
 
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+// Limite padrão do express.json() é 100kb — aumentado pra caber upload de
+// documento em base64 (até ~10MB de arquivo vira ~14MB em base64 + payload).
+app.use(express.json({ limit: '15mb' }));
 
 // /api/health e /api/health/db ficam abertos (sem API key) para
 // facilitar diagnóstico de deploy/conectividade.
@@ -66,6 +69,7 @@ app.use('/api/rh/dependentes', rhDependentesRoutes);
 app.use('/api/rh/promocoes', rhPromocoesRoutes);
 app.use('/api/rh/premiacoes-escrita', rhPremiacoesEscritaRoutes);
 app.use('/api/rh/transferencias-escrita', rhTransferenciasEscritaRoutes);
+app.use('/api/rh/documentos', rhDocumentosUploadRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'af360-api', message: 'Veja /api/health' });

@@ -471,6 +471,56 @@ export async function createRhTransferencia(
   return { data: json.data as RhTransferenciaColaboradorItem, colaboradorAtualizado: json.colaboradorAtualizado };
 }
 
+// --- RH: Documentos do colaborador (rh_documentos). Leitura via sub-recurso
+// já existente; upload/download/exclusão de arquivo confirmados pela
+// Lovable em 11/08/2026 (bucket documentos-colaboradores, mesmo do painel
+// web). ---
+
+export type RhDocumentoItem = {
+  id: string;
+  colaborador_id: string;
+  tipo: string;
+  nome_arquivo: string | null;
+  storage_path: string | null;
+  validade: string | null;
+  data_validade: string | null;
+  data_emissao: string | null;
+  observacoes: string | null;
+  tamanho_bytes: number | null;
+  mime_type: string | null;
+  status: string | null;
+  created_at?: string;
+  [key: string]: unknown;
+};
+
+export async function fetchRhDocumentos(colaboradorId: string): Promise<RhDocumentoItem[]> {
+  const json = await api.get(`/api/rh/colaboradores/${encodeURIComponent(colaboradorId)}/documentos`);
+  return (json.data as RhDocumentoItem[]) ?? [];
+}
+
+export async function createRhDocumento(body: {
+  colaborador_id: string;
+  tipo: string;
+  nome_arquivo: string;
+  arquivo_base64: string;
+  mime_type: string;
+  data_validade?: string;
+  data_emissao?: string;
+  observacoes?: string;
+}): Promise<{ data: RhDocumentoItem; url: string | null }> {
+  const json = await api.post('/api/rh/documentos', body);
+  return { data: json.data as RhDocumentoItem, url: json.url ?? null };
+}
+
+export async function fetchRhDocumentoUrl(id: string): Promise<{ data: RhDocumentoItem | null; url: string | null }> {
+  const json = await api.get(`/api/rh/documentos/${encodeURIComponent(id)}`);
+  return { data: (json.data as RhDocumentoItem) ?? null, url: json.url ?? null };
+}
+
+export async function deleteRhDocumento(id: string): Promise<void> {
+  await api.delete(`/api/rh/documentos/${encodeURIComponent(id)}`);
+}
+
 // --- RH: unidades reais (tabela empresas no Supabase do Lovable) ---
 // NÃO confundir com o endpoint /api/empresas (esse lê "postos" de um
 // Postgres self-hosted diferente, usado por Vendas/Margem/Estoque).

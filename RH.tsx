@@ -104,6 +104,11 @@ import {
   createRhPromocao,
   createRhPremiacao,
   createRhTransferencia,
+  fetchRhDocumentos,
+  type RhDocumentoItem,
+  createRhDocumento,
+  fetchRhDocumentoUrl,
+  deleteRhDocumento,
 } from './api';
 
 // ---------- Types ----------
@@ -5797,6 +5802,23 @@ const rhDocumentCategories: Array<{
   { key: 'outros', label: 'Outros', description: 'Demais documentos', icon: 'folder', pendentes: 0 },
 ];
 
+// Agrupamento cliente-side de rh_documentos.tipo (texto livre) nas pastas
+// da tela. "Outro"/tipos não mapeados caem em "outros".
+const rhDocumentTipoToCategory: Record<string, string> = {
+  RG: 'identificacao',
+  CPF: 'identificacao',
+  CNH: 'identificacao',
+  'Título de eleitor': 'identificacao',
+  'Certidão de reservista': 'identificacao',
+  'Comprovante de residência': 'endereco',
+  ASO: 'saude',
+  Contrato: 'trabalho',
+};
+
+// Mimes aceitos pelo endpoint da Lovable (415 se mandar outro).
+const rhDocumentoMimesAceitos = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+const rhDocumentoTamanhoMaximoBytes = 10 * 1024 * 1024;
+
 function DocumentosModal({
   visible,
   employee,
@@ -5806,16 +5828,31 @@ function DocumentosModal({
   employee: Employee;
   onClose: () => void;
 }) {
-  const totalPendentes = rhDocumentCategories.reduce((sum, category) => sum + category.pendentes, 0);
+  const [documentos, setDocumentos] = useState<RhDocumentoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isUploadFormOpen, setIsUploadFormOpen] = useState(false);
   const [tipoDocumento, setTipoDocumento] = useState('');
   const [dataValidade, setDataValidade] = useState('');
   const [dataEmissao, setDataEmissao] = useState('');
   const [observacaoDocumento, setObservacaoDocumento] = useState('');
+  const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; mimeType: string; size: number } | null>(
+    null
+  );
+  const [isUploading, setIsUploading] = useState(false);
   const [isTipoDocumentoPickerOpen, setIsTipoDocumentoPickerOpen] = useState(false);
   const [isDataValidadePickerOpen, setIsDataValidadePickerOpen] = useState(false);
   const [isDataEmissaoPickerOpen, setIsDataEmissaoPickerOpen] = useState(false);
+
+  const reloadDocumentos = useCallback(() => {
+    setIsLoading(true);
+    setLoadError(null);
+    return fetchRhDocumentos(employee.id)
+      .then(setDocumentos)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Erro ao carregar documentos.'))
+      .finally(() => setIsLoading(false));
+  }, [employee.id]);
 
   useEffect(() => {
     if (visible) {
@@ -5825,17 +5862,113 @@ function DocumentosModal({
       setDataValidade('');
       setDataEmissao('');
       setObservacaoDocumento('');
+      setSelectedFile(null);
+      reloadDocumentos();
     }
-  }, [visible]);
-
-  const showUploadNotAvailable = () => {
-    Alert.alert(
-      'Envio de documentos ainda não disponível',
-      'O upload e armazenamento de documentos depende de um endpoint de arquivos no Lovable que ainda não está liberado.'
-    );
-  };
+  }, [visible, reloadDocumentos]);
 
   const activeCategory = rhDocumentCategories.find((category) => category.key === selectedCategory) ?? null;
+
+  const documentosPorCategoria = useMemo(() => {
+    const map = new Map<string, RhDocumentoItem[]>();
+    documentos.forEach((doc) => {
+      const categoria = rhDocumentTipoToCategory[doc.tipo] ?? 'outros';
+      map.set(categoria, [...(map.get(categoria) ?? []), doc]);
+    });
+    return map;
+  }, [documentos]);
+
+  const hojeMs = Date.now();
+  const totalVencidos = documentos.filter(
+    (doc) => doc.data_validade && Date.parse(doc.data_validade) < hojeMs
+  ).length;
+  const documentosDaCategoria = selectedCategory ? documentosPorCategoria.get(selectedCategory) ?? [] : [];
+
+  const handlePickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: rhDocumentoMimesAceitos,
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const mimeType = asset.mimeType ?? '';
+      if (!rhDocumentoMimesAceitos.includes(mimeType)) {
+        Alert.alert('Arquivo inválido', 'Envie um PDF, JPEG, PNG ou WEBP.');
+        return;
+      }
+      if ((asset.size ?? 0) > rhDocumentoTamanhoMaximoBytes) {
+        Alert.alert('Arquivo muito grande', 'O tamanho máximo por documento é 10MB.');
+        return;
+      }
+      setSelectedFile({ uri: asset.uri, name: asset.name ?? 'documento', mimeType, size: asset.size ?? 0 });
+    } catch {
+      Alert.alert('Falha ao selecionar arquivo', 'Não foi possível abrir o seletor de arquivos agora.');
+    }
+  };
+
+  const handleUploadSubmit = async () => {
+    if (!tipoDocumento.trim()) {
+      Alert.alert('Campo obrigatório', 'Selecione o tipo de documento.');
+      return;
+    }
+    if (!selectedFile) {
+      Alert.alert('Selecione um arquivo', 'Toque em "Toque para selecionar um arquivo" antes de enviar.');
+      return;
+    }
+    setIsUploading(true);
+    try {
+      const base64 = await FileSystem.readAsStringAsync(selectedFile.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      await createRhDocumento({
+        colaborador_id: employee.id,
+        tipo: tipoDocumento,
+        nome_arquivo: selectedFile.name,
+        arquivo_base64: base64,
+        mime_type: selectedFile.mimeType,
+        data_validade: brDateLabelToIso(dataValidade) ?? undefined,
+        data_emissao: brDateLabelToIso(dataEmissao) ?? undefined,
+        observacoes: observacaoDocumento || undefined,
+      });
+      setIsUploadFormOpen(false);
+      setTipoDocumento('');
+      setDataValidade('');
+      setDataEmissao('');
+      setObservacaoDocumento('');
+      setSelectedFile(null);
+      reloadDocumentos();
+    } catch (err) {
+      showRhSaveError(err, 'Não foi possível enviar o documento.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleOpenDocumento = (doc: RhDocumentoItem) => {
+    fetchRhDocumentoUrl(doc.id)
+      .then(({ url }) => {
+        if (url) Linking.openURL(url);
+        else Alert.alert('Link indisponível', 'Não foi possível gerar o link de visualização agora.');
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível abrir o documento.'));
+  };
+
+  const handleDeleteDocumento = (doc: RhDocumentoItem) => {
+    Alert.alert('Excluir documento', `Excluir "${doc.nome_arquivo ?? doc.tipo}"? Essa ação não pode ser desfeita.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteRhDocumento(doc.id)
+            .then(() => reloadDocumentos())
+            .catch((err) => showRhSaveError(err, 'Não foi possível excluir o documento.'));
+        },
+      },
+    ]);
+  };
 
   return (
     <>
@@ -5843,14 +5976,10 @@ function DocumentosModal({
         {!selectedCategory ? (
           <>
             <View style={rhStyles.docStatsRow}>
-              <Text style={rhStyles.docStatsText}>0 total · {totalPendentes} pendentes · 0 vencidos</Text>
+              <Text style={rhStyles.docStatsText}>{documentos.length} total · {totalVencidos} vencidos</Text>
               <Pressable
                 style={rhStyles.primaryButtonGreenSmall}
                 onPress={() => {
-                  // Antes pulava direto pro aviso de "ainda não disponível" —
-                  // agora abre o mesmo formulário que se chega clicando numa
-                  // categoria (com "Outros" pré-selecionado), pra não ter
-                  // dois comportamentos diferentes pro mesmo botão "Enviar".
                   setSelectedCategory('outros');
                   setIsUploadFormOpen(true);
                 }}
@@ -5860,31 +5989,35 @@ function DocumentosModal({
               </Pressable>
             </View>
 
-            <View style={rhStyles.docGrid}>
-              {rhDocumentCategories.map((category) => (
-                <Pressable
-                  key={category.key}
-                  style={rhStyles.docCard}
-                  onPress={() => setSelectedCategory(category.key)}
-                >
-                  <View style={rhStyles.docCardTopRow}>
-                    <View style={[styles.iconShell, styles.iconAccentGreen]}>
-                      <Feather name={category.icon} size={15} color="#1B6E3A" />
-                    </View>
-                    {category.pendentes > 0 ? (
-                      <View style={rhStyles.docPendingBadge}>
-                        <Text style={rhStyles.docPendingBadgeText}>{category.pendentes} pend.</Text>
+            {isLoading ? (
+              <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+            ) : loadError ? (
+              <RHEmptyTabState message={`Não foi possível carregar: ${loadError}`} />
+            ) : (
+              <View style={rhStyles.docGrid}>
+                {rhDocumentCategories.map((category) => {
+                  const count = documentosPorCategoria.get(category.key)?.length ?? 0;
+                  return (
+                    <Pressable
+                      key={category.key}
+                      style={rhStyles.docCard}
+                      onPress={() => setSelectedCategory(category.key)}
+                    >
+                      <View style={rhStyles.docCardTopRow}>
+                        <View style={[styles.iconShell, styles.iconAccentGreen]}>
+                          <Feather name={category.icon} size={15} color="#1B6E3A" />
+                        </View>
                       </View>
-                    ) : null}
-                  </View>
-                  <Text style={rhStyles.docCardTitle}>{category.label}</Text>
-                  <Text style={rhStyles.docCardDescription} numberOfLines={2}>
-                    {category.description}
-                  </Text>
-                  <Text style={rhStyles.docCardCount}>0 documentos</Text>
-                </Pressable>
-              ))}
-            </View>
+                      <Text style={rhStyles.docCardTitle}>{category.label}</Text>
+                      <Text style={rhStyles.docCardDescription} numberOfLines={2}>
+                        {category.description}
+                      </Text>
+                      <Text style={rhStyles.docCardCount}>{count} documento(s)</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
           </>
         ) : isUploadFormOpen ? (
           <>
@@ -5940,14 +6073,26 @@ function DocumentosModal({
               textAlignVertical="top"
             />
 
-            <Pressable style={[rhStyles.uploadDropZone, styles.spacingTop]} onPress={showUploadNotAvailable}>
+            <Pressable style={[rhStyles.uploadDropZone, styles.spacingTop]} onPress={handlePickFile}>
               <Feather name="upload-cloud" size={22} color="#7A8299" />
-              <Text style={rhStyles.uploadDropZoneText}>Toque para selecionar um arquivo</Text>
+              <Text style={rhStyles.uploadDropZoneText}>
+                {selectedFile ? `${selectedFile.name} (${formatFileSize(selectedFile.size)})` : 'Toque para selecionar um arquivo'}
+              </Text>
             </Pressable>
 
-            <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={showUploadNotAvailable}>
-              <Feather name="upload" size={15} color="#FFFFFF" />
-              <Text style={styles.primaryButtonText}>Enviar documento</Text>
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isUploading ? { opacity: 0.6 } : null]}
+              disabled={isUploading}
+              onPress={handleUploadSubmit}
+            >
+              {isUploading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Feather name="upload" size={15} color="#FFFFFF" />
+                  <Text style={styles.primaryButtonText}>Enviar documento</Text>
+                </>
+              )}
             </Pressable>
           </>
         ) : (
@@ -5962,7 +6107,7 @@ function DocumentosModal({
               <Text style={rhStyles.docFolderHeaderTitle}>{activeCategory?.label}</Text>
             </View>
             <Text style={rhStyles.docFolderHeaderSubtitle}>
-              0 arquivos • {employee.fullName}
+              {documentosDaCategoria.length} arquivo(s) • {employee.fullName}
             </Text>
 
             <Pressable
@@ -5974,7 +6119,38 @@ function DocumentosModal({
             </Pressable>
 
             <View style={styles.spacingTop}>
-              <RHEmptyTabState message="Nenhum documento nesta pasta." />
+              {documentosDaCategoria.length === 0 ? (
+                <RHEmptyTabState message="Nenhum documento nesta pasta." />
+              ) : (
+                documentosDaCategoria.map((doc) => (
+                  <View key={doc.id} style={rhStyles.historyCard}>
+                    <View style={rhStyles.docCardTopRow}>
+                      <Text style={rhStyles.historyCardTitle}>{doc.nome_arquivo ?? doc.tipo}</Text>
+                      {doc.data_validade && Date.parse(doc.data_validade) < hojeMs ? (
+                        <View style={rhStyles.docPendingBadge}>
+                          <Text style={rhStyles.docPendingBadgeText}>Vencido</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={rhStyles.historyCardMeta}>
+                      {doc.tipo}
+                      {doc.data_validade ? ` · validade ${formatDateOnlyBR(doc.data_validade)}` : ''}
+                    </Text>
+                    <View style={[rhStyles.docCardTopRow, styles.spacingTop]}>
+                      <Pressable onPress={() => handleOpenDocumento(doc)}>
+                        <Text style={[rhStyles.historyCardMeta, { color: '#3457D5', fontWeight: '600' }]}>
+                          Ver/baixar
+                        </Text>
+                      </Pressable>
+                      <Pressable onPress={() => handleDeleteDocumento(doc)}>
+                        <Text style={[rhStyles.historyCardMeta, { color: '#B3261E', fontWeight: '600' }]}>
+                          Excluir
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))
+              )}
             </View>
           </>
         )}
