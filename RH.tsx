@@ -2810,9 +2810,9 @@ function NovoColaboradorModal({
       <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
         <View style={styles.requestModalBackdrop}>
           <View style={styles.requestModalCard}>
-            <View style={styles.requestModalHeader}>
-              <View>
-                <Text style={styles.requestModalTitle}>Novo colaborador</Text>
+            <View style={[styles.requestModalHeader, { paddingTop: 4 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.requestModalTitle, { lineHeight: 26 }]}>Novo colaborador</Text>
                 <Text style={rhStyles.modalSubtitle}>Cadastro rápido. Você pode completar os dados depois.</Text>
               </View>
               <Pressable onPress={onClose} hitSlop={8}>
