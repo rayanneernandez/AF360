@@ -126,6 +126,11 @@ import {
   uploadComunicadoAnexo,
   fetchRhPdfImports,
   type RhPdfImportItem,
+  uploadRhPdfImport,
+  aplicarRhPdfImportAdmissao,
+  aplicarRhPdfImportDesligamento,
+  reprocessarRhPdfImport,
+  deleteRhPdfImport,
 } from './api';
 
 // ---------- Types ----------
@@ -10391,10 +10396,13 @@ export function RHSolicitacoesScreen({ navigation }: ScreenProps<'RHSolicitacoes
 // ---------- Importar PDF ----------
 
 export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>) {
+  const { identity } = useContext(AuthIdentityContext);
   const [imports, setImports] = useState<RhPdfImportItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const loadData = useCallback(() => {
     setIsLoading(true);
@@ -10434,17 +10442,94 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
     });
   }, [imports, query]);
 
-  const handleSelectPdfs = () => {
+  const handleSelectPdfs = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      setIsUploading(true);
+      const arquivos = await Promise.all(
+        result.assets.map(async (asset) => ({
+          nome_arquivo: asset.name ?? 'arquivo.pdf',
+          arquivo_base64: await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 }),
+          mime_type: asset.mimeType ?? 'application/pdf',
+        }))
+      );
+      const { itens, erros } = await uploadRhPdfImport(arquivos, {}, identity?.profileId);
+      loadData();
+      if (erros.length > 0) {
+        Alert.alert(
+          'Importação concluída com erros',
+          `${itens.length} arquivo(s) processado(s), ${erros.length} com erro:\n${erros
+            .map((e) => `• ${e.arquivo ?? 'arquivo'}: ${e.error}`)
+            .join('\n')}`
+        );
+      } else {
+        Alert.alert('Importação enviada', `${itens.length} arquivo(s) em processamento pela IA.`);
+      }
+    } catch (err) {
+      showRhSaveError(err, 'Não foi possível enviar os PDFs.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleAplicar = (item: RhPdfImportItem) => {
+    if (item.tipo !== 'admissao' && item.tipo !== 'desligamento') {
+      Alert.alert('Tipo não suportado', 'Só é possível aplicar admissão ou desligamento por aqui.');
+      return;
+    }
+    const acaoLabel = item.tipo === 'admissao' ? 'admissão' : 'desligamento';
     Alert.alert(
-      'Selecionar PDFs',
-      'O upload e o processamento por IA ainda não estão disponíveis no servidor. Estamos aguardando a Lovable liberar esse endpoint.'
+      `Aplicar ${acaoLabel}`,
+      `Confirma aplicar essa ${acaoLabel} a partir dos dados extraídos de "${item.arquivo_nome ?? 'arquivo'}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Aplicar',
+          onPress: () => {
+            setBusyId(item.id);
+            const call = item.tipo === 'admissao' ? aplicarRhPdfImportAdmissao : aplicarRhPdfImportDesligamento;
+            call(item.id, {}, identity?.profileId)
+              .then(() => loadData())
+              .catch((err) => showRhSaveError(err, `Não foi possível aplicar a ${acaoLabel}.`))
+              .finally(() => setBusyId(null));
+          },
+        },
+      ]
     );
   };
 
-  const handleAction = (action: string) => {
+  const handleReprocessar = (item: RhPdfImportItem) => {
+    setBusyId(item.id);
+    reprocessarRhPdfImport(item.id, identity?.profileId)
+      .then(() => loadData())
+      .catch((err) => showRhSaveError(err, 'Não foi possível reprocessar esse arquivo.'))
+      .finally(() => setBusyId(null));
+  };
+
+  const handleExcluir = (item: RhPdfImportItem) => {
     Alert.alert(
-      'Ainda não disponível',
-      `A ação "${action}" depende de um endpoint de escrita que a Lovable ainda não confirmou.`
+      'Excluir importação',
+      `Excluir "${item.arquivo_nome ?? 'arquivo'}"? Essa ação não pode ser desfeita.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: () => {
+            setBusyId(item.id);
+            deleteRhPdfImport(item.id, identity?.profileId)
+              .then(() => loadData())
+              .catch((err) => showRhSaveError(err, 'Não foi possível excluir essa importação.'))
+              .finally(() => setBusyId(null));
+          },
+        },
+      ]
     );
   };
 
@@ -10497,9 +10582,17 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
           <Text style={rhStyles.importActionSubtitle}>
             A IA processa em fila (3 por vez) em segundo plano.
           </Text>
-          <Pressable style={[rhStyles.primaryButtonGreen, rhStyles.importActionButton]} onPress={handleSelectPdfs}>
-            <Feather name="upload" size={16} color="#FFFFFF" />
-            <Text style={styles.primaryButtonText}>Selecionar PDFs</Text>
+          <Pressable
+            style={[rhStyles.primaryButtonGreen, rhStyles.importActionButton, isUploading && { opacity: 0.6 }]}
+            onPress={handleSelectPdfs}
+            disabled={isUploading}
+          >
+            {isUploading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Feather name="upload" size={16} color="#FFFFFF" />
+            )}
+            <Text style={styles.primaryButtonText}>{isUploading ? 'Enviando...' : 'Selecionar PDFs'}</Text>
           </Pressable>
         </View>
 
@@ -10558,19 +10651,25 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
                   <View style={[rhStyles.importTypePill, { backgroundColor: statusMeta.tint }]}>
                     <Text style={[rhStyles.importTypePillText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
                   </View>
-                  {canApply ? (
-                    <Pressable hitSlop={8} onPress={() => handleAction(`aplicar ${item.tipo ?? ''}`.trim())}>
-                      <Feather name="check-circle" size={18} color="#18955A" />
-                    </Pressable>
-                  ) : null}
-                  {canReprocess ? (
-                    <Pressable hitSlop={8} onPress={() => handleAction('reprocessar')}>
-                      <Feather name="refresh-cw" size={18} color="#2F6FE4" />
-                    </Pressable>
-                  ) : null}
-                  <Pressable hitSlop={8} onPress={() => handleAction('excluir')}>
-                    <Feather name="trash-2" size={18} color="#E6213D" />
-                  </Pressable>
+                  {busyId === item.id ? (
+                    <ActivityIndicator size="small" color="#677089" />
+                  ) : (
+                    <>
+                      {canApply ? (
+                        <Pressable hitSlop={8} onPress={() => handleAplicar(item)}>
+                          <Feather name="check-circle" size={18} color="#18955A" />
+                        </Pressable>
+                      ) : null}
+                      {canReprocess ? (
+                        <Pressable hitSlop={8} onPress={() => handleReprocessar(item)}>
+                          <Feather name="refresh-cw" size={18} color="#2F6FE4" />
+                        </Pressable>
+                      ) : null}
+                      <Pressable hitSlop={8} onPress={() => handleExcluir(item)}>
+                        <Feather name="trash-2" size={18} color="#E6213D" />
+                      </Pressable>
+                    </>
+                  )}
                 </View>
               </View>
             );

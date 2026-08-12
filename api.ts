@@ -1742,9 +1742,9 @@ export async function fetchRhComunicadoLeituras(comunicadoId: string): Promise<R
   return (json.data as RhComunicadoLeituraItem[]) ?? [];
 }
 
-// --- Importar PDF (rh_pdf_imports) — só leitura por enquanto. Upload real
-// (PDF + IA), aplicar admissão/desligamento, excluir e reprocessar ainda
-// não têm endpoint de escrita confirmado pela Lovable. ---
+// --- Importar PDF (rh_pdf_imports). Leitura + escrita (upload/IA, aplicar
+// admissão/desligamento, excluir, reprocessar) confirmadas pela Lovable em
+// 21/07/2026 e 12/08/2026. ---
 
 export type RhPdfImportItem = {
   id: string;
@@ -1770,6 +1770,66 @@ export async function fetchRhPdfImports(params: { status?: string; tipo?: string
   if (params.tipo) search.set('tipo', params.tipo);
   const json = await api.get(`/api/rh/importacoes-pdf?${search.toString()}`);
   return (json.data as RhPdfImportItem[]) ?? [];
+}
+
+export type RhPdfImportArquivo = {
+  nome_arquivo: string;
+  arquivo_base64: string;
+  mime_type: string;
+};
+
+// Upload de um ou mais PDFs + disparo da extração por IA. Com
+// processar=false, cria as linhas só como "pendente" sem rodar a IA agora
+// (reprocessar depois). Devolve as linhas criadas (já com status
+// pronto/erro se processado na hora) e eventuais erros por arquivo.
+export async function uploadRhPdfImport(
+  arquivos: RhPdfImportArquivo[],
+  opts: { processar?: boolean } = {},
+  actorId?: string | null
+): Promise<{ itens: RhPdfImportItem[]; erros: Array<{ arquivo?: string; error: string }> }> {
+  const body = arquivos.length === 1 ? arquivos[0] : { arquivos };
+  let path = '/api/rh/importacoes-pdf';
+  if (opts.processar === false) path += '?processar=0';
+  const json = await api.post(withActorId(path, actorId), body);
+  return { itens: (json.itens as RhPdfImportItem[]) ?? [], erros: (json.erros as Array<{ arquivo?: string; error: string }>) ?? [] };
+}
+
+export async function fetchRhPdfImportDetalhe(
+  id: string,
+  actorId?: string | null
+): Promise<{ data: RhPdfImportItem | null; url: string | null }> {
+  const json = await api.get(withActorId(`/api/rh/importacoes-pdf/${encodeURIComponent(id)}`, actorId));
+  return { data: (json.data as RhPdfImportItem) ?? null, url: json.url ?? null };
+}
+
+export async function aplicarRhPdfImportAdmissao(
+  id: string,
+  body: Record<string, unknown> = {},
+  actorId?: string | null
+): Promise<RhPdfImportItem> {
+  const json = await api.post(withActorId(`/api/rh/importacoes-pdf/${encodeURIComponent(id)}/aplicar-admissao`, actorId), body);
+  return json.data as RhPdfImportItem;
+}
+
+export async function aplicarRhPdfImportDesligamento(
+  id: string,
+  body: Record<string, unknown> = {},
+  actorId?: string | null
+): Promise<RhPdfImportItem> {
+  const json = await api.post(
+    withActorId(`/api/rh/importacoes-pdf/${encodeURIComponent(id)}/aplicar-desligamento`, actorId),
+    body
+  );
+  return json.data as RhPdfImportItem;
+}
+
+export async function reprocessarRhPdfImport(id: string, actorId?: string | null): Promise<RhPdfImportItem> {
+  const json = await api.post(withActorId(`/api/rh/importacoes-pdf/${encodeURIComponent(id)}/reprocessar`, actorId), {});
+  return json.data as RhPdfImportItem;
+}
+
+export async function deleteRhPdfImport(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/importacoes-pdf/${encodeURIComponent(id)}`, actorId));
 }
 
 export async function marcarComunicadoLido(

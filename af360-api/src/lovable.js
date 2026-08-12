@@ -983,12 +983,10 @@ function getRhComunicadoLeituras(comunicadoId) {
 }
 
 // --- Importar PDF (rh_pdf_imports) — tabela liberada no allowlist da
-// Lovable desde 21/07/2026 (ver LOVABLE_API.md §6.6), então a LEITURA já
-// funciona pelo endpoint genérico /table normalmente. O que NÃO existe
-// ainda é a parte de escrita real (upload do PDF + disparo do
-// processamento por IA, aplicar admissão/desligamento, excluir,
-// reprocessar) — isso segue gated no frontend até a Lovable confirmar
-// esses endpoints (mensagem já rascunhada pra mandar).
+// Lovable desde 21/07/2026 (ver LOVABLE_API.md §6.6), leitura pelo endpoint
+// genérico /table. Escrita (upload+IA, aplicar admissão/desligamento,
+// excluir, reprocessar) confirmada pela Lovable em 12/08/2026:
+// /api/public/internal/rh-pdf-import. ---
 function getRhPdfImports({ status, tipo } = {}) {
   return fetchAllRows('rh_pdf_imports', {
     select:
@@ -996,6 +994,55 @@ function getRhPdfImports({ status, tipo } = {}) {
     order: 'created_at:desc',
     filters: { tipo, status },
   });
+}
+
+// Upload + disparo da extração por IA. Body em JSON (mesmo padrão de
+// rh-documento-upload/rh-comunicado-upload): { nome_arquivo, arquivo_base64,
+// mime_type } para um arquivo só, ou { arquivos: [...] } para vários.
+// Query processar=0 cria as linhas só como "pendente" sem rodar a IA agora
+// (fica pra rodar depois via reprocessar); sem isso, processa na hora e já
+// devolve status "pronto"/"erro". Resposta: { itens: [linha completa],
+// erros: [{arquivo, error}] }.
+function postRhPdfImportUpload(body, { processar } = {}, actorId) {
+  return lovablePost(
+    '/api/public/internal/rh-pdf-import',
+    processar === false ? { processar: 0 } : {},
+    body,
+    actorId
+  );
+}
+
+// GET ?id= — usado pra polling (status ainda pendente/processando) e pra
+// pegar a URL assinada (1h) do arquivo original.
+function getRhPdfImportDetalhe(id, actorId) {
+  return lovableGet('/api/public/internal/rh-pdf-import', { id }, actorId);
+}
+
+function deleteRhPdfImport(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-pdf-import', { id }, actorId);
+}
+
+// body opcional sobrescreve a extração revisada: { pessoa, contrato,
+// bancarios, empresa_id }. Cria o colaborador (mesmo contrato de
+// postRhColaborador) e marca a linha como aplicado (aplicado_em/
+// aplicado_por/resultado_aplicacao). 409 se CPF já cadastrado ou já
+// aplicado; 422 se CPF inválido.
+function postRhPdfImportAplicarAdmissao(id, body, actorId) {
+  return lovablePost(`/api/public/internal/rh-pdf-import/${id}/aplicar-admissao`, {}, body ?? {}, actorId);
+}
+
+// body opcional: { colaborador_id?, cpf?, data_demissao?, motivo?,
+// valor_rescisao_liquida? }. Marca rh_colaboradores.status="desligado" +
+// data_demissao/motivo_desligamento e marca a linha de rh_pdf_imports como
+// aplicado igual ao de admissão.
+function postRhPdfImportAplicarDesligamento(id, body, actorId) {
+  return lovablePost(`/api/public/internal/rh-pdf-import/${id}/aplicar-desligamento`, {}, body ?? {}, actorId);
+}
+
+// Volta uma linha com status "erro" pra "processando" e tenta a extração
+// de novo.
+function postRhPdfImportReprocessar(id, actorId) {
+  return lovablePost(`/api/public/internal/rh-pdf-import/${id}/reprocessar`, {}, {}, actorId);
 }
 
 // --- Treinamentos: conteúdo real (rh_treinamentos, rh_treinamento_aulas,
@@ -1181,6 +1228,12 @@ module.exports = {
   postRhComunicadoLeitura,
   getRhComunicadoLeituras,
   getRhPdfImports,
+  postRhPdfImportUpload,
+  getRhPdfImportDetalhe,
+  deleteRhPdfImport,
+  postRhPdfImportAplicarAdmissao,
+  postRhPdfImportAplicarDesligamento,
+  postRhPdfImportReprocessar,
   getRhTreinamentos,
   postRhTreinamentoResposta,
   postRhTreinamentoProva,
