@@ -1707,6 +1707,22 @@ export async function marcarComunicadoLido(
   });
 }
 
+// --- Comunicados: upload de imagem/anexo (bucket público rh-comunicados,
+// endpoint confirmado pela Lovable em 12/08/2026). Sem comunicadoId, salva
+// em avulsos/ e só devolve a url (grave em anexo_url ao criar o comunicado);
+// com comunicadoId, já atualiza o comunicado sozinho do lado deles. Limite:
+// 8MB, jpg/png/webp/pdf. URL retornada é pública (sem expiração). ---
+
+export async function uploadComunicadoAnexo(body: {
+  comunicado_id?: string;
+  nome_arquivo: string;
+  arquivo_base64: string;
+  mime_type: string;
+}): Promise<{ url: string | null }> {
+  const json = await api.post('/api/rh/comunicados-upload', body);
+  return { url: json.url ?? null };
+}
+
 // --- Admin: Cargos (roles) ---
 
 export type AdminCargoItem = {

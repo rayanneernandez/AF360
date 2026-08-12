@@ -309,6 +309,23 @@ function patchAdmissaoPrazo(id, dias, actorId) {
   return lovablePatch('/api/public/internal/admissao-conformidade', { recurso: 'prazos' }, { id, dias }, actorId);
 }
 
+// --- RH: Comunicados — upload/exclusão de imagem/anexo (bucket público
+// rh-comunicados, separado do bucket privado de documentos do colaborador —
+// esse não exige colaborador_id). Endpoint confirmado pela Lovable em
+// 12/08/2026: /api/public/internal/rh-comunicado-upload. Sem comunicado_id
+// no POST, salva em avulsos/ e só devolve a URL (pra gravar em anexo_url
+// depois, ex: antes de criar o comunicado); com comunicado_id, já grava
+// anexo_url sozinho. Limite: 8MB, jpg/png/webp/pdf. URL pública, sem
+// expiração — não precisa de link assinado igual documentos.
+
+function postRhComunicadoUpload(body, actorId) {
+  return lovablePost('/api/public/internal/rh-comunicado-upload', {}, body, actorId);
+}
+
+function deleteRhComunicadoUpload({ path, comunicadoId } = {}, actorId) {
+  return lovableDelete('/api/public/internal/rh-comunicado-upload', { path, comunicado_id: comunicadoId }, actorId);
+}
+
 // --- Admin ---
 
 function postAdminUsuario(body, actorId) {
@@ -1029,6 +1046,8 @@ module.exports = {
   getAdmissaoConformidade,
   getAdmissaoPrazos,
   patchAdmissaoPrazo,
+  postRhComunicadoUpload,
+  deleteRhComunicadoUpload,
   postAdminUsuario,
   postAdminUsuarioResetSenha,
   postAdminUsuarioToggleAtivo,

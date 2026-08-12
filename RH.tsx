@@ -10,6 +10,7 @@ import { Feather } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Linking,
   Modal,
   Pressable,
@@ -115,6 +116,7 @@ import {
   type AdmissaoConformidadeLinha,
   fetchAdminGrupos,
   type AdminGrupoItem,
+  uploadComunicadoAnexo,
 } from './api';
 
 // ---------- Types ----------
@@ -9210,6 +9212,11 @@ const emptyAnnouncementForm: AnnouncementFormValues = {
 
 const rhComunicadoAudienciaOptions = ['Todos', 'Grupo específico', 'Colaborador específico'];
 
+// Upload de imagem/anexo confirmado pela Lovable em 12/08/2026 (bucket
+// público rh-comunicados). Limite: 8MB, jpg/png/webp/pdf.
+const rhComunicadoAnexoMimesAceitos = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+const rhComunicadoAnexoTamanhoMaximoBytes = 8 * 1024 * 1024;
+
 function comunicadoPublicoLabelRh(publico: string): string {
   if (publico === 'empresa') return 'Empresa';
   if (publico === 'grupo') return 'Grupo';
@@ -9333,6 +9340,8 @@ function AnnouncementFormModal({
   const [isGrupoPickerOpen, setIsGrupoPickerOpen] = useState(false);
   const [selectedColaborador, setSelectedColaborador] = useState<RhColaboradorRaw | null>(null);
   const [isColaboradorPickerOpen, setIsColaboradorPickerOpen] = useState(false);
+  const [anexoPreview, setAnexoPreview] = useState<{ uri: string; name: string; mimeType: string } | null>(null);
+  const [isUploadingAnexo, setIsUploadingAnexo] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -9340,6 +9349,7 @@ function AnnouncementFormModal({
       setAudiencia(rhComunicadoAudienciaOptions[0]);
       setSelectedGrupo(null);
       setSelectedColaborador(null);
+      setAnexoPreview(null);
       fetchAdminGrupos()
         .then((result) => setGrupos(result.grupos))
         .catch(() => {});
@@ -9348,7 +9358,46 @@ function AnnouncementFormModal({
 
   const handleClose = () => {
     setForm(emptyAnnouncementForm);
+    setAnexoPreview(null);
     onClose();
+  };
+
+  const handlePickAnexo = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: rhComunicadoAnexoMimesAceitos,
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const mimeType = asset.mimeType ?? '';
+      if (!rhComunicadoAnexoMimesAceitos.includes(mimeType)) {
+        Alert.alert('Arquivo inválido', 'Envie uma imagem (JPG/PNG/WEBP) ou PDF.');
+        return;
+      }
+      if ((asset.size ?? 0) > rhComunicadoAnexoTamanhoMaximoBytes) {
+        Alert.alert('Arquivo muito grande', 'O tamanho máximo é 8MB.');
+        return;
+      }
+      setIsUploadingAnexo(true);
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+      const { url } = await uploadComunicadoAnexo({
+        nome_arquivo: asset.name ?? 'anexo',
+        arquivo_base64: base64,
+        mime_type: mimeType,
+      });
+      if (!url) {
+        Alert.alert('Falha no envio', 'O upload não retornou uma URL. Tente novamente.');
+        return;
+      }
+      setForm((current) => ({ ...current, anexoUrl: url }));
+      setAnexoPreview({ uri: asset.uri, name: asset.name ?? 'anexo', mimeType });
+    } catch (err) {
+      showRhSaveError(err, 'Não foi possível enviar o anexo.');
+    } finally {
+      setIsUploadingAnexo(false);
+    }
   };
 
   const handleSubmit = () => {
@@ -9452,20 +9501,43 @@ function AnnouncementFormModal({
                 />
               ) : null}
 
-              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Link da imagem/anexo (opcional)</Text>
-              <TextInput
-                style={styles.processTextInput}
-                value={form.anexoUrl}
-                onChangeText={(text) => setForm((current) => ({ ...current, anexoUrl: text }))}
-                placeholder="https://..."
-                placeholderTextColor="#A7AEC2"
-                autoCapitalize="none"
-                keyboardType="url"
-              />
-              <Text style={rhStyles.announcementMeta}>
-                Ainda não temos upload de imagem por aqui — cole o link de uma imagem ou PDF já hospedado em algum
-                lugar (Drive, etc.). Já pedimos pra Lovable um endpoint de upload pra isso.
-              </Text>
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Imagem/anexo (opcional)</Text>
+              <Pressable
+                style={[rhStyles.uploadDropZone, isUploadingAnexo ? { opacity: 0.6 } : null]}
+                onPress={handlePickAnexo}
+                disabled={isUploadingAnexo}
+              >
+                {isUploadingAnexo ? (
+                  <ActivityIndicator color="#7A8299" />
+                ) : anexoPreview?.mimeType.startsWith('image/') ? (
+                  <Image
+                    source={{ uri: anexoPreview.uri }}
+                    style={{ width: '100%', height: 140, borderRadius: 8 }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <>
+                    <Feather name={anexoPreview ? 'file-text' : 'upload-cloud'} size={22} color="#7A8299" />
+                    <Text style={rhStyles.uploadDropZoneText}>
+                      {anexoPreview ? anexoPreview.name : 'Toque pra anexar uma imagem ou PDF (até 8MB)'}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+              {!anexoPreview ? (
+                <>
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>ou cole um link já hospedado</Text>
+                  <TextInput
+                    style={styles.processTextInput}
+                    value={form.anexoUrl}
+                    onChangeText={(text) => setForm((current) => ({ ...current, anexoUrl: text }))}
+                    placeholder="https://..."
+                    placeholderTextColor="#A7AEC2"
+                    autoCapitalize="none"
+                    keyboardType="url"
+                  />
+                </>
+              ) : null}
 
               <Pressable
                 style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
@@ -9564,7 +9636,15 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
               </View>
               <Text style={rhStyles.announcementTitle}>{item.titulo}</Text>
               <Text style={rhStyles.announcementDesc}>{item.conteudo}</Text>
-              {item.anexo_url ? (
+              {item.anexo_url && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(item.anexo_url) ? (
+                <Pressable onPress={() => Linking.openURL(item.anexo_url as string)}>
+                  <Image
+                    source={{ uri: item.anexo_url }}
+                    style={[styles.spacingTop, { width: '100%', height: 160, borderRadius: 8 }]}
+                    resizeMode="cover"
+                  />
+                </Pressable>
+              ) : item.anexo_url ? (
                 <Pressable onPress={() => Linking.openURL(item.anexo_url as string)}>
                   <Text style={[rhStyles.announcementMeta, { color: '#3457D5' }]}>Ver anexo</Text>
                 </Pressable>
