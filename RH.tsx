@@ -127,6 +127,7 @@ import {
   fetchRhPdfImports,
   type RhPdfImportItem,
   uploadRhPdfImport,
+  fetchRhPdfImportDetalhe,
   aplicarRhPdfImportAdmissao,
   aplicarRhPdfImportDesligamento,
   reprocessarRhPdfImport,
@@ -10442,6 +10443,22 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
     });
   }, [imports, query]);
 
+  // "Pronto" = já extraído pela IA e aguardando revisão humana — vira fila de
+  // ação, separada por tipo (igual ao painel web).
+  const pendentesRevisao = useMemo(() => imports.filter((item) => item.status === 'pronto'), [imports]);
+  const admissoesAguardando = useMemo(
+    () => pendentesRevisao.filter((item) => item.tipo === 'admissao'),
+    [pendentesRevisao]
+  );
+  const desligamentosAguardando = useMemo(
+    () => pendentesRevisao.filter((item) => item.tipo === 'desligamento'),
+    [pendentesRevisao]
+  );
+  const semClassificacao = useMemo(
+    () => pendentesRevisao.filter((item) => item.tipo !== 'admissao' && item.tipo !== 'desligamento'),
+    [pendentesRevisao]
+  );
+
   const handleSelectPdfs = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -10478,22 +10495,21 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
     }
   };
 
-  const handleAplicar = (item: RhPdfImportItem) => {
-    if (item.tipo !== 'admissao' && item.tipo !== 'desligamento') {
-      Alert.alert('Tipo não suportado', 'Só é possível aplicar admissão ou desligamento por aqui.');
-      return;
-    }
-    const acaoLabel = item.tipo === 'admissao' ? 'admissão' : 'desligamento';
+  // "Sem classificação" deixa a pessoa escolher o tipo na hora de aplicar
+  // (a IA não conseguiu decidir sozinha), por isso modo é explícito e não
+  // vem só de item.tipo.
+  const handleAplicar = (item: RhPdfImportItem, modo: 'admissao' | 'desligamento') => {
+    const acaoLabel = modo === 'admissao' ? 'admissão' : 'desligamento';
     Alert.alert(
-      `Aplicar ${acaoLabel}`,
+      modo === 'admissao' ? 'Cadastrar admissão' : 'Aplicar desligamento',
       `Confirma aplicar essa ${acaoLabel} a partir dos dados extraídos de "${item.arquivo_nome ?? 'arquivo'}"?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Aplicar',
+          text: 'Confirmar',
           onPress: () => {
             setBusyId(item.id);
-            const call = item.tipo === 'admissao' ? aplicarRhPdfImportAdmissao : aplicarRhPdfImportDesligamento;
+            const call = modo === 'admissao' ? aplicarRhPdfImportAdmissao : aplicarRhPdfImportDesligamento;
             call(item.id, {}, identity?.profileId)
               .then(() => loadData())
               .catch((err) => showRhSaveError(err, `Não foi possível aplicar a ${acaoLabel}.`))
@@ -10509,6 +10525,17 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
     reprocessarRhPdfImport(item.id, identity?.profileId)
       .then(() => loadData())
       .catch((err) => showRhSaveError(err, 'Não foi possível reprocessar esse arquivo.'))
+      .finally(() => setBusyId(null));
+  };
+
+  const handleVerDocumento = (item: RhPdfImportItem) => {
+    setBusyId(item.id);
+    fetchRhPdfImportDetalhe(item.id, identity?.profileId)
+      .then(({ url }) => {
+        if (url) Linking.openURL(url);
+        else Alert.alert('Link indisponível', 'Não foi possível gerar o link de visualização agora.');
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível abrir o documento.'))
       .finally(() => setBusyId(null));
   };
 
@@ -10530,6 +10557,47 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
           },
         },
       ]
+    );
+  };
+
+  const renderPendingRow = (
+    item: RhPdfImportItem,
+    buttons: { label: string; color: string; onPress: () => void }[]
+  ) => {
+    const displayName = item.nome_extraido || item.arquivo_nome || 'Arquivo sem nome';
+    return (
+      <View key={item.id} style={rhStyles.importPendingCard}>
+        <Text style={rhStyles.importPendingName} numberOfLines={1}>
+          {displayName}
+        </Text>
+        <Text style={rhStyles.importPendingMeta}>
+          {item.cpf_extraido ? `CPF ${item.cpf_extraido}` : 'CPF não identificado'}
+          {item.confianca != null ? ` · confiança ${Math.round(item.confianca * 100)}%` : ''}
+        </Text>
+        <View style={rhStyles.importPendingActions}>
+          {busyId === item.id ? (
+            <ActivityIndicator size="small" color="#677089" />
+          ) : (
+            <>
+              {buttons.map((btn) => (
+                <Pressable
+                  key={btn.label}
+                  style={[rhStyles.importApplyButton, { backgroundColor: btn.color }]}
+                  onPress={btn.onPress}
+                >
+                  <Text style={rhStyles.importApplyButtonText}>{btn.label}</Text>
+                </Pressable>
+              ))}
+              <Pressable style={rhStyles.importSmallIconButton} hitSlop={6} onPress={() => handleVerDocumento(item)}>
+                <Feather name="eye" size={16} color="#677089" />
+              </Pressable>
+              <Pressable style={rhStyles.importSmallIconButton} hitSlop={6} onPress={() => handleExcluir(item)}>
+                <Feather name="trash-2" size={16} color="#E6213D" />
+              </Pressable>
+            </>
+          )}
+        </View>
+      </View>
     );
   };
 
@@ -10596,6 +10664,84 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
           </Pressable>
         </View>
 
+        <View style={rhStyles.importQueueSection}>
+          <View style={[rhStyles.importQueueHeader, { backgroundColor: '#E3F5EA' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Feather name="user-plus" size={14} color="#18955A" />
+              <Text style={[rhStyles.importQueueHeaderText, { color: '#18955A' }]}>
+                Admissões aguardando cadastro
+              </Text>
+            </View>
+            <View style={rhStyles.importQueueBadge}>
+              <Text style={[rhStyles.importQueueBadgeText, { color: '#18955A' }]}>{admissoesAguardando.length}</Text>
+            </View>
+          </View>
+          {admissoesAguardando.length === 0 ? (
+            <View style={rhStyles.importQueueEmpty}>
+              <Text style={rhStyles.importQueueEmptyText}>Nada por aqui no momento.</Text>
+            </View>
+          ) : (
+            admissoesAguardando.map((item) =>
+              renderPendingRow(item, [
+                { label: 'Cadastrar admissão', color: '#18955A', onPress: () => handleAplicar(item, 'admissao') },
+              ])
+            )
+          )}
+        </View>
+
+        <View style={rhStyles.importQueueSection}>
+          <View style={[rhStyles.importQueueHeader, { backgroundColor: '#FCE8EC' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Feather name="user-minus" size={14} color="#E6213D" />
+              <Text style={[rhStyles.importQueueHeaderText, { color: '#E6213D' }]}>
+                Desligamentos aguardando aplicação
+              </Text>
+            </View>
+            <View style={rhStyles.importQueueBadge}>
+              <Text style={[rhStyles.importQueueBadgeText, { color: '#E6213D' }]}>
+                {desligamentosAguardando.length}
+              </Text>
+            </View>
+          </View>
+          {desligamentosAguardando.length === 0 ? (
+            <View style={rhStyles.importQueueEmpty}>
+              <Text style={rhStyles.importQueueEmptyText}>Nada por aqui no momento.</Text>
+            </View>
+          ) : (
+            desligamentosAguardando.map((item) =>
+              renderPendingRow(item, [
+                { label: 'Aplicar desligamento', color: '#E6213D', onPress: () => handleAplicar(item, 'desligamento') },
+              ])
+            )
+          )}
+        </View>
+
+        <View style={rhStyles.importQueueSection}>
+          <View style={[rhStyles.importQueueHeader, { backgroundColor: '#FCEFDA' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Feather name="help-circle" size={14} color="#B07A1E" />
+              <Text style={[rhStyles.importQueueHeaderText, { color: '#B07A1E' }]}>
+                Sem classificação — escolha o tipo
+              </Text>
+            </View>
+            <View style={rhStyles.importQueueBadge}>
+              <Text style={[rhStyles.importQueueBadgeText, { color: '#B07A1E' }]}>{semClassificacao.length}</Text>
+            </View>
+          </View>
+          {semClassificacao.length === 0 ? (
+            <View style={rhStyles.importQueueEmpty}>
+              <Text style={rhStyles.importQueueEmptyText}>Nada por aqui no momento.</Text>
+            </View>
+          ) : (
+            semClassificacao.map((item) =>
+              renderPendingRow(item, [
+                { label: 'Cadastrar admissão', color: '#18955A', onPress: () => handleAplicar(item, 'admissao') },
+                { label: 'Aplicar desligamento', color: '#E6213D', onPress: () => handleAplicar(item, 'desligamento') },
+              ])
+            )
+          )}
+        </View>
+
         <View style={rhStyles.searchRow}>
           <Feather name="search" size={16} color="#9AA1B5" />
           <TextInput
@@ -10626,7 +10772,6 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
             const typeMeta = item.tipo ? rhImportTypeMeta[item.tipo] : rhImportTypeMeta.outro;
             const statusMeta = rhImportStatusMeta[item.status];
             const displayName = item.nome_extraido || item.arquivo_nome || 'Arquivo sem nome';
-            const canApply = item.status === 'pronto';
             const canReprocess = item.status === 'erro';
             return (
               <View key={item.id} style={rhStyles.importRecordCard}>
@@ -10655,11 +10800,9 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
                     <ActivityIndicator size="small" color="#677089" />
                   ) : (
                     <>
-                      {canApply ? (
-                        <Pressable hitSlop={8} onPress={() => handleAplicar(item)}>
-                          <Feather name="check-circle" size={18} color="#18955A" />
-                        </Pressable>
-                      ) : null}
+                      <Pressable hitSlop={8} onPress={() => handleVerDocumento(item)}>
+                        <Feather name="eye" size={18} color="#677089" />
+                      </Pressable>
                       {canReprocess ? (
                         <Pressable hitSlop={8} onPress={() => handleReprocessar(item)}>
                           <Feather name="refresh-cw" size={18} color="#2F6FE4" />
@@ -13850,6 +13993,90 @@ const rhStyles = StyleSheet.create({
     marginTop: 14,
     width: '100%',
     marginBottom: 0,
+  },
+  importQueueSection: {
+    marginBottom: 16,
+  },
+  importQueueHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  importQueueHeaderText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  importQueueBadge: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  importQueueBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  importQueueEmpty: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 14,
+    alignItems: 'center',
+  },
+  importQueueEmptyText: {
+    color: '#9AA1B5',
+    fontSize: 12,
+  },
+  importPendingCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 12,
+    marginBottom: 8,
+  },
+  importPendingName: {
+    color: '#15203E',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  importPendingMeta: {
+    marginTop: 2,
+    color: '#9AA1B5',
+    fontSize: 11,
+  },
+  importPendingActions: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  importApplyButton: {
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  importApplyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  importSmallIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F8',
   },
   historyLabel: {
     color: '#7C8397',
