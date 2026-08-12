@@ -84,6 +84,7 @@ import {
   type RhHistoricoContratacaoItem,
   fetchRhComunicados,
   createRhComunicado,
+  deleteRhComunicado,
   type RhComunicadoItem,
   fetchColaboradorContracheques,
   type ColaboradorContrachequeItem,
@@ -9680,10 +9681,12 @@ function AnnouncementFormModal({
 }
 
 export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>) {
+  const { identity } = useContext(AuthIdentityContext);
   const [comunicados, setComunicados] = useState<RhComunicadoItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadComunicados = useCallback(() => {
     setIsLoading(true);
@@ -9703,6 +9706,29 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
   useEffect(() => {
     loadComunicados();
   }, [loadComunicados]);
+
+  const handleDelete = (item: RhComunicadoItem) => {
+    Alert.alert(
+      'Excluir comunicado',
+      `Tem certeza que quer excluir "${item.titulo}"? Essa ação não pode ser desfeita.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: () => {
+            setDeletingId(item.id);
+            deleteRhComunicado(item.id, identity?.profileId)
+              .then(loadComunicados)
+              .catch((err) => {
+                Alert.alert('Não foi possível excluir', err instanceof Error ? err.message : 'Tente novamente.');
+              })
+              .finally(() => setDeletingId(null));
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -9739,6 +9765,14 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
                   </Text>
                 </View>
                 <Text style={rhStyles.announcementTime}>{formatComunicadoDateRh(item.publicar_em)}</Text>
+                <Pressable
+                  onPress={() => handleDelete(item)}
+                  disabled={deletingId === item.id}
+                  hitSlop={8}
+                  style={{ marginLeft: 'auto', opacity: deletingId === item.id ? 0.4 : 1 }}
+                >
+                  <Feather name="trash-2" size={16} color="#E6213D" />
+                </Pressable>
               </View>
               <Text style={rhStyles.announcementTitle}>{item.titulo}</Text>
               <Text style={rhStyles.announcementDesc}>{item.conteudo}</Text>
