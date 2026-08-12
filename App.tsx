@@ -6265,6 +6265,8 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
   const [items, setItems] = useState<ColaboradorComunicadoItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'lista' | 'cards'>('lista');
+  const [viewingItem, setViewingItem] = useState<ColaboradorComunicadoItem | null>(null);
 
   useEffect(() => {
     if (!colaboradorId) {
@@ -6314,9 +6316,31 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
-        <View style={styles.pageHeader}>
-          <Text style={styles.pageTitle}>Comunicados</Text>
-          <Text style={styles.pageSubtitle}>Avisos e novidades da empresa</Text>
+        <View style={[styles.communicationTop, { justifyContent: 'space-between' }]}>
+          <View style={styles.pageHeader}>
+            <Text style={styles.pageTitle}>Comunicados</Text>
+            <Text style={styles.pageSubtitle}>Avisos e novidades da empresa</Text>
+          </View>
+          <View style={styles.comunicadoViewToggle}>
+            <Pressable
+              style={[styles.comunicadoViewToggleBtn, viewMode === 'lista' ? styles.comunicadoViewToggleBtnActive : null]}
+              onPress={() => setViewMode('lista')}
+            >
+              <Feather name="list" size={13} color={viewMode === 'lista' ? '#FFFFFF' : '#677089'} />
+              <Text style={[styles.comunicadoViewToggleText, viewMode === 'lista' ? styles.comunicadoViewToggleTextActive : null]}>
+                Lista
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.comunicadoViewToggleBtn, viewMode === 'cards' ? styles.comunicadoViewToggleBtnActive : null]}
+              onPress={() => setViewMode('cards')}
+            >
+              <Feather name="grid" size={13} color={viewMode === 'cards' ? '#FFFFFF' : '#677089'} />
+              <Text style={[styles.comunicadoViewToggleText, viewMode === 'cards' ? styles.comunicadoViewToggleTextActive : null]}>
+                Cards
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
         {!colaboradorId ? (
@@ -6329,52 +6353,110 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
           <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
         ) : items.length === 0 ? (
           <Text style={styles.conversaEmptyText}>Nenhum comunicado disponível no momento.</Text>
-        ) : (
+        ) : viewMode === 'lista' ? (
           items.map((item) => {
-            // Ícone/cores fixos (estilo) — variam só pelo status lido/não
-            // lido, que é o único sinal real disponível pra diferenciar
-            // itens aqui (não existe categoria/ícone por comunicado no
-            // schema).
-            const accent = item.lido ? '#7B8299' : '#E6213D';
-            const tint = item.lido ? '#F0F1F6' : '#FCE8EC';
-
+            const isImage = item.anexoUrl && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(item.anexoUrl);
             return (
-              <View key={item.id} style={styles.communicationCard}>
-                <View style={styles.communicationTop}>
-                  <View style={[styles.iconShell, { backgroundColor: tint }]}>
-                    <Feather name="send" size={18} color={accent} />
-                  </View>
-                  <View style={styles.communicationMetaRow}>
-                    <View style={[styles.tag, { backgroundColor: tint }]}>
-                      <Text style={[styles.tagText, { color: accent }]}>{comunicadoPublicoLabel(item.publico)}</Text>
+              <Pressable key={item.id} style={styles.comunicadoListRow} onPress={() => setViewingItem(item)}>
+                <View style={styles.comunicadoListThumb}>
+                  {isImage ? (
+                    <Image source={{ uri: item.anexoUrl as string }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                  ) : (
+                    <Feather name="mail" size={18} color="#9AA1B5" />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.communicationTitle} numberOfLines={1}>
+                    {item.titulo}
+                  </Text>
+                  <View style={[styles.communicationMetaRow, { marginLeft: 0, marginTop: 6 }]}>
+                    <View style={[styles.tag, { backgroundColor: item.lido ? '#F0F1F6' : '#FCE8EC' }]}>
+                      <Text style={[styles.tagText, { color: item.lido ? '#7B8299' : '#E6213D' }]}>
+                        {comunicadoPublicoLabel(item.publico)}
+                      </Text>
                     </View>
                     <Text style={styles.communicationTime}>{item.tempoLabel}</Text>
                     {!item.lido ? <View style={styles.alertDot} /> : null}
                   </View>
                 </View>
-
-                <Text style={styles.communicationTitle}>{item.titulo}</Text>
-                <Text style={styles.communicationDescription}>{item.conteudo}</Text>
-                {item.anexoUrl && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(item.anexoUrl) ? (
-                  <Pressable onPress={() => Linking.openURL(item.anexoUrl as string)}>
-                    <Image
-                      source={{ uri: item.anexoUrl }}
-                      style={{ width: '100%', height: 160, borderRadius: 8, marginTop: 10 }}
-                      resizeMode="cover"
-                    />
-                  </Pressable>
-                ) : item.anexoUrl ? (
-                  <Pressable onPress={() => Linking.openURL(item.anexoUrl as string)}>
-                    <Text style={[styles.communicationDescription, { color: '#3457D5', marginTop: 4 }]}>
-                      Ver anexo
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
+              </Pressable>
             );
           })
+        ) : (
+          <View style={styles.comunicadoCardsGrid}>
+            {items.map((item) => {
+              const isImage = item.anexoUrl && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(item.anexoUrl);
+              return (
+                <Pressable key={item.id} style={styles.comunicadoCardItem} onPress={() => setViewingItem(item)}>
+                  {isImage ? (
+                    <Image source={{ uri: item.anexoUrl as string }} style={styles.comunicadoCardImage} resizeMode="cover" />
+                  ) : (
+                    <LinearGradient colors={['#1B6E3A', '#2A9D51']} style={styles.comunicadoCardPlaceholder}>
+                      <Feather name="mail" size={22} color="#FFFFFF" />
+                    </LinearGradient>
+                  )}
+                  <View style={styles.comunicadoCardBody}>
+                    <View style={[styles.tag, { backgroundColor: item.lido ? '#F0F1F6' : '#FCE8EC', alignSelf: 'flex-start' }]}>
+                      <Text style={[styles.tagText, { color: item.lido ? '#7B8299' : '#E6213D' }]}>
+                        {comunicadoPublicoLabel(item.publico)}
+                      </Text>
+                    </View>
+                    <Text style={[styles.communicationTitle, { marginTop: 6 }]} numberOfLines={2}>
+                      {item.titulo}
+                    </Text>
+                    <Text style={styles.communicationTime}>{item.tempoLabel}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
         )}
       </ScrollView>
+
+      <Modal visible={!!viewingItem} transparent animationType="fade" onRequestClose={() => setViewingItem(null)}>
+        <Pressable style={styles.requestModalBackdrop} onPress={() => setViewingItem(null)}>
+          <Pressable style={styles.requestModalCard} onPress={(e) => e.stopPropagation()}>
+            {viewingItem ? (
+              <>
+                <View style={styles.requestModalHeader}>
+                  <Text style={styles.requestModalTitle} numberOfLines={2}>
+                    {viewingItem.titulo}
+                  </Text>
+                  <Pressable onPress={() => setViewingItem(null)} hitSlop={8}>
+                    <Feather name="x" size={20} color="#677089" />
+                  </Pressable>
+                </View>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View style={[styles.communicationMetaRow, { marginLeft: 0 }]}>
+                    <View style={[styles.tag, { backgroundColor: viewingItem.lido ? '#F0F1F6' : '#FCE8EC' }]}>
+                      <Text style={[styles.tagText, { color: viewingItem.lido ? '#7B8299' : '#E6213D' }]}>
+                        {comunicadoPublicoLabel(viewingItem.publico)}
+                      </Text>
+                    </View>
+                    <Text style={styles.communicationTime}>{viewingItem.tempoLabel}</Text>
+                  </View>
+                  <Text style={[styles.communicationDescription, { marginTop: 10 }]}>{viewingItem.conteudo}</Text>
+                  {viewingItem.anexoUrl && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(viewingItem.anexoUrl) ? (
+                    <Pressable onPress={() => Linking.openURL(viewingItem.anexoUrl as string)}>
+                      <Image
+                        source={{ uri: viewingItem.anexoUrl }}
+                        style={{ width: '100%', height: 240, borderRadius: 8, marginTop: 10 }}
+                        resizeMode="contain"
+                      />
+                    </Pressable>
+                  ) : viewingItem.anexoUrl ? (
+                    <Pressable onPress={() => Linking.openURL(viewingItem.anexoUrl as string)}>
+                      <Text style={[styles.communicationDescription, { color: '#3457D5', marginTop: 8 }]}>
+                        Ver anexo
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </ScrollView>
+              </>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -15118,6 +15200,76 @@ export const styles = StyleSheet.create({
     color: '#6E768D',
     fontSize: 12,
     lineHeight: 18,
+  },
+  comunicadoViewToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#EEF0F6',
+    borderRadius: 10,
+    padding: 3,
+    gap: 3,
+  },
+  comunicadoViewToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  comunicadoViewToggleBtnActive: {
+    backgroundColor: '#15203E',
+  },
+  comunicadoViewToggleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#677089',
+  },
+  comunicadoViewToggleTextActive: {
+    color: '#FFFFFF',
+  },
+  comunicadoListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDEFF5',
+    gap: 12,
+  },
+  comunicadoListThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#EEF0F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  comunicadoCardsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  comunicadoCardItem: {
+    width: '48.5%',
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    marginBottom: 12,
+  },
+  comunicadoCardImage: {
+    width: '100%',
+    height: 88,
+  },
+  comunicadoCardPlaceholder: {
+    width: '100%',
+    height: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  comunicadoCardBody: {
+    padding: 10,
   },
   profileSummaryHero: {
     marginTop: 2,
