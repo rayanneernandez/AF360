@@ -9841,7 +9841,7 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
                     <Image source={{ uri: item.anexo_url as string }} style={rhStyles.comunicadoCardImage} resizeMode="cover" />
                   ) : (
                     <LinearGradient colors={['#1B6E3A', '#2A9D51']} style={rhStyles.comunicadoCardPlaceholder}>
-                      <Feather name="volume-2" size={22} color="#FFFFFF" />
+                      <Feather name="mail" size={22} color="#FFFFFF" />
                     </LinearGradient>
                   )}
                   <View style={rhStyles.comunicadoCardBody}>
