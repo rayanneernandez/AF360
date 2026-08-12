@@ -3391,6 +3391,7 @@ function RHSmallModal({
   onClose,
   children,
   overlay,
+  dismissOnBackdropPress,
 }: {
   visible: boolean;
   title: string;
@@ -3403,6 +3404,11 @@ function RHSmallModal({
   // corretamente (abre "atrás" do primeiro). Ver RHSimplePickerModal/
   // RHDatePickerModal com inline=true.
   overlay?: ReactNode;
+  // Fechar ao tocar fora do card (fora, não no card em si). Padrão false pra
+  // não mudar o comportamento das telas que já usam este modal com
+  // formulário (evita perder dados preenchidos por toque sem querer) — só
+  // liga explicitamente onde faz sentido (ex.: tela só de leitura).
+  dismissOnBackdropPress?: boolean;
 }) {
   if (!visible) {
     return null;
@@ -3410,8 +3416,8 @@ function RHSmallModal({
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={styles.requestModalBackdrop}>
-        <View style={styles.requestModalCard}>
+      <Pressable style={styles.requestModalBackdrop} onPress={dismissOnBackdropPress ? onClose : undefined}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
           <View style={styles.requestModalHeader}>
             <Text style={styles.requestModalTitle} numberOfLines={2}>
               {title}
@@ -3422,8 +3428,8 @@ function RHSmallModal({
           </View>
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">{children}</ScrollView>
           {overlay}
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -9493,8 +9499,8 @@ function AnnouncementFormModal({
   return (
     <>
       <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
-        <View style={styles.requestModalBackdrop}>
-          <View style={styles.requestModalCard}>
+        <Pressable style={styles.requestModalBackdrop} onPress={handleClose}>
+          <Pressable style={styles.requestModalCard} onPress={() => {}}>
             <View style={styles.requestModalHeader}>
               <Text style={styles.requestModalTitle}>Novo comunicado</Text>
               <Pressable onPress={handleClose} hitSlop={8}>
@@ -9673,8 +9679,8 @@ function AnnouncementFormModal({
               onClose={() => setIsColaboradorPickerOpen(false)}
               onSelect={setSelectedColaborador}
             />
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </>
   );
@@ -9800,6 +9806,7 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
         visible={!!viewingComunicado}
         title={viewingComunicado?.titulo ?? 'Comunicado'}
         onClose={() => setViewingComunicado(null)}
+        dismissOnBackdropPress
       >
         {viewingComunicado ? (
           <>
