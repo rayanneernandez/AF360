@@ -287,6 +287,28 @@ function deleteRhDocumentoUpload(id, actorId) {
   return lovableDelete('/api/public/internal/rh-documento-upload', { id }, actorId);
 }
 
+// --- RH: Conformidade de Admissões (rs_admissoes + filhas). Endpoint
+// unificado confirmado pela Lovable em 12/08/2026:
+// /api/public/internal/admissao-conformidade. GET sem "recurso" devolve
+// { resumo, por_etapa, por_responsavel, linhas, prazos, filtros } já
+// filtrado pelos query params (inicio/fim sobre created_at, empresa_id,
+// responsavel_id, etapa, status, busca, incluir_encerradas). GET
+// ?recurso=prazos lista só admissao_prazos (SLA por etapa). PATCH
+// ?recurso=prazos com { id, dias } grava o novo SLA (mesma função
+// salvarPrazoAdmissao do site, mínimo 1 dia).
+
+function getAdmissaoConformidade(params = {}, actorId) {
+  return lovableGet('/api/public/internal/admissao-conformidade', params, actorId);
+}
+
+function getAdmissaoPrazos(actorId) {
+  return lovableGet('/api/public/internal/admissao-conformidade', { recurso: 'prazos' }, actorId);
+}
+
+function patchAdmissaoPrazo(id, dias, actorId) {
+  return lovablePatch('/api/public/internal/admissao-conformidade', { recurso: 'prazos' }, { id, dias }, actorId);
+}
+
 // --- Admin ---
 
 function postAdminUsuario(body, actorId) {
@@ -1004,6 +1026,9 @@ module.exports = {
   postRhDocumentoUpload,
   getRhDocumento,
   deleteRhDocumentoUpload,
+  getAdmissaoConformidade,
+  getAdmissaoPrazos,
+  patchAdmissaoPrazo,
   postAdminUsuario,
   postAdminUsuarioResetSenha,
   postAdminUsuarioToggleAtivo,

@@ -29,6 +29,7 @@ const rhPromocoesRoutes = require('./routes/rhPromocoes');
 const rhPremiacoesEscritaRoutes = require('./routes/rhPremiacoesEscrita');
 const rhTransferenciasEscritaRoutes = require('./routes/rhTransferenciasEscrita');
 const rhDocumentosUploadRoutes = require('./routes/rhDocumentosUpload');
+const rhAdmissaoConformidadeRoutes = require('./routes/rhAdmissaoConformidade');
 
 const app = express();
 
@@ -70,6 +71,7 @@ app.use('/api/rh/promocoes', rhPromocoesRoutes);
 app.use('/api/rh/premiacoes-escrita', rhPremiacoesEscritaRoutes);
 app.use('/api/rh/transferencias-escrita', rhTransferenciasEscritaRoutes);
 app.use('/api/rh/documentos', rhDocumentosUploadRoutes);
+app.use('/api/rh/admissao-conformidade', rhAdmissaoConformidadeRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'af360-api', message: 'Veja /api/health' });

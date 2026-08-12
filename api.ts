@@ -521,6 +521,103 @@ export async function deleteRhDocumento(id: string): Promise<void> {
   await api.delete(`/api/rh/documentos/${encodeURIComponent(id)}`);
 }
 
+// --- RH: Conformidade de Admissões (rs_admissoes) — endpoint confirmado
+// pela Lovable em 12/08/2026. Mesmo módulo de derivação de etapa/atraso do
+// site, então nunca diverge do que aparece lá. ---
+
+export type AdmissaoConformidadeResumo = {
+  iniciadas: number;
+  abertas: number;
+  atrasadas: number;
+  concluidas: number;
+  canceladas: number;
+  solicitacoes_pendentes: number;
+};
+
+export type AdmissaoConformidadeEtapaResumo = {
+  etapa: string;
+  rotulo: string;
+  prazo_dias: number;
+  total: number;
+  atrasadas: number;
+  media_dias: number;
+};
+
+export type AdmissaoConformidadeResponsavel = {
+  responsavel: string;
+  total: number;
+  abertas: number;
+  atrasadas: number;
+};
+
+export type AdmissaoConformidadeLinha = {
+  id: string;
+  candidato: string;
+  empresa: string | null;
+  empresa_id: string | null;
+  cargo: string | null;
+  status: string;
+  etapa: string;
+  etapa_rotulo: string;
+  dias_na_etapa: number;
+  prazo_dias: number;
+  atrasada: boolean;
+  encerrada: boolean;
+  docs_pendentes: number;
+  solicitacoes_pendentes: number;
+  responsavel: string | null;
+  responsavel_id: string | null;
+  iniciada_em: string | null;
+  data_admissao: string | null;
+  [key: string]: unknown;
+};
+
+export type AdmissaoPrazoItem = {
+  id: string;
+  etapa: string;
+  rotulo: string;
+  dias: number;
+  ordem: number;
+};
+
+export type AdmissaoConformidadeDetalhe = {
+  resumo: AdmissaoConformidadeResumo;
+  por_etapa: AdmissaoConformidadeEtapaResumo[];
+  por_responsavel: AdmissaoConformidadeResponsavel[];
+  linhas: AdmissaoConformidadeLinha[];
+  prazos: AdmissaoPrazoItem[];
+  filtros: Record<string, unknown>;
+};
+
+export async function fetchAdmissaoConformidade(filters: {
+  inicio?: string;
+  fim?: string;
+  empresaId?: string;
+  responsavelId?: string;
+  etapa?: string;
+  status?: string;
+  busca?: string;
+  incluirEncerradas?: 0 | 1;
+} = {}): Promise<AdmissaoConformidadeDetalhe> {
+  const search = new URLSearchParams();
+  if (filters.inicio) search.set('inicio', filters.inicio);
+  if (filters.fim) search.set('fim', filters.fim);
+  if (filters.empresaId) search.set('empresaId', filters.empresaId);
+  if (filters.responsavelId) search.set('responsavelId', filters.responsavelId);
+  if (filters.etapa) search.set('etapa', filters.etapa);
+  if (filters.status) search.set('status', filters.status);
+  if (filters.busca) search.set('busca', filters.busca);
+  if (filters.incluirEncerradas !== undefined) search.set('incluirEncerradas', String(filters.incluirEncerradas));
+  const qs = search.toString();
+  const json = await api.get(`/api/rh/admissao-conformidade${qs ? `?${qs}` : ''}`);
+  return json.data as AdmissaoConformidadeDetalhe;
+}
+
+export async function updateAdmissaoPrazo(id: string, dias: number): Promise<AdmissaoPrazoItem> {
+  const json = await api.patch(`/api/rh/admissao-conformidade/prazos/${encodeURIComponent(id)}`, { dias });
+  return json.data as AdmissaoPrazoItem;
+}
+
 // --- RH: unidades reais (tabela empresas no Supabase do Lovable) ---
 // NÃO confundir com o endpoint /api/empresas (esse lê "postos" de um
 // Postgres self-hosted diferente, usado por Vendas/Margem/Estoque).

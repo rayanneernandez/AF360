@@ -109,6 +109,10 @@ import {
   createRhDocumento,
   fetchRhDocumentoUrl,
   deleteRhDocumento,
+  fetchAdmissaoConformidade,
+  updateAdmissaoPrazo,
+  type AdmissaoConformidadeDetalhe,
+  type AdmissaoConformidadeLinha,
 } from './api';
 
 // ---------- Types ----------
@@ -8441,36 +8445,160 @@ export function RHColaboradorDetalheScreen({ navigation, route }: ScreenProps<'R
   );
 }
 
-// ---------- Pré-Contratados ----------
-// Telas novas no web (fluxo de admissão: documentos do candidato → validação
-// do RH → contabilidade → retorno da contabilidade → efetivação). Ainda sem
-// crédito na Lovable pra vincular ao banco — por ora é só o layout/fluxo de
-// filtro, com o mesmo estado vazio ("0 processo(s)") que o próprio site
-// mostra agora. Quando o backend vier, troca a lista mock por um fetch real.
+// ---------- Pré-Contratados / Conformidade de Admissões ----------
+// Fluxo de admissão (documentos do candidato → validação do RH →
+// contabilidade → ASO → retorno da contabilidade → efetivação), tabela
+// rs_admissoes + filhas. Endpoint unificado confirmado pela Lovable em
+// 12/08/2026 (/api/public/internal/admissao-conformidade) — a mesma regra de
+// derivação de etapa/atraso do site é usada do lado deles, então essa tela
+// nunca diverge do painel web. "0 processo(s)" aparece de verdade quando
+// rs_admissoes está vazia, não é mock.
 
-const preContratadosStatusOptions = [
-  'Em andamento',
-  'Aguardando documentos',
-  'Em validação do RH',
-  'Na contabilidade',
-  'Retorno da contabilidade',
-  'Admitidos',
-  'Todos',
+const rhAdmissaoStatusMeta: Record<string, { label: string; color: string; tint: string }> = {
+  documentos_pendentes: { label: 'Aguardando documentos', color: '#B07A1E', tint: '#FCEFDA' },
+  em_validacao: { label: 'Em validação do RH', color: '#3457D5', tint: '#EDF1FF' },
+  enviado_contabilidade: { label: 'Na contabilidade', color: '#3457D5', tint: '#EDF1FF' },
+  retorno_contabilidade: { label: 'Retorno da contabilidade', color: '#B07A1E', tint: '#FCEFDA' },
+  admitido: { label: 'Admitido', color: '#18955A', tint: '#E3F5EA' },
+  cancelado: { label: 'Cancelado', color: '#B3261E', tint: '#FBEAEA' },
+};
+
+const rhAdmissaoStatusFilterOptions: Array<{ label: string; value?: string }> = [
+  { label: 'Todos' },
+  { label: 'Aguardando documentos', value: 'documentos_pendentes' },
+  { label: 'Em validação do RH', value: 'em_validacao' },
+  { label: 'Na contabilidade', value: 'enviado_contabilidade' },
+  { label: 'Retorno da contabilidade', value: 'retorno_contabilidade' },
+  { label: 'Admitido', value: 'admitido' },
+  { label: 'Cancelado', value: 'cancelado' },
 ];
 
-export function RHPreContratadosScreen({ navigation }: ScreenProps<'RHPreContratados'>) {
-  const [statusFilter, setStatusFilter] = useState(preContratadosStatusOptions[0]);
-  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+const rhAdmissaoEtapaIcons: Record<string, keyof typeof Feather.glyphMap> = {
+  documentos_pendentes: 'file-text',
+  em_validacao: 'user-check',
+  enviado_contabilidade: 'briefcase',
+  aso: 'activity',
+  retorno_contabilidade: 'check-circle',
+};
 
-  // Sem endpoint de admissão liberado ainda — lista vazia de propósito,
-  // igual ao que o site mostra hoje pra esse mesmo filtro.
-  const processos: never[] = [];
+function EditarSlaModal({
+  visible,
+  prazo,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  prazo: AdmissaoConformidadeDetalhe['prazos'][number] | null;
+  onClose: () => void;
+  onSaved: (updated: AdmissaoConformidadeDetalhe['prazos'][number]) => void;
+}) {
+  const [dias, setDias] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 500);
+  useEffect(() => {
+    if (visible && prazo) setDias(String(prazo.dias));
+  }, [visible, prazo]);
+
+  const handleSave = () => {
+    if (!prazo) return;
+    const parsed = parseInt(dias, 10);
+    if (!parsed || parsed < 1) {
+      Alert.alert('Valor inválido', 'Informe um número de dias maior que zero.');
+      return;
+    }
+    setIsSaving(true);
+    updateAdmissaoPrazo(prazo.id, parsed)
+      .then((updated) => {
+        onSaved(updated);
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível atualizar o SLA.'))
+      .finally(() => setIsSaving(false));
   };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={[styles.requestModalCard, { maxWidth: 340 }]}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>SLA — {prazo?.rotulo}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+          <Text style={styles.requestFieldLabel}>Dias</Text>
+          <TextInput
+            style={styles.processTextInput}
+            value={dias}
+            onChangeText={(text) => setDias(text.replace(/\D/g, ''))}
+            keyboardType="number-pad"
+            placeholder="Ex.: 5"
+            placeholderTextColor="#A7AEC2"
+          />
+          <Pressable
+            style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? { opacity: 0.6 } : null]}
+            disabled={isSaving}
+            onPress={handleSave}
+          >
+            {isSaving ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <Feather name="save" size={15} color="#FFFFFF" />
+                <Text style={styles.primaryButtonText}>Salvar</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function useAdmissaoConformidade(params: {
+  inicio?: string;
+  fim?: string;
+  empresaId?: string;
+  responsavelId?: string;
+  etapa?: string;
+  status?: string;
+  busca?: string;
+  incluirEncerradas?: 0 | 1;
+}) {
+  const [data, setData] = useState<AdmissaoConformidadeDetalhe | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const paramsKey = JSON.stringify(params);
+
+  const reload = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    return fetchAdmissaoConformidade(JSON.parse(paramsKey))
+      .then(setData)
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar.'))
+      .finally(() => setIsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramsKey]);
+
+  useEffect(() => {
+    const timer = setTimeout(reload, 250);
+    return () => clearTimeout(timer);
+  }, [reload]);
+
+  return { data, isLoading, errorMessage, reload, setData };
+}
+
+export function RHPreContratadosScreen({ navigation }: ScreenProps<'RHPreContratados'>) {
+  const [statusFilter, setStatusFilter] = useState(rhAdmissaoStatusFilterOptions[0].label);
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const statusValue = rhAdmissaoStatusFilterOptions.find((item) => item.label === statusFilter)?.value;
+
+  const { data, isLoading, errorMessage, reload } = useAdmissaoConformidade({
+    status: statusValue,
+    incluirEncerradas: 0,
+  });
+
+  const processos = data?.linhas ?? [];
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -8488,7 +8616,7 @@ export function RHPreContratadosScreen({ navigation }: ScreenProps<'RHPreContrat
 
         <View style={rhStyles.filterPillRow}>
           <RHFilterPill label={statusFilter} onPress={() => setIsStatusFilterOpen(true)} />
-          <Pressable style={rhStyles.secondaryIconButton} onPress={handleRefresh}>
+          <Pressable style={rhStyles.secondaryIconButton} onPress={reload}>
             <Feather name="refresh-cw" size={14} color="#15203E" />
             <Text style={rhStyles.secondaryIconButtonText}>Atualizar</Text>
           </Pressable>
@@ -8499,17 +8627,52 @@ export function RHPreContratadosScreen({ navigation }: ScreenProps<'RHPreContrat
           <Text style={rhStyles.sectionHeaderMeta}>{processos.length} processo(s)</Text>
         </View>
 
-        <View style={styles.processEmptyCard}>
-          <Text style={styles.processEmptyText}>
-            {isRefreshing ? 'Atualizando...' : 'Nenhum processo de admissão neste filtro.'}
-          </Text>
-        </View>
+        {isLoading ? (
+          <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+        ) : errorMessage ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>{errorMessage}</Text>
+          </View>
+        ) : processos.length === 0 ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Nenhum processo de admissão neste filtro.</Text>
+          </View>
+        ) : (
+          processos.map((item) => {
+            const statusMeta = rhAdmissaoStatusMeta[item.status] ?? rhAdmissaoStatusMeta.documentos_pendentes;
+            return (
+              <View key={item.id} style={rhStyles.historyCard}>
+                <View style={rhStyles.docCardTopRow}>
+                  <Text style={rhStyles.historyCardTitle} numberOfLines={1}>
+                    {item.candidato}
+                  </Text>
+                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: statusMeta.tint }]}>
+                    <Text style={[rhStyles.employeeStatusText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
+                  </View>
+                </View>
+                <Text style={rhStyles.historyCardMeta}>
+                  {item.cargo ?? '—'} · {item.empresa ?? '—'}
+                </Text>
+                <Text style={rhStyles.historyCardMeta}>
+                  Etapa: {item.etapa_rotulo} · {item.dias_na_etapa} dia(s){item.atrasada ? ' · atrasada' : ''}
+                  {item.prazo_dias ? ` (SLA ${item.prazo_dias}d)` : ''}
+                </Text>
+                {item.docs_pendentes > 0 || item.solicitacoes_pendentes > 0 ? (
+                  <Text style={[rhStyles.historyCardMeta, { color: '#B07A1E' }]}>
+                    {item.docs_pendentes} doc(s) pendente(s) · {item.solicitacoes_pendentes} pendência(s)
+                  </Text>
+                ) : null}
+                <Text style={rhStyles.historyCardMeta}>Responsável: {item.responsavel ?? '—'}</Text>
+              </View>
+            );
+          })
+        )}
       </ScrollView>
 
       <RHSimplePickerModal
         visible={isStatusFilterOpen}
         title="Status do processo"
-        options={preContratadosStatusOptions}
+        options={rhAdmissaoStatusFilterOptions.map((item) => item.label)}
         selectedValue={statusFilter}
         onSelect={setStatusFilter}
         onClose={() => setIsStatusFilterOpen(false)}
@@ -8517,68 +8680,6 @@ export function RHPreContratadosScreen({ navigation }: ScreenProps<'RHPreContrat
     </SafeAreaView>
   );
 }
-
-// ---------- Conformidade de Admissões ----------
-// Painel de SLA/pendências do mesmo fluxo de admissão acima. Também sem
-// backend ainda — os cards e a tabela ficam com os totais zerados (estado
-// real de "sem admissão em andamento"), prontos pra receber o fetch quando
-// o endpoint existir. Unidade já usa a lista real (fetchRhUnidades) porque
-// isso já está disponível hoje, não depende de crédito novo.
-
-type ConformidadeEtapaResumo = {
-  id: string;
-  etapa: string;
-  icon: keyof typeof Feather.glyphMap;
-  emAberto: number;
-  atrasadas: number;
-  mediaDias: number;
-  slaLabel: string;
-};
-
-const conformidadeEtapas: ConformidadeEtapaResumo[] = [
-  {
-    id: 'documentos',
-    etapa: 'Documentos do candidato',
-    icon: 'file-text',
-    emAberto: 0,
-    atrasadas: 0,
-    mediaDias: 0,
-    slaLabel: '7 dias',
-  },
-  {
-    id: 'validacao-rh',
-    etapa: 'Validação do RH',
-    icon: 'user-check',
-    emAberto: 0,
-    atrasadas: 0,
-    mediaDias: 0,
-    slaLabel: '2 dias',
-  },
-  {
-    id: 'contabilidade',
-    etapa: 'Contabilidade',
-    icon: 'briefcase',
-    emAberto: 0,
-    atrasadas: 0,
-    mediaDias: 0,
-    slaLabel: '3 dias',
-  },
-  { id: 'aso', etapa: 'ASO', icon: 'activity', emAberto: 0, atrasadas: 0, mediaDias: 0, slaLabel: '5 dias' },
-  {
-    id: 'efetivacao',
-    etapa: 'Efetivação após retorno',
-    icon: 'check-circle',
-    emAberto: 0,
-    atrasadas: 0,
-    mediaDias: 0,
-    slaLabel: '2 dias',
-  },
-];
-
-const conformidadeEtapaFilterOptions = ['Todas', ...conformidadeEtapas.map((item) => item.etapa)];
-const conformidadeResponsavelFilterOptions = ['Todos'];
-const conformidadeStatusFilterOptions = ['Todos', ...preContratadosStatusOptions.filter((item) => item !== 'Todos')];
-
 function firstDayOfCurrentMonth(): Date {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -8591,15 +8692,23 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
   const [isAteModalOpen, setIsAteModalOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [unidadeFilter, setUnidadeFilter] = useState('Todas');
-  const [responsavelFilter, setResponsavelFilter] = useState(conformidadeResponsavelFilterOptions[0]);
-  const [etapaFilter, setEtapaFilter] = useState(conformidadeEtapaFilterOptions[0]);
-  const [statusFilter, setStatusFilter] = useState(conformidadeStatusFilterOptions[0]);
+  const [responsavelFilter, setResponsavelFilter] = useState('Todos');
+  const [etapaFilter, setEtapaFilter] = useState('Todas');
+  const [statusFilter, setStatusFilter] = useState(rhAdmissaoStatusFilterOptions[0].label);
   const [isUnidadeFilterOpen, setIsUnidadeFilterOpen] = useState(false);
   const [isResponsavelFilterOpen, setIsResponsavelFilterOpen] = useState(false);
   const [isEtapaFilterOpen, setIsEtapaFilterOpen] = useState(false);
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [unidadesReais, setUnidadesReais] = useState<RhUnidadeItem[]>([]);
+  const [editingPrazo, setEditingPrazo] = useState<AdmissaoConformidadeDetalhe['prazos'][number] | null>(null);
+  // Acumula responsável(nome->id) visto nas "linhas" pra poder filtrar por
+  // responsavel_id (por_responsavel só devolve o nome, não o id).
+  const [responsavelNameToId, setResponsavelNameToId] = useState<Record<string, string>>({});
+  // Guarda a última lista de etapas (etapa+rótulo) vinda do backend num
+  // estado à parte — precisa existir ANTES da chamada do hook de fetch (que
+  // usa o valor do filtro de etapa como parâmetro), então não pode vir
+  // direto de "data" (que só existe depois dessa mesma chamada).
+  const [etapaOptionsState, setEtapaOptionsState] = useState<AdmissaoConformidadeDetalhe['por_etapa']>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -8617,22 +8726,67 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
     () => ['Todas', ...unidadesReais.map((unidade) => unidade.nome).sort((a, b) => a.localeCompare(b, 'pt-BR'))],
     [unidadesReais]
   );
+  const empresaId = unidadeFilter === 'Todas' ? undefined : unidadesReais.find((u) => u.nome === unidadeFilter)?.id;
+  const statusValue = rhAdmissaoStatusFilterOptions.find((item) => item.label === statusFilter)?.value;
+  const etapaLabelToValue = useMemo(() => {
+    const map = new Map<string, string>();
+    etapaOptionsState.forEach((item) => map.set(item.rotulo, item.etapa));
+    return map;
+  }, [etapaOptionsState]);
+  const etapaValue = etapaFilter === 'Todas' ? undefined : etapaLabelToValue.get(etapaFilter);
+  const responsavelId = responsavelFilter === 'Todos' ? undefined : responsavelNameToId[responsavelFilter];
 
-  // Zerados de propósito — sem endpoint de admissão ainda. Ver comentário no
-  // topo da seção.
-  const kpis = { iniciadas: 0, emAberto: 0, atrasadas: 0, concluidas: 0, pendenciasAbertas: 0 };
-  const admissoes: never[] = [];
-  const responsaveis: never[] = [];
+  const { data, isLoading, errorMessage, reload, setData } = useAdmissaoConformidade({
+    inicio: brDateLabelToIso(deLabel) ?? undefined,
+    fim: brDateLabelToIso(ateLabel) ?? undefined,
+    empresaId,
+    responsavelId,
+    etapa: etapaValue,
+    status: statusValue,
+    busca: search || undefined,
+    incluirEncerradas: 1,
+  });
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 500);
+  useEffect(() => {
+    if (!data) return;
+    setResponsavelNameToId((current) => {
+      const next = { ...current };
+      data.linhas.forEach((linha) => {
+        if (linha.responsavel && linha.responsavel_id) next[linha.responsavel] = linha.responsavel_id;
+      });
+      return next;
+    });
+    if (data.por_etapa.length > 0) setEtapaOptionsState(data.por_etapa);
+  }, [data]);
+
+  const responsavelFilterOptions = useMemo(
+    () => ['Todos', ...Object.keys(responsavelNameToId).sort((a, b) => a.localeCompare(b, 'pt-BR'))],
+    [responsavelNameToId]
+  );
+  // O picker (RHSimplePickerModal) só mostra/seleciona strings simples, então
+  // o filtro guarda o RÓTULO (rotulo) — igual usuária vê — e etapaLabelToValue
+  // (acima) resolve de volta pro slug que o endpoint espera.
+  const etapaFilterOptions = useMemo(
+    () => ['Todas', ...etapaOptionsState.map((item) => item.rotulo)],
+    [etapaOptionsState]
+  );
+
+  const kpis = data?.resumo ?? {
+    iniciadas: 0,
+    abertas: 0,
+    atrasadas: 0,
+    concluidas: 0,
+    canceladas: 0,
+    solicitacoes_pendentes: 0,
   };
+  const porEtapa = data?.por_etapa ?? [];
+  const porResponsavel = data?.por_responsavel ?? [];
+  const admissoes = data?.linhas ?? [];
 
   const handleExport = (formato: 'CSV' | 'PDF') => {
     Alert.alert(
       'Ainda não disponível',
-      `Exportar em ${formato} vai funcionar quando essa tela estiver ligada ao fluxo real de admissão.`
+      `Exportar em ${formato} ainda não foi confirmado pela Lovable pra esse endpoint.`
     );
   };
 
@@ -8663,9 +8817,9 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
         </View>
 
         <View style={rhStyles.filterPillRow}>
-          <Pressable style={rhStyles.secondaryIconButton} onPress={handleRefresh}>
+          <Pressable style={rhStyles.secondaryIconButton} onPress={reload}>
             <Feather name="refresh-cw" size={14} color="#15203E" />
-            <Text style={rhStyles.secondaryIconButtonText}>{isRefreshing ? 'Atualizando...' : 'Atualizar'}</Text>
+            <Text style={rhStyles.secondaryIconButtonText}>{isLoading ? 'Atualizando...' : 'Atualizar'}</Text>
           </Pressable>
           <Pressable style={rhStyles.secondaryIconButton} onPress={() => handleExport('CSV')}>
             <Feather name="download" size={14} color="#15203E" />
@@ -8700,96 +8854,160 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
           <RHFilterSelectField label="Status" value={statusFilter} onPress={() => setIsStatusFilterOpen(true)} />
         </View>
 
+        {errorMessage ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>{errorMessage}</Text>
+          </View>
+        ) : null}
+
         <View style={rhStyles.conformidadeKpiCard}>
-          <Pressable style={rhStyles.conformidadeKpiItem} onPress={() => setStatusFilter('Em andamento')}>
+          <View style={rhStyles.conformidadeKpiItem}>
             <Text style={rhStyles.conformidadeKpiValue}>{kpis.iniciadas}</Text>
             <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               Iniciadas
             </Text>
-          </Pressable>
+          </View>
           <View style={rhStyles.conformidadeKpiDivider} />
-          <Pressable style={rhStyles.conformidadeKpiItem} onPress={() => setStatusFilter('Aguardando documentos')}>
-            <Text style={rhStyles.conformidadeKpiValue}>{kpis.emAberto}</Text>
+          <View style={rhStyles.conformidadeKpiItem}>
+            <Text style={rhStyles.conformidadeKpiValue}>{kpis.abertas}</Text>
             <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               Em aberto
             </Text>
-          </Pressable>
+          </View>
           <View style={rhStyles.conformidadeKpiDivider} />
-          <Pressable style={rhStyles.conformidadeKpiItem} onPress={() => setStatusFilter('Todos')}>
+          <View style={rhStyles.conformidadeKpiItem}>
             <Text style={rhStyles.conformidadeKpiValue}>{kpis.atrasadas}</Text>
             <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               Atrasadas
             </Text>
-          </Pressable>
+          </View>
           <View style={rhStyles.conformidadeKpiDivider} />
-          <Pressable style={rhStyles.conformidadeKpiItem} onPress={() => setStatusFilter('Admitidos')}>
+          <View style={rhStyles.conformidadeKpiItem}>
             <Text style={rhStyles.conformidadeKpiValue}>{kpis.concluidas}</Text>
             <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               Concluídas
             </Text>
-          </Pressable>
+          </View>
           <View style={rhStyles.conformidadeKpiDivider} />
-          <Pressable style={rhStyles.conformidadeKpiItem} onPress={() => setStatusFilter('Todos')}>
-            <Text style={rhStyles.conformidadeKpiValue}>{kpis.pendenciasAbertas}</Text>
+          <View style={rhStyles.conformidadeKpiItem}>
+            <Text style={rhStyles.conformidadeKpiValue}>{kpis.solicitacoes_pendentes}</Text>
             <Text style={rhStyles.conformidadeKpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               Pendências
             </Text>
-          </Pressable>
+          </View>
         </View>
 
         <View style={rhStyles.sectionHeaderRow}>
           <Text style={rhStyles.sectionTitle}>POR ETAPA</Text>
         </View>
-        {conformidadeEtapas.map((item) => (
-          <View
-            key={item.id}
-            style={[rhStyles.etapaCard, item.atrasadas > 0 ? rhStyles.etapaCardAlert : null]}
-          >
-            <View style={rhStyles.etapaCardHeader}>
-              <Feather name={item.icon} size={13} color="#5E667D" />
-              <Text style={rhStyles.etapaCardTitle} numberOfLines={1}>
-                {item.etapa}
-              </Text>
-              <View style={rhStyles.etapaSlaPill}>
-                <Text style={rhStyles.etapaSlaPillText}>SLA {item.slaLabel}</Text>
+        {isLoading && porEtapa.length === 0 ? (
+          <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+        ) : (
+          porEtapa.map((item) => (
+            <View key={item.etapa} style={[rhStyles.etapaCard, item.atrasadas > 0 ? rhStyles.etapaCardAlert : null]}>
+              <View style={rhStyles.etapaCardHeader}>
+                <Feather name={rhAdmissaoEtapaIcons[item.etapa] ?? 'folder'} size={13} color="#5E667D" />
+                <Text style={rhStyles.etapaCardTitle} numberOfLines={1}>
+                  {item.rotulo}
+                </Text>
+                <Pressable
+                  style={rhStyles.etapaSlaPill}
+                  onPress={() =>
+                    setEditingPrazo(
+                      data?.prazos.find((p) => p.etapa === item.etapa) ?? {
+                        id: '',
+                        etapa: item.etapa,
+                        rotulo: item.rotulo,
+                        dias: item.prazo_dias,
+                        ordem: 0,
+                      }
+                    )
+                  }
+                >
+                  <Text style={rhStyles.etapaSlaPillText}>SLA {item.prazo_dias}d</Text>
+                  <Feather name="edit-2" size={10} color="#1B6E3A" />
+                </Pressable>
               </View>
-            </View>
 
-            <View style={rhStyles.etapaStatsRow}>
-              <View style={rhStyles.etapaStatItem}>
-                <Text style={rhStyles.etapaStatValue}>{item.emAberto}</Text>
-                <Text style={rhStyles.etapaStatLabel}>Em aberto</Text>
-              </View>
-              <View style={rhStyles.etapaStatDivider} />
-              <View style={rhStyles.etapaStatItem}>
-                <Text style={[rhStyles.etapaStatValue, { color: '#B07A1E' }]}>{item.atrasadas}</Text>
-                <Text style={rhStyles.etapaStatLabel}>Atrasadas</Text>
-              </View>
-              <View style={rhStyles.etapaStatDivider} />
-              <View style={rhStyles.etapaStatItem}>
-                <Text style={rhStyles.etapaStatValue}>{item.mediaDias}</Text>
-                <Text style={rhStyles.etapaStatLabel}>Média (dias)</Text>
+              <View style={rhStyles.etapaStatsRow}>
+                <View style={rhStyles.etapaStatItem}>
+                  <Text style={rhStyles.etapaStatValue}>{item.total}</Text>
+                  <Text style={rhStyles.etapaStatLabel}>Em aberto</Text>
+                </View>
+                <View style={rhStyles.etapaStatDivider} />
+                <View style={rhStyles.etapaStatItem}>
+                  <Text style={[rhStyles.etapaStatValue, { color: '#B07A1E' }]}>{item.atrasadas}</Text>
+                  <Text style={rhStyles.etapaStatLabel}>Atrasadas</Text>
+                </View>
+                <View style={rhStyles.etapaStatDivider} />
+                <View style={rhStyles.etapaStatItem}>
+                  <Text style={rhStyles.etapaStatValue}>{item.media_dias}</Text>
+                  <Text style={rhStyles.etapaStatLabel}>Média (dias)</Text>
+                </View>
               </View>
             </View>
-          </View>
-        ))}
+          ))
+        )}
 
         <View style={rhStyles.sectionHeaderRow}>
           <Text style={rhStyles.sectionTitle}>POR RESPONSÁVEL</Text>
         </View>
-        {responsaveis.length === 0 ? (
+        {porResponsavel.length === 0 ? (
           <View style={styles.processEmptyCard}>
             <Text style={styles.processEmptyText}>Nenhum responsável com pendência no período.</Text>
           </View>
-        ) : null}
+        ) : (
+          porResponsavel.map((item) => (
+            <View key={item.responsavel} style={rhStyles.historyCard}>
+              <Text style={rhStyles.historyCardTitle}>{item.responsavel}</Text>
+              <Text style={rhStyles.historyCardMeta}>
+                {item.total} total · {item.abertas} em aberto · {item.atrasadas} atrasada(s)
+              </Text>
+            </View>
+          ))
+        )}
 
         <View style={rhStyles.sectionHeaderRow}>
           <Text style={rhStyles.sectionTitle}>ADMISSÕES NO PERÍODO</Text>
-          <Text style={rhStyles.sectionHeaderMeta}>{admissoes.length} de {admissoes.length} registro(s)</Text>
+          <Text style={rhStyles.sectionHeaderMeta}>{admissoes.length} registro(s)</Text>
         </View>
-        <View style={styles.processEmptyCard}>
-          <Text style={styles.processEmptyText}>Nenhuma admissão para os filtros selecionados.</Text>
-        </View>
+        {isLoading && admissoes.length === 0 ? (
+          <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+        ) : admissoes.length === 0 ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Nenhuma admissão para os filtros selecionados.</Text>
+          </View>
+        ) : (
+          admissoes.map((item) => {
+            const statusMeta = rhAdmissaoStatusMeta[item.status] ?? rhAdmissaoStatusMeta.documentos_pendentes;
+            return (
+              <View key={item.id} style={rhStyles.historyCard}>
+                <View style={rhStyles.docCardTopRow}>
+                  <Text style={rhStyles.historyCardTitle} numberOfLines={1}>
+                    {item.candidato}
+                  </Text>
+                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: statusMeta.tint }]}>
+                    <Text style={[rhStyles.employeeStatusText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
+                  </View>
+                </View>
+                <Text style={rhStyles.historyCardMeta}>
+                  {item.cargo ?? '—'} · {item.empresa ?? '—'}
+                </Text>
+                <Text style={rhStyles.historyCardMeta}>
+                  Etapa: {item.etapa_rotulo} · {item.dias_na_etapa} dia(s){item.atrasada ? ' · atrasada' : ''}
+                </Text>
+                {item.docs_pendentes > 0 || item.solicitacoes_pendentes > 0 ? (
+                  <Text style={[rhStyles.historyCardMeta, { color: '#B07A1E' }]}>
+                    {item.docs_pendentes} doc(s) pendente(s) · {item.solicitacoes_pendentes} pendência(s)
+                  </Text>
+                ) : null}
+                <Text style={rhStyles.historyCardMeta}>
+                  Responsável: {item.responsavel ?? '—'} · Início: {formatDateOnlyBR(item.iniciada_em)}
+                </Text>
+              </View>
+            );
+          })
+        )}
       </ScrollView>
 
       <RHDatePickerModal
@@ -8817,7 +9035,7 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
       <RHSimplePickerModal
         visible={isResponsavelFilterOpen}
         title="Responsável"
-        options={conformidadeResponsavelFilterOptions}
+        options={responsavelFilterOptions}
         selectedValue={responsavelFilter}
         onSelect={setResponsavelFilter}
         onClose={() => setIsResponsavelFilterOpen(false)}
@@ -8825,7 +9043,7 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
       <RHSimplePickerModal
         visible={isEtapaFilterOpen}
         title="Etapa"
-        options={conformidadeEtapaFilterOptions}
+        options={etapaFilterOptions}
         selectedValue={etapaFilter}
         onSelect={setEtapaFilter}
         onClose={() => setIsEtapaFilterOpen(false)}
@@ -8833,10 +9051,29 @@ export function RHConformidadeAdmissoesScreen({ navigation }: ScreenProps<'RHCon
       <RHSimplePickerModal
         visible={isStatusFilterOpen}
         title="Status"
-        options={conformidadeStatusFilterOptions}
+        options={rhAdmissaoStatusFilterOptions.map((item) => item.label)}
         selectedValue={statusFilter}
         onSelect={setStatusFilter}
         onClose={() => setIsStatusFilterOpen(false)}
+      />
+
+      <EditarSlaModal
+        visible={!!editingPrazo}
+        prazo={editingPrazo}
+        onClose={() => setEditingPrazo(null)}
+        onSaved={(updated) => {
+          setData((current) =>
+            current
+              ? {
+                  ...current,
+                  prazos: current.prazos.map((p) => (p.etapa === updated.etapa ? updated : p)),
+                  por_etapa: current.por_etapa.map((p) =>
+                    p.etapa === updated.etapa ? { ...p, prazo_dias: updated.dias } : p
+                  ),
+                }
+              : current
+          );
+        }}
       />
     </SafeAreaView>
   );
