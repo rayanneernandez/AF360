@@ -9687,6 +9687,7 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [viewingComunicado, setViewingComunicado] = useState<RhComunicadoItem | null>(null);
 
   const loadComunicados = useCallback(() => {
     setIsLoading(true);
@@ -9757,7 +9758,7 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
           <Text style={styles.conversaEmptyText}>Nenhum comunicado enviado ainda.</Text>
         ) : (
           comunicados.map((item) => (
-            <View key={item.id} style={rhStyles.announcementCard}>
+            <Pressable key={item.id} style={rhStyles.announcementCard} onPress={() => setViewingComunicado(item)}>
               <View style={rhStyles.announcementTopRow}>
                 <View style={[rhStyles.announcementBadge, { backgroundColor: '#E9EEFF' }]}>
                   <Text style={[rhStyles.announcementBadgeText, { color: '#3457D5' }]}>
@@ -9775,24 +9776,87 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
                 </Pressable>
               </View>
               <Text style={rhStyles.announcementTitle}>{item.titulo}</Text>
-              <Text style={rhStyles.announcementDesc}>{item.conteudo}</Text>
+              <Text style={rhStyles.announcementDesc} numberOfLines={3}>
+                {item.conteudo}
+              </Text>
               {item.anexo_url && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(item.anexo_url) ? (
-                <Pressable onPress={() => Linking.openURL(item.anexo_url as string)}>
-                  <Image
-                    source={{ uri: item.anexo_url }}
-                    style={[styles.spacingTop, { width: '100%', height: 160, borderRadius: 8 }]}
-                    resizeMode="cover"
-                  />
-                </Pressable>
+                <Image
+                  source={{ uri: item.anexo_url }}
+                  style={[styles.spacingTop, { width: '100%', height: 160, borderRadius: 8 }]}
+                  resizeMode="cover"
+                />
               ) : item.anexo_url ? (
-                <Pressable onPress={() => Linking.openURL(item.anexo_url as string)}>
-                  <Text style={[rhStyles.announcementMeta, { color: '#3457D5' }]}>Ver anexo</Text>
-                </Pressable>
+                <Text style={[rhStyles.announcementMeta, { color: '#3457D5' }]}>Ver anexo</Text>
               ) : null}
-            </View>
+              <Text style={[rhStyles.announcementMeta, styles.spacingTop, { color: '#9AA1B5' }]}>
+                Toque pra ver tudo
+              </Text>
+            </Pressable>
           ))
         )}
       </ScrollView>
+
+      <RHSmallModal
+        visible={!!viewingComunicado}
+        title={viewingComunicado?.titulo ?? 'Comunicado'}
+        onClose={() => setViewingComunicado(null)}
+      >
+        {viewingComunicado ? (
+          <>
+            <View style={rhStyles.announcementTopRow}>
+              <View style={[rhStyles.announcementBadge, { backgroundColor: '#E9EEFF' }]}>
+                <Text style={[rhStyles.announcementBadgeText, { color: '#3457D5' }]}>
+                  {comunicadoPublicoLabelRh(viewingComunicado.publico)}
+                </Text>
+              </View>
+              <Text style={rhStyles.announcementTime}>{formatComunicadoDateRh(viewingComunicado.publicar_em)}</Text>
+            </View>
+            <Text style={[rhStyles.announcementDesc, styles.spacingTop]}>{viewingComunicado.conteudo}</Text>
+            {viewingComunicado.expira_em ? (
+              <Text style={[rhStyles.announcementMeta, styles.spacingTop, { color: '#9AA1B5' }]}>
+                Remove automaticamente em {formatComunicadoDateRh(viewingComunicado.expira_em)}
+              </Text>
+            ) : null}
+            {viewingComunicado.anexo_url && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(viewingComunicado.anexo_url) ? (
+              <Pressable onPress={() => Linking.openURL(viewingComunicado.anexo_url as string)}>
+                <Image
+                  source={{ uri: viewingComunicado.anexo_url }}
+                  style={[styles.spacingTop, { width: '100%', height: 260, borderRadius: 8 }]}
+                  resizeMode="contain"
+                />
+              </Pressable>
+            ) : viewingComunicado.anexo_url ? (
+              <Pressable onPress={() => Linking.openURL(viewingComunicado.anexo_url as string)}>
+                <Text style={[rhStyles.announcementMeta, styles.spacingTop, { color: '#3457D5' }]}>Ver anexo</Text>
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              style={[
+                styles.spacingTop,
+                {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: '#F5C2CB',
+                  backgroundColor: '#FCE8EC',
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                },
+              ]}
+              onPress={() => {
+                const target = viewingComunicado;
+                setViewingComunicado(null);
+                if (target) handleDelete(target);
+              }}
+            >
+              <Feather name="trash-2" size={16} color="#E6213D" />
+              <Text style={{ color: '#E6213D', fontWeight: '600', marginLeft: 6 }}>Excluir comunicado</Text>
+            </Pressable>
+          </>
+        ) : null}
+      </RHSmallModal>
 
       <AnnouncementFormModal visible={isFormOpen} onClose={() => setIsFormOpen(false)} onCreated={loadComunicados} />
     </SafeAreaView>
