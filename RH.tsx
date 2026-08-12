@@ -113,6 +113,8 @@ import {
   updateAdmissaoPrazo,
   type AdmissaoConformidadeDetalhe,
   type AdmissaoConformidadeLinha,
+  fetchAdminGrupos,
+  type AdminGrupoItem,
 } from './api';
 
 // ---------- Types ----------
@@ -9188,10 +9190,12 @@ export function RHTransferenciasScreen({ navigation }: ScreenProps<'RHTransferen
 // ---------- Comunicados ----------
 
 // rh_comunicados não tem coluna de categoria (RH/SST/DP era só do mock) —
-// por isso o formulário e a lista abaixo não usam mais esse chip; só título,
-// descrição, link de anexo (não temos upload de arquivo ainda, só link) e
-// "enviar para" (fixo em "todos" por enquanto — segmentar por empresa/grupo/
-// colaborador específico fica pra uma próxima rodada).
+// por isso o formulário e a lista abaixo não usam mais esse chip. "Enviar
+// para" usa o enum real rh_comunicado_publico (todos|empresa|grupo|
+// colaborador) — não existe "cargo específico" no schema hoje (só grupo ou
+// colaborador avulso), então essa opção não está aqui; ver mensagem
+// rascunhada pra Lovable se quiser pedir isso. Anexo continua por link (sem
+// endpoint de upload de imagem confirmado pra comunicados ainda).
 type AnnouncementFormValues = {
   titulo: string;
   conteudo: string;
@@ -9203,6 +9207,8 @@ const emptyAnnouncementForm: AnnouncementFormValues = {
   conteudo: '',
   anexoUrl: '',
 };
+
+const rhComunicadoAudienciaOptions = ['Todos', 'Grupo específico', 'Colaborador específico'];
 
 function comunicadoPublicoLabelRh(publico: string): string {
   if (publico === 'empresa') return 'Empresa';
@@ -9218,6 +9224,96 @@ function formatComunicadoDateRh(raw: string | null): string {
   return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function ColaboradorSearchPickerModal({
+  visible,
+  onClose,
+  onSelect,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (colaborador: RhColaboradorRaw) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<RhColaboradorRaw[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setQuery('');
+      setResults([]);
+      return;
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || query.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    setIsSearching(true);
+    const timer = setTimeout(() => {
+      fetchRhColaboradores({ q: query.trim() })
+        .then((rows) => setResults(rows.slice(0, 30)))
+        .catch(() => setResults([]))
+        .finally(() => setIsSearching(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, visible]);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={[styles.requestModalCard, { maxHeight: '75%' }]}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Selecionar colaborador</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <View style={rhStyles.searchRow}>
+            <Feather name="search" size={16} color="#9AA1B5" />
+            <TextInput
+              style={rhStyles.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Digite pelo menos 2 letras do nome..."
+              placeholderTextColor="#A7AEC2"
+              autoFocus
+            />
+          </View>
+
+          {isSearching ? (
+            <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+          ) : (
+            <ScrollView style={{ maxHeight: 320 }} keyboardShouldPersistTaps="handled">
+              {results.length === 0 ? (
+                <RHEmptyTabState
+                  message={query.trim().length < 2 ? 'Digite pra buscar.' : 'Nenhum colaborador encontrado.'}
+                />
+              ) : (
+                results.map((colaborador) => (
+                  <Pressable
+                    key={colaborador.id}
+                    style={styles.templateOptionRow}
+                    onPress={() => {
+                      onSelect(colaborador);
+                      onClose();
+                    }}
+                  >
+                    <Text style={rhStyles.historyCardTitle}>{colaborador.nome_completo}</Text>
+                    <Text style={rhStyles.historyCardMeta}>{colaborador.cargo ?? '—'}</Text>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function AnnouncementFormModal({
   visible,
   onClose,
@@ -9230,9 +9326,24 @@ function AnnouncementFormModal({
   const { identity } = useContext(AuthIdentityContext);
   const [form, setForm] = useState<AnnouncementFormValues>(emptyAnnouncementForm);
   const [isSaving, setIsSaving] = useState(false);
+  const [audiencia, setAudiencia] = useState(rhComunicadoAudienciaOptions[0]);
+  const [isAudienciaPickerOpen, setIsAudienciaPickerOpen] = useState(false);
+  const [grupos, setGrupos] = useState<AdminGrupoItem[]>([]);
+  const [selectedGrupo, setSelectedGrupo] = useState<AdminGrupoItem | null>(null);
+  const [isGrupoPickerOpen, setIsGrupoPickerOpen] = useState(false);
+  const [selectedColaborador, setSelectedColaborador] = useState<RhColaboradorRaw | null>(null);
+  const [isColaboradorPickerOpen, setIsColaboradorPickerOpen] = useState(false);
 
   useEffect(() => {
-    if (visible) setForm(emptyAnnouncementForm);
+    if (visible) {
+      setForm(emptyAnnouncementForm);
+      setAudiencia(rhComunicadoAudienciaOptions[0]);
+      setSelectedGrupo(null);
+      setSelectedColaborador(null);
+      fetchAdminGrupos()
+        .then((result) => setGrupos(result.grupos))
+        .catch(() => {});
+    }
   }, [visible]);
 
   const handleClose = () => {
@@ -9245,18 +9356,33 @@ function AnnouncementFormModal({
       Alert.alert('Campos obrigatórios', 'Preencha o título e a descrição do comunicado.');
       return;
     }
+    if (audiencia === 'Grupo específico' && !selectedGrupo) {
+      Alert.alert('Selecione um grupo', 'Escolha pra qual grupo esse comunicado vai.');
+      return;
+    }
+    if (audiencia === 'Colaborador específico' && !selectedColaborador) {
+      Alert.alert('Selecione um colaborador', 'Escolha pra quem esse comunicado vai.');
+      return;
+    }
+
+    const body: Parameters<typeof createRhComunicado>[0] = {
+      titulo: form.titulo.trim(),
+      conteudo: form.conteudo.trim(),
+      publico: 'todos',
+      anexo_url: form.anexoUrl.trim() || undefined,
+    };
+    if (audiencia === 'Grupo específico' && selectedGrupo) {
+      body.publico = 'grupo';
+      body.grupo_id = selectedGrupo.id;
+    } else if (audiencia === 'Colaborador específico' && selectedColaborador) {
+      body.publico = 'colaborador';
+      body.colaborador_id = selectedColaborador.id;
+    } else {
+      body.empresa_id = identity?.empresaId ?? undefined;
+    }
 
     setIsSaving(true);
-    createRhComunicado(
-      {
-        titulo: form.titulo.trim(),
-        conteudo: form.conteudo.trim(),
-        publico: 'todos',
-        empresa_id: identity?.empresaId ?? undefined,
-        anexo_url: form.anexoUrl.trim() || undefined,
-      },
-      identity?.profileId
-    )
+    createRhComunicado(body, identity?.profileId)
       .then(() => {
         onCreated();
         handleClose();
@@ -9268,63 +9394,113 @@ function AnnouncementFormModal({
   };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
-      <View style={styles.requestModalBackdrop}>
-        <View style={styles.requestModalCard}>
-          <View style={styles.requestModalHeader}>
-            <Text style={styles.requestModalTitle}>Novo comunicado</Text>
-            <Pressable onPress={handleClose} hitSlop={8}>
-              <Feather name="x" size={20} color="#677089" />
-            </Pressable>
+    <>
+      <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+        <View style={styles.requestModalBackdrop}>
+          <View style={styles.requestModalCard}>
+            <View style={styles.requestModalHeader}>
+              <Text style={styles.requestModalTitle}>Novo comunicado</Text>
+              <Pressable onPress={handleClose} hitSlop={8}>
+                <Feather name="x" size={20} color="#677089" />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={styles.requestFieldLabel}>Título *</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.titulo}
+                onChangeText={(text) => setForm((current) => ({ ...current, titulo: text }))}
+                placeholder="Ex.: Nova tabela de reajuste 2026"
+                placeholderTextColor="#A7AEC2"
+              />
+
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição *</Text>
+              <TextInput
+                style={[styles.processTextInput, styles.processDocumentationArea]}
+                value={form.conteudo}
+                onChangeText={(text) => setForm((current) => ({ ...current, conteudo: text }))}
+                placeholder="Detalhe o comunicado..."
+                placeholderTextColor="#A7AEC2"
+                multiline
+                textAlignVertical="top"
+              />
+
+              <RHSelectField
+                label="Enviar para"
+                required
+                value={audiencia}
+                onPress={() => setIsAudienciaPickerOpen(true)}
+              />
+              {audiencia === 'Grupo específico' ? (
+                <RHSelectField
+                  label="Grupo"
+                  required
+                  value={selectedGrupo?.name ?? ''}
+                  placeholder="Selecione o grupo"
+                  onPress={() => setIsGrupoPickerOpen(true)}
+                />
+              ) : null}
+              {audiencia === 'Colaborador específico' ? (
+                <RHSelectField
+                  label="Colaborador"
+                  required
+                  value={selectedColaborador?.nome_completo ?? ''}
+                  placeholder="Buscar colaborador"
+                  icon="search"
+                  onPress={() => setIsColaboradorPickerOpen(true)}
+                />
+              ) : null}
+
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Link da imagem/anexo (opcional)</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={form.anexoUrl}
+                onChangeText={(text) => setForm((current) => ({ ...current, anexoUrl: text }))}
+                placeholder="https://..."
+                placeholderTextColor="#A7AEC2"
+                autoCapitalize="none"
+                keyboardType="url"
+              />
+              <Text style={rhStyles.announcementMeta}>
+                Ainda não temos upload de imagem por aqui — cole o link de uma imagem ou PDF já hospedado em algum
+                lugar (Drive, etc.). Já pedimos pra Lovable um endpoint de upload pra isso.
+              </Text>
+
+              <Pressable
+                style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+                onPress={handleSubmit}
+                disabled={isSaving}
+              >
+                <Text style={styles.primaryButtonText}>{isSaving ? 'Enviando...' : 'Enviar comunicado'}</Text>
+              </Pressable>
+            </ScrollView>
           </View>
-
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Text style={styles.requestFieldLabel}>Título *</Text>
-            <TextInput
-              style={styles.processTextInput}
-              value={form.titulo}
-              onChangeText={(text) => setForm((current) => ({ ...current, titulo: text }))}
-              placeholder="Ex.: Nova tabela de reajuste 2026"
-              placeholderTextColor="#A7AEC2"
-            />
-
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição *</Text>
-            <TextInput
-              style={[styles.processTextInput, styles.processDocumentationArea]}
-              value={form.conteudo}
-              onChangeText={(text) => setForm((current) => ({ ...current, conteudo: text }))}
-              placeholder="Detalhe o comunicado..."
-              placeholderTextColor="#A7AEC2"
-              multiline
-              textAlignVertical="top"
-            />
-
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Link da imagem/anexo (opcional)</Text>
-            <TextInput
-              style={styles.processTextInput}
-              value={form.anexoUrl}
-              onChangeText={(text) => setForm((current) => ({ ...current, anexoUrl: text }))}
-              placeholder="https://..."
-              placeholderTextColor="#A7AEC2"
-              autoCapitalize="none"
-              keyboardType="url"
-            />
-            <Text style={rhStyles.announcementMeta}>
-              Ainda não temos upload de arquivo por aqui — cole o link de uma imagem ou PDF já hospedado em algum
-              lugar (Drive, etc.).
-            </Text>
-
-            <Pressable
-              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
-              onPress={handleSubmit}
-              disabled={isSaving}
-            >
-              <Text style={styles.primaryButtonText}>{isSaving ? 'Enviando...' : 'Enviar comunicado'}</Text>
-            </Pressable>
-          </ScrollView>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+
+      <RHSimplePickerModal
+        visible={isAudienciaPickerOpen}
+        title="Enviar para"
+        options={rhComunicadoAudienciaOptions}
+        selectedValue={audiencia}
+        onSelect={setAudiencia}
+        onClose={() => setIsAudienciaPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isGrupoPickerOpen}
+        title="Grupo"
+        options={grupos.map((g) => g.name)}
+        selectedValue={selectedGrupo?.name ?? ''}
+        onSelect={(name) => setSelectedGrupo(grupos.find((g) => g.name === name) ?? null)}
+        onClose={() => setIsGrupoPickerOpen(false)}
+      />
+      <ColaboradorSearchPickerModal
+        visible={isColaboradorPickerOpen}
+        onClose={() => setIsColaboradorPickerOpen(false)}
+        onSelect={setSelectedColaborador}
+      />
+    </>
   );
 }
 
