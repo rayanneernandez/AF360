@@ -1031,6 +1031,7 @@ export type ColaboradorComunicadoItem = {
   publico: string | null;
   tempoLabel: string;
   lido: boolean;
+  anexoUrl: string | null;
 };
 
 export type ColaboradorComunicadosDetalhe = { items: ColaboradorComunicadoItem[]; total: number };

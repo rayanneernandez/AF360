@@ -1202,7 +1202,7 @@ router.get('/comunicados', async (req, res) => {
 
     const [comunicadosJson, leiturasJson] = await Promise.all([
       fetchAllRows('rh_comunicados', {
-        select: 'id,titulo,conteudo,publico,empresa_id,colaborador_id,publicar_em,expira_em',
+        select: 'id,titulo,conteudo,publico,empresa_id,colaborador_id,publicar_em,expira_em,anexo_url',
       }),
       fetchAllRows('rh_comunicado_leituras', {
         select: 'comunicado_id,colaborador_id,lido_em',
@@ -1241,6 +1241,7 @@ router.get('/comunicados', async (req, res) => {
         publico: c.publico || null,
         tempoLabel: tempoRelativoLabel(c.publicar_em, nowMs) || capitalizeLabel(c.publico),
         lido: lidosSet.has(c.id),
+        anexoUrl: c.anexo_url || null,
       }));
 
     res.json({ ok: true, data: { items, total: items.length } });

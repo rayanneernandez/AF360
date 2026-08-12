@@ -6355,6 +6355,21 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
 
                 <Text style={styles.communicationTitle}>{item.titulo}</Text>
                 <Text style={styles.communicationDescription}>{item.conteudo}</Text>
+                {item.anexoUrl && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(item.anexoUrl) ? (
+                  <Pressable onPress={() => Linking.openURL(item.anexoUrl as string)}>
+                    <Image
+                      source={{ uri: item.anexoUrl }}
+                      style={{ width: '100%', height: 160, borderRadius: 8, marginTop: 10 }}
+                      resizeMode="cover"
+                    />
+                  </Pressable>
+                ) : item.anexoUrl ? (
+                  <Pressable onPress={() => Linking.openURL(item.anexoUrl as string)}>
+                    <Text style={[styles.communicationDescription, { color: '#3457D5', marginTop: 4 }]}>
+                      Ver anexo
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
             );
           })
