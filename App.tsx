@@ -6366,17 +6366,15 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
                   )}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.communicationTitle} numberOfLines={1}>
-                    {item.titulo}
-                  </Text>
-                  <View style={[styles.communicationMetaRow, { marginLeft: 0, marginTop: 6 }]}>
-                    <View style={[styles.tag, { backgroundColor: item.lido ? '#F0F1F6' : '#FCE8EC' }]}>
-                      <Text style={[styles.tagText, { color: item.lido ? '#7B8299' : '#E6213D' }]}>
-                        {comunicadoPublicoLabel(item.publico)}
-                      </Text>
-                    </View>
+                  <View style={[styles.communicationTop, { justifyContent: 'space-between' }]}>
+                    <Text style={[styles.communicationTitle, { marginTop: 0, flex: 1 }]} numberOfLines={1}>
+                      {item.titulo}
+                    </Text>
                     <Text style={styles.communicationTime}>{item.tempoLabel}</Text>
-                    {!item.lido ? <View style={styles.alertDot} /> : null}
+                    {!item.lido ? <View style={[styles.alertDot, { marginLeft: 6 }]} /> : null}
+                  </View>
+                  <View style={[styles.tag, { backgroundColor: '#F1F2F6', alignSelf: 'flex-start', marginTop: 6 }]}>
+                    <Text style={[styles.tagText, { color: '#677089' }]}>comunicado</Text>
                   </View>
                 </View>
               </Pressable>
@@ -6396,10 +6394,8 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
                     </LinearGradient>
                   )}
                   <View style={styles.comunicadoCardBody}>
-                    <View style={[styles.tag, { backgroundColor: item.lido ? '#F0F1F6' : '#FCE8EC', alignSelf: 'flex-start' }]}>
-                      <Text style={[styles.tagText, { color: item.lido ? '#7B8299' : '#E6213D' }]}>
-                        {comunicadoPublicoLabel(item.publico)}
-                      </Text>
+                    <View style={[styles.tag, { backgroundColor: '#F1F2F6', alignSelf: 'flex-start' }]}>
+                      <Text style={[styles.tagText, { color: '#677089' }]}>comunicado</Text>
                     </View>
                     <Text style={[styles.communicationTitle, { marginTop: 6 }]} numberOfLines={2}>
                       {item.titulo}
@@ -6428,10 +6424,8 @@ function CommunicationsScreen({ navigation }: ScreenProps<'Communications'>) {
                 </View>
                 <ScrollView showsVerticalScrollIndicator={false}>
                   <View style={[styles.communicationMetaRow, { marginLeft: 0 }]}>
-                    <View style={[styles.tag, { backgroundColor: viewingItem.lido ? '#F0F1F6' : '#FCE8EC' }]}>
-                      <Text style={[styles.tagText, { color: viewingItem.lido ? '#7B8299' : '#E6213D' }]}>
-                        {comunicadoPublicoLabel(viewingItem.publico)}
-                      </Text>
+                    <View style={[styles.tag, { backgroundColor: '#F1F2F6' }]}>
+                      <Text style={[styles.tagText, { color: '#677089' }]}>comunicado</Text>
                     </View>
                     <Text style={styles.communicationTime}>{viewingItem.tempoLabel}</Text>
                   </View>

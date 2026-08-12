@@ -9807,16 +9807,14 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
                     )}
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={rhStyles.announcementTitle} numberOfLines={1}>
-                      {item.titulo}
-                    </Text>
-                    <View style={[rhStyles.announcementTopRow, styles.spacingTop]}>
-                      <View style={[rhStyles.announcementBadge, { backgroundColor: '#E9EEFF' }]}>
-                        <Text style={[rhStyles.announcementBadgeText, { color: '#3457D5' }]}>
-                          {comunicadoPublicoLabelRh(item.publico)}
-                        </Text>
-                      </View>
+                    <View style={rhStyles.announcementTopRow}>
+                      <Text style={[rhStyles.announcementTitle, { marginTop: 0, flex: 1 }]} numberOfLines={1}>
+                        {item.titulo}
+                      </Text>
                       <Text style={rhStyles.announcementTime}>{formatComunicadoDateRh(item.publicar_em)}</Text>
+                    </View>
+                    <View style={[rhStyles.announcementBadge, { backgroundColor: '#F1F2F6', alignSelf: 'flex-start', marginTop: 6 }]}>
+                      <Text style={[rhStyles.announcementBadgeText, { color: '#677089' }]}>comunicado</Text>
                     </View>
                   </View>
                   <Pressable
@@ -9845,10 +9843,8 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
                     </LinearGradient>
                   )}
                   <View style={rhStyles.comunicadoCardBody}>
-                    <View style={[rhStyles.announcementBadge, { backgroundColor: '#E9EEFF', alignSelf: 'flex-start' }]}>
-                      <Text style={[rhStyles.announcementBadgeText, { color: '#3457D5' }]}>
-                        {comunicadoPublicoLabelRh(item.publico)}
-                      </Text>
+                    <View style={[rhStyles.announcementBadge, { backgroundColor: '#F1F2F6', alignSelf: 'flex-start' }]}>
+                      <Text style={[rhStyles.announcementBadgeText, { color: '#677089' }]}>comunicado</Text>
                     </View>
                     <Text style={[rhStyles.announcementTitle, styles.spacingTop]} numberOfLines={2}>
                       {item.titulo}
@@ -9871,10 +9867,8 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
         {viewingComunicado ? (
           <>
             <View style={rhStyles.announcementTopRow}>
-              <View style={[rhStyles.announcementBadge, { backgroundColor: '#E9EEFF' }]}>
-                <Text style={[rhStyles.announcementBadgeText, { color: '#3457D5' }]}>
-                  {comunicadoPublicoLabelRh(viewingComunicado.publico)}
-                </Text>
+              <View style={[rhStyles.announcementBadge, { backgroundColor: '#F1F2F6' }]}>
+                <Text style={[rhStyles.announcementBadgeText, { color: '#677089' }]}>comunicado</Text>
               </View>
               <Text style={rhStyles.announcementTime}>{formatComunicadoDateRh(viewingComunicado.publicar_em)}</Text>
             </View>
