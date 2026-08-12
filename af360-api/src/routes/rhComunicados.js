@@ -1,5 +1,12 @@
 const express = require('express');
-const { getRhComunicados, postRhComunicado, patchRhComunicado, deleteRhComunicado, postRhComunicadoLeitura } = require('../lovable');
+const {
+  getRhComunicados,
+  postRhComunicado,
+  patchRhComunicado,
+  deleteRhComunicado,
+  postRhComunicadoLeitura,
+  getRhComunicadoLeituras,
+} = require('../lovable');
 
 const router = express.Router();
 
@@ -61,6 +68,21 @@ router.delete('/:id', async (req, res) => {
   } catch (err) {
     console.error('[rh/comunicados DELETE] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// GET /api/rh/comunicados/:id/leituras -> lista { colaborador_id, lido_em }
+// de quem já visualizou (usada no painel do RH pro botão "olho" — nome/
+// cargo/empresa de cada colaborador são resolvidos no frontend, cruzando
+// com a lista de colaboradores/unidades que a tela já carrega).
+router.get('/:id/leituras', async (req, res) => {
+  try {
+    const json = await getRhComunicadoLeituras(req.params.id);
+    const row = json?.data ?? [];
+    res.json({ ok: true, count: json?.count ?? row.length, data: row });
+  } catch (err) {
+    console.error('[rh/comunicados/:id/leituras GET] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
   }
 });
 

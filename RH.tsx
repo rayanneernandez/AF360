@@ -87,7 +87,10 @@ import {
   type RhHistoricoContratacaoItem,
   fetchRhComunicados,
   createRhComunicado,
+  updateRhComunicado,
   deleteRhComunicado,
+  fetchRhComunicadoLeituras,
+  type RhComunicadoLeituraItem,
   type RhComunicadoItem,
   fetchColaboradorContracheques,
   type ColaboradorContrachequeItem,
@@ -9246,6 +9249,93 @@ function formatComunicadoDateRh(raw: string | null): string {
   return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function formatComunicadoDateTimeRh(raw: string | null): string {
+  if (!raw) return '—';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return '—';
+  const dateLabel = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const timeLabel = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return `${dateLabel} às ${timeLabel}`;
+}
+
+// Modal "Quem viu" — leituras (rh_comunicado_leituras) de um comunicado,
+// com nome/cargo/empresa resolvidos a partir das listas de colaboradores/
+// unidades que a tela já carrega (a leitura crua só tem colaborador_id).
+function ComunicadoLeiturasModal({
+  visible,
+  comunicadoId,
+  colaboradores,
+  unidades,
+  onClose,
+}: {
+  visible: boolean;
+  comunicadoId: string | null;
+  colaboradores: RhColaboradorRaw[];
+  unidades: RhUnidadeItem[];
+  onClose: () => void;
+}) {
+  const [leituras, setLeituras] = useState<RhComunicadoLeituraItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible || !comunicadoId) {
+      setLeituras([]);
+      return;
+    }
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhComunicadoLeituras(comunicadoId)
+      .then(setLeituras)
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as visualizações.');
+      })
+      .finally(() => setIsLoading(false));
+  }, [visible, comunicadoId]);
+
+  const colaboradorMap = useMemo(() => new Map(colaboradores.map((c) => [c.id, c])), [colaboradores]);
+  const unidadeMap = useMemo(() => new Map(unidades.map((u) => [u.id, u.nome])), [unidades]);
+
+  const ordenadas = useMemo(
+    () => [...leituras].sort((a, b) => (Date.parse(b.lido_em) || 0) - (Date.parse(a.lido_em) || 0)),
+    [leituras]
+  );
+
+  return (
+    <RHSmallModal visible={visible} title="Visualizações do comunicado" onClose={onClose} dismissOnBackdropPress>
+      {isLoading ? (
+        <Text style={styles.conversaEmptyText}>Carregando...</Text>
+      ) : errorMessage ? (
+        <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+      ) : ordenadas.length === 0 ? (
+        <RHEmptyTabState message="Ninguém visualizou este comunicado ainda." />
+      ) : (
+        <>
+          <Text style={[rhStyles.announcementMeta, { color: '#9AA1B5' }]}>
+            Total: {ordenadas.length} visualizaç{ordenadas.length === 1 ? 'ão' : 'ões'}
+          </Text>
+          {ordenadas.map((leitura, index) => {
+            const colaborador = colaboradorMap.get(leitura.colaborador_id);
+            const empresaNome = colaborador?.empresa_id ? unidadeMap.get(colaborador.empresa_id) : null;
+            return (
+              <View
+                key={`${leitura.colaborador_id}-${index}`}
+                style={[rhStyles.comunicadoListRow, index === 0 ? styles.spacingTop : null]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={rhStyles.historyCardTitle}>{colaborador?.nome_completo ?? 'Colaborador removido'}</Text>
+                  <Text style={rhStyles.historyCardMeta}>{colaborador?.cargo ?? '—'} · {empresaNome ?? '—'}</Text>
+                </View>
+                <Text style={rhStyles.announcementTime}>{formatComunicadoDateTimeRh(leitura.lido_em)}</Text>
+              </View>
+            );
+          })}
+        </>
+      )}
+    </RHSmallModal>
+  );
+}
+
 function ColaboradorSearchPickerModal({
   visible,
   onClose,
@@ -9354,10 +9444,19 @@ function ColaboradorSearchPickerModal({
 
 function AnnouncementFormModal({
   visible,
+  editingItem,
+  colaboradoresReais,
   onClose,
   onCreated,
 }: {
   visible: boolean;
+  // Presente = editando um comunicado existente (PATCH); ausente/null =
+  // criando um novo (POST).
+  editingItem?: RhComunicadoItem | null;
+  // Lista já carregada pela tela (RHComunicadosScreen) — usada só pra
+  // resolver o colaborador selecionado ao editar um comunicado com
+  // publico='colaborador', sem precisar buscar de novo.
+  colaboradoresReais: RhColaboradorRaw[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -9381,7 +9480,47 @@ function AnnouncementFormModal({
   const [isExpiraDataPickerOpen, setIsExpiraDataPickerOpen] = useState(false);
 
   useEffect(() => {
-    if (visible) {
+    if (!visible) return;
+
+    if (editingItem) {
+      setForm({
+        titulo: editingItem.titulo ?? '',
+        conteudo: editingItem.conteudo ?? '',
+        anexoUrl: editingItem.anexo_url ?? '',
+      });
+      const publico = editingItem.publico;
+      setAudiencia(
+        publico === 'grupo'
+          ? 'Grupo específico'
+          : publico === 'colaborador'
+          ? 'Colaborador específico'
+          : rhComunicadoAudienciaOptions[0]
+      );
+      setSelectedColaborador(
+        (editingItem.colaborador_id && colaboradoresReais.find((c) => c.id === editingItem.colaborador_id)) || null
+      );
+      // Só trata como "programado" se a data de publicação ainda está no
+      // futuro — se já passou, o comunicado já foi ao ar, então editar
+      // volta a mostrar "Agora" (não faz sentido reprogramar o passado).
+      const publicarMs = editingItem.publicar_em ? Date.parse(editingItem.publicar_em) : NaN;
+      if (!Number.isNaN(publicarMs) && publicarMs > Date.now()) {
+        setEnvioTipo(rhComunicadoEnvioOptions[1]);
+        setPublicarData(formatComunicadoDateRh(editingItem.publicar_em));
+      } else {
+        setEnvioTipo(rhComunicadoEnvioOptions[0]);
+        setPublicarData('');
+      }
+      setExpiraData(editingItem.expira_em ? formatComunicadoDateRh(editingItem.expira_em) : '');
+      setAnexoPreview(null);
+      fetchAdminGrupos()
+        .then((result) => {
+          setGrupos(result.grupos);
+          if (editingItem.grupo_id) {
+            setSelectedGrupo(result.grupos.find((g) => g.id === editingItem.grupo_id) ?? null);
+          }
+        })
+        .catch(() => {});
+    } else {
       setForm(emptyAnnouncementForm);
       setAudiencia(rhComunicadoAudienciaOptions[0]);
       setSelectedGrupo(null);
@@ -9394,7 +9533,7 @@ function AnnouncementFormModal({
         .then((result) => setGrupos(result.grupos))
         .catch(() => {});
     }
-  }, [visible]);
+  }, [visible, editingItem, colaboradoresReais]);
 
   const handleClose = () => {
     setForm(emptyAnnouncementForm);
@@ -9458,7 +9597,7 @@ function AnnouncementFormModal({
       return;
     }
 
-    const body: Parameters<typeof createRhComunicado>[0] = {
+    const body: Record<string, unknown> = {
       titulo: form.titulo.trim(),
       conteudo: form.conteudo.trim(),
       publico: 'todos',
@@ -9466,16 +9605,28 @@ function AnnouncementFormModal({
     };
     if (envioTipo === 'Programar para depois' && publicarData) {
       body.publicar_em = brDateLabelToIso(publicarData) ?? undefined;
+    } else if (editingItem) {
+      // Editando e voltou pra "Agora" — limpa explicitamente, senão o PATCH
+      // (que só atualiza as chaves enviadas) manteria a data antiga.
+      body.publicar_em = null;
     }
     if (expiraData) {
       body.expira_em = brDateLabelToIso(expiraData) ?? undefined;
+    } else if (editingItem) {
+      body.expira_em = null;
     }
     if (audiencia === 'Grupo específico' && selectedGrupo) {
       body.publico = 'grupo';
       body.grupo_id = selectedGrupo.id;
+      if (editingItem) body.colaborador_id = null;
     } else if (audiencia === 'Colaborador específico' && selectedColaborador) {
       body.publico = 'colaborador';
       body.colaborador_id = selectedColaborador.id;
+      if (editingItem) body.grupo_id = null;
+    } else if (editingItem) {
+      // Voltou pra "Todos" editando — limpa o alvo anterior.
+      body.grupo_id = null;
+      body.colaborador_id = null;
     }
     // 'Todos' fica sem empresa_id/grupo_id/colaborador_id de propósito — é
     // pra valer pra qualquer um, igual o comunicado já existente no banco
@@ -9484,13 +9635,16 @@ function AnnouncementFormModal({
     // empresa — ver loadComunicados).
 
     setIsSaving(true);
-    createRhComunicado(body, identity?.profileId)
+    const request = editingItem
+      ? updateRhComunicado(editingItem.id, body, identity?.profileId)
+      : createRhComunicado(body as Parameters<typeof createRhComunicado>[0], identity?.profileId);
+    request
       .then(() => {
         onCreated();
         handleClose();
       })
       .catch((err) => {
-        Alert.alert('Não foi possível enviar', err instanceof Error ? err.message : 'Tente novamente.');
+        Alert.alert('Não foi possível salvar', err instanceof Error ? err.message : 'Tente novamente.');
       })
       .finally(() => setIsSaving(false));
   };
@@ -9501,7 +9655,7 @@ function AnnouncementFormModal({
         <Pressable style={styles.requestModalBackdrop} onPress={handleClose}>
           <Pressable style={styles.requestModalCard} onPress={() => {}}>
             <View style={styles.requestModalHeader}>
-              <Text style={styles.requestModalTitle}>Novo comunicado</Text>
+              <Text style={styles.requestModalTitle}>{editingItem ? 'Editar comunicado' : 'Novo comunicado'}</Text>
               <Pressable onPress={handleClose} hitSlop={8}>
                 <Feather name="x" size={20} color="#677089" />
               </Pressable>
@@ -9592,16 +9746,32 @@ function AnnouncementFormModal({
                     style={{ width: '100%', height: 140, borderRadius: 8 }}
                     resizeMode="cover"
                   />
+                ) : !anexoPreview && form.anexoUrl && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(form.anexoUrl) ? (
+                  // Anexo já existente (editando um comunicado) — mostra o
+                  // preview remoto até a pessoa escolher um arquivo novo.
+                  <Image
+                    source={{ uri: form.anexoUrl }}
+                    style={{ width: '100%', height: 140, borderRadius: 8 }}
+                    resizeMode="cover"
+                  />
                 ) : (
                   <>
-                    <Feather name={anexoPreview ? 'file-text' : 'upload-cloud'} size={22} color="#7A8299" />
+                    <Feather
+                      name={anexoPreview ? 'file-text' : form.anexoUrl ? 'file-text' : 'upload-cloud'}
+                      size={22}
+                      color="#7A8299"
+                    />
                     <Text style={rhStyles.uploadDropZoneText}>
-                      {anexoPreview ? anexoPreview.name : 'Toque pra anexar uma imagem ou PDF (até 8MB)'}
+                      {anexoPreview
+                        ? anexoPreview.name
+                        : form.anexoUrl
+                        ? 'Anexo atual — toque pra trocar'
+                        : 'Toque pra anexar uma imagem ou PDF (até 8MB)'}
                     </Text>
                   </>
                 )}
               </Pressable>
-              {!anexoPreview ? (
+              {!anexoPreview && !form.anexoUrl ? (
                 <>
                   <Text style={[styles.requestFieldLabel, styles.spacingTop]}>ou cole um link já hospedado</Text>
                   <TextInput
@@ -9621,7 +9791,9 @@ function AnnouncementFormModal({
                 onPress={handleSubmit}
                 disabled={isSaving}
               >
-                <Text style={styles.primaryButtonText}>{isSaving ? 'Enviando...' : 'Enviar comunicado'}</Text>
+                <Text style={styles.primaryButtonText}>
+                  {isSaving ? 'Salvando...' : editingItem ? 'Salvar alterações' : 'Enviar comunicado'}
+                </Text>
               </Pressable>
             </ScrollView>
 
@@ -9688,11 +9860,15 @@ function AnnouncementFormModal({
 export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>) {
   const { identity } = useContext(AuthIdentityContext);
   const [comunicados, setComunicados] = useState<RhComunicadoItem[]>([]);
+  const [colaboradoresReais, setColaboradoresReais] = useState<RhColaboradorRaw[]>([]);
+  const [unidadesReais, setUnidadesReais] = useState<RhUnidadeItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingComunicado, setEditingComunicado] = useState<RhComunicadoItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [viewingComunicado, setViewingComunicado] = useState<RhComunicadoItem | null>(null);
+  const [leiturasComunicadoId, setLeiturasComunicadoId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'lista' | 'cards'>('lista');
 
   const loadComunicados = useCallback(() => {
@@ -9712,7 +9888,31 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
 
   useEffect(() => {
     loadComunicados();
+    // Colaboradores/unidades: usados pra resolver nome/cargo/empresa no
+    // modal "quem viu" e pra pré-preencher o colaborador ao editar um
+    // comunicado direcionado a alguém específico.
+    fetchRhColaboradores({})
+      .then(setColaboradoresReais)
+      .catch(() => {});
+    fetchRhUnidades()
+      .then(setUnidadesReais)
+      .catch(() => {});
   }, [loadComunicados]);
+
+  const handleOpenCreate = () => {
+    setEditingComunicado(null);
+    setIsFormOpen(true);
+  };
+
+  const handleOpenEdit = (item: RhComunicadoItem) => {
+    setEditingComunicado(item);
+    setIsFormOpen(true);
+  };
+
+  const handleCloseForm = () => {
+    setIsFormOpen(false);
+    setEditingComunicado(null);
+  };
 
   const handleDelete = (item: RhComunicadoItem) => {
     Alert.alert(
@@ -9777,7 +9977,7 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
           </View>
         </View>
 
-        <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={() => setIsFormOpen(true)}>
+        <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={handleOpenCreate}>
           <Feather name="plus" size={16} color="#FFFFFF" />
           <Text style={styles.primaryButtonText}>Novo comunicado</Text>
         </Pressable>
@@ -9816,14 +10016,22 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
                       <Text style={[rhStyles.announcementBadgeText, { color: '#677089' }]}>comunicado</Text>
                     </View>
                   </View>
-                  <Pressable
-                    onPress={() => handleDelete(item)}
-                    disabled={deletingId === item.id}
-                    hitSlop={8}
-                    style={{ opacity: deletingId === item.id ? 0.4 : 1 }}
-                  >
-                    <Feather name="trash-2" size={16} color="#E6213D" />
-                  </Pressable>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                    <Pressable onPress={() => setLeiturasComunicadoId(item.id)} hitSlop={8}>
+                      <Feather name="eye" size={16} color="#677089" />
+                    </Pressable>
+                    <Pressable onPress={() => handleOpenEdit(item)} hitSlop={8}>
+                      <Feather name="edit-2" size={16} color="#677089" />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleDelete(item)}
+                      disabled={deletingId === item.id}
+                      hitSlop={8}
+                      style={{ opacity: deletingId === item.id ? 0.4 : 1 }}
+                    >
+                      <Feather name="trash-2" size={16} color="#E6213D" />
+                    </Pressable>
+                  </View>
                 </Pressable>
               );
             })}
@@ -9849,6 +10057,32 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
                       {item.titulo}
                     </Text>
                     <Text style={rhStyles.announcementTime}>{formatComunicadoDateRh(item.publicar_em)}</Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 16,
+                        marginTop: 10,
+                        borderTopWidth: 1,
+                        borderTopColor: '#EDEFF5',
+                        paddingTop: 8,
+                      }}
+                    >
+                      <Pressable onPress={() => setLeiturasComunicadoId(item.id)} hitSlop={8}>
+                        <Feather name="eye" size={15} color="#677089" />
+                      </Pressable>
+                      <Pressable onPress={() => handleOpenEdit(item)} hitSlop={8}>
+                        <Feather name="edit-2" size={15} color="#677089" />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => handleDelete(item)}
+                        disabled={deletingId === item.id}
+                        hitSlop={8}
+                        style={{ opacity: deletingId === item.id ? 0.4 : 1 }}
+                      >
+                        <Feather name="trash-2" size={15} color="#E6213D" />
+                      </Pressable>
+                    </View>
                   </View>
                 </Pressable>
               );
@@ -9891,6 +10125,49 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
               </Pressable>
             ) : null}
 
+            <View style={[styles.spacingTop, { flexDirection: 'row', gap: 8 }]}>
+              <Pressable
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: '#E2E6F0',
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                }}
+                onPress={() => {
+                  const target = viewingComunicado;
+                  setViewingComunicado(null);
+                  setLeiturasComunicadoId(target?.id ?? null);
+                }}
+              >
+                <Feather name="eye" size={16} color="#677089" />
+                <Text style={{ color: '#677089', fontWeight: '600', marginLeft: 6 }}>Quem viu</Text>
+              </Pressable>
+              <Pressable
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: '#E2E6F0',
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                }}
+                onPress={() => {
+                  const target = viewingComunicado;
+                  setViewingComunicado(null);
+                  if (target) handleOpenEdit(target);
+                }}
+              >
+                <Feather name="edit-2" size={16} color="#677089" />
+                <Text style={{ color: '#677089', fontWeight: '600', marginLeft: 6 }}>Editar</Text>
+              </Pressable>
+            </View>
+
             <Pressable
               style={[
                 styles.spacingTop,
@@ -9918,7 +10195,21 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
         ) : null}
       </RHSmallModal>
 
-      <AnnouncementFormModal visible={isFormOpen} onClose={() => setIsFormOpen(false)} onCreated={loadComunicados} />
+      <AnnouncementFormModal
+        visible={isFormOpen}
+        editingItem={editingComunicado}
+        colaboradoresReais={colaboradoresReais}
+        onClose={handleCloseForm}
+        onCreated={loadComunicados}
+      />
+
+      <ComunicadoLeiturasModal
+        visible={!!leiturasComunicadoId}
+        comunicadoId={leiturasComunicadoId}
+        colaboradores={colaboradoresReais}
+        unidades={unidadesReais}
+        onClose={() => setLeiturasComunicadoId(null)}
+      />
     </SafeAreaView>
   );
 }

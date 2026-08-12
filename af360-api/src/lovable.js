@@ -968,6 +968,20 @@ function postRhComunicadoLeitura(comunicadoId, colaboradorId, actorId) {
   );
 }
 
+// Lista de quem já visualizou um comunicado ("olho" no painel do RH) — não
+// existe um GET dedicado por "recurso=leituras" confirmado, então lê direto
+// da tabela rh_comunicado_leituras pelo endpoint genérico /table (mesmo
+// mecanismo já usado em rhDashboard.js pra filtrar leituras por
+// colaborador_id — aqui só inverte o filtro pra comunicado_id). O nome/
+// cargo/empresa de quem leu é resolvido no frontend, juntando com a lista
+// de colaboradores/unidades que a tela já busca.
+function getRhComunicadoLeituras(comunicadoId) {
+  return fetchAllRows('rh_comunicado_leituras', {
+    select: 'colaborador_id,lido_em',
+    filters: { comunicado_id: comunicadoId },
+  });
+}
+
 // --- Treinamentos: conteúdo real (rh_treinamentos, rh_treinamento_aulas,
 // rh_treinamento_questoes, rh_treinamento_inscricoes, rh_treinamento_
 // respostas; GET confirmado pela Lovable em 03/08/2026 via "recurso"). Sem
@@ -1149,6 +1163,7 @@ module.exports = {
   patchRhComunicado,
   deleteRhComunicado,
   postRhComunicadoLeitura,
+  getRhComunicadoLeituras,
   getRhTreinamentos,
   postRhTreinamentoResposta,
   postRhTreinamentoProva,

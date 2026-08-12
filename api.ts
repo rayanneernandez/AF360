@@ -129,6 +129,7 @@ export async function updateConversa(
 
 export type RhColaboradorRaw = {
   id: string;
+  empresa_id: string | null;
   nome_completo: string | null;
   cargo: string | null;
   setor: string | null;
@@ -1729,6 +1730,16 @@ export async function updateRhComunicado(
 
 export async function deleteRhComunicado(id: string, actorId?: string | null): Promise<void> {
   await api.delete(withActorId(`/api/rh/comunicados/${encodeURIComponent(id)}`, actorId));
+}
+
+// Lista de quem já visualizou o comunicado ("olho" no painel do RH) — nome/
+// cargo/empresa de cada leitura são resolvidos no componente, cruzando com
+// fetchRhColaboradores()/fetchRhUnidades() que a tela já carrega.
+export type RhComunicadoLeituraItem = { colaborador_id: string; lido_em: string };
+
+export async function fetchRhComunicadoLeituras(comunicadoId: string): Promise<RhComunicadoLeituraItem[]> {
+  const json = await api.get(`/api/rh/comunicados/${encodeURIComponent(comunicadoId)}/leituras`);
+  return (json.data as RhComunicadoLeituraItem[]) ?? [];
 }
 
 export async function marcarComunicadoLido(
