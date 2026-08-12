@@ -1742,6 +1742,36 @@ export async function fetchRhComunicadoLeituras(comunicadoId: string): Promise<R
   return (json.data as RhComunicadoLeituraItem[]) ?? [];
 }
 
+// --- Importar PDF (rh_pdf_imports) — só leitura por enquanto. Upload real
+// (PDF + IA), aplicar admissão/desligamento, excluir e reprocessar ainda
+// não têm endpoint de escrita confirmado pela Lovable. ---
+
+export type RhPdfImportItem = {
+  id: string;
+  arquivo_nome: string | null;
+  arquivo_path: string | null;
+  arquivo_mime: string | null;
+  tipo: 'admissao' | 'desligamento' | 'experiencia' | 'outro' | null;
+  status: 'pendente' | 'processando' | 'pronto' | 'aplicado' | 'erro';
+  confianca: number | null;
+  cpf_extraido: string | null;
+  nome_extraido: string | null;
+  colaborador_id: string | null;
+  erro: string | null;
+  aplicado_em: string | null;
+  aplicado_por: string | null;
+  created_at?: string;
+  [key: string]: unknown;
+};
+
+export async function fetchRhPdfImports(params: { status?: string; tipo?: string } = {}): Promise<RhPdfImportItem[]> {
+  const search = new URLSearchParams();
+  if (params.status) search.set('status', params.status);
+  if (params.tipo) search.set('tipo', params.tipo);
+  const json = await api.get(`/api/rh/importacoes-pdf?${search.toString()}`);
+  return (json.data as RhPdfImportItem[]) ?? [];
+}
+
 export async function marcarComunicadoLido(
   comunicadoId: string,
   colaboradorId: string,

@@ -982,6 +982,22 @@ function getRhComunicadoLeituras(comunicadoId) {
   });
 }
 
+// --- Importar PDF (rh_pdf_imports) — tabela liberada no allowlist da
+// Lovable desde 21/07/2026 (ver LOVABLE_API.md §6.6), então a LEITURA já
+// funciona pelo endpoint genérico /table normalmente. O que NÃO existe
+// ainda é a parte de escrita real (upload do PDF + disparo do
+// processamento por IA, aplicar admissão/desligamento, excluir,
+// reprocessar) — isso segue gated no frontend até a Lovable confirmar
+// esses endpoints (mensagem já rascunhada pra mandar).
+function getRhPdfImports({ status, tipo } = {}) {
+  return fetchAllRows('rh_pdf_imports', {
+    select:
+      'id,arquivo_nome,arquivo_path,arquivo_mime,tipo,status,confianca,cpf_extraido,nome_extraido,colaborador_id,erro,aplicado_em,aplicado_por,created_at',
+    order: 'created_at:desc',
+    filters: { tipo, status },
+  });
+}
+
 // --- Treinamentos: conteúdo real (rh_treinamentos, rh_treinamento_aulas,
 // rh_treinamento_questoes, rh_treinamento_inscricoes, rh_treinamento_
 // respostas; GET confirmado pela Lovable em 03/08/2026 via "recurso"). Sem
@@ -1164,6 +1180,7 @@ module.exports = {
   deleteRhComunicado,
   postRhComunicadoLeitura,
   getRhComunicadoLeituras,
+  getRhPdfImports,
   getRhTreinamentos,
   postRhTreinamentoResposta,
   postRhTreinamentoProva,

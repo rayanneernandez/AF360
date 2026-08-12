@@ -124,6 +124,8 @@ import {
   fetchAdminGrupos,
   type AdminGrupoItem,
   uploadComunicadoAnexo,
+  fetchRhPdfImports,
+  type RhPdfImportItem,
 } from './api';
 
 // ---------- Types ----------
@@ -209,16 +211,10 @@ type AnnouncementItem = {
 // 3 status fabricado antes.
 type TicketStatus = 'aberta' | 'em_analise' | 'respondida' | 'encerrada' | 'cancelada';
 
-type ImportRecordType = 'admissao' | 'desligamento';
-type ImportRecordStatus = 'aplicado' | 'revisar' | 'erro';
-
-type ImportRecord = {
-  id: string;
-  type: ImportRecordType;
-  employeeName: string;
-  timestampLabel: string;
-  status: ImportRecordStatus;
-};
+// Enums reais de rh_pdf_imports (LOVABLE_API.md §6.6, tabela liberada em
+// 21/07/2026) — RHImportarPdfScreen usa isso direto.
+type RhPdfImportTipo = 'admissao' | 'desligamento' | 'experiencia' | 'outro';
+type RhPdfImportStatus = 'pendente' | 'processando' | 'pronto' | 'aplicado' | 'erro';
 
 type ImportedCsvFile = {
   name: string;
@@ -714,26 +710,20 @@ function rhSolicitacaoAssuntoLabelOf(assunto: string | null): string {
   return rhSolicitacaoAssuntoLabel[assunto] ?? assunto;
 }
 
-const rhImportStats = { naFila: 0, pRevisar: 1, aplicados: 44, comErro: 0 };
-
-const rhImportStatusMeta: Record<ImportRecordStatus, { label: string; color: string; tint: string }> = {
+const rhImportStatusMeta: Record<RhPdfImportStatus, { label: string; color: string; tint: string }> = {
+  pendente: { label: 'Na fila', color: '#6B7280', tint: '#EEF0F3' },
+  processando: { label: 'Processando', color: '#2F6FE4', tint: '#E7EFFD' },
+  pronto: { label: 'A revisar', color: '#B07A1E', tint: '#FCEFDA' },
   aplicado: { label: 'Aplicado', color: '#18955A', tint: '#E3F5EA' },
-  revisar: { label: 'A revisar', color: '#B07A1E', tint: '#FCEFDA' },
   erro: { label: 'Erro', color: '#E6213D', tint: '#FCE8EC' },
 };
 
-const rhImportTypeMeta: Record<ImportRecordType, { label: string; color: string; tint: string }> = {
+const rhImportTypeMeta: Record<RhPdfImportTipo, { label: string; color: string; tint: string }> = {
   admissao: { label: 'Admissão', color: '#18955A', tint: '#E3F5EA' },
   desligamento: { label: 'Desligamento', color: '#E6213D', tint: '#FCE8EC' },
+  experiencia: { label: 'Experiência', color: '#B07A1E', tint: '#FCEFDA' },
+  outro: { label: 'Outro', color: '#6B7280', tint: '#EEF0F3' },
 };
-
-const rhImportRecords: ImportRecord[] = [
-  { id: 'imp-1', type: 'desligamento', employeeName: 'Gabriela Cristina da Silva', timestampLabel: '26/06/2026 15:26', status: 'aplicado' },
-  { id: 'imp-2', type: 'desligamento', employeeName: 'João Henrique M. de Souza', timestampLabel: '26/06/2026 15:26', status: 'aplicado' },
-  { id: 'imp-3', type: 'desligamento', employeeName: 'Marcelo Arnaldo de Sá', timestampLabel: '26/06/2026 15:23', status: 'aplicado' },
-  { id: 'imp-4', type: 'desligamento', employeeName: 'Renan Ruel L. Figueiredo', timestampLabel: '26/06/2026 15:26', status: 'aplicado' },
-  { id: 'imp-5', type: 'desligamento', employeeName: 'Alfredo Ramos Vasques', timestampLabel: '25/06/2026 09:14', status: 'aplicado' },
-];
 
 const rhNotificationRoutines: NotificationRoutineItem[] = [
   {
@@ -10401,12 +10391,60 @@ export function RHSolicitacoesScreen({ navigation }: ScreenProps<'RHSolicitacoes
 // ---------- Importar PDF ----------
 
 export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>) {
-  const [records, setRecords] = useState<ImportRecord[]>(rhImportRecords);
+  const [imports, setImports] = useState<RhPdfImportItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+
+  const loadData = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhPdfImports({})
+      .then((rows) => setImports(rows))
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as importações.');
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const stats = useMemo(() => {
+    let naFila = 0;
+    let pRevisar = 0;
+    let aplicados = 0;
+    let comErro = 0;
+    imports.forEach((item) => {
+      if (item.status === 'pendente' || item.status === 'processando') naFila += 1;
+      else if (item.status === 'pronto') pRevisar += 1;
+      else if (item.status === 'aplicado') aplicados += 1;
+      else if (item.status === 'erro') comErro += 1;
+    });
+    return { naFila, pRevisar, aplicados, comErro };
+  }, [imports]);
+
+  const filteredImports = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return imports;
+    return imports.filter((item) => {
+      const haystack = `${item.arquivo_nome ?? ''} ${item.nome_extraido ?? ''} ${item.cpf_extraido ?? ''}`.toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [imports, query]);
 
   const handleSelectPdfs = () => {
     Alert.alert(
       'Selecionar PDFs',
-      'A importação por IA será conectada em breve. Nenhum arquivo foi processado agora.'
+      'O upload e o processamento por IA ainda não estão disponíveis no servidor. Estamos aguardando a Lovable liberar esse endpoint.'
+    );
+  };
+
+  const handleAction = (action: string) => {
+    Alert.alert(
+      'Ainda não disponível',
+      `A ação "${action}" depende de um endpoint de escrita que a Lovable ainda não confirmou.`
     );
   };
 
@@ -10427,25 +10465,25 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
         <View style={styles.grid}>
           <View style={styles.gridItem}>
             <View style={rhStyles.kpiCard}>
-              <Text style={rhStyles.sectionBigValue}>{rhImportStats.naFila}</Text>
+              <Text style={rhStyles.sectionBigValue}>{stats.naFila}</Text>
               <Text style={rhStyles.kpiMeta}>Na fila</Text>
             </View>
           </View>
           <View style={styles.gridItem}>
             <View style={rhStyles.kpiCard}>
-              <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGold]}>{rhImportStats.pRevisar}</Text>
+              <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGold]}>{stats.pRevisar}</Text>
               <Text style={rhStyles.kpiMeta}>P/ revisar</Text>
             </View>
           </View>
           <View style={styles.gridItem}>
             <View style={rhStyles.kpiCard}>
-              <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGreen]}>{rhImportStats.aplicados}</Text>
+              <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGreen]}>{stats.aplicados}</Text>
               <Text style={rhStyles.kpiMeta}>Aplicados</Text>
             </View>
           </View>
           <View style={styles.gridItem}>
             <View style={rhStyles.kpiCard}>
-              <Text style={[rhStyles.sectionBigValue, { color: '#E6213D' }]}>{rhImportStats.comErro}</Text>
+              <Text style={[rhStyles.sectionBigValue, { color: '#E6213D' }]}>{stats.comErro}</Text>
               <Text style={rhStyles.kpiMeta}>Com erro</Text>
             </View>
           </View>
@@ -10465,27 +10503,79 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
           </Pressable>
         </View>
 
-        <Text style={rhStyles.historyLabel}>HISTÓRICO ({records.length})</Text>
-        {records.map((record) => {
-          const typeMeta = rhImportTypeMeta[record.type];
-          const statusMeta = rhImportStatusMeta[record.status];
-          return (
-            <View key={record.id} style={rhStyles.importRecordCard}>
-              <View style={[rhStyles.importTypePill, { backgroundColor: typeMeta.tint }]}>
-                <Text style={[rhStyles.importTypePillText, { color: typeMeta.color }]}>{typeMeta.label}</Text>
+        <View style={rhStyles.searchRow}>
+          <Feather name="search" size={16} color="#9AA1B5" />
+          <TextInput
+            style={rhStyles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Buscar por arquivo, nome ou CPF..."
+            placeholderTextColor="#A7AEC2"
+          />
+        </View>
+
+        <Text style={rhStyles.historyLabel}>HISTÓRICO ({filteredImports.length})</Text>
+
+        {isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando importações...</Text>
+        ) : errorMessage ? (
+          <RHEmptyTabState message={errorMessage} />
+        ) : filteredImports.length === 0 ? (
+          <RHEmptyTabState
+            message={
+              imports.length === 0
+                ? 'Nenhuma importação registrada ainda.'
+                : 'Nenhum resultado para essa busca.'
+            }
+          />
+        ) : (
+          filteredImports.map((item) => {
+            const typeMeta = item.tipo ? rhImportTypeMeta[item.tipo] : rhImportTypeMeta.outro;
+            const statusMeta = rhImportStatusMeta[item.status];
+            const displayName = item.nome_extraido || item.arquivo_nome || 'Arquivo sem nome';
+            const canApply = item.status === 'pronto';
+            const canReprocess = item.status === 'erro';
+            return (
+              <View key={item.id} style={rhStyles.importRecordCard}>
+                <View style={[rhStyles.importTypePill, { backgroundColor: typeMeta.tint }]}>
+                  <Text style={[rhStyles.importTypePillText, { color: typeMeta.color }]}>{typeMeta.label}</Text>
+                </View>
+                <View style={rhStyles.importRecordInfo}>
+                  <Text style={rhStyles.importRecordName} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                  <Text style={rhStyles.importRecordTime}>
+                    {formatComunicadoDateTimeRh(item.created_at ?? null)}
+                    {item.confianca != null ? ` · confiança ${Math.round(item.confianca * 100)}%` : ''}
+                  </Text>
+                  {item.erro ? (
+                    <Text style={[rhStyles.importRecordTime, { color: '#E6213D' }]} numberOfLines={2}>
+                      {item.erro}
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={[rhStyles.importTypePill, { backgroundColor: statusMeta.tint }]}>
+                    <Text style={[rhStyles.importTypePillText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
+                  </View>
+                  {canApply ? (
+                    <Pressable hitSlop={8} onPress={() => handleAction(`aplicar ${item.tipo ?? ''}`.trim())}>
+                      <Feather name="check-circle" size={18} color="#18955A" />
+                    </Pressable>
+                  ) : null}
+                  {canReprocess ? (
+                    <Pressable hitSlop={8} onPress={() => handleAction('reprocessar')}>
+                      <Feather name="refresh-cw" size={18} color="#2F6FE4" />
+                    </Pressable>
+                  ) : null}
+                  <Pressable hitSlop={8} onPress={() => handleAction('excluir')}>
+                    <Feather name="trash-2" size={18} color="#E6213D" />
+                  </Pressable>
+                </View>
               </View>
-              <View style={rhStyles.importRecordInfo}>
-                <Text style={rhStyles.importRecordName} numberOfLines={1}>
-                  {record.employeeName}
-                </Text>
-                <Text style={rhStyles.importRecordTime}>{record.timestampLabel}</Text>
-              </View>
-              <View style={[rhStyles.importTypePill, { backgroundColor: statusMeta.tint }]}>
-                <Text style={[rhStyles.importTypePillText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
-              </View>
-            </View>
-          );
-        })}
+            );
+          })
+        )}
       </ScrollView>
     </SafeAreaView>
   );
