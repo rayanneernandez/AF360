@@ -10615,52 +10615,44 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <RHPageHeader icon="file-text" title="Importar PDF" subtitle="Admissões e desligamentos via IA" />
 
-        <View style={styles.grid}>
-          <View style={styles.gridItem}>
-            <View style={rhStyles.kpiCard}>
-              <Text style={rhStyles.sectionBigValue}>{stats.naFila}</Text>
-              <Text style={rhStyles.kpiMeta}>Na fila</Text>
-            </View>
+        <View style={rhStyles.importStatsRow}>
+          <View style={rhStyles.importStatCard}>
+            <Text style={rhStyles.importStatValue}>{stats.naFila}</Text>
+            <Text style={rhStyles.importStatLabel}>Na fila</Text>
           </View>
-          <View style={styles.gridItem}>
-            <View style={rhStyles.kpiCard}>
-              <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGold]}>{stats.pRevisar}</Text>
-              <Text style={rhStyles.kpiMeta}>P/ revisar</Text>
-            </View>
+          <View style={rhStyles.importStatCard}>
+            <Text style={[rhStyles.importStatValue, rhStyles.statGridValueGold]}>{stats.pRevisar}</Text>
+            <Text style={rhStyles.importStatLabel}>P/ revisar</Text>
           </View>
-          <View style={styles.gridItem}>
-            <View style={rhStyles.kpiCard}>
-              <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGreen]}>{stats.aplicados}</Text>
-              <Text style={rhStyles.kpiMeta}>Aplicados</Text>
-            </View>
+          <View style={rhStyles.importStatCard}>
+            <Text style={[rhStyles.importStatValue, rhStyles.statGridValueGreen]}>{stats.aplicados}</Text>
+            <Text style={rhStyles.importStatLabel}>Aplicados</Text>
           </View>
-          <View style={styles.gridItem}>
-            <View style={rhStyles.kpiCard}>
-              <Text style={[rhStyles.sectionBigValue, { color: '#E6213D' }]}>{stats.comErro}</Text>
-              <Text style={rhStyles.kpiMeta}>Com erro</Text>
-            </View>
+          <View style={rhStyles.importStatCard}>
+            <Text style={[rhStyles.importStatValue, { color: '#E6213D' }]}>{stats.comErro}</Text>
+            <Text style={rhStyles.importStatLabel}>Com erro</Text>
           </View>
         </View>
 
         <View style={rhStyles.importActionCard}>
           <View style={rhStyles.importActionIconShell}>
-            <Feather name="star" size={22} color="#FFFFFF" />
+            <Feather name="star" size={20} color="#FFFFFF" />
           </View>
           <Text style={rhStyles.importActionTitle}>Importar lote de PDFs</Text>
           <Text style={rhStyles.importActionSubtitle}>
             A IA processa em fila (3 por vez) em segundo plano.
           </Text>
           <Pressable
-            style={[rhStyles.primaryButtonGreen, rhStyles.importActionButton, isUploading && { opacity: 0.6 }]}
+            style={[rhStyles.importActionButtonSmall, isUploading && { opacity: 0.6 }]}
             onPress={handleSelectPdfs}
             disabled={isUploading}
           >
             {isUploading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
-              <Feather name="upload" size={16} color="#FFFFFF" />
+              <Feather name="upload" size={14} color="#FFFFFF" />
             )}
-            <Text style={styles.primaryButtonText}>{isUploading ? 'Enviando...' : 'Selecionar PDFs'}</Text>
+            <Text style={rhStyles.importActionButtonText}>{isUploading ? 'Enviando...' : 'Selecionar PDFs'}</Text>
           </Pressable>
         </View>
 
@@ -10775,45 +10767,45 @@ export function RHImportarPdfScreen({ navigation }: ScreenProps<'RHImportarPdf'>
             const canReprocess = item.status === 'erro';
             return (
               <View key={item.id} style={rhStyles.importRecordCard}>
-                <View style={[rhStyles.importTypePill, { backgroundColor: typeMeta.tint }]}>
-                  <Text style={[rhStyles.importTypePillText, { color: typeMeta.color }]}>{typeMeta.label}</Text>
-                </View>
-                <View style={rhStyles.importRecordInfo}>
+                <View style={rhStyles.importRecordTopRow}>
                   <Text style={rhStyles.importRecordName} numberOfLines={1}>
                     {displayName}
                   </Text>
+                  {busyId === item.id ? (
+                    <ActivityIndicator size="small" color="#677089" />
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <Pressable hitSlop={8} onPress={() => handleVerDocumento(item)}>
+                        <Feather name="eye" size={16} color="#677089" />
+                      </Pressable>
+                      {canReprocess ? (
+                        <Pressable hitSlop={8} onPress={() => handleReprocessar(item)}>
+                          <Feather name="refresh-cw" size={16} color="#2F6FE4" />
+                        </Pressable>
+                      ) : null}
+                      <Pressable hitSlop={8} onPress={() => handleExcluir(item)}>
+                        <Feather name="trash-2" size={16} color="#E6213D" />
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+                <View style={rhStyles.importRecordBottomRow}>
+                  <View style={[rhStyles.importTypePillSmall, { backgroundColor: typeMeta.tint }]}>
+                    <Text style={[rhStyles.importTypePillText, { color: typeMeta.color }]}>{typeMeta.label}</Text>
+                  </View>
+                  <View style={[rhStyles.importTypePillSmall, { backgroundColor: statusMeta.tint }]}>
+                    <Text style={[rhStyles.importTypePillText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
+                  </View>
                   <Text style={rhStyles.importRecordTime}>
                     {formatComunicadoDateTimeRh(item.created_at ?? null)}
                     {item.confianca != null ? ` · confiança ${Math.round(item.confianca * 100)}%` : ''}
                   </Text>
-                  {item.erro ? (
-                    <Text style={[rhStyles.importRecordTime, { color: '#E6213D' }]} numberOfLines={2}>
-                      {item.erro}
-                    </Text>
-                  ) : null}
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View style={[rhStyles.importTypePill, { backgroundColor: statusMeta.tint }]}>
-                    <Text style={[rhStyles.importTypePillText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
-                  </View>
-                  {busyId === item.id ? (
-                    <ActivityIndicator size="small" color="#677089" />
-                  ) : (
-                    <>
-                      <Pressable hitSlop={8} onPress={() => handleVerDocumento(item)}>
-                        <Feather name="eye" size={18} color="#677089" />
-                      </Pressable>
-                      {canReprocess ? (
-                        <Pressable hitSlop={8} onPress={() => handleReprocessar(item)}>
-                          <Feather name="refresh-cw" size={18} color="#2F6FE4" />
-                        </Pressable>
-                      ) : null}
-                      <Pressable hitSlop={8} onPress={() => handleExcluir(item)}>
-                        <Feather name="trash-2" size={18} color="#E6213D" />
-                      </Pressable>
-                    </>
-                  )}
-                </View>
+                {item.erro ? (
+                  <Text style={[rhStyles.importRecordTime, { color: '#E6213D', marginTop: 4 }]} numberOfLines={2}>
+                    {item.erro}
+                  </Text>
+                ) : null}
               </View>
             );
           })
@@ -13989,10 +13981,52 @@ const rhStyles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
   },
-  importActionButton: {
+  importActionButtonSmall: {
     marginTop: 14,
-    width: '100%',
-    marginBottom: 0,
+    minHeight: 36,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    backgroundColor: '#1B6E3A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    alignSelf: 'center',
+  },
+  importActionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  importStatsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+    marginBottom: 16,
+  },
+  importStatCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderLeftWidth: 3,
+    borderLeftColor: '#E2E6F0',
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+  },
+  importStatValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0C1736',
+  },
+  importStatLabel: {
+    marginTop: 2,
+    color: '#9AA1B5',
+    fontSize: 9,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   importQueueSection: {
     marginBottom: 16,
@@ -14086,35 +14120,47 @@ const rhStyles = StyleSheet.create({
     marginBottom: 10,
   },
   importRecordCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E2E6F0',
     padding: 12,
     marginBottom: 8,
+  },
+  importRecordTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
+  },
+  importRecordBottomRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
   },
   importTypePill: {
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
+  importTypePillSmall: {
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
   importTypePillText: {
     fontSize: 10,
     fontWeight: '800',
   },
-  importRecordInfo: {
-    flex: 1,
-  },
   importRecordName: {
+    flex: 1,
     color: '#15203E',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
   importRecordTime: {
-    marginTop: 2,
     color: '#9AA1B5',
     fontSize: 11,
   },
