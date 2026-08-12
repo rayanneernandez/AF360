@@ -9212,6 +9212,15 @@ const emptyAnnouncementForm: AnnouncementFormValues = {
 
 const rhComunicadoAudienciaOptions = ['Todos', 'Grupo específico', 'Colaborador específico'];
 
+// Agendamento: publicar_em/expira_em já existem em rh_comunicados e a
+// leitura do colaborador (rhDashboard.js /colaborador-home e /comunicados)
+// já filtra por eles (publicar_em > agora fica escondido, expira_em < agora
+// some da lista) — não precisou de nada novo na Lovable, só expor esses dois
+// campos no formulário. Guardamos só a data (sem horário): backend recebe
+// "AAAA-MM-DD", que o Postgres interpreta como meia-noite — dá pra agendar
+// por dia, não por hora exata.
+const rhComunicadoEnvioOptions = ['Agora', 'Programar para depois'];
+
 // Upload de imagem/anexo confirmado pela Lovable em 12/08/2026 (bucket
 // público rh-comunicados). Limite: 8MB, jpg/png/webp/pdf.
 const rhComunicadoAnexoMimesAceitos = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -9358,6 +9367,12 @@ function AnnouncementFormModal({
   const [isColaboradorPickerOpen, setIsColaboradorPickerOpen] = useState(false);
   const [anexoPreview, setAnexoPreview] = useState<{ uri: string; name: string; mimeType: string } | null>(null);
   const [isUploadingAnexo, setIsUploadingAnexo] = useState(false);
+  const [envioTipo, setEnvioTipo] = useState(rhComunicadoEnvioOptions[0]);
+  const [isEnvioPickerOpen, setIsEnvioPickerOpen] = useState(false);
+  const [publicarData, setPublicarData] = useState('');
+  const [isPublicarDataPickerOpen, setIsPublicarDataPickerOpen] = useState(false);
+  const [expiraData, setExpiraData] = useState('');
+  const [isExpiraDataPickerOpen, setIsExpiraDataPickerOpen] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -9366,6 +9381,9 @@ function AnnouncementFormModal({
       setSelectedGrupo(null);
       setSelectedColaborador(null);
       setAnexoPreview(null);
+      setEnvioTipo(rhComunicadoEnvioOptions[0]);
+      setPublicarData('');
+      setExpiraData('');
       fetchAdminGrupos()
         .then((result) => setGrupos(result.grupos))
         .catch(() => {});
@@ -9429,6 +9447,10 @@ function AnnouncementFormModal({
       Alert.alert('Selecione um colaborador', 'Escolha pra quem esse comunicado vai.');
       return;
     }
+    if (envioTipo === 'Programar para depois' && !publicarData) {
+      Alert.alert('Selecione a data', 'Escolha o dia em que o comunicado deve ser publicado.');
+      return;
+    }
 
     const body: Parameters<typeof createRhComunicado>[0] = {
       titulo: form.titulo.trim(),
@@ -9436,6 +9458,12 @@ function AnnouncementFormModal({
       publico: 'todos',
       anexo_url: form.anexoUrl.trim() || undefined,
     };
+    if (envioTipo === 'Programar para depois' && publicarData) {
+      body.publicar_em = brDateLabelToIso(publicarData) ?? undefined;
+    }
+    if (expiraData) {
+      body.expira_em = brDateLabelToIso(expiraData) ?? undefined;
+    }
     if (audiencia === 'Grupo específico' && selectedGrupo) {
       body.publico = 'grupo';
       body.grupo_id = selectedGrupo.id;
@@ -9520,6 +9548,30 @@ function AnnouncementFormModal({
                 />
               ) : null}
 
+              <RHSelectField
+                label="Quando enviar"
+                required
+                value={envioTipo}
+                onPress={() => setIsEnvioPickerOpen(true)}
+              />
+              {envioTipo === 'Programar para depois' ? (
+                <RHSelectField
+                  label="Publicar em"
+                  required
+                  value={publicarData}
+                  placeholder="Selecione a data"
+                  icon="calendar"
+                  onPress={() => setIsPublicarDataPickerOpen(true)}
+                />
+              ) : null}
+              <RHSelectField
+                label="Remover automaticamente em (opcional)"
+                value={expiraData}
+                placeholder="Sem data de expiração"
+                icon="calendar"
+                onPress={() => setIsExpiraDataPickerOpen(true)}
+              />
+
               <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Imagem/anexo (opcional)</Text>
               <Pressable
                 style={[rhStyles.uploadDropZone, isUploadingAnexo ? { opacity: 0.6 } : null]}
@@ -9588,6 +9640,31 @@ function AnnouncementFormModal({
               selectedValue={selectedGrupo?.name ?? ''}
               onSelect={(name) => setSelectedGrupo(grupos.find((g) => g.name === name) ?? null)}
               onClose={() => setIsGrupoPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isEnvioPickerOpen}
+              title="Quando enviar"
+              options={rhComunicadoEnvioOptions}
+              selectedValue={envioTipo}
+              onSelect={setEnvioTipo}
+              onClose={() => setIsEnvioPickerOpen(false)}
+            />
+            <RHDatePickerModal
+              inline
+              visible={isPublicarDataPickerOpen}
+              title="Publicar em"
+              value={publicarData}
+              onSelect={setPublicarData}
+              onClose={() => setIsPublicarDataPickerOpen(false)}
+            />
+            <RHDatePickerModal
+              inline
+              visible={isExpiraDataPickerOpen}
+              title="Remover automaticamente em"
+              value={expiraData}
+              onSelect={setExpiraData}
+              onClose={() => setIsExpiraDataPickerOpen(false)}
             />
             <ColaboradorSearchPickerModal
               inline
