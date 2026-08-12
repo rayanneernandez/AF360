@@ -48,6 +48,9 @@ import type {
 } from './App';
 import {
   fetchRhColaboradores,
+  fetchRhSolicitacoes,
+  updateRhSolicitacao,
+  type RhSolicitacaoItem,
   fetchRhStats,
   fetchRhTurnover,
   fetchRhDashboardResumo,
@@ -198,17 +201,10 @@ type AnnouncementItem = {
   audienceLabel: string;
 };
 
-type TicketStatus = 'aberto' | 'em_andamento' | 'resolvido';
-
-type RequestTicket = {
-  id: string;
-  code: string;
-  title: string;
-  requesterName: string;
-  unit: string;
-  timeLabel: string;
-  status: TicketStatus;
-};
+// Status real de rh_solicitacoes (enum confirmado pela Lovable em
+// 03/08/2026) — RHSolicitacoesScreen usa isso direto, não mais o mock de
+// 3 status fabricado antes.
+type TicketStatus = 'aberta' | 'em_analise' | 'respondida' | 'encerrada' | 'cancelada';
 
 type ImportRecordType = 'admissao' | 'desligamento';
 type ImportRecordStatus = 'aplicado' | 'revisar' | 'erro';
@@ -666,51 +662,54 @@ const rhAnnouncements: AnnouncementItem[] = [
 ];
 
 const rhTicketStatusMeta: Record<TicketStatus, { label: string; color: string; tint: string }> = {
-  aberto: { label: 'Aberto', color: '#3457D5', tint: '#E9EEFF' },
-  em_andamento: { label: 'Em andamento', color: '#B07A1E', tint: '#FCEFDA' },
-  resolvido: { label: 'Resolvido', color: '#18955A', tint: '#E3F5EA' },
+  aberta: { label: 'Aberta', color: '#3457D5', tint: '#E9EEFF' },
+  em_analise: { label: 'Em análise', color: '#B07A1E', tint: '#FCEFDA' },
+  respondida: { label: 'Respondida', color: '#6A4CB0', tint: '#EFE7FA' },
+  encerrada: { label: 'Encerrada', color: '#18955A', tint: '#E3F5EA' },
+  cancelada: { label: 'Cancelada', color: '#7B8299', tint: '#F0F1F6' },
 };
 
-const rhTicketStatusOrder: TicketStatus[] = ['aberto', 'em_andamento', 'resolvido'];
+const rhTicketStatusOrder: TicketStatus[] = ['aberta', 'em_analise', 'respondida', 'encerrada', 'cancelada'];
 
-const rhTickets: RequestTicket[] = [
-  {
-    id: 'sl-2041',
-    code: '#SL-2041',
-    title: 'Segunda via de holerite',
-    requesterName: 'Carlos Dias',
-    unit: 'Posto Geriba',
-    timeLabel: 'há 2 h',
-    status: 'aberto',
-  },
-  {
-    id: 'sl-2038',
-    code: '#SL-2038',
-    title: 'Declaração de vínculo',
-    requesterName: 'Ana Souza',
-    unit: 'Posto Monalisa',
-    timeLabel: 'ontem',
-    status: 'em_andamento',
-  },
-  {
-    id: 'sl-2035',
-    code: '#SL-2035',
-    title: 'Atualização de dados bancários',
-    requesterName: 'Pedro Lima',
-    unit: 'Petromasa Irajá',
-    timeLabel: 'há 3 dias',
-    status: 'resolvido',
-  },
-  {
-    id: 'sl-2030',
-    code: '#SL-2030',
-    title: 'Dúvida sobre vale-transporte',
-    requesterName: 'Marina Reis',
-    unit: 'Posto SG',
-    timeLabel: 'há 4 dias',
-    status: 'resolvido',
-  },
-];
+// setor/assunto de rh_solicitacoes (enum confirmado pela Lovable em
+// 03/08/2026) — labels só pra exibição, os valores crus continuam sendo
+// enviados/recebidos como estão no banco.
+const rhSolicitacaoSetorLabel: Record<string, string> = {
+  rh: 'RH',
+  dp: 'DP',
+  documentos: 'Documentos',
+  outros: 'Outros',
+};
+
+const rhSolicitacaoAssuntoLabel: Record<string, string> = {
+  rh_ferias: 'Férias',
+  rh_beneficios: 'Benefícios',
+  rh_atestado: 'Atestado',
+  rh_turno: 'Turno',
+  rh_reclamacao: 'Reclamação',
+  rh_outros: 'Outros (RH)',
+  dp_holerite: 'Holerite',
+  dp_vt: 'Vale-transporte',
+  dp_vr: 'Vale-refeição',
+  dp_adiantamento: 'Adiantamento',
+  dp_rescisao: 'Rescisão',
+  dp_outros: 'Outros (DP)',
+  doc_atestado: 'Atestado (documento)',
+  doc_residencia: 'Comprovante de residência',
+  doc_rgcpf: 'RG/CPF',
+  doc_ctps: 'Carteira de trabalho',
+  doc_diploma: 'Diploma',
+  doc_outros: 'Outros (documentos)',
+  out_sugestao: 'Sugestão',
+  out_elogio: 'Elogio',
+  out_reclamacao: 'Reclamação (outros)',
+  out_duvida: 'Dúvida',
+};
+
+function rhSolicitacaoAssuntoLabelOf(assunto: string | null): string {
+  if (!assunto) return 'Solicitação';
+  return rhSolicitacaoAssuntoLabel[assunto] ?? assunto;
+}
 
 const rhImportStats = { naFila: 0, pRevisar: 1, aplicados: 44, comErro: 0 };
 
@@ -9929,11 +9928,17 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
 function TicketDetailModal({
   visible,
   ticket,
+  requesterName,
+  unit,
+  isSaving,
   onClose,
   onChangeStatus,
 }: {
   visible: boolean;
-  ticket: RequestTicket | null;
+  ticket: RhSolicitacaoItem | null;
+  requesterName: string;
+  unit: string;
+  isSaving: boolean;
   onClose: () => void;
   onChangeStatus: (ticketId: string, status: TicketStatus) => void;
 }) {
@@ -9943,56 +9948,106 @@ function TicketDetailModal({
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={styles.requestModalBackdrop}>
-        <View style={styles.requestModalCard}>
+      <Pressable style={styles.requestModalBackdrop} onPress={onClose}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
           <View style={styles.requestModalHeader}>
-            <Text style={styles.requestModalTitle}>{ticket.code}</Text>
+            <Text style={styles.requestModalTitle}>{ticket.protocolo ?? 'Solicitação'}</Text>
             <Pressable onPress={onClose} hitSlop={8}>
               <Feather name="x" size={20} color="#677089" />
             </Pressable>
           </View>
 
-          <Text style={rhStyles.ticketDetailTitle}>{ticket.title}</Text>
-          <Text style={rhStyles.ticketDetailMeta}>
-            {ticket.requesterName} · {ticket.unit} · {ticket.timeLabel}
-          </Text>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={rhStyles.ticketDetailTitle}>
+              {ticket.titulo || rhSolicitacaoAssuntoLabelOf(ticket.assunto)}
+            </Text>
+            <Text style={rhStyles.ticketDetailMeta}>
+              {requesterName} · {unit} · {rhSolicitacaoSetorLabel[ticket.setor ?? ''] ?? 'Outros'} ·{' '}
+              {formatComunicadoDateRh(ticket.created_at ?? null)}
+            </Text>
+            {ticket.mensagem ? (
+              <Text style={[rhStyles.announcementDesc, styles.spacingTop]}>{ticket.mensagem}</Text>
+            ) : null}
 
-          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Status</Text>
-          <View style={rhStyles.categoryRow}>
-            {rhTicketStatusOrder.map((statusKey) => {
-              const meta = rhTicketStatusMeta[statusKey];
-              const isSelected = ticket.status === statusKey;
-              return (
-                <Pressable
-                  key={statusKey}
-                  style={[
-                    rhStyles.categoryChip,
-                    isSelected ? { backgroundColor: meta.color, borderColor: meta.color } : null,
-                  ]}
-                  onPress={() => onChangeStatus(ticket.id, statusKey)}
-                >
-                  <Text
-                    style={[rhStyles.categoryChipText, isSelected ? rhStyles.categoryChipTextActive : null]}
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Status</Text>
+            <View style={rhStyles.categoryRow}>
+              {rhTicketStatusOrder.map((statusKey) => {
+                const meta = rhTicketStatusMeta[statusKey];
+                const isSelected = ticket.status === statusKey;
+                return (
+                  <Pressable
+                    key={statusKey}
+                    disabled={isSaving}
+                    style={[
+                      rhStyles.categoryChip,
+                      isSelected ? { backgroundColor: meta.color, borderColor: meta.color } : null,
+                      isSaving ? { opacity: 0.6 } : null,
+                    ]}
+                    onPress={() => onChangeStatus(ticket.id, statusKey)}
                   >
-                    {meta.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      </View>
+                    <Text
+                      style={[rhStyles.categoryChipText, isSelected ? rhStyles.categoryChipTextActive : null]}
+                    >
+                      {meta.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
 
 export function RHSolicitacoesScreen({ navigation }: ScreenProps<'RHSolicitacoes'>) {
-  const [tickets, setTickets] = useState<RequestTicket[]>(rhTickets);
-  const [selectedTicket, setSelectedTicket] = useState<RequestTicket | null>(null);
+  const { identity } = useContext(AuthIdentityContext);
+  const [tickets, setTickets] = useState<RhSolicitacaoItem[]>([]);
+  const [colaboradores, setColaboradores] = useState<RhColaboradorRaw[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedTicket, setSelectedTicket] = useState<RhSolicitacaoItem | null>(null);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+
+  const loadData = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    Promise.all([fetchRhSolicitacoes({}), fetchRhColaboradores({})])
+      .then(([solicitacoesRows, colaboradoresRows]) => {
+        setTickets(solicitacoesRows);
+        setColaboradores(colaboradoresRows);
+      })
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as solicitações.');
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const colaboradorMap = useMemo(() => new Map(colaboradores.map((c) => [c.id, c])), [colaboradores]);
+  const resolveRequester = (colaboradorId: string | null) => {
+    const colaborador = colaboradorId ? colaboradorMap.get(colaboradorId) : null;
+    return {
+      requesterName: colaborador?.nome_completo ?? 'Colaborador não encontrado',
+      unit: colaborador?.posto_trabalho ?? '—',
+    };
+  };
 
   const handleChangeStatus = (ticketId: string, status: TicketStatus) => {
-    setTickets((current) => current.map((item) => (item.id === ticketId ? { ...item, status } : item)));
-    setSelectedTicket((current) => (current && current.id === ticketId ? { ...current, status } : current));
+    setIsSavingStatus(true);
+    updateRhSolicitacao(ticketId, { status }, identity?.profileId)
+      .then(() => {
+        setTickets((current) => current.map((item) => (item.id === ticketId ? { ...item, status } : item)));
+        setSelectedTicket((current) => (current && current.id === ticketId ? { ...current, status } : current));
+      })
+      .catch((err) => {
+        Alert.alert('Não foi possível atualizar', err instanceof Error ? err.message : 'Tente novamente.');
+      })
+      .finally(() => setIsSavingStatus(false));
   };
 
   return (
@@ -10009,28 +10064,42 @@ export function RHSolicitacoesScreen({ navigation }: ScreenProps<'RHSolicitacoes
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <RHPageHeader icon="message-circle" title="Solicitações" subtitle="Chamados de RH, DP e documentos" />
 
-        {tickets.map((ticket) => {
-          const meta = rhTicketStatusMeta[ticket.status];
-          return (
-            <Pressable key={ticket.id} style={rhStyles.ticketCard} onPress={() => setSelectedTicket(ticket)}>
-              <View style={rhStyles.ticketTopRow}>
-                <Text style={rhStyles.ticketCode}>{ticket.code}</Text>
-                <View style={[rhStyles.ticketStatusPill, { backgroundColor: meta.tint }]}>
-                  <Text style={[rhStyles.ticketStatusText, { color: meta.color }]}>{meta.label}</Text>
+        {isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando solicitações...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : tickets.length === 0 ? (
+          <Text style={styles.conversaEmptyText}>Nenhuma solicitação registrada ainda.</Text>
+        ) : (
+          tickets.map((ticket) => {
+            const meta = rhTicketStatusMeta[ticket.status];
+            const { requesterName, unit } = resolveRequester(ticket.colaborador_id);
+            return (
+              <Pressable key={ticket.id} style={rhStyles.ticketCard} onPress={() => setSelectedTicket(ticket)}>
+                <View style={rhStyles.ticketTopRow}>
+                  <Text style={rhStyles.ticketCode}>{ticket.protocolo ?? '—'}</Text>
+                  <View style={[rhStyles.ticketStatusPill, { backgroundColor: meta.tint }]}>
+                    <Text style={[rhStyles.ticketStatusText, { color: meta.color }]}>{meta.label}</Text>
+                  </View>
                 </View>
-              </View>
-              <Text style={rhStyles.ticketTitle}>{ticket.title}</Text>
-              <Text style={rhStyles.ticketMeta}>
-                {ticket.requesterName} · {ticket.unit} · {ticket.timeLabel}
-              </Text>
-            </Pressable>
-          );
-        })}
+                <Text style={rhStyles.ticketTitle}>
+                  {ticket.titulo || rhSolicitacaoAssuntoLabelOf(ticket.assunto)}
+                </Text>
+                <Text style={rhStyles.ticketMeta}>
+                  {requesterName} · {unit} · {formatComunicadoDateRh(ticket.created_at ?? null)}
+                </Text>
+              </Pressable>
+            );
+          })
+        )}
       </ScrollView>
 
       <TicketDetailModal
         visible={Boolean(selectedTicket)}
         ticket={selectedTicket}
+        requesterName={selectedTicket ? resolveRequester(selectedTicket.colaborador_id).requesterName : ''}
+        unit={selectedTicket ? resolveRequester(selectedTicket.colaborador_id).unit : ''}
+        isSaving={isSavingStatus}
         onClose={() => setSelectedTicket(null)}
         onChangeStatus={handleChangeStatus}
       />

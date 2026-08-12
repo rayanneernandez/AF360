@@ -1257,6 +1257,39 @@ export const fetchContrachequesDoColaborador = fetchColaboradorContracheques;
 // dp_rescisao|dp_outros|doc_atestado|doc_residencia|doc_rgcpf|doc_ctps|
 // doc_diploma|doc_outros|out_sugestao|out_elogio|out_reclamacao|out_duvida. ---
 
+// --- RH/liderança: lista completa de solicitações (rh_solicitacoes cru,
+// mesmo endpoint dedicado acima) — usada no painel do RH pra gerenciar
+// chamados de verdade (GET /api/rh/solicitacoes). ---
+
+export type RhSolicitacaoItem = {
+  id: string;
+  protocolo: string | null;
+  colaborador_id: string | null;
+  setor: 'rh' | 'dp' | 'documentos' | 'outros' | null;
+  assunto: string | null;
+  titulo: string | null;
+  mensagem: string | null;
+  status: 'aberta' | 'em_analise' | 'respondida' | 'encerrada' | 'cancelada';
+  atribuido_a: string | null;
+  respondido_em: string | null;
+  encerrado_em: string | null;
+  created_at?: string;
+  [key: string]: unknown;
+};
+
+export async function fetchRhSolicitacoes(params: {
+  colaboradorId?: string;
+  status?: string;
+  setor?: string;
+} = {}): Promise<RhSolicitacaoItem[]> {
+  const search = new URLSearchParams();
+  if (params.colaboradorId) search.set('colaboradorId', params.colaboradorId);
+  if (params.status) search.set('status', params.status);
+  if (params.setor) search.set('setor', params.setor);
+  const json = await api.get(`/api/rh/solicitacoes?${search.toString()}`);
+  return (json.data as RhSolicitacaoItem[]) ?? [];
+}
+
 export async function createColaboradorSolicitacao(body: {
   colaborador_id: string;
   setor: 'rh' | 'dp' | 'documentos' | 'outros';
