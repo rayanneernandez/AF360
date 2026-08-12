@@ -9235,10 +9235,14 @@ function ColaboradorSearchPickerModal({
   visible,
   onClose,
   onSelect,
+  inline,
 }: {
   visible: boolean;
   onClose: () => void;
   onSelect: (colaborador: RhColaboradorRaw) => void;
+  // Ver comentário em RHSimplePickerModal — mesmo motivo (evita dois <Modal>
+  // nativos empilhados quando aberto de dentro de outro modal já visível).
+  inline?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<RhColaboradorRaw[]>([]);
@@ -9267,56 +9271,68 @@ function ColaboradorSearchPickerModal({
     return () => clearTimeout(timer);
   }, [query, visible]);
 
+  if (inline && !visible) {
+    return null;
+  }
+
+  const content = (
+    <View style={styles.requestModalBackdrop}>
+      <View style={[styles.requestModalCard, { maxHeight: '75%' }]}>
+        <View style={styles.requestModalHeader}>
+          <Text style={styles.requestModalTitle}>Selecionar colaborador</Text>
+          <Pressable onPress={onClose} hitSlop={8}>
+            <Feather name="x" size={20} color="#677089" />
+          </Pressable>
+        </View>
+
+        <View style={rhStyles.searchRow}>
+          <Feather name="search" size={16} color="#9AA1B5" />
+          <TextInput
+            style={rhStyles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Digite pelo menos 2 letras do nome..."
+            placeholderTextColor="#A7AEC2"
+            autoFocus
+          />
+        </View>
+
+        {isSearching ? (
+          <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
+        ) : (
+          <ScrollView style={{ maxHeight: 320 }} keyboardShouldPersistTaps="handled">
+            {results.length === 0 ? (
+              <RHEmptyTabState
+                message={query.trim().length < 2 ? 'Digite pra buscar.' : 'Nenhum colaborador encontrado.'}
+              />
+            ) : (
+              results.map((colaborador) => (
+                <Pressable
+                  key={colaborador.id}
+                  style={styles.templateOptionRow}
+                  onPress={() => {
+                    onSelect(colaborador);
+                    onClose();
+                  }}
+                >
+                  <Text style={rhStyles.historyCardTitle}>{colaborador.nome_completo}</Text>
+                  <Text style={rhStyles.historyCardMeta}>{colaborador.cargo ?? '—'}</Text>
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+        )}
+      </View>
+    </View>
+  );
+
+  if (inline) {
+    return <View style={rhStyles.inlinePickerLayer}>{content}</View>;
+  }
+
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={styles.requestModalBackdrop}>
-        <View style={[styles.requestModalCard, { maxHeight: '75%' }]}>
-          <View style={styles.requestModalHeader}>
-            <Text style={styles.requestModalTitle}>Selecionar colaborador</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
-              <Feather name="x" size={20} color="#677089" />
-            </Pressable>
-          </View>
-
-          <View style={rhStyles.searchRow}>
-            <Feather name="search" size={16} color="#9AA1B5" />
-            <TextInput
-              style={rhStyles.searchInput}
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Digite pelo menos 2 letras do nome..."
-              placeholderTextColor="#A7AEC2"
-              autoFocus
-            />
-          </View>
-
-          {isSearching ? (
-            <ActivityIndicator color="#1B6E3A" style={styles.spacingTop} />
-          ) : (
-            <ScrollView style={{ maxHeight: 320 }} keyboardShouldPersistTaps="handled">
-              {results.length === 0 ? (
-                <RHEmptyTabState
-                  message={query.trim().length < 2 ? 'Digite pra buscar.' : 'Nenhum colaborador encontrado.'}
-                />
-              ) : (
-                results.map((colaborador) => (
-                  <Pressable
-                    key={colaborador.id}
-                    style={styles.templateOptionRow}
-                    onPress={() => {
-                      onSelect(colaborador);
-                      onClose();
-                    }}
-                  >
-                    <Text style={rhStyles.historyCardTitle}>{colaborador.nome_completo}</Text>
-                    <Text style={rhStyles.historyCardMeta}>{colaborador.cargo ?? '—'}</Text>
-                  </Pressable>
-                ))
-              )}
-            </ScrollView>
-          )}
-        </View>
-      </View>
+      {content}
     </Modal>
   );
 }
@@ -9426,9 +9442,12 @@ function AnnouncementFormModal({
     } else if (audiencia === 'Colaborador específico' && selectedColaborador) {
       body.publico = 'colaborador';
       body.colaborador_id = selectedColaborador.id;
-    } else {
-      body.empresa_id = identity?.empresaId ?? undefined;
     }
+    // 'Todos' fica sem empresa_id/grupo_id/colaborador_id de propósito — é
+    // pra valer pra qualquer um, igual o comunicado já existente no banco
+    // ("Bem-vindo ao portal do colaborador"). Marcar empresa_id aqui fazia
+    // o comunicado sumir da listagem (que também não filtra mais por
+    // empresa — ver loadComunicados).
 
     setIsSaving(true);
     createRhComunicado(body, identity?.profileId)
@@ -9547,37 +9566,43 @@ function AnnouncementFormModal({
                 <Text style={styles.primaryButtonText}>{isSaving ? 'Enviando...' : 'Enviar comunicado'}</Text>
               </Pressable>
             </ScrollView>
+
+            {/* inline: esses pickers abrem de DENTRO deste modal já visível —
+                precisam ser overlay absoluto (não um 2º <Modal> nativo), senão
+                o toque não é registrado (mesmo bug já corrigido em outras
+                telas, ver RHSimplePickerModal). */}
+            <RHSimplePickerModal
+              inline
+              visible={isAudienciaPickerOpen}
+              title="Enviar para"
+              options={rhComunicadoAudienciaOptions}
+              selectedValue={audiencia}
+              onSelect={setAudiencia}
+              onClose={() => setIsAudienciaPickerOpen(false)}
+            />
+            <RHSimplePickerModal
+              inline
+              visible={isGrupoPickerOpen}
+              title="Grupo"
+              options={grupos.map((g) => g.name)}
+              selectedValue={selectedGrupo?.name ?? ''}
+              onSelect={(name) => setSelectedGrupo(grupos.find((g) => g.name === name) ?? null)}
+              onClose={() => setIsGrupoPickerOpen(false)}
+            />
+            <ColaboradorSearchPickerModal
+              inline
+              visible={isColaboradorPickerOpen}
+              onClose={() => setIsColaboradorPickerOpen(false)}
+              onSelect={setSelectedColaborador}
+            />
           </View>
         </View>
       </Modal>
-
-      <RHSimplePickerModal
-        visible={isAudienciaPickerOpen}
-        title="Enviar para"
-        options={rhComunicadoAudienciaOptions}
-        selectedValue={audiencia}
-        onSelect={setAudiencia}
-        onClose={() => setIsAudienciaPickerOpen(false)}
-      />
-      <RHSimplePickerModal
-        visible={isGrupoPickerOpen}
-        title="Grupo"
-        options={grupos.map((g) => g.name)}
-        selectedValue={selectedGrupo?.name ?? ''}
-        onSelect={(name) => setSelectedGrupo(grupos.find((g) => g.name === name) ?? null)}
-        onClose={() => setIsGrupoPickerOpen(false)}
-      />
-      <ColaboradorSearchPickerModal
-        visible={isColaboradorPickerOpen}
-        onClose={() => setIsColaboradorPickerOpen(false)}
-        onSelect={setSelectedColaborador}
-      />
     </>
   );
 }
 
 export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>) {
-  const { identity } = useContext(AuthIdentityContext);
   const [comunicados, setComunicados] = useState<RhComunicadoItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -9586,13 +9611,17 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
   const loadComunicados = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchRhComunicados({ empresaId: identity?.empresaId ?? undefined })
+    // Sem filtro por empresa: esta é a tela de gestão do RH (igual ao web,
+    // que também lista tudo). Filtrar por empresaId escondia comunicados
+    // "Todos" que não têm empresa_id preenchido (ex.: o comunicado seed
+    // "Bem-vindo ao portal do colaborador").
+    fetchRhComunicados({})
       .then(setComunicados)
       .catch((err) => {
         setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os comunicados.');
       })
       .finally(() => setIsLoading(false));
-  }, [identity?.empresaId]);
+  }, []);
 
   useEffect(() => {
     loadComunicados();
