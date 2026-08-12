@@ -11284,10 +11284,13 @@ const rhStyles = StyleSheet.create({
     fontWeight: '800',
   },
   etapaSlaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#E3F5EA',
     borderRadius: 999,
     paddingHorizontal: 7,
-    paddingVertical: 2,
+    paddingVertical: 3,
   },
   etapaSlaPillText: {
     color: '#18955A',
