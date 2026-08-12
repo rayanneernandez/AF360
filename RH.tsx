@@ -9694,6 +9694,7 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [viewingComunicado, setViewingComunicado] = useState<RhComunicadoItem | null>(null);
+  const [viewMode, setViewMode] = useState<'lista' | 'cards'>('lista');
 
   const loadComunicados = useCallback(() => {
     setIsLoading(true);
@@ -9749,9 +9750,35 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <RHPageHeader icon="volume-2" title="Comunicados" subtitle="Avisos enviados ao time" />
+        <View style={[rhStyles.announcementTopRow, { alignItems: 'flex-start' }]}>
+          <RHPageHeader icon="volume-2" title="Comunicados" subtitle="Avisos enviados ao time" />
+          <View style={rhStyles.comunicadoViewToggle}>
+            <Pressable
+              style={[rhStyles.comunicadoViewToggleBtn, viewMode === 'lista' ? rhStyles.comunicadoViewToggleBtnActive : null]}
+              onPress={() => setViewMode('lista')}
+            >
+              <Feather name="list" size={13} color={viewMode === 'lista' ? '#FFFFFF' : '#677089'} />
+              <Text
+                style={[rhStyles.comunicadoViewToggleText, viewMode === 'lista' ? rhStyles.comunicadoViewToggleTextActive : null]}
+              >
+                Lista
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[rhStyles.comunicadoViewToggleBtn, viewMode === 'cards' ? rhStyles.comunicadoViewToggleBtnActive : null]}
+              onPress={() => setViewMode('cards')}
+            >
+              <Feather name="grid" size={13} color={viewMode === 'cards' ? '#FFFFFF' : '#677089'} />
+              <Text
+                style={[rhStyles.comunicadoViewToggleText, viewMode === 'cards' ? rhStyles.comunicadoViewToggleTextActive : null]}
+              >
+                Cards
+              </Text>
+            </Pressable>
+          </View>
+        </View>
 
-        <Pressable style={rhStyles.primaryButtonGreen} onPress={() => setIsFormOpen(true)}>
+        <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={() => setIsFormOpen(true)}>
           <Feather name="plus" size={16} color="#FFFFFF" />
           <Text style={styles.primaryButtonText}>Novo comunicado</Text>
         </Pressable>
@@ -9762,43 +9789,76 @@ export function RHComunicadosScreen({ navigation }: ScreenProps<'RHComunicados'>
           <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
         ) : comunicados.length === 0 ? (
           <Text style={styles.conversaEmptyText}>Nenhum comunicado enviado ainda.</Text>
-        ) : (
-          comunicados.map((item) => (
-            <Pressable key={item.id} style={rhStyles.announcementCard} onPress={() => setViewingComunicado(item)}>
-              <View style={rhStyles.announcementTopRow}>
-                <View style={[rhStyles.announcementBadge, { backgroundColor: '#E9EEFF' }]}>
-                  <Text style={[rhStyles.announcementBadgeText, { color: '#3457D5' }]}>
-                    {comunicadoPublicoLabelRh(item.publico)}
-                  </Text>
-                </View>
-                <Text style={rhStyles.announcementTime}>{formatComunicadoDateRh(item.publicar_em)}</Text>
+        ) : viewMode === 'lista' ? (
+          <View style={styles.spacingTop}>
+            {comunicados.map((item) => {
+              const isImage = item.anexo_url && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(item.anexo_url);
+              return (
                 <Pressable
-                  onPress={() => handleDelete(item)}
-                  disabled={deletingId === item.id}
-                  hitSlop={8}
-                  style={{ marginLeft: 'auto', opacity: deletingId === item.id ? 0.4 : 1 }}
+                  key={item.id}
+                  style={rhStyles.comunicadoListRow}
+                  onPress={() => setViewingComunicado(item)}
                 >
-                  <Feather name="trash-2" size={16} color="#E6213D" />
+                  <View style={rhStyles.comunicadoListThumb}>
+                    {isImage ? (
+                      <Image source={{ uri: item.anexo_url as string }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    ) : (
+                      <Feather name="mail" size={18} color="#9AA1B5" />
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={rhStyles.announcementTitle} numberOfLines={1}>
+                      {item.titulo}
+                    </Text>
+                    <View style={[rhStyles.announcementTopRow, styles.spacingTop]}>
+                      <View style={[rhStyles.announcementBadge, { backgroundColor: '#E9EEFF' }]}>
+                        <Text style={[rhStyles.announcementBadgeText, { color: '#3457D5' }]}>
+                          {comunicadoPublicoLabelRh(item.publico)}
+                        </Text>
+                      </View>
+                      <Text style={rhStyles.announcementTime}>{formatComunicadoDateRh(item.publicar_em)}</Text>
+                    </View>
+                  </View>
+                  <Pressable
+                    onPress={() => handleDelete(item)}
+                    disabled={deletingId === item.id}
+                    hitSlop={8}
+                    style={{ opacity: deletingId === item.id ? 0.4 : 1 }}
+                  >
+                    <Feather name="trash-2" size={16} color="#E6213D" />
+                  </Pressable>
                 </Pressable>
-              </View>
-              <Text style={rhStyles.announcementTitle}>{item.titulo}</Text>
-              <Text style={rhStyles.announcementDesc} numberOfLines={3}>
-                {item.conteudo}
-              </Text>
-              {item.anexo_url && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(item.anexo_url) ? (
-                <Image
-                  source={{ uri: item.anexo_url }}
-                  style={[styles.spacingTop, { width: '100%', height: 160, borderRadius: 8 }]}
-                  resizeMode="cover"
-                />
-              ) : item.anexo_url ? (
-                <Text style={[rhStyles.announcementMeta, { color: '#3457D5' }]}>Ver anexo</Text>
-              ) : null}
-              <Text style={[rhStyles.announcementMeta, styles.spacingTop, { color: '#9AA1B5' }]}>
-                Toque pra ver tudo
-              </Text>
-            </Pressable>
-          ))
+              );
+            })}
+          </View>
+        ) : (
+          <View style={[rhStyles.comunicadoCardsGrid, styles.spacingTop]}>
+            {comunicados.map((item) => {
+              const isImage = item.anexo_url && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(item.anexo_url);
+              return (
+                <Pressable key={item.id} style={rhStyles.comunicadoCardItem} onPress={() => setViewingComunicado(item)}>
+                  {isImage ? (
+                    <Image source={{ uri: item.anexo_url as string }} style={rhStyles.comunicadoCardImage} resizeMode="cover" />
+                  ) : (
+                    <LinearGradient colors={['#1B6E3A', '#2A9D51']} style={rhStyles.comunicadoCardPlaceholder}>
+                      <Feather name="volume-2" size={22} color="#FFFFFF" />
+                    </LinearGradient>
+                  )}
+                  <View style={rhStyles.comunicadoCardBody}>
+                    <View style={[rhStyles.announcementBadge, { backgroundColor: '#E9EEFF', alignSelf: 'flex-start' }]}>
+                      <Text style={[rhStyles.announcementBadgeText, { color: '#3457D5' }]}>
+                        {comunicadoPublicoLabelRh(item.publico)}
+                      </Text>
+                    </View>
+                    <Text style={[rhStyles.announcementTitle, styles.spacingTop]} numberOfLines={2}>
+                      {item.titulo}
+                    </Text>
+                    <Text style={rhStyles.announcementTime}>{formatComunicadoDateRh(item.publicar_em)}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
         )}
       </ScrollView>
 
@@ -13094,6 +13154,76 @@ const rhStyles = StyleSheet.create({
     marginTop: 8,
     color: '#9AA1B5',
     fontSize: 11,
+  },
+  comunicadoViewToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#EEF0F6',
+    borderRadius: 10,
+    padding: 3,
+    gap: 3,
+  },
+  comunicadoViewToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  comunicadoViewToggleBtnActive: {
+    backgroundColor: '#15203E',
+  },
+  comunicadoViewToggleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#677089',
+  },
+  comunicadoViewToggleTextActive: {
+    color: '#FFFFFF',
+  },
+  comunicadoListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDEFF5',
+    gap: 12,
+  },
+  comunicadoListThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#EEF0F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  comunicadoCardsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  comunicadoCardItem: {
+    width: '48.5%',
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    marginBottom: 12,
+  },
+  comunicadoCardImage: {
+    width: '100%',
+    height: 88,
+  },
+  comunicadoCardPlaceholder: {
+    width: '100%',
+    height: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  comunicadoCardBody: {
+    padding: 10,
   },
   ticketCard: {
     backgroundColor: '#FFFFFF',
