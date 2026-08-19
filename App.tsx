@@ -18601,7 +18601,7 @@ export const styles = StyleSheet.create({
   estoqueParadoProdutoName: {
     color: '#15203E',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '400',
   },
   estoqueParadoProdutoMeta: {
     marginTop: 3,
