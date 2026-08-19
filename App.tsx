@@ -9533,11 +9533,11 @@ function LavaRapidoScreen({ navigation }: ScreenProps<'LavaRapido'>) {
         </View>
 
         <View style={[styles.directorFilterRow, { marginBottom: 8 }]}>
-          <View style={[styles.lowStockTabsRow, { flex: 0, marginTop: 0, width: 156 }]}>
+          <View style={[styles.lowStockTabsRow, { flex: 0, marginTop: 0, width: 120, paddingHorizontal: 2 }]}>
             {(['dia', 'mes', 'ano'] as const).map((mode) => (
               <Pressable
                 key={mode}
-                style={[styles.lowStockTab, lavaViewMode === mode ? styles.lowStockTabActive : null]}
+                style={[styles.lowStockTab, lavaViewMode === mode ? styles.lowStockTabActive : null, { paddingHorizontal: 0 }]}
                 onPress={() => {
                   setLavaViewMode(mode);
                   setHistoricoPagina(1);
@@ -9550,12 +9550,12 @@ function LavaRapidoScreen({ navigation }: ScreenProps<'LavaRapido'>) {
             ))}
           </View>
 
-          <View style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}>
+          <View style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between', paddingHorizontal: 8 }]}>
             <Pressable onPress={handleLavaPrevPeriod}>
               <Feather name="chevron-left" size={16} color="#5E667D" />
             </Pressable>
             <Pressable onPress={handleLavaResetPeriod} style={styles.marginPeriodLabelWrap}>
-              <Text style={styles.directorFilterPillText} numberOfLines={1}>
+              <Text style={[styles.directorFilterPillText, { fontSize: 12 }]} numberOfLines={1}>
                 {lavaPeriodLabel}
               </Text>
             </Pressable>
@@ -9572,6 +9572,17 @@ function LavaRapidoScreen({ navigation }: ScreenProps<'LavaRapido'>) {
           >
             <Text style={styles.directorFilterPillText}>{selectedStation}</Text>
             <Feather name="chevron-down" size={14} color="#5E667D" />
+          </Pressable>
+          <Pressable
+            style={styles.lavaExportButton}
+            onPress={() => {
+              const exportUrl = pickStr(lava, ['exportUrl']);
+              if (exportUrl) Linking.openURL(exportUrl);
+              else Alert.alert('Exportar Excel', 'Ainda não há um arquivo pra exportar nesse período.');
+            }}
+          >
+            <Feather name="download" size={14} color="#5E667D" />
+            <Text style={styles.lavaExportButtonText}>Excel</Text>
           </Pressable>
         </View>
 
@@ -9906,7 +9917,13 @@ function EstoqueParadoScreen({ navigation }: ScreenProps<'EstoqueParado'>) {
                                 </Text>
                               </View>
                               <Text style={styles.estoqueParadoEstoqueValue}>
-                                Estoque estimado: {fmtNumOrDash(estoqueEstimado)}
+                                Estoque estimado:{' '}
+                                {estoqueEstimado !== null
+                                  ? estoqueEstimado.toLocaleString('pt-BR', {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })
+                                  : '—'}
                               </Text>
                             </View>
                           );
@@ -16635,6 +16652,8 @@ export const styles = StyleSheet.create({
     color: '#7C8397',
     fontSize: 12,
     fontWeight: '700',
+    lineHeight: 15,
+    minHeight: 30,
   },
   directorSummaryValue: {
     marginTop: 4,
@@ -18519,6 +18538,22 @@ export const styles = StyleSheet.create({
     marginTop: 4,
     color: '#9AA1B5',
     fontSize: 9,
+  },
+  lavaExportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  lavaExportButtonText: {
+    color: '#5E667D',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // --- Estoque Parado (Diretoria) ---
