@@ -3222,7 +3222,16 @@ export async function fetchAdminDashboardKpis(opts?: {
 // prefiro validar/ajustar contra o retorno real na primeira carga em vez de
 // arriscar um tipo rígido errado.
 
-export type DiretoriaPainelRecurso = 'resumo' | 'rede' | 'margem' | 'estoques' | 'gnv' | 'postos' | 'periodo';
+export type DiretoriaPainelRecurso =
+  | 'resumo'
+  | 'rede'
+  | 'margem'
+  | 'estoques'
+  | 'gnv'
+  | 'postos'
+  | 'periodo'
+  | 'lava-rapido'
+  | 'estoque-parado';
 
 export type DiretoriaPainelResponse<T = any> = {
   recurso: string;
@@ -3234,7 +3243,16 @@ export type DiretoriaPainelResponse<T = any> = {
 
 export async function fetchDiretoriaPainel<T = any>(
   recurso: DiretoriaPainelRecurso,
-  params: { de?: string; ate?: string; posto?: string } = {},
+  params: {
+    de?: string;
+    ate?: string;
+    posto?: string;
+    placa?: string;
+    pagina?: number;
+    porPagina?: number;
+    faixa?: string;
+    busca?: string;
+  } = {},
   actorId?: string | null
 ): Promise<DiretoriaPainelResponse<T>> {
   const search = new URLSearchParams();
@@ -3242,10 +3260,83 @@ export async function fetchDiretoriaPainel<T = any>(
   if (params.de) search.set('de', params.de);
   if (params.ate) search.set('ate', params.ate);
   if (params.posto) search.set('posto', params.posto);
+  if (params.placa) search.set('placa', params.placa);
+  if (params.pagina) search.set('pagina', String(params.pagina));
+  if (params.porPagina) search.set('porPagina', String(params.porPagina));
+  if (params.faixa) search.set('faixa', params.faixa);
+  if (params.busca) search.set('busca', params.busca);
   const path = `/api/diretoria-painel?${search.toString()}`;
   const json = await api.get(withActorId(path, actorId));
   return { recurso: json.recurso ?? recurso, de: json.de, ate: json.ate, postos: json.postos, dados: json.dados as T };
 }
+
+// --- Diretoria: Lava Rápido (lavagens via ANPR — api-placas.vercel.app por
+// trás, hoje só o posto Ceprano tem câmera) e Estoque Parado (produtos sem
+// reposição há 45+ dias, view vw_produtos_loja_parados) — os dois novos
+// recursos acima, confirmados pela Lovable em 18/08/2026. Tipados (em vez de
+// "any" como os outros recursos) porque o shape exato do retorno veio
+// especificado por eles desta vez.
+
+export type DiretoriaLavaRapidoRegistro = {
+  placa: string;
+  camera: string | null;
+  posto: string | null;
+  entrada: string;
+  saida: string | null;
+  permanencia_segundos: number | null;
+};
+
+export type DiretoriaLavaRapidoPayload = {
+  resumo: {
+    total: number;
+    tempo_medio_min: number | null;
+    tempo_min_min: number | null;
+    tempo_max_min: number | null;
+    faturamento: number;
+    preco_unitario: number;
+  };
+  porDia: Array<{ dia: string; total: number }>;
+  ultimas: DiretoriaLavaRapidoRegistro[];
+  historico: {
+    total: number;
+    pagina: number;
+    porPagina: number;
+    linhas: DiretoriaLavaRapidoRegistro[];
+    preco_unitario: number;
+  };
+  exportUrl?: string | null;
+};
+
+export type DiretoriaEstoqueParadoProduto = {
+  produto_codigo: string;
+  produto_nome: string;
+  data_recebimento: string | null;
+  dias_parado: number;
+  estoque_atual_estimado: number;
+};
+
+export type DiretoriaEstoqueParadoPosto = {
+  posto_id: string;
+  posto_nome: string;
+  total_produtos: number;
+  media_dias_parado: number;
+  estoque_estimado: number;
+  produtos: DiretoriaEstoqueParadoProduto[];
+};
+
+export type DiretoriaEstoqueParadoPayload = {
+  faixa?: string;
+  posto?: string;
+  atualizadoEm?: string | null;
+  observacao?: string | null;
+  resumo: {
+    produtos_parados: number;
+    postos_afetados: number;
+    media_dias_parado: number;
+    estoque_estimado: number;
+  };
+  postos: DiretoriaEstoqueParadoPosto[];
+};
 
 // --- Diretoria: Mapa de Processos (gst_processos + gst_processo_etapas) —
 // endpoint confirmado pela Lovable em 04/08/2026 (/api/public/internal/

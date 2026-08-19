@@ -188,6 +188,8 @@ export type RootStackParamList = {
   Margin: undefined;
   Stock: undefined;
   GnvMetrics: undefined;
+  LavaRapido: undefined;
+  EstoqueParado: undefined;
   ProcessMap: undefined;
   DirectorNotifications: undefined;
   DirectorConversas: undefined;
@@ -370,6 +372,8 @@ type DirectorSideMenuRoute =
   | 'Margin'
   | 'Stock'
   | 'GnvMetrics'
+  | 'LavaRapido'
+  | 'EstoqueParado'
   | 'ProcessMap'
   | 'DirectorNotifications'
   | 'DirectorConversas'
@@ -1220,6 +1224,8 @@ const directorSideMenuSections: Array<{
       { id: 'margin', label: 'Margem', icon: 'percent', route: 'Margin' },
       { id: 'stock', label: 'Estoques', icon: 'box', route: 'Stock' },
       { id: 'gnv-metrics', label: 'Métricas GNV', icon: 'zap', route: 'GnvMetrics' },
+      { id: 'lava-rapido', label: 'Lava Rápido', icon: 'droplet', route: 'LavaRapido' },
+      { id: 'estoque-parado', label: 'Estoque Parado', icon: 'package', route: 'EstoqueParado' },
     ],
   },
   {
@@ -2588,6 +2594,8 @@ export default function App() {
                     <Stack.Screen name="Margin" component={MarginScreen} />
                     <Stack.Screen name="Stock" component={StockScreen} />
                     <Stack.Screen name="GnvMetrics" component={GnvMetricsScreen} />
+                    <Stack.Screen name="LavaRapido" component={LavaRapidoScreen} />
+                    <Stack.Screen name="EstoqueParado" component={EstoqueParadoScreen} />
                     <Stack.Screen name="ProcessMap" component={ProcessMapScreen} />
                     <Stack.Screen name="DirectorNotifications" component={DirectorNotificationsScreen} />
                     <Stack.Screen name="DirectorConversas" component={DirectorConversasScreen} />
@@ -7363,6 +7371,24 @@ function DirectorDashboardScreen({ navigation }: ScreenProps<'DirectorDashboard'
       subtitle: 'Desconto e volume',
     },
     {
+      id: 'lava-rapido',
+      route: 'LavaRapido',
+      icon: 'droplet',
+      iconColor: '#6D4AFF',
+      tintColor: '#EEE9FF',
+      label: 'Lava Rápido',
+      subtitle: 'Lavagens por ANPR',
+    },
+    {
+      id: 'estoque-parado',
+      route: 'EstoqueParado',
+      icon: 'package',
+      iconColor: '#B7791F',
+      tintColor: '#FCF4DE',
+      label: 'Estoque Parado',
+      subtitle: 'Produtos sem giro',
+    },
+    {
       id: 'process-map',
       route: 'ProcessMap',
       icon: 'git-branch',
@@ -9303,6 +9329,612 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
         selectedValue={selectedStation}
         onSelect={setSelectedStation}
         onClose={() => setIsStationPickerOpen(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
+// --- Lava Rápido (lavagens via ANPR — api-placas.vercel.app por trás, hoje
+// só o posto Ceprano tem câmera) e Estoque Parado (view
+// vw_produtos_loja_parados) — 2 novos recursos do painel unificado da
+// Diretoria, confirmados pela Lovable em 18/08/2026. ---
+
+// Bar chart simples (sem libs de gráfico) pra "Carros por dia" — barras com
+// altura proporcional ao maior valor do período, rótulo do dia embaixo.
+function LavaRapidoBarChart({ pontos }: { pontos: { dia: string; total: number }[] }) {
+  const maxTotal = Math.max(1, ...pontos.map((p) => p.total));
+  const dayLabel = (iso: string) => {
+    const parts = iso.split('-');
+    return parts.length === 3 ? parts[2] : iso;
+  };
+  return (
+    <View style={styles.lavaBarChartContainer}>
+      {pontos.map((ponto, index) => (
+        <View key={`${ponto.dia}-${index}`} style={styles.lavaBarColumn}>
+          <Text style={styles.lavaBarValue}>{ponto.total}</Text>
+          <View style={styles.lavaBarTrack}>
+            <View
+              style={[styles.lavaBarFill, { height: `${Math.max(4, (ponto.total / maxTotal) * 100)}%` }]}
+            />
+          </View>
+          <Text style={styles.lavaBarLabel}>{dayLabel(ponto.dia)}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function LavaRapidoScreen({ navigation }: ScreenProps<'LavaRapido'>) {
+  const postos = useDiretoriaPostos();
+  const stationOptions = useMemo(() => ['Todos os postos', ...postos.map((p) => p.nome)], [postos]);
+  const [selectedStation, setSelectedStation] = useState('Todos os postos');
+  const [isStationPickerOpen, setIsStationPickerOpen] = useState(false);
+
+  const [lavaViewMode, setLavaViewMode] = useState<'dia' | 'mes' | 'ano'>('dia');
+  const [lavaAnchorDate, setLavaAnchorDate] = useState(() => new Date());
+  const [placaSearch, setPlacaSearch] = useState('');
+  const [historicoPagina, setHistoricoPagina] = useState(1);
+  const HISTORICO_POR_PAGINA = 20;
+
+  const handleLavaPrevPeriod = () => {
+    setLavaAnchorDate((current) => {
+      if (lavaViewMode === 'dia') {
+        const next = new Date(current);
+        next.setDate(next.getDate() - 1);
+        return next;
+      }
+      if (lavaViewMode === 'mes') return new Date(current.getFullYear(), current.getMonth() - 1, 1);
+      return new Date(current.getFullYear() - 1, current.getMonth(), 1);
+    });
+    setHistoricoPagina(1);
+  };
+  const handleLavaNextPeriod = () => {
+    setLavaAnchorDate((current) => {
+      if (lavaViewMode === 'dia') {
+        const next = new Date(current);
+        next.setDate(next.getDate() + 1);
+        return next;
+      }
+      if (lavaViewMode === 'mes') return new Date(current.getFullYear(), current.getMonth() + 1, 1);
+      return new Date(current.getFullYear() + 1, current.getMonth(), 1);
+    });
+    setHistoricoPagina(1);
+  };
+  const handleLavaResetPeriod = () => {
+    setLavaAnchorDate(new Date());
+    setHistoricoPagina(1);
+  };
+
+  const lavaPeriodLabel =
+    lavaViewMode === 'dia'
+      ? `${lavaAnchorDate.getDate()} de ${MARGIN_MONTH_NAMES[lavaAnchorDate.getMonth()]} / ${lavaAnchorDate.getFullYear()}`
+      : lavaViewMode === 'mes'
+      ? `${MARGIN_MONTH_NAMES[lavaAnchorDate.getMonth()]} / ${lavaAnchorDate.getFullYear()}`
+      : `${lavaAnchorDate.getFullYear()}`;
+
+  const lavaFiltros = useMemo(() => {
+    let de: Date;
+    let ate: Date;
+    if (lavaViewMode === 'dia') {
+      de = lavaAnchorDate;
+      ate = lavaAnchorDate;
+    } else if (lavaViewMode === 'mes') {
+      de = new Date(lavaAnchorDate.getFullYear(), lavaAnchorDate.getMonth(), 1);
+      ate = new Date(lavaAnchorDate.getFullYear(), lavaAnchorDate.getMonth() + 1, 0);
+    } else {
+      de = new Date(lavaAnchorDate.getFullYear(), 0, 1);
+      ate = new Date(lavaAnchorDate.getFullYear(), 11, 31);
+    }
+    return {
+      de: toApiDateOnly(de),
+      ate: toApiDateOnly(ate),
+      posto: selectedStation === 'Todos os postos' ? undefined : selectedStation,
+      placa: placaSearch.trim() || undefined,
+      pagina: historicoPagina,
+      porPagina: HISTORICO_POR_PAGINA,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lavaViewMode, lavaAnchorDate, selectedStation, placaSearch, historicoPagina]);
+
+  const {
+    dados: lava,
+    isLoading,
+    errorMessage,
+    refresh: refreshLava,
+  } = useDiretoriaPainelRecurso('lava-rapido', lavaFiltros);
+
+  const resumo = (lava as any)?.resumo ?? null;
+  const carrosLavados = pickNum(resumo, ['total']);
+  const tempoMedioMin = pickNum(resumo, ['tempo_medio_min']);
+  const tempoMinMin = pickNum(resumo, ['tempo_min_min']);
+  const tempoMaxMin = pickNum(resumo, ['tempo_max_min']);
+  const faturamento = pickNum(resumo, ['faturamento']);
+  const precoUnitario = pickNum(resumo, ['preco_unitario']);
+
+  const chartPontos = pickArr(lava, ['porDia'])
+    .map((ponto: any) => {
+      const dia = pickStr(ponto, ['dia']);
+      const total = pickNum(ponto, ['total']);
+      return dia && total !== null ? { dia, total } : null;
+    })
+    .filter((p): p is { dia: string; total: number } => p !== null);
+
+  const ultimas = pickArr(lava, ['ultimas']);
+  const historico = (lava as any)?.historico ?? null;
+  const historicoLinhas = pickArr(historico, ['linhas']);
+  const historicoTotal = pickNum(historico, ['total']) ?? 0;
+  const historicoTotalPaginas = Math.max(1, Math.ceil(historicoTotal / HISTORICO_POR_PAGINA));
+
+  const formatPermanencia = (segundos: number | null) => {
+    if (segundos === null) return '—';
+    const min = segundos / 60;
+    return `${min.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} min`;
+  };
+
+  const formatHora = (iso: string | null) => {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return iso;
+    return date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const renderRegistro = (registro: any, index: number) => {
+    const placa = pickStr(registro, ['placa']) ?? '—';
+    const posto = pickStr(registro, ['posto']) ?? '—';
+    const entrada = pickStr(registro, ['entrada']);
+    const permanenciaSeg = pickNum(registro, ['permanencia_segundos']);
+    return (
+      <View key={`${placa}-${entrada}-${index}`} style={styles.lavaRegistroCard}>
+        <View style={styles.lavaRegistroTopRow}>
+          <View style={styles.lavaPlacaPill}>
+            <Text style={styles.lavaPlacaPillText}>{placa}</Text>
+          </View>
+          <Text style={styles.lavaRegistroValor}>{fmtBRLOrDash(precoUnitario)}</Text>
+        </View>
+        <Text style={styles.lavaRegistroMeta}>
+          {formatHora(entrada)} · {posto} · {formatPermanencia(permanenciaSeg)}
+        </Text>
+      </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={directorUserInitials}
+          variant="diretoria"
+          onAvatarPress={() => navigation.navigate('DirectorProfile')}
+        />
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshLava} tintColor="#6D4AFF" />}
+      >
+        <View style={styles.pageHeader}>
+          <View style={styles.directorPageTitleRow}>
+            <View style={[styles.iconShell, { backgroundColor: '#EEE9FF' }]}>
+              <Feather name="droplet" size={18} color="#6D4AFF" />
+            </View>
+            <Text style={styles.pageTitle}>Lava Rápido</Text>
+          </View>
+          <Text style={styles.pageSubtitle}>
+            Lavagens registradas por reconhecimento de placa (ANPR), tempo médio e faturamento.
+          </Text>
+        </View>
+
+        <View style={[styles.directorFilterRow, { marginBottom: 8 }]}>
+          <View style={[styles.lowStockTabsRow, { flex: 0, marginTop: 0, width: 156 }]}>
+            {(['dia', 'mes', 'ano'] as const).map((mode) => (
+              <Pressable
+                key={mode}
+                style={[styles.lowStockTab, lavaViewMode === mode ? styles.lowStockTabActive : null]}
+                onPress={() => {
+                  setLavaViewMode(mode);
+                  setHistoricoPagina(1);
+                }}
+              >
+                <Text style={[styles.lowStockTabText, lavaViewMode === mode ? styles.lowStockTabTextActive : null]}>
+                  {mode === 'dia' ? 'Dia' : mode === 'mes' ? 'Mês' : 'Ano'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}>
+            <Pressable onPress={handleLavaPrevPeriod}>
+              <Feather name="chevron-left" size={16} color="#5E667D" />
+            </Pressable>
+            <Pressable onPress={handleLavaResetPeriod} style={styles.marginPeriodLabelWrap}>
+              <Text style={styles.directorFilterPillText} numberOfLines={1}>
+                {lavaPeriodLabel}
+              </Text>
+            </Pressable>
+            <Pressable onPress={handleLavaNextPeriod}>
+              <Feather name="chevron-right" size={16} color="#5E667D" />
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.directorFilterRow}>
+          <Pressable
+            style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}
+            onPress={() => setIsStationPickerOpen(true)}
+          >
+            <Text style={styles.directorFilterPillText}>{selectedStation}</Text>
+            <Feather name="chevron-down" size={14} color="#5E667D" />
+          </Pressable>
+        </View>
+
+        {isLoading && !lava ? (
+          <Text style={styles.conversaEmptyText}>Carregando lavagens...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : (
+          <>
+            <Text style={styles.directorSectionTitle}>RESUMO</Text>
+            <View style={styles.stockSummaryGrid}>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>CARROS LAVADOS</Text>
+                <Text style={styles.directorSummaryValue}>{fmtNumOrDash(carrosLavados)}</Text>
+                <Text style={styles.directorSummaryMeta}>No período selecionado</Text>
+              </View>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>TEMPO MÉDIO</Text>
+                <Text style={styles.directorSummaryValue}>
+                  {tempoMedioMin !== null ? `${tempoMedioMin.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} min` : '—'}
+                </Text>
+                <Text style={styles.directorSummaryMeta}>Entrada até saída</Text>
+              </View>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>FATURAMENTO</Text>
+                <Text style={styles.directorSummaryValue}>{fmtBRLOrDash(faturamento)}</Text>
+                <Text style={styles.directorSummaryMeta}>Higienização {fmtBRLOrDash(precoUnitario)}</Text>
+              </View>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>MENOR / MAIOR</Text>
+                <Text style={styles.directorSummaryValue}>
+                  {tempoMinMin !== null ? tempoMinMin.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'} /{' '}
+                  {tempoMaxMin !== null ? tempoMaxMin.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'} min
+                </Text>
+                <Text style={styles.directorSummaryMeta}>Permanência no período</Text>
+              </View>
+            </View>
+
+            <Text style={styles.directorSectionTitle}>CARROS POR DIA</Text>
+            {chartPontos.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Sem lavagens no período.</Text>
+            ) : (
+              <LavaRapidoBarChart pontos={chartPontos} />
+            )}
+
+            <Text style={styles.directorSectionTitle}>ÚLTIMAS PLACAS REGISTRADAS</Text>
+            {ultimas.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Nenhuma lavagem registrada ainda.</Text>
+            ) : (
+              ultimas.map(renderRegistro)
+            )}
+
+            <View style={styles.processSearchRow}>
+              <Feather name="search" size={16} color="#99A0BA" />
+              <TextInput
+                style={styles.processSearchInput}
+                placeholder="Buscar por placa..."
+                placeholderTextColor="#99A0BA"
+                value={placaSearch}
+                onChangeText={(text) => {
+                  setPlacaSearch(text);
+                  setHistoricoPagina(1);
+                }}
+                autoCapitalize="characters"
+              />
+            </View>
+
+            <Text style={styles.directorSectionTitle}>HISTÓRICO COMPLETO ({fmtNumOrDash(historicoTotal)})</Text>
+            {historicoLinhas.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Nenhum registro encontrado.</Text>
+            ) : (
+              historicoLinhas.map(renderRegistro)
+            )}
+
+            {historicoTotalPaginas > 1 ? (
+              <View style={styles.lowStockPaginationRow}>
+                <Pressable
+                  style={[styles.lowStockPageButton, historicoPagina === 1 ? styles.lowStockPageButtonDisabled : null]}
+                  onPress={() => setHistoricoPagina((p) => Math.max(1, p - 1))}
+                  disabled={historicoPagina === 1}
+                >
+                  <Feather name="chevron-left" size={16} color={historicoPagina === 1 ? '#C8CEDD' : '#3A415C'} />
+                  <Text
+                    style={[styles.lowStockPageButtonText, historicoPagina === 1 ? styles.lowStockPageButtonTextDisabled : null]}
+                  >
+                    Anterior
+                  </Text>
+                </Pressable>
+
+                <Text style={styles.lowStockPageIndicator}>
+                  Página {historicoPagina} de {historicoTotalPaginas}
+                </Text>
+
+                <Pressable
+                  style={[
+                    styles.lowStockPageButton,
+                    historicoPagina === historicoTotalPaginas ? styles.lowStockPageButtonDisabled : null,
+                  ]}
+                  onPress={() => setHistoricoPagina((p) => Math.min(historicoTotalPaginas, p + 1))}
+                  disabled={historicoPagina === historicoTotalPaginas}
+                >
+                  <Text
+                    style={[
+                      styles.lowStockPageButtonText,
+                      historicoPagina === historicoTotalPaginas ? styles.lowStockPageButtonTextDisabled : null,
+                    ]}
+                  >
+                    Próxima
+                  </Text>
+                  <Feather
+                    name="chevron-right"
+                    size={16}
+                    color={historicoPagina === historicoTotalPaginas ? '#C8CEDD' : '#3A415C'}
+                  />
+                </Pressable>
+              </View>
+            ) : null}
+
+            <Text style={styles.directorUpdatedAt}>Período: {lavaPeriodLabel}</Text>
+          </>
+        )}
+      </ScrollView>
+
+      <SimpleListModal
+        visible={isStationPickerOpen}
+        title="Selecionar posto"
+        options={stationOptions}
+        selectedValue={selectedStation}
+        onSelect={setSelectedStation}
+        onClose={() => setIsStationPickerOpen(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
+const ESTOQUE_PARADO_FAIXA_OPTIONS = [
+  { label: 'Todas as faixas', value: 'todas' },
+  { label: '45–90 dias', value: '45_90' },
+  { label: '90–180 dias', value: '90_180' },
+  { label: '180–365 dias', value: '180_365' },
+  { label: '+365 dias', value: '365' },
+];
+
+function EstoqueParadoScreen({ navigation }: ScreenProps<'EstoqueParado'>) {
+  const postos = useDiretoriaPostos();
+  const stationOptions = useMemo(() => ['Todos os postos', ...postos.map((p) => p.nome)], [postos]);
+  const [selectedStation, setSelectedStation] = useState('Todos os postos');
+  const [isStationPickerOpen, setIsStationPickerOpen] = useState(false);
+
+  const [selectedFaixaLabel, setSelectedFaixaLabel] = useState('Todas as faixas');
+  const [isFaixaPickerOpen, setIsFaixaPickerOpen] = useState(false);
+  const selectedFaixaValue =
+    ESTOQUE_PARADO_FAIXA_OPTIONS.find((f) => f.label === selectedFaixaLabel)?.value ?? 'todas';
+
+  const [buscaProduto, setBuscaProduto] = useState('');
+  const [expandedPostoIds, setExpandedPostoIds] = useState<Record<string, boolean>>({});
+
+  const filtros = useMemo(
+    () => ({
+      posto: selectedStation === 'Todos os postos' ? undefined : selectedStation,
+      faixa: selectedFaixaValue === 'todas' ? undefined : selectedFaixaValue,
+      busca: buscaProduto.trim() || undefined,
+    }),
+    [selectedStation, selectedFaixaValue, buscaProduto]
+  );
+
+  const {
+    dados: estoqueParado,
+    isLoading,
+    errorMessage,
+    refresh: refreshEstoqueParado,
+  } = useDiretoriaPainelRecurso('estoque-parado', filtros);
+
+  const resumo = (estoqueParado as any)?.resumo ?? null;
+  const produtosParados = pickNum(resumo, ['produtos_parados']);
+  const postosAfetados = pickNum(resumo, ['postos_afetados']);
+  const mediaDiasParado = pickNum(resumo, ['media_dias_parado']);
+  const estoqueEstimadoTotal = pickNum(resumo, ['estoque_estimado']);
+  const observacao = pickStr(estoqueParado, ['observacao']);
+  const gruposPostos = pickArr(estoqueParado, ['postos']);
+
+  const formatData = (raw: string | null) => {
+    if (!raw) return '—';
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return raw;
+    return date.toLocaleDateString('pt-BR');
+  };
+
+  const toggleGrupo = (postoId: string) => {
+    setExpandedPostoIds((current) => ({ ...current, [postoId]: !current[postoId] }));
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={directorUserInitials}
+          variant="diretoria"
+          onAvatarPress={() => navigation.navigate('DirectorProfile')}
+        />
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={isLoading} onRefresh={refreshEstoqueParado} tintColor="#B7791F" />
+        }
+      >
+        <View style={styles.pageHeader}>
+          <View style={styles.directorPageTitleRow}>
+            <View style={[styles.iconShell, { backgroundColor: '#FCF4DE' }]}>
+              <Feather name="package" size={18} color="#B7791F" />
+            </View>
+            <Text style={styles.pageTitle}>Estoque Parado</Text>
+          </View>
+          <Text style={styles.pageSubtitle}>
+            Produtos de loja sem reposição há mais de 45 dias e com estoque estimado em aberto.
+          </Text>
+        </View>
+
+        <View style={styles.directorFilterRow}>
+          <Pressable
+            style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}
+            onPress={() => setIsStationPickerOpen(true)}
+          >
+            <Text style={styles.directorFilterPillText}>{selectedStation}</Text>
+            <Feather name="chevron-down" size={14} color="#5E667D" />
+          </Pressable>
+          <Pressable
+            style={[styles.directorFilterPill, { flex: 1, justifyContent: 'space-between' }]}
+            onPress={() => setIsFaixaPickerOpen(true)}
+          >
+            <Text style={styles.directorFilterPillText} numberOfLines={1}>
+              {selectedFaixaLabel}
+            </Text>
+            <Feather name="chevron-down" size={14} color="#5E667D" />
+          </Pressable>
+        </View>
+
+        <View style={styles.processSearchRow}>
+          <Feather name="search" size={16} color="#99A0BA" />
+          <TextInput
+            style={styles.processSearchInput}
+            placeholder="Buscar produto..."
+            placeholderTextColor="#99A0BA"
+            value={buscaProduto}
+            onChangeText={setBuscaProduto}
+          />
+        </View>
+
+        {isLoading && !estoqueParado ? (
+          <Text style={styles.conversaEmptyText}>Carregando estoque parado...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : (
+          <>
+            <View style={styles.stockSummaryGrid}>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>PRODUTOS PARADOS</Text>
+                <Text style={styles.directorSummaryValue}>{fmtNumOrDash(produtosParados)}</Text>
+                <Text style={styles.directorSummaryMeta}>Sem reposição há +45 dias</Text>
+              </View>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>POSTOS AFETADOS</Text>
+                <Text style={styles.directorSummaryValue}>{fmtNumOrDash(postosAfetados)}</Text>
+                <Text style={styles.directorSummaryMeta}>Com ao menos 1 item parado</Text>
+              </View>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>MÉDIA DE DIAS PARADO</Text>
+                <Text style={styles.directorSummaryValue}>
+                  {mediaDiasParado !== null ? `${fmtNumOrDash(mediaDiasParado)} dias` : '—'}
+                </Text>
+                <Text style={styles.directorSummaryMeta}>Nos itens filtrados</Text>
+              </View>
+              <View style={styles.stockSummaryCard}>
+                <Text style={styles.directorSummaryLabel}>ESTOQUE ESTIMADO</Text>
+                <Text style={styles.directorSummaryValue}>{fmtNumOrDash(estoqueEstimadoTotal)}</Text>
+                <Text style={styles.directorSummaryMeta}>Somatório de unidades</Text>
+              </View>
+            </View>
+
+            {observacao ? (
+              <View style={styles.estoqueParadoBanner}>
+                <Text style={styles.estoqueParadoBannerText}>{observacao}</Text>
+              </View>
+            ) : null}
+
+            {gruposPostos.length === 0 ? (
+              <Text style={styles.conversaEmptyText}>Nenhum produto parado encontrado.</Text>
+            ) : (
+              gruposPostos.map((grupo: any, grupoIndex: number) => {
+                const postoId = pickStr(grupo, ['posto_id']) ?? String(grupoIndex);
+                const postoNome = pickStr(grupo, ['posto_nome']) ?? '—';
+                const totalProdutos = pickNum(grupo, ['total_produtos']);
+                const mediaDias = pickNum(grupo, ['media_dias_parado']);
+                const produtos = pickArr(grupo, ['produtos']);
+                const isExpanded = Boolean(expandedPostoIds[postoId]);
+
+                return (
+                  <View key={postoId}>
+                    <Pressable style={styles.estoqueParadoGroupHeader} onPress={() => toggleGrupo(postoId)}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.estoqueParadoGroupTitle}>{postoNome}</Text>
+                        <Text style={styles.estoqueParadoGroupMeta}>
+                          {fmtNumOrDash(totalProdutos)} produto(s) · média{' '}
+                          {mediaDias !== null ? `${fmtNumOrDash(mediaDias)} dias` : '—'}
+                        </Text>
+                      </View>
+                      <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#5E667D" />
+                    </Pressable>
+
+                    {isExpanded
+                      ? produtos.map((produto: any, produtoIndex: number) => {
+                          const nome = pickStr(produto, ['produto_nome']) ?? '—';
+                          const codigo = pickStr(produto, ['produto_codigo']);
+                          const dataRecebimento = pickStr(produto, ['data_recebimento']);
+                          const diasParado = pickNum(produto, ['dias_parado']);
+                          const estoqueEstimado = pickNum(produto, ['estoque_atual_estimado']);
+                          return (
+                            <View key={`${postoId}-${codigo ?? produtoIndex}`} style={styles.estoqueParadoProdutoRow}>
+                              <Text style={styles.estoqueParadoProdutoName} numberOfLines={2}>
+                                {nome}
+                              </Text>
+                              <Text style={styles.estoqueParadoProdutoMeta}>
+                                Código {codigo ?? '—'} · último recebimento {formatData(dataRecebimento)}
+                              </Text>
+                              <View style={styles.estoqueParadoDiasBadge}>
+                                <Text style={styles.estoqueParadoDiasBadgeText}>
+                                  {diasParado !== null ? `${diasParado} dias` : '—'}
+                                </Text>
+                              </View>
+                              <Text style={styles.estoqueParadoEstoqueValue}>
+                                Estoque estimado: {fmtNumOrDash(estoqueEstimado)}
+                              </Text>
+                            </View>
+                          );
+                        })
+                      : null}
+                  </View>
+                );
+              })
+            )}
+          </>
+        )}
+      </ScrollView>
+
+      <SimpleListModal
+        visible={isStationPickerOpen}
+        title="Selecionar posto"
+        options={stationOptions}
+        selectedValue={selectedStation}
+        onSelect={setSelectedStation}
+        onClose={() => setIsStationPickerOpen(false)}
+      />
+      <SimpleListModal
+        visible={isFaixaPickerOpen}
+        title="Selecionar faixa de dias"
+        options={ESTOQUE_PARADO_FAIXA_OPTIONS.map((f) => f.label)}
+        selectedValue={selectedFaixaLabel}
+        onSelect={setSelectedFaixaLabel}
+        onClose={() => setIsFaixaPickerOpen(false)}
       />
     </SafeAreaView>
   );
@@ -12240,7 +12872,16 @@ function useDiretoriaPostos() {
 // período/posto — usado por Vendas/Margem/Estoques/GNV.
 function useDiretoriaPainelRecurso(
   recurso: DiretoriaPainelRecurso,
-  filtros: { de?: string; ate?: string; posto?: string }
+  filtros: {
+    de?: string;
+    ate?: string;
+    posto?: string;
+    placa?: string;
+    pagina?: number;
+    porPagina?: number;
+    faixa?: string;
+    busca?: string;
+  }
 ) {
   const { identity } = useContext(AuthIdentityContext);
   // Refaz a busca sempre que a tela volta a ficar em foco (ex.: usuária sai
@@ -12280,7 +12921,20 @@ function useDiretoriaPainelRecurso(
       isActive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recurso, filtros.de, filtros.ate, filtros.posto, identity?.profileId, isFocused, refreshKey]);
+  }, [
+    recurso,
+    filtros.de,
+    filtros.ate,
+    filtros.posto,
+    filtros.placa,
+    filtros.pagina,
+    filtros.porPagina,
+    filtros.faixa,
+    filtros.busca,
+    identity?.profileId,
+    isFocused,
+    refreshKey,
+  ]);
 
   const refresh = useCallback(() => setRefreshKey((current) => current + 1), []);
 
@@ -17787,6 +18441,156 @@ export const styles = StyleSheet.create({
     color: '#7C8397',
     fontSize: 12,
     fontWeight: '600',
+  },
+
+  // --- Lava Rápido (Diretoria) ---
+  lavaRegistroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 12,
+    marginBottom: 8,
+  },
+  lavaRegistroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  lavaPlacaPill: {
+    backgroundColor: '#EEE9FF',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  lavaPlacaPillText: {
+    color: '#6D4AFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  lavaRegistroValor: {
+    color: '#18955A',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  lavaRegistroMeta: {
+    marginTop: 6,
+    color: '#7C8397',
+    fontSize: 12,
+  },
+  lavaBarChartContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: 140,
+    paddingHorizontal: 4,
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    paddingTop: 24,
+    paddingBottom: 8,
+  },
+  lavaBarColumn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: '100%',
+  },
+  lavaBarValue: {
+    color: '#0C1736',
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  lavaBarTrack: {
+    width: '60%',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  lavaBarFill: {
+    width: '100%',
+    backgroundColor: '#6D4AFF',
+    borderRadius: 4,
+    minHeight: 2,
+  },
+  lavaBarLabel: {
+    marginTop: 4,
+    color: '#9AA1B5',
+    fontSize: 9,
+  },
+
+  // --- Estoque Parado (Diretoria) ---
+  estoqueParadoBanner: {
+    backgroundColor: '#FCF4DE',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  estoqueParadoBannerText: {
+    color: '#8A6D1D',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  estoqueParadoGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 12,
+    marginBottom: 8,
+  },
+  estoqueParadoGroupTitle: {
+    color: '#15203E',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  estoqueParadoGroupMeta: {
+    marginTop: 2,
+    color: '#9AA1B5',
+    fontSize: 11,
+  },
+  estoqueParadoProdutoRow: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 10,
+    marginBottom: 6,
+    marginLeft: 8,
+  },
+  estoqueParadoProdutoName: {
+    color: '#15203E',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  estoqueParadoProdutoMeta: {
+    marginTop: 3,
+    color: '#9AA1B5',
+    fontSize: 11,
+  },
+  estoqueParadoDiasBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    backgroundColor: '#FCE8EC',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  estoqueParadoDiasBadgeText: {
+    color: '#E6213D',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  estoqueParadoEstoqueValue: {
+    marginTop: 3,
+    color: '#0C1736',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // --- Fale com a Diretoria ---

@@ -725,9 +725,31 @@ function getDashboardKpis({ mes, ano, actorId } = {}) {
 // posto=todos = rede inteira). Retorno: { recurso, de, ate, postos, dados }.
 // Fontes por baixo: espelhos Quality no Postgres AF360 deles + metas/alertas
 // (config_metas_margem, quality_alerta_custo) + API de relatórios GNV.
+//
+// Dois recursos extras confirmados pela Lovable em 18/08/2026, no mesmo
+// endpoint:
+// - recurso=lava-rapido: lavagens via ANPR (API pública api-placas.vercel.app
+//   por trás — hoje só o posto Ceprano tem câmera). Valor derivado (carros ×
+//   R$14,99). Só tem dado a partir de ontem. Params extras: placa, pagina,
+//   porPagina (5-200, padrão 25). Retorno: { ..., dados: { resumo, porDia,
+//   ultimas, historico, exportUrl } }.
+// - recurso=estoque-parado: produtos parados (view vw_produtos_loja_parados,
+//   fechamento Quality + compras - vendas, exclui tipo_produto='U'). Sem
+//   período (foto atual) — de/ate não se aplicam aqui. Params extras: faixa
+//   (todas|45_90|90_180|180_365|365), busca (nome/código do produto). Retorno:
+//   { ..., resumo, postos: [{ posto_id, posto_nome, total_produtos,
+//   media_dias_parado, estoque_estimado, produtos: [...] }] } (sem "dados"
+//   por baixo, o payload já vem "achatado" nesse recurso).
 
-function getDiretoriaVendas({ recurso, de, ate, posto } = {}, actorId) {
-  return lovableGet('/api/public/internal/diretoria-vendas', { recurso, de, ate, posto }, actorId);
+function getDiretoriaVendas(
+  { recurso, de, ate, posto, placa, pagina, porPagina, faixa, busca } = {},
+  actorId
+) {
+  return lovableGet(
+    '/api/public/internal/diretoria-vendas',
+    { recurso, de, ate, posto, placa, pagina, porPagina, faixa, busca },
+    actorId
+  );
 }
 
 // --- Autenticação: verificação em duas etapas (2FA) por e-mail — endpoints
