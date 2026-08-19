@@ -144,6 +144,13 @@ import {
   type RhMetaPublico,
   type RhMetaFonteAuto,
   type RhMetaCreateBody,
+  fetchRhJornadas,
+  createRhJornada,
+  updateRhJornada,
+  deleteRhJornada,
+  type RhJornadaItem,
+  type RhRegimeJornada,
+  type RhJornadaCreateBody,
 } from './api';
 
 // ---------- Types ----------
@@ -11785,6 +11792,7 @@ export function RHMetasScreen({ navigation }: ScreenProps<'RHMetas'>) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [unidades, setUnidades] = useState<RhUnidadeItem[]>([]);
   const [cargos, setCargos] = useState<{ id: string; nome: string }[]>([]);
+  const [menuAnchor, setMenuAnchor] = useState<{ id: string; x: number; y: number } | null>(null);
 
   useEffect(() => {
     fetchRhUnidades().then(setUnidades).catch(() => setUnidades([]));
@@ -11935,7 +11943,7 @@ export function RHMetasScreen({ navigation }: ScreenProps<'RHMetas'>) {
             return (
               <View key={item.id} style={rhStyles.goalCard}>
                 <View style={rhStyles.importRecordTopRow}>
-                  <Text style={rhStyles.goalTitle} numberOfLines={1}>
+                  <Text style={[rhStyles.goalTitle, { marginRight: 4 }]} numberOfLines={1}>
                     {item.titulo}
                   </Text>
                   <View style={[rhStyles.importTypePillSmall, { backgroundColor: statusMeta.bg }]}>
@@ -11943,6 +11951,16 @@ export function RHMetasScreen({ navigation }: ScreenProps<'RHMetas'>) {
                       {metaStatusValueToLabel[item.status] ?? item.status}
                     </Text>
                   </View>
+                  <Pressable
+                    onPress={(e) => {
+                      const { pageX, pageY } = e.nativeEvent;
+                      setMenuAnchor({ id: item.id, x: pageX, y: pageY });
+                    }}
+                    hitSlop={8}
+                    style={{ marginLeft: 8 }}
+                  >
+                    <Feather name="more-vertical" size={18} color="#677089" />
+                  </Pressable>
                 </View>
                 {item.descricao ? <Text style={rhStyles.goalSubtitle}>{item.descricao}</Text> : null}
 
@@ -11964,36 +11982,62 @@ export function RHMetasScreen({ navigation }: ScreenProps<'RHMetas'>) {
                   <Text style={[rhStyles.goalPct, { color: tone }]}>{percentual}%</Text>
                 </View>
                 <RHProgressBar pct={percentual} color={tone} />
-
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 12 }}>
-                  {item.medicao === 'manual' ? (
-                    <Pressable onPress={() => setResultadoItem(item)} hitSlop={8}>
-                      <Feather name="refresh-cw" size={16} color="#677089" />
-                    </Pressable>
-                  ) : null}
-                  <Pressable
-                    onPress={() => {
-                      setEditingItem(item);
-                      setIsFormOpen(true);
-                    }}
-                    hitSlop={8}
-                  >
-                    <Feather name="edit-2" size={16} color="#677089" />
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleDelete(item)}
-                    disabled={deletingId === item.id}
-                    hitSlop={8}
-                    style={{ opacity: deletingId === item.id ? 0.4 : 1 }}
-                  >
-                    <Feather name="trash-2" size={16} color="#E6213D" />
-                  </Pressable>
-                </View>
               </View>
             );
           })
         )}
       </ScrollView>
+
+      <Modal visible={menuAnchor !== null} transparent animationType="fade" onRequestClose={() => setMenuAnchor(null)}>
+        <Pressable style={{ flex: 1 }} onPress={() => setMenuAnchor(null)}>
+          {menuAnchor
+            ? (() => {
+                const menuItem = items.find((entry) => entry.id === menuAnchor.id);
+                if (!menuItem) return null;
+                return (
+                  <Pressable
+                    style={[rhStyles.rowActionsMenu, { top: menuAnchor.y + 8, right: 16 }]}
+                    onPress={() => {}}
+                  >
+                    {menuItem.medicao === 'manual' ? (
+                      <Pressable
+                        style={rhStyles.rowActionsMenuItem}
+                        onPress={() => {
+                          setMenuAnchor(null);
+                          setResultadoItem(menuItem);
+                        }}
+                      >
+                        <Feather name="refresh-cw" size={15} color="#5E667D" />
+                        <Text style={rhStyles.rowActionsMenuItemText}>Atualizar resultado</Text>
+                      </Pressable>
+                    ) : null}
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        setEditingItem(menuItem);
+                        setIsFormOpen(true);
+                      }}
+                    >
+                      <Feather name="edit-2" size={15} color="#5E667D" />
+                      <Text style={rhStyles.rowActionsMenuItemText}>Editar</Text>
+                    </Pressable>
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        handleDelete(menuItem);
+                      }}
+                    >
+                      <Feather name="trash-2" size={15} color="#E6213D" />
+                      <Text style={[rhStyles.rowActionsMenuItemText, { color: '#E6213D' }]}>Excluir</Text>
+                    </Pressable>
+                  </Pressable>
+                );
+              })()
+            : null}
+        </Pressable>
+      </Modal>
 
       <RHSimplePickerModal
         visible={isStatusFilterOpen}
@@ -12031,30 +12075,332 @@ export function RHMetasScreen({ navigation }: ScreenProps<'RHMetas'>) {
   );
 }
 
-// ---------- Ponto ----------
+// ---------- Ponto / Configurações do Ponto / Jornadas ----------
+// Dados reais (rh_jornadas) via /api/rh/jornadas — endpoint confirmado pela
+// Lovable em 19/08/2026. O mock antigo de "marcações do dia" foi removido:
+// não existe tabela/endpoint de apuração diária de ponto liberado ainda, e
+// o que o web mostra em "Ponto" hoje é justamente o cadastro de jornadas.
 
-type PontoStatus = 'ok' | 'aberto' | 'atraso' | 'falta';
-type PontoEntry = { id: string; name: string; times: string; status: PontoStatus };
+const regimeJornadaOptions = [
+  '44h semanais',
+  '40h semanais',
+  '36h semanais',
+  '30h semanais',
+  'Escala 12x36',
+  'Escala personalizada',
+] as const;
 
-const rhPontoStatusMeta: Record<PontoStatus, { label: string; color: string; tint: string }> = {
-  ok: { label: 'OK', color: '#18955A', tint: '#E3F5EA' },
-  aberto: { label: 'Aberto', color: '#3457D5', tint: '#E9EEFF' },
-  atraso: { label: 'Atraso', color: '#B07A1E', tint: '#FCEFDA' },
-  falta: { label: 'Falta', color: '#E6213D', tint: '#FCE8EC' },
+const regimeJornadaLabelToValue: Record<(typeof regimeJornadaOptions)[number], RhRegimeJornada> = {
+  '44h semanais': '44h',
+  '40h semanais': '40h',
+  '36h semanais': '36h',
+  '30h semanais': '30h',
+  'Escala 12x36': '12x36',
+  'Escala personalizada': 'escala',
 };
 
-const rhPontoStats = { presentesHoje: 912, totalAtivos: 968, inconsistencias: 14 };
+const regimeJornadaValueToLabel: Record<RhRegimeJornada, string> = {
+  '44h': '44h semanais',
+  '40h': '40h semanais',
+  '36h': '36h semanais',
+  '30h': '30h semanais',
+  '12x36': 'Escala 12x36',
+  escala: 'Escala personalizada',
+};
 
-const rhPontoEntries: PontoEntry[] = [
-  { id: 'p-1', name: 'Adilson Bezerra', times: '08:00 · 12:02 · 13:00 · 17:31', status: 'ok' },
-  { id: 'p-2', name: 'Ailson de Andrade', times: '08:03 · 12:00 · —', status: 'aberto' },
-  { id: 'p-3', name: 'Alan Duarte', times: '07:58 · 12:10 · 13:05 · 17:20', status: 'ok' },
-  { id: 'p-4', name: 'Adriano Filho', times: '08:40 · — · —', status: 'atraso' },
-  { id: 'p-5', name: 'Alan Gama', times: '— · — · —', status: 'falta' },
-];
+// Filtra dígitos e formata como HH:MM enquanto digita (máx. 4 dígitos).
+function maskHoraInput(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+function isHoraValida(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function empresaNomeJornada(jornada: RhJornadaItem): string {
+  if (!jornada.empresa_id) return 'Todas as empresas';
+  return jornada.empresas?.nome_fantasia ?? jornada.empresas?.apelido ?? jornada.empresas?.razao_social ?? 'Unidade';
+}
+
+type JornadaFormValues = {
+  nome: string;
+  empresaLabel: string;
+  empresaId: string | null;
+  entrada: string;
+  saida: string;
+  intervaloMinutos: string;
+  regimeLabel: (typeof regimeJornadaOptions)[number];
+  ativa: boolean;
+};
+
+function emptyJornadaForm(): JornadaFormValues {
+  return {
+    nome: '',
+    empresaLabel: 'Todas as empresas',
+    empresaId: null,
+    entrada: '',
+    saida: '',
+    intervaloMinutos: '',
+    regimeLabel: '44h semanais',
+    ativa: true,
+  };
+}
+
+function jornadaToFormValues(item: RhJornadaItem): JornadaFormValues {
+  return {
+    nome: item.nome,
+    empresaLabel: empresaNomeJornada(item),
+    empresaId: item.empresa_id,
+    entrada: item.entrada?.slice(0, 5) ?? '',
+    saida: item.saida?.slice(0, 5) ?? '',
+    intervaloMinutos: String(item.intervalo_minutos ?? ''),
+    regimeLabel: (regimeJornadaValueToLabel[item.regime] as (typeof regimeJornadaOptions)[number]) ?? '44h semanais',
+    ativa: item.ativo,
+  };
+}
+
+function RHJornadaFormModal({
+  visible,
+  editingItem,
+  unidades,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  editingItem: RhJornadaItem | null;
+  unidades: RhUnidadeItem[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [form, setForm] = useState<JornadaFormValues>(emptyJornadaForm());
+  const [isSaving, setIsSaving] = useState(false);
+  const [isEmpresaPickerOpen, setIsEmpresaPickerOpen] = useState(false);
+  const [isRegimePickerOpen, setIsRegimePickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setForm(editingItem ? jornadaToFormValues(editingItem) : emptyJornadaForm());
+    }
+  }, [visible, editingItem]);
+
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
+
+  const handleSubmit = () => {
+    const nomeTrim = form.nome.trim();
+    const intervaloNum = Number(form.intervaloMinutos);
+
+    if (!nomeTrim) {
+      Alert.alert('Nome obrigatório', 'Informe um nome para a jornada.');
+      return;
+    }
+    if (!isHoraValida(form.entrada) || !isHoraValida(form.saida)) {
+      Alert.alert('Horário inválido', 'Informe a entrada e a saída no formato HH:MM.');
+      return;
+    }
+    if (!form.intervaloMinutos || Number.isNaN(intervaloNum) || intervaloNum < 0 || intervaloNum > 600) {
+      Alert.alert('Intervalo inválido', 'Informe o intervalo em minutos (0 a 600).');
+      return;
+    }
+
+    const body: RhJornadaCreateBody = {
+      nome: nomeTrim,
+      empresa_id: form.empresaLabel === 'Todas as empresas' ? null : form.empresaId,
+      entrada: form.entrada,
+      saida: form.saida,
+      intervalo_minutos: intervaloNum,
+      regime: regimeJornadaLabelToValue[form.regimeLabel],
+      ativo: form.ativa,
+    };
+
+    setIsSaving(true);
+    const request = editingItem
+      ? updateRhJornada(editingItem.id, body, identity?.profileId)
+      : createRhJornada(body, identity?.profileId);
+    request
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar a jornada.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={handleClose}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>{editingItem ? 'Editar jornada' : 'Nova jornada'}</Text>
+            <Pressable onPress={handleClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.requestFieldLabel}>Nome *</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.nome}
+              onChangeText={(text) => setForm((current) => ({ ...current, nome: text }))}
+              placeholder="Ex.: Administrativo 44h"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <RHSelectField
+              label="Empresa"
+              value={form.empresaLabel}
+              onPress={() => setIsEmpresaPickerOpen(true)}
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Entrada *</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.entrada}
+              onChangeText={(text) => setForm((current) => ({ ...current, entrada: maskHoraInput(text) }))}
+              placeholder="08:00"
+              placeholderTextColor="#A7AEC2"
+              keyboardType="numeric"
+              maxLength={5}
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Saída *</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.saida}
+              onChangeText={(text) => setForm((current) => ({ ...current, saida: maskHoraInput(text) }))}
+              placeholder="17:00"
+              placeholderTextColor="#A7AEC2"
+              keyboardType="numeric"
+              maxLength={5}
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Intervalo (minutos) *</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.intervaloMinutos}
+              onChangeText={(text) =>
+                setForm((current) => ({ ...current, intervaloMinutos: text.replace(/\D/g, '') }))
+              }
+              placeholder="Ex.: 60"
+              placeholderTextColor="#A7AEC2"
+              keyboardType="numeric"
+              maxLength={3}
+            />
+
+            <RHSelectField
+              label="Regime"
+              required
+              value={form.regimeLabel}
+              onPress={() => setIsRegimePickerOpen(true)}
+            />
+
+            <View style={[rhStyles.sectionHeaderRow, styles.spacingTop]}>
+              <Text style={rhStyles.filterFieldLabel}>Jornada ativa</Text>
+              <ToggleSwitch
+                value={form.ativa}
+                onValueChange={() => setForm((current) => ({ ...current, ativa: !current.ativa }))}
+              />
+            </View>
+
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>
+                {isSaving ? 'Salvando...' : editingItem ? 'Salvar alterações' : 'Cadastrar jornada'}
+              </Text>
+            </Pressable>
+          </ScrollView>
+
+          <RHSimplePickerModal
+            inline
+            visible={isEmpresaPickerOpen}
+            title="Empresa"
+            options={['Todas as empresas', ...unidades.map((entry) => entry.nome)]}
+            selectedValue={form.empresaLabel}
+            onSelect={(nome) => {
+              const found = unidades.find((entry) => entry.nome === nome);
+              setForm((current) => ({ ...current, empresaLabel: nome, empresaId: found?.id ?? null }));
+            }}
+            onClose={() => setIsEmpresaPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isRegimePickerOpen}
+            title="Regime"
+            options={[...regimeJornadaOptions]}
+            selectedValue={form.regimeLabel}
+            onSelect={(value) =>
+              setForm((current) => ({ ...current, regimeLabel: value as (typeof regimeJornadaOptions)[number] }))
+            }
+            onClose={() => setIsRegimePickerOpen(false)}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
 
 export function RHPontoScreen({ navigation }: ScreenProps<'RHPonto'>) {
-  const todayLabel = formatDateBR(new Date());
+  const { identity } = useContext(AuthIdentityContext);
+  const [items, setItems] = useState<RhJornadaItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [unidades, setUnidades] = useState<RhUnidadeItem[]>([]);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<RhJornadaItem | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchRhUnidades().then(setUnidades).catch(() => setUnidades([]));
+  }, []);
+
+  const loadJornadas = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhJornadas({ busca: search || undefined })
+      .then((result) => setItems(result.items))
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as jornadas.'))
+      .finally(() => setIsLoading(false));
+  }, [search]);
+
+  useEffect(() => {
+    loadJornadas();
+  }, [loadJornadas]);
+
+  const handleToggleAtivo = (item: RhJornadaItem) => {
+    setBusyId(item.id);
+    updateRhJornada(item.id, { ativo: !item.ativo }, identity?.profileId)
+      .then(loadJornadas)
+      .catch((err) => showRhSaveError(err, 'Não foi possível atualizar a jornada.'))
+      .finally(() => setBusyId(null));
+  };
+
+  const handleDelete = (item: RhJornadaItem) => {
+    Alert.alert('Excluir jornada', `Tem certeza que quer excluir "${item.nome}"? Essa ação não pode ser desfeita.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          setBusyId(item.id);
+          deleteRhJornada(item.id, identity?.profileId)
+            .then(loadJornadas)
+            .catch((err) => showRhSaveError(err, 'Não foi possível excluir a jornada.'))
+            .finally(() => setBusyId(null));
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -12068,64 +12414,155 @@ export function RHPontoScreen({ navigation }: ScreenProps<'RHPonto'>) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <RHPageHeader icon="clock" title="Ponto" subtitle="Controle e fechamento de jornada" />
+        <RHPageHeader
+          icon="clock"
+          title="Configurações do Ponto"
+          subtitle="Cadastro de jornadas/escalas associadas aos colaboradores."
+        />
 
-        <View style={styles.grid}>
-          <View style={styles.gridItem}>
-            <View style={rhStyles.kpiCard}>
-              <Text style={rhStyles.kpiLabel}>PRESENTES HOJE</Text>
-              <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGreen]}>
-                {rhPontoStats.presentesHoje}
-              </Text>
-              <Text style={rhStyles.kpiMeta}>de {rhPontoStats.totalAtivos} ativos</Text>
-            </View>
-          </View>
-          <View style={styles.gridItem}>
-            <View style={rhStyles.kpiCard}>
-              <Text style={rhStyles.kpiLabel}>INCONSISTÊNCIAS</Text>
-              <Text style={[rhStyles.sectionBigValue, { color: '#E6213D' }]}>{rhPontoStats.inconsistencias}</Text>
-              <Text style={rhStyles.kpiMeta}>marcações a tratar</Text>
-            </View>
-          </View>
+        <View style={rhStyles.searchRow}>
+          <Feather name="search" size={16} color="#9AA1B5" />
+          <TextInput
+            style={rhStyles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Buscar jornada..."
+            placeholderTextColor="#A7AEC2"
+          />
         </View>
-
-        <View style={rhStyles.sectionHeaderRow}>
-          <Text style={rhStyles.sectionTitle}>Marcações de hoje</Text>
-          <Text style={rhStyles.sectionHeaderMeta}>{todayLabel}</Text>
-        </View>
-
-        {rhPontoEntries.map((entry) => {
-          const meta = rhPontoStatusMeta[entry.status];
-          const initials = entry.name
-            .split(' ')
-            .slice(0, 2)
-            .map((part) => part[0])
-            .join('')
-            .toUpperCase();
-
-          return (
-            <View key={entry.id} style={rhStyles.employeeCard}>
-              <View style={rhStyles.employeeAvatar}>
-                <Text style={rhStyles.employeeAvatarText}>{initials}</Text>
-              </View>
-              <View style={rhStyles.employeeInfo}>
-                <Text style={rhStyles.employeeName}>{entry.name}</Text>
-                <Text style={rhStyles.employeeRoleUnit}>{entry.times}</Text>
-              </View>
-              <View style={[rhStyles.employeeStatusPill, { backgroundColor: meta.tint }]}>
-                <Text style={[rhStyles.employeeStatusText, { color: meta.color }]}>{meta.label}</Text>
-              </View>
-            </View>
-          );
-        })}
 
         <Pressable
-          style={rhStyles.outlineButton}
-          onPress={() => Alert.alert('Fechar competência', 'O fechamento da competência do mês será conectado em breve.')}
+          style={[
+            rhStyles.primaryButtonGreen,
+            { flexDirection: 'row', gap: 6, marginBottom: 16 },
+          ]}
+          onPress={() => {
+            setEditingItem(null);
+            setIsFormOpen(true);
+          }}
         >
-          <Text style={rhStyles.outlineButtonText}>Fechar competência do mês</Text>
+          <Feather name="plus" size={16} color="#FFFFFF" />
+          <Text style={styles.primaryButtonText}>Nova Jornada</Text>
         </Pressable>
+
+        {isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando jornadas...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : items.length === 0 ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Nenhuma jornada cadastrada.</Text>
+          </View>
+        ) : (
+          items.map((item) => (
+            <View key={item.id} style={rhStyles.goalCard}>
+              <View style={rhStyles.importRecordTopRow}>
+                <Text style={[rhStyles.goalTitle, { marginRight: 4 }]} numberOfLines={1}>
+                  {item.nome}
+                </Text>
+                <View
+                  style={[
+                    rhStyles.importTypePillSmall,
+                    { backgroundColor: item.ativo ? '#E3F5EA' : '#FCE8EC' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      rhStyles.importTypePillText,
+                      { color: item.ativo ? '#18955A' : '#E6213D' },
+                    ]}
+                  >
+                    {item.ativo ? 'Ativa' : 'Inativa'}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={(e) => {
+                    const { pageX, pageY } = e.nativeEvent;
+                    setMenuAnchor({ id: item.id, x: pageX, y: pageY });
+                  }}
+                  hitSlop={8}
+                  style={{ marginLeft: 8 }}
+                  disabled={busyId === item.id}
+                >
+                  <Feather name="more-vertical" size={18} color="#677089" />
+                </Pressable>
+              </View>
+
+              <View style={rhStyles.importRecordBottomRow}>
+                <View style={[rhStyles.importTypePillSmall, { backgroundColor: '#EEF0F6' }]}>
+                  <Text style={[rhStyles.importTypePillText, { color: '#5C6580' }]}>
+                    {empresaNomeJornada(item)}
+                  </Text>
+                </View>
+                <Text style={rhStyles.goalSubtitle}>
+                  {item.entrada?.slice(0, 5)} – {item.saida?.slice(0, 5)}
+                </Text>
+                <Text style={rhStyles.goalSubtitle}>Intervalo: {item.intervalo_minutos} min</Text>
+                <Text style={rhStyles.goalSubtitle}>{regimeJornadaValueToLabel[item.regime] ?? item.regime}</Text>
+              </View>
+            </View>
+          ))
+        )}
       </ScrollView>
+
+      <Modal visible={menuAnchor !== null} transparent animationType="fade" onRequestClose={() => setMenuAnchor(null)}>
+        <Pressable style={{ flex: 1 }} onPress={() => setMenuAnchor(null)}>
+          {menuAnchor
+            ? (() => {
+                const menuItem = items.find((entry) => entry.id === menuAnchor.id);
+                if (!menuItem) return null;
+                return (
+                  <Pressable
+                    style={[rhStyles.rowActionsMenu, { top: menuAnchor.y + 8, right: 16 }]}
+                    onPress={() => {}}
+                  >
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        setEditingItem(menuItem);
+                        setIsFormOpen(true);
+                      }}
+                    >
+                      <Feather name="edit-2" size={15} color="#5E667D" />
+                      <Text style={rhStyles.rowActionsMenuItemText}>Editar</Text>
+                    </Pressable>
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        handleToggleAtivo(menuItem);
+                      }}
+                    >
+                      <Feather name={menuItem.ativo ? 'pause-circle' : 'play-circle'} size={15} color="#5E667D" />
+                      <Text style={rhStyles.rowActionsMenuItemText}>
+                        {menuItem.ativo ? 'Inativar' : 'Ativar'}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        handleDelete(menuItem);
+                      }}
+                    >
+                      <Feather name="trash-2" size={15} color="#E6213D" />
+                      <Text style={[rhStyles.rowActionsMenuItemText, { color: '#E6213D' }]}>Excluir</Text>
+                    </Pressable>
+                  </Pressable>
+                );
+              })()
+            : null}
+        </Pressable>
+      </Modal>
+
+      <RHJornadaFormModal
+        visible={isFormOpen}
+        editingItem={editingItem}
+        unidades={unidades}
+        onClose={() => setIsFormOpen(false)}
+        onSaved={loadJornadas}
+      />
     </SafeAreaView>
   );
 }
@@ -15097,6 +15534,30 @@ const rhStyles = StyleSheet.create({
     marginTop: 4,
     color: '#7C8397',
     fontSize: 12,
+  },
+  rowActionsMenu: {
+    position: 'absolute',
+    minWidth: 190,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 6,
+    shadowColor: '#0C1736',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  rowActionsMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  rowActionsMenuItemText: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '600',
   },
   experienceCard: {
     backgroundColor: '#FFFFFF',

@@ -1199,6 +1199,43 @@ function postRhMetasRecalcular(metaId, actorId) {
   return lovablePost('/api/public/internal/rh-metas', { recurso: 'recalcular', id: metaId }, {}, actorId);
 }
 
+// --- Jornadas (rh_jornadas) — endpoint confirmado pela Lovable em
+// 19/08/2026: /api/public/internal/rh-jornadas (mesma auth: x-internal-
+// secret + x-actor-id). empresa_id nulo = jornada global ("Todas as
+// empresas"). regime é enum fechado (rh_regime_jornada): 44h|40h|36h|30h|
+// 12x36|escala.
+//
+// GET ?empresa_id=&ativo=true|false&busca=&limit=&offset= — retorna
+// {data, count, regimes}; passar empresa_id também traz as jornadas globais
+// (empresa_id null) junto com as da empresa. Cada linha já vem com
+// empresas(id, razao_social, nome_fantasia, apelido) embutido.
+// POST: cria (valida entrada/saida HH:MM, regime no enum, intervalo 0-600).
+// PATCH ?id=: edita; toggle ativa/inativa é só {ativo: false/true}.
+// DELETE ?id=: exclusão real — retorna 409 se tiver colaborador vinculado
+// (rh_colaboradores.jornada_id); nesse caso, inativar em vez de excluir.
+//
+// Ligação: rh_colaboradores.jornada_id (FK nullable pra rh_jornadas.id).
+
+function getRhJornadas({ empresaId, ativo, busca, limit, offset } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-jornadas',
+    { empresa_id: empresaId, ativo, busca, limit, offset },
+    actorId
+  );
+}
+
+function postRhJornada(body, actorId) {
+  return lovablePost('/api/public/internal/rh-jornadas', {}, body, actorId);
+}
+
+function patchRhJornada(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-jornadas', { id }, body, actorId);
+}
+
+function deleteRhJornada(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-jornadas', { id }, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -1350,4 +1387,8 @@ module.exports = {
   patchRhMeta,
   deleteRhMeta,
   postRhMetasRecalcular,
+  getRhJornadas,
+  postRhJornada,
+  patchRhJornada,
+  deleteRhJornada,
 };

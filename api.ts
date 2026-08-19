@@ -2014,6 +2014,80 @@ export async function recalcularRhMetas(
   return { total: json.total ?? 0, atualizadas: json.atualizadas ?? 0 };
 }
 
+// --- Jornadas (rh_jornadas) — endpoint confirmado pela Lovable em
+// 19/08/2026 (/api/public/internal/rh-jornadas via nosso proxy
+// /api/rh/jornadas). empresa_id nulo = jornada global ("Todas as
+// empresas"). DELETE pode devolver 409 se houver colaborador vinculado
+// (rh_colaboradores.jornada_id) — nesse caso, inativar em vez de excluir.
+export type RhRegimeJornada = '44h' | '40h' | '36h' | '30h' | '12x36' | 'escala';
+
+export type RhJornadaItem = {
+  id: string;
+  empresa_id: string | null;
+  nome: string;
+  entrada: string;
+  saida: string;
+  intervalo_minutos: number;
+  regime: RhRegimeJornada;
+  ativo: boolean;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: string | null;
+  empresas?: { id: string; razao_social?: string | null; nome_fantasia?: string | null; apelido?: string | null } | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRhJornadas(
+  params: {
+    empresaId?: string;
+    ativo?: boolean;
+    busca?: string;
+    limit?: number;
+    offset?: number;
+  } = {}
+): Promise<{ items: RhJornadaItem[]; count: number }> {
+  const search = new URLSearchParams();
+  if (params.empresaId) search.set('empresaId', params.empresaId);
+  if (params.ativo !== undefined) search.set('ativo', String(params.ativo));
+  if (params.busca) search.set('busca', params.busca);
+  if (params.limit !== undefined) search.set('limit', String(params.limit));
+  if (params.offset !== undefined) search.set('offset', String(params.offset));
+  const qs = search.toString();
+  const json = await api.get(`/api/rh/jornadas${qs ? `?${qs}` : ''}`);
+  return {
+    items: (json.data as RhJornadaItem[]) ?? [],
+    count: json.count ?? 0,
+  };
+}
+
+export type RhJornadaCreateBody = {
+  nome: string;
+  empresa_id?: string | null;
+  entrada: string;
+  saida: string;
+  intervalo_minutos: number;
+  regime: RhRegimeJornada;
+  ativo?: boolean;
+};
+
+export async function createRhJornada(body: RhJornadaCreateBody, actorId?: string | null): Promise<RhJornadaItem> {
+  const json = await api.post(withActorId('/api/rh/jornadas', actorId), body);
+  return json.data as RhJornadaItem;
+}
+
+export async function updateRhJornada(
+  id: string,
+  body: Partial<RhJornadaCreateBody>,
+  actorId?: string | null
+): Promise<RhJornadaItem> {
+  const json = await api.patch(withActorId(`/api/rh/jornadas/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhJornadaItem;
+}
+
+export async function deleteRhJornada(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/jornadas/${encodeURIComponent(id)}`, actorId));
+}
+
 export async function marcarComunicadoLido(
   comunicadoId: string,
   colaboradorId: string,
