@@ -1083,10 +1083,28 @@ function postRhPdfImportReprocessar(id, actorId) {
 //   em_andamento). Retorna {data: inscricao, resultado: {acertos, total,
 //   nota, prova_min_acerto, aprovado, tentativa}}.
 // - PATCH recurso=inscricoes&id=: pra progresso de aula (status, iniciado_em,
-//   tempo_gasto_min, certificado_url). ---
+//   tempo_gasto_min, certificado_url).
+//
+// Progresso por aula (rh_treinamento_progresso — UNIQUE em inscricao_id+
+// aula_id — confirmado pela Lovable em 19/08/2026):
+// - GET recurso=progresso-aulas&inscricaoId=&aulaId=: linhas cruas de
+//   progresso (segundos_assistidos, segundos_max, duracao_segundos,
+//   concluida, iniciado_em, ultimo_acesso_em). aulaId é opcional (filtra 1
+//   aula); sem ele, traz todas as aulas da inscrição.
+// - GET recurso=aulas&treinamentoId=&inscricaoId=: as aulas já vêm com o
+//   campo "progresso" (objeto ou null) embutido — melhor forma pra tela de
+//   detalhe da aula.
+// - POST recurso=progresso-aula (aliases: progresso, progresso-aulas):
+//   upsert por (inscricao_id, aula_id). Body: {inscricao_id, aula_id,
+//   posicao_atual_seg, duracao_total_seg, concluida?, ultima_visualizacao?}
+//   (aceita também os aliases segundos_assistidos/duracao_segundos/
+//   ultimo_acesso_em). O servidor mantém segundos_max monotônico (nunca
+//   "volta" o progresso), nunca desmarca concluida, e marca concluida
+//   automaticamente ao chegar perto do fim (tolerância de 2s). Retorna
+//   {data, percentual}. ---
 
 function getRhTreinamentos(
-  { recurso, treinamentoId, colaboradorId, inscricaoId, status, ativo, incluirGabarito } = {},
+  { recurso, treinamentoId, colaboradorId, inscricaoId, aulaId, status, ativo, incluirGabarito } = {},
   actorId
 ) {
   return lovableGet(
@@ -1096,6 +1114,7 @@ function getRhTreinamentos(
       treinamento_id: treinamentoId,
       colaborador_id: colaboradorId,
       inscricao_id: inscricaoId,
+      aula_id: aulaId,
       status,
       ativo,
       incluir_gabarito: incluirGabarito ? 1 : undefined,
@@ -1114,6 +1133,17 @@ function postRhTreinamentoProva(body, actorId) {
 
 function patchRhTreinamentoInscricao(id, body, actorId) {
   return lovablePatch('/api/public/internal/rh-treinamentos', { recurso: 'inscricoes', id }, body, actorId);
+}
+
+// Upsert de progresso por aula (posição assistida, se concluiu, último acesso).
+function postRhTreinamentoProgressoAula(body, actorId) {
+  return lovablePost('/api/public/internal/rh-treinamentos', { recurso: 'progresso-aula' }, body, actorId);
+}
+
+// Leitura crua de progresso por aula (alternativa ao "progresso" embutido em
+// recurso=aulas) — útil quando só se tem a inscrição, sem recarregar aulas.
+function getRhTreinamentoProgressoAulas({ inscricaoId, aulaId } = {}, actorId) {
+  return getRhTreinamentos({ recurso: 'progresso-aulas', inscricaoId, aulaId }, actorId);
 }
 
 module.exports = {
@@ -1260,4 +1290,6 @@ module.exports = {
   postRhTreinamentoResposta,
   postRhTreinamentoProva,
   patchRhTreinamentoInscricao,
+  postRhTreinamentoProgressoAula,
+  getRhTreinamentoProgressoAulas,
 };

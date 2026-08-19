@@ -4,6 +4,7 @@ const {
   postRhTreinamentoResposta,
   postRhTreinamentoProva,
   patchRhTreinamentoInscricao,
+  postRhTreinamentoProgressoAula,
 } = require('../lovable');
 
 const router = express.Router();
@@ -19,16 +20,18 @@ function writeErrorStatus(err) {
   return err.lovableStatus && err.lovableStatus >= 400 && err.lovableStatus < 500 ? 400 : 500;
 }
 
-// GET /api/rh/treinamentos-conteudo?recurso=treinamentos|aulas|questoes|inscricoes|respostas&treinamentoId=&colaboradorId=&inscricaoId=&status=&ativo=&incluirGabarito=
+// GET /api/rh/treinamentos-conteudo?recurso=treinamentos|aulas|questoes|inscricoes|respostas|progresso-aulas&treinamentoId=&colaboradorId=&inscricaoId=&aulaId=&status=&ativo=&incluirGabarito=
 router.get('/', async (req, res) => {
   try {
-    const { recurso, treinamentoId, colaboradorId, inscricaoId, status, ativo, incluirGabarito, actorId } = req.query;
+    const { recurso, treinamentoId, colaboradorId, inscricaoId, aulaId, status, ativo, incluirGabarito, actorId } =
+      req.query;
     const json = await getRhTreinamentos(
       {
         recurso,
         treinamentoId,
         colaboradorId,
         inscricaoId,
+        aulaId,
         status,
         ativo,
         incluirGabarito: incluirGabarito === '1' || incluirGabarito === 'true',
@@ -65,6 +68,19 @@ router.post('/prova', async (req, res) => {
     res.json({ ok: true, data: json?.data ?? json, resultado: json?.resultado });
   } catch (err) {
     console.error('[rh/treinamentos-conteudo prova] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/rh/treinamentos-conteudo/progresso-aula?actorId= — body: { inscricao_id, aula_id, posicao_atual_seg, duracao_total_seg, concluida?, ultima_visualizacao? }
+// Upsert por (inscricao_id, aula_id) — grava quanto da aula em vídeo o
+// colaborador já assistiu. O servidor nunca deixa o progresso "voltar".
+router.post('/progresso-aula', async (req, res) => {
+  try {
+    const json = await postRhTreinamentoProgressoAula(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json, percentual: json?.percentual });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo progresso-aula] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });

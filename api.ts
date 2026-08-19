@@ -1540,6 +1540,22 @@ export type RhTreinamentoCatalogo = {
   [key: string]: unknown;
 };
 
+// Progresso de uma aula em vídeo pra uma inscrição (rh_treinamento_progresso
+// — confirmado pela Lovable em 19/08/2026). segundos_max é o maior ponto já
+// atingido (o servidor nunca deixa "voltar"); segundos_assistidos costuma
+// refletir a posição atual do player.
+export type RhTreinamentoProgressoAula = {
+  inscricao_id: string;
+  aula_id: string;
+  segundos_assistidos: number | null;
+  segundos_max: number | null;
+  duracao_segundos: number | null;
+  concluida: boolean | null;
+  iniciado_em: string | null;
+  ultimo_acesso_em: string | null;
+  [key: string]: unknown;
+};
+
 export type RhTreinamentoAula = {
   id: string;
   treinamento_id: string;
@@ -1549,6 +1565,7 @@ export type RhTreinamentoAula = {
   duracao_min: number | null;
   video_url: string | null;
   video_storage_path: string | null;
+  progresso?: RhTreinamentoProgressoAula | null;
   [key: string]: unknown;
 };
 
@@ -1564,11 +1581,12 @@ export type RhTreinamentoQuestao = {
 };
 
 async function fetchRhTreinamentosRecurso<T>(
-  recurso: 'treinamentos' | 'aulas' | 'questoes' | 'inscricoes' | 'respostas',
+  recurso: 'treinamentos' | 'aulas' | 'questoes' | 'inscricoes' | 'respostas' | 'progresso-aulas',
   params: {
     treinamentoId?: string;
     colaboradorId?: string;
     inscricaoId?: string;
+    aulaId?: string;
     status?: string;
     ativo?: boolean;
     incluirGabarito?: boolean;
@@ -1579,6 +1597,7 @@ async function fetchRhTreinamentosRecurso<T>(
   if (params.treinamentoId) search.set('treinamentoId', params.treinamentoId);
   if (params.colaboradorId) search.set('colaboradorId', params.colaboradorId);
   if (params.inscricaoId) search.set('inscricaoId', params.inscricaoId);
+  if (params.aulaId) search.set('aulaId', params.aulaId);
   if (params.status) search.set('status', params.status);
   if (params.ativo !== undefined) search.set('ativo', params.ativo ? 'true' : 'false');
   if (params.incluirGabarito) search.set('incluirGabarito', '1');
@@ -1586,8 +1605,26 @@ async function fetchRhTreinamentosRecurso<T>(
   return (json.data as T[]) ?? [];
 }
 
-export async function fetchRhTreinamentoAulas(treinamentoId: string): Promise<RhTreinamentoAula[]> {
-  return fetchRhTreinamentosRecurso<RhTreinamentoAula>('aulas', { treinamentoId });
+// Passar inscricaoId traz o campo "progresso" já embutido em cada aula
+// (posição assistida, se concluiu) — ideal pra tela de detalhe da aula.
+export async function fetchRhTreinamentoAulas(
+  treinamentoId: string,
+  inscricaoId?: string | null
+): Promise<RhTreinamentoAula[]> {
+  return fetchRhTreinamentosRecurso<RhTreinamentoAula>('aulas', {
+    treinamentoId,
+    inscricaoId: inscricaoId ?? undefined,
+  });
+}
+
+// Leitura crua de progresso por aula — alternativa a reler "aulas" quando já
+// se tem a inscrição em mãos. Sem aulaId, traz o progresso de todas as aulas
+// da inscrição.
+export async function fetchRhTreinamentoProgressoAulas(
+  inscricaoId: string,
+  aulaId?: string
+): Promise<RhTreinamentoProgressoAula[]> {
+  return fetchRhTreinamentosRecurso<RhTreinamentoProgressoAula>('progresso-aulas', { inscricaoId, aulaId });
 }
 
 // incluirGabarito NUNCA deve ser passado true a partir do app do colaborador.
@@ -1657,6 +1694,25 @@ export async function updateRhTreinamentoInscricao(
     body
   );
   return json.data;
+}
+
+// Upsert de progresso por aula — endpoint confirmado pela Lovable em
+// 19/08/2026 (rh_treinamento_progresso, UNIQUE em inscricao_id+aula_id). O
+// servidor mantém o progresso monotônico (nunca "volta") e marca concluida
+// automaticamente perto do fim do vídeo.
+export async function upsertRhTreinamentoProgressoAula(
+  body: {
+    inscricao_id: string;
+    aula_id: string;
+    posicao_atual_seg: number;
+    duracao_total_seg: number;
+    concluida?: boolean;
+    ultima_visualizacao?: string;
+  },
+  actorId?: string | null
+): Promise<{ data: RhTreinamentoProgressoAula; percentual?: number }> {
+  const json = await api.post(withActorId('/api/rh/treinamentos-conteudo/progresso-aula', actorId), body);
+  return { data: json.data, percentual: json.percentual };
 }
 
 // --- Comunicados: escrita real (rh_comunicados) — endpoint dedicado

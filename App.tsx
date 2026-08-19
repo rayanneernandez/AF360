@@ -3,6 +3,7 @@ import { useEventListener } from 'expo';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as ScreenCapture from 'expo-screen-capture';
@@ -135,6 +136,9 @@ import {
   submeterProvaTreinamento,
   updateRhTreinamentoInscricao,
   fetchRhTreinamentoInscricoes,
+  fetchRhTreinamentoProgressoAulas,
+  upsertRhTreinamentoProgressoAula,
+  type RhTreinamentoProgressoAula,
   marcarComunicadoLido,
   fetchDiretoriaPainel,
   type DiretoriaPainelRecurso,
@@ -3456,7 +3460,7 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
       icon: 'megaphone-outline',
       iconColor: '#F03A51',
       tintColor: '#FCE8EC',
-      label: 'Comunicados',
+      label: 'Comunicados não lidos',
       value: homeData ? String(homeData.comunicadosNaoLidos) : '—',
     },
     {
@@ -3483,7 +3487,7 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
       icon: 'school-outline',
       iconColor: '#2D9E6A',
       tintColor: '#E4F5EE',
-      label: 'Treinamentos',
+      label: 'Treinamentos pendentes',
       value: homeData ? String(homeData.treinamentosPendentes) : '—',
     },
   ];
@@ -3758,7 +3762,12 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
+  const [progressoPorAula, setProgressoPorAula] = useState<Record<string, RhTreinamentoProgressoAula>>({});
   const hasMarkedStartedRef = useRef(false);
+  const lastProgressoSyncRef = useRef<{ aulaId: string | null; lastSentAt: number }>({
+    aulaId: null,
+    lastSentAt: 0,
+  });
 
   useEffect(() => {
     if (!colaboradorId) {
@@ -3804,6 +3813,31 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
     };
   }, [courseId, colaboradorId]);
 
+  // Progresso salvo por aula (rh_treinamento_progresso) — carregado assim
+  // que sabemos a inscrição, pra retomar de onde parou (igual ao web).
+  useEffect(() => {
+    if (!inscricaoId) {
+      setProgressoPorAula({});
+      return;
+    }
+    let isActive = true;
+    fetchRhTreinamentoProgressoAulas(inscricaoId)
+      .then((rows) => {
+        if (!isActive) return;
+        const map: Record<string, RhTreinamentoProgressoAula> = {};
+        rows.forEach((row) => {
+          if (row.aula_id) map[row.aula_id] = row;
+        });
+        setProgressoPorAula(map);
+      })
+      .catch(() => {
+        if (isActive) setProgressoPorAula({});
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [inscricaoId]);
+
   // Quando não há aulas cadastradas em rh_treinamento_aulas, mas o próprio
   // treinamento tem um video_url direto, tratamos ele como a aula única —
   // é literalmente o conteúdo que existe, não é invenção.
@@ -3825,6 +3859,22 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
     }
     return [];
   }, [aulas, treinamento, courseId]);
+
+  // Semeia o progresso local (usado pra destravar a próxima aula e mostrar
+  // "Concluída"/"Em andamento") com o que já veio salvo do servidor.
+  useEffect(() => {
+    if (Object.keys(progressoPorAula).length === 0) return;
+    effectiveLessons.forEach((lesson) => {
+      const salvo = progressoPorAula[lesson.id];
+      if (!salvo) return;
+      const duracaoSeg = salvo.duracao_segundos ?? (lesson.duracao_min ?? 0) * 60;
+      const assistidoSeg = salvo.segundos_max ?? salvo.segundos_assistidos ?? 0;
+      if (duracaoSeg > 0) {
+        updateLessonWatchTime(courseId, lesson.id, assistidoSeg, duracaoSeg);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressoPorAula, effectiveLessons, courseId]);
 
   const lessonIds = useMemo(() => effectiveLessons.map((lesson) => lesson.id), [effectiveLessons]);
   const progress = courseProgress[courseId];
@@ -3854,15 +3904,69 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
   const minimumScore = treinamento?.prova_min_acerto ?? 70;
   const examDurationSeconds = (treinamento?.prova_tempo_limite_min ?? 0) * 60;
 
-  const player = useVideoPlayer(selectedLesson?.video_url ?? null, (p) => {
-    p.timeUpdateEventInterval = 2;
-  });
+  const externalVideoEmbedUrl = useMemo(
+    () => getExternalVideoEmbedUrl(selectedLesson?.video_url),
+    [selectedLesson?.video_url]
+  );
+  const [videoLoadError, setVideoLoadError] = useState(false);
+
+  const player = useVideoPlayer(
+    !externalVideoEmbedUrl && selectedLesson?.video_url ? selectedLesson.video_url : null,
+    (p) => {
+      p.timeUpdateEventInterval = 2;
+    }
+  );
 
   useEffect(() => {
-    if (selectedLesson?.video_url) {
+    setVideoLoadError(false);
+    if (selectedLesson?.video_url && !externalVideoEmbedUrl) {
       player.replace(selectedLesson.video_url);
     }
-  }, [selectedLesson?.video_url, player]);
+  }, [selectedLesson?.video_url, externalVideoEmbedUrl, player]);
+
+  useEventListener(player, 'statusChange', ({ status }) => {
+    if (status === 'error') {
+      setVideoLoadError(true);
+    }
+  });
+
+  // Grava no servidor quanto da aula já foi assistido (rh_treinamento_
+  // progresso) — throttled pra não disparar uma escrita a cada 2s de vídeo.
+  const syncProgressoAula = useCallback(
+    (aulaId: string, posicaoSeg: number, duracaoSeg: number, concluida: boolean, force = false) => {
+      if (!inscricaoId || duracaoSeg <= 0) return;
+      const now = Date.now();
+      if (!force && lastProgressoSyncRef.current.aulaId === aulaId && now - lastProgressoSyncRef.current.lastSentAt < 5000) {
+        return;
+      }
+      lastProgressoSyncRef.current = { aulaId, lastSentAt: now };
+      upsertRhTreinamentoProgressoAula(
+        {
+          inscricao_id: inscricaoId,
+          aula_id: aulaId,
+          posicao_atual_seg: Math.floor(posicaoSeg),
+          duracao_total_seg: Math.round(duracaoSeg),
+          concluida,
+          ultima_visualizacao: new Date().toISOString(),
+        },
+        identity?.profileId
+      ).catch(() => {});
+    },
+    [inscricaoId, identity?.profileId]
+  );
+
+  // Vídeos externos (YouTube/Vimeo) tocam via WebView, então os eventos do
+  // player (timeUpdate) não disparam pra eles. Registra o mesmo "começou o
+  // treinamento" que o player nativo registraria, pra não perder esse sinal.
+  useEffect(() => {
+    if (!externalVideoEmbedUrl || !inscricaoId || hasMarkedStartedRef.current) return;
+    hasMarkedStartedRef.current = true;
+    updateRhTreinamentoInscricao(
+      inscricaoId,
+      { status: 'em_andamento', iniciado_em: new Date().toISOString() },
+      identity?.profileId
+    ).catch(() => {});
+  }, [externalVideoEmbedUrl, inscricaoId, identity?.profileId]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -3880,12 +3984,12 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
     const duration = player.duration || selectedLessonDurationSeconds || 0;
     if (duration > 0) {
       updateLessonWatchTime(courseId, selectedLesson.id, Math.floor(currentTime), duration);
+      syncProgressoAula(selectedLesson.id, currentTime, duration, false);
     }
 
     // Registra que o colaborador começou o treinamento — PATCH real em
-    // rh_treinamento_inscricoes, uma vez por sessão nesta tela. Não fabrica
-    // progresso por aula (o backend não guarda isso granularmente), só
-    // marca que ele engajou com o conteúdo.
+    // rh_treinamento_inscricoes, uma vez por sessão nesta tela (o progresso
+    // por aula em si já vai separado via syncProgressoAula acima).
     if (inscricaoId && !hasMarkedStartedRef.current) {
       hasMarkedStartedRef.current = true;
       updateRhTreinamentoInscricao(
@@ -3901,6 +4005,7 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
     const duration = player.duration || selectedLessonDurationSeconds || 0;
     if (duration > 0) {
       updateLessonWatchTime(courseId, selectedLesson.id, duration, duration);
+      syncProgressoAula(selectedLesson.id, duration, duration, true, true);
     }
   });
 
@@ -3960,15 +4065,45 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
                   </View>
 
                   <View style={styles.trainingVideoPlayer}>
-                    {selectedLesson.video_url ? (
-                      <VideoView
-                        player={player}
-                        style={{ width: '100%', height: '100%' }}
-                        nativeControls
-                        allowsFullscreen
-                        allowsPictureInPicture
-                        contentFit="contain"
+                    {externalVideoEmbedUrl ? (
+                      <WebView
+                        source={{ uri: externalVideoEmbedUrl }}
+                        style={{ width: '100%', height: '100%', backgroundColor: '#000' }}
+                        allowsFullscreenVideo
+                        mediaPlaybackRequiresUserAction={false}
+                        onError={() => setVideoLoadError(true)}
                       />
+                    ) : selectedLesson.video_url ? (
+                      <View style={{ width: '100%', height: '100%', position: 'relative' }}>
+                        <VideoView
+                          player={player}
+                          style={{ width: '100%', height: '100%' }}
+                          nativeControls
+                          allowsFullscreen
+                          allowsPictureInPicture
+                          contentFit="contain"
+                        />
+                        {videoLoadError ? (
+                          <View
+                            style={[
+                              styles.trainingVideoMockCenter,
+                              {
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                justifyContent: 'center',
+                                backgroundColor: '#000000',
+                              },
+                            ]}
+                          >
+                            <Text style={styles.trainingVideoMockSubtitle}>
+                              Não foi possível carregar este vídeo. Avise o RH para verificar o link cadastrado.
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
                     ) : (
                       <View style={styles.trainingVideoMockCenter}>
                         <Text style={styles.trainingVideoMockSubtitle}>
@@ -4156,6 +4291,12 @@ function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const hasLeftExamRef = useRef(false);
   const startedAtRef = useRef(Date.now());
+  // Tempo de resposta por questão (tempo_ms), pra RH ver se a pessoa
+  // respondeu rápido demais — acumula o tempo que a questão ficou aberta na
+  // tela, mesmo se o colaborador for e voltar entre as questões.
+  const questionTimeSpentRef = useRef<Record<string, number>>({});
+  const questionEnteredAtRef = useRef<number>(Date.now());
+  const previousQuestionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!colaboradorId) {
@@ -4194,6 +4335,19 @@ function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) 
 
   const currentQuestion = questoes[currentQuestionIndex] ?? null;
 
+  // Acumula o tempo gasto na questão anterior sempre que a questão em tela
+  // muda (navegação Anterior/Próxima), registrando em questionTimeSpentRef.
+  useEffect(() => {
+    const now = Date.now();
+    const previousId = previousQuestionIdRef.current;
+    if (previousId) {
+      const elapsed = now - questionEnteredAtRef.current;
+      questionTimeSpentRef.current[previousId] = (questionTimeSpentRef.current[previousId] ?? 0) + elapsed;
+    }
+    questionEnteredAtRef.current = now;
+    previousQuestionIdRef.current = currentQuestion?.id ?? null;
+  }, [currentQuestion?.id]);
+
   const finalizeExam = useCallback(
     (reason: 'submitted' | 'timeout') => {
       if (hasFinished || !inscricaoId || questoes.length === 0) return;
@@ -4202,12 +4356,22 @@ function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) 
 
       const tempoGastoMin = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60000));
 
+      // Fecha o tempo da última questão vista antes de montar o payload.
+      const now = Date.now();
+      if (currentQuestion) {
+        const elapsed = now - questionEnteredAtRef.current;
+        questionTimeSpentRef.current[currentQuestion.id] =
+          (questionTimeSpentRef.current[currentQuestion.id] ?? 0) + elapsed;
+        questionEnteredAtRef.current = now;
+      }
+
       submeterProvaTreinamento(
         {
           inscricao_id: inscricaoId,
           respostas: questoes.map((questao) => ({
             questao_id: questao.id,
             resposta: answers[questao.id] ?? '',
+            tempo_ms: questionTimeSpentRef.current[questao.id] ?? 0,
           })),
           tempo_gasto_min: tempoGastoMin,
         },
@@ -4231,7 +4395,7 @@ function TrainingExamScreen({ navigation, route }: ScreenProps<'TrainingExam'>) 
         })
         .finally(() => setIsSubmitting(false));
     },
-    [hasFinished, inscricaoId, questoes, answers, identity?.profileId, saveExamAttempt, courseId, navigation]
+    [hasFinished, inscricaoId, questoes, answers, identity?.profileId, saveExamAttempt, courseId, navigation, currentQuestion]
   );
 
   useEffect(() => {
@@ -12728,6 +12892,48 @@ function formatSeconds(totalSeconds: number) {
   const seconds = totalSeconds % 60;
 
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+// expo-video só toca fontes de mídia diretas (mp4/HLS/DASH). Quando o RH
+// cadastra um link externo (YouTube/Vimeo — página HTML, não um arquivo de
+// vídeo), o player nativo falha silenciosamente. Aqui detectamos esses casos
+// e devolvemos uma URL de embed pra tocar via WebView em vez do VideoView.
+function getExternalVideoEmbedUrl(rawUrl?: string | null): string | null {
+  if (!rawUrl) return null;
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./, '').toLowerCase();
+
+  if (host === 'youtu.be') {
+    const videoId = url.pathname.split('/').filter(Boolean)[0];
+    return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+  }
+
+  if (host === 'youtube.com' || host === 'm.youtube.com') {
+    if (url.pathname === '/watch') {
+      const videoId = url.searchParams.get('v');
+      return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+    }
+    if (url.pathname.startsWith('/embed/')) {
+      return url.toString();
+    }
+    if (url.pathname.startsWith('/shorts/')) {
+      const videoId = url.pathname.split('/').filter(Boolean)[1];
+      return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+    }
+    return null;
+  }
+
+  if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+    const videoId = url.pathname.split('/').filter(Boolean).pop();
+    return videoId && /^\d+$/.test(videoId) ? `https://player.vimeo.com/video/${videoId}` : null;
+  }
+
+  return null;
 }
 
 // Versões genéricas (operam em cima de uma lista de ids de aula reais —
