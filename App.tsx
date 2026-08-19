@@ -9855,7 +9855,7 @@ function EstoqueParadoScreen({ navigation }: ScreenProps<'EstoqueParado'>) {
               <View style={styles.stockSummaryCard}>
                 <Text style={styles.directorSummaryLabel}>MÉDIA DE DIAS PARADO</Text>
                 <Text style={styles.directorSummaryValue}>
-                  {mediaDiasParado !== null ? `${fmtNumOrDash(mediaDiasParado)} dias` : '—'}
+                  {mediaDiasParado !== null ? `${Math.round(mediaDiasParado)} dias` : '—'}
                 </Text>
                 <Text style={styles.directorSummaryMeta}>Nos itens filtrados</Text>
               </View>
@@ -9890,7 +9890,7 @@ function EstoqueParadoScreen({ navigation }: ScreenProps<'EstoqueParado'>) {
                         <Text style={styles.estoqueParadoGroupTitle}>{postoNome}</Text>
                         <Text style={styles.estoqueParadoGroupMeta}>
                           {fmtNumOrDash(totalProdutos)} produto(s) · média{' '}
-                          {mediaDias !== null ? `${fmtNumOrDash(mediaDias)} dias` : '—'}
+                          {mediaDias !== null ? `${Math.round(mediaDias)} dias` : '—'}
                         </Text>
                       </View>
                       <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#5E667D" />
