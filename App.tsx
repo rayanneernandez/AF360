@@ -18623,9 +18623,9 @@ export const styles = StyleSheet.create({
   },
   estoqueParadoEstoqueValue: {
     marginTop: 3,
-    color: '#0C1736',
+    color: '#3A415C',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '500',
   },
 
   // --- Fale com a Diretoria ---
