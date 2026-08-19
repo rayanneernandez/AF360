@@ -1146,6 +1146,59 @@ function getRhTreinamentoProgressoAulas({ inscricaoId, aulaId } = {}, actorId) {
   return getRhTreinamentos({ recurso: 'progresso-aulas', inscricaoId, aulaId }, actorId);
 }
 
+// --- Metas de RH (rh_metas) — endpoint confirmado pela Lovable em
+// 19/08/2026: /api/public/internal/rh-metas (mesma auth: x-internal-secret +
+// x-actor-id).
+//
+// GET ?busca=&status=&medicao=&colaboradorId=&empresaId=&limit=&offset=
+// Retorna { data, count, resumo: { total, abertas, atingidas, automaticas } }
+// — resumo é sempre da rede toda, independente dos filtros aplicados. Cada
+// linha já vem com percentual, colaborador_nome, colaboradores_nomes,
+// empresa_nome, empresas_nomes prontos (sem precisar de join extra).
+//
+// Escrita:
+// - POST: cria (obrigatórios titulo, periodo_inicio, periodo_fim, meta_alvo;
+//   default medicao=manual, status=aberta). Aceita publico (todos|empresa|
+//   grupo|cargo|colaborador) + os arrays empresa_ids/grupo_ids/cargo_ids/
+//   colaborador_ids conforme o escopo, e medicao=automatica exige fonte_auto
+//   (faturamento|cupons|litros_total|litros_gasolina|litros_etanol|
+//   litros_diesel|litros_gnv).
+// - PATCH ?id=: edita; mandar só { resultado } cobre "Atualizar resultado" e
+//   já grava resultado_atualizado_em no servidor.
+// - DELETE ?id=: exclui.
+//
+// Recalcular automáticas: POST ?recurso=recalcular (opcional &id=<metaId>)
+// — retorna { total, atualizadas }; sob demanda (sem cron), lê o espelho
+// Quality no período/escopo da meta e reavalia status quando o período já
+// fechou.
+
+function getRhMetas(
+  { busca, status, medicao, colaboradorId, empresaId, limit, offset } = {},
+  actorId
+) {
+  return lovableGet(
+    '/api/public/internal/rh-metas',
+    { busca, status, medicao, colaboradorId, empresaId, limit, offset },
+    actorId
+  );
+}
+
+function postRhMeta(body, actorId) {
+  return lovablePost('/api/public/internal/rh-metas', {}, body, actorId);
+}
+
+function patchRhMeta(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-metas', { id }, body, actorId);
+}
+
+function deleteRhMeta(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-metas', { id }, actorId);
+}
+
+function postRhMetasRecalcular(metaId, actorId) {
+  return lovablePost('/api/public/internal/rh-metas', { recurso: 'recalcular', id: metaId }, {}, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -1292,4 +1345,9 @@ module.exports = {
   patchRhTreinamentoInscricao,
   postRhTreinamentoProgressoAula,
   getRhTreinamentoProgressoAulas,
+  getRhMetas,
+  postRhMeta,
+  patchRhMeta,
+  deleteRhMeta,
+  postRhMetasRecalcular,
 };

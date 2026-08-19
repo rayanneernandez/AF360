@@ -132,6 +132,18 @@ import {
   aplicarRhPdfImportDesligamento,
   reprocessarRhPdfImport,
   deleteRhPdfImport,
+  fetchRhMetas,
+  createRhMeta,
+  updateRhMeta,
+  deleteRhMeta,
+  recalcularRhMetas,
+  type RhMetaItem,
+  type RhMetasResumo,
+  type RhMetaStatus,
+  type RhMetaMedicao,
+  type RhMetaPublico,
+  type RhMetaFonteAuto,
+  type RhMetaCreateBody,
 } from './api';
 
 // ---------- Types ----------
@@ -11129,20 +11141,707 @@ function RHEmptyTabState({ message }: { message: string }) {
 }
 
 // ---------- Metas ----------
+// Tela do RH pra rh_metas — endpoint agregado confirmado pela Lovable em
+// 19/08/2026 (/api/public/internal/rh-metas via /api/rh/metas). Cobre
+// leitura com filtros/contadores de rede + escrita completa (criar, editar,
+// atualizar resultado, excluir, recalcular automáticas).
 
-type GoalItem = { id: string; title: string; subtitle: string; progressPct: number };
+const metaStatusValueToLabel: Record<RhMetaStatus, string> = {
+  aberta: 'Aberta',
+  atingida: 'Atingida',
+  nao_atingida: 'Não atingida',
+  cancelada: 'Cancelada',
+};
 
-const rhGoalStats = { noPrazo: 12, emRisco: 4, concluidas: 8 };
+const metaStatusColors: Record<RhMetaStatus, { bg: string; color: string }> = {
+  aberta: { bg: '#EAF1FF', color: '#3457D5' },
+  atingida: { bg: '#E4F5EE', color: '#18955A' },
+  nao_atingida: { bg: '#FCE8EC', color: '#E6213D' },
+  cancelada: { bg: '#F1F2F6', color: '#5E667D' },
+};
 
-const rhGoals: GoalItem[] = [
-  { id: 'goal-1', title: 'Reduzir turnover para 4%', subtitle: 'Rede · fechar o trimestre em 4,2%', progressPct: 82 },
-  { id: 'goal-2', title: 'Preencher 56 lideranças de posto', subtitle: 'Rede · 0 de 56 atribuídas', progressPct: 12 },
-  { id: 'goal-3', title: 'Adesão ao portal do colaborador', subtitle: 'Engajamento · meta 70% com login', progressPct: 49 },
-  { id: 'goal-4', title: 'Treinamento NR obrigatório', subtitle: 'Compliance · 2 de 3 turmas concluídas', progressPct: 67 },
-  { id: 'goal-5', title: 'Tempo médio de admissão < 5 dias', subtitle: 'DP · média atual 4,1 dias', progressPct: 95 },
+const metaMedicaoLabels: Record<RhMetaMedicao, string> = {
+  manual: 'Manual',
+  automatica: 'Automática',
+};
+
+const metaFonteAutoOptions: { label: string; value: RhMetaFonteAuto }[] = [
+  { label: 'Faturamento', value: 'faturamento' },
+  { label: 'Cupons', value: 'cupons' },
+  { label: 'Litros total', value: 'litros_total' },
+  { label: 'Litros gasolina', value: 'litros_gasolina' },
+  { label: 'Litros etanol', value: 'litros_etanol' },
+  { label: 'Litros diesel', value: 'litros_diesel' },
+  { label: 'Litros GNV', value: 'litros_gnv' },
 ];
 
+function formatMetaNumero(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '—';
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+}
+
+// Monta o texto de "Escopo" a partir do que a Lovable já devolve pronto
+// (colaborador_nome/colaboradores_nomes/empresa_nome/empresas_nomes) — pra
+// cargo/grupo ela não manda nome resolvido, então só mostra o rótulo
+// genérico em vez de inventar um nome.
+function metaEscopoLabel(item: RhMetaItem): { badge: string; detail: string | null } {
+  switch (item.publico) {
+    case 'todos':
+      return { badge: 'Todos', detail: null };
+    case 'colaborador':
+      return { badge: 'Colaborador', detail: item.colaborador_nome ?? item.colaboradores_nomes?.join(', ') ?? null };
+    case 'empresa':
+      return { badge: 'Unidade', detail: item.empresa_nome ?? item.empresas_nomes?.join(', ') ?? null };
+    case 'grupo':
+      return { badge: 'Grupo', detail: null };
+    case 'cargo':
+      return { badge: 'Cargo', detail: null };
+    default:
+      return { badge: item.publico, detail: null };
+  }
+}
+
+function formatIsoDateBR(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!match) return iso;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
+const metaValeParaOptions = ['Todos os colaboradores', 'Unidade', 'Cargo', 'Colaborador'] as const;
+type MetaValePara = (typeof metaValeParaOptions)[number];
+
+const metaMedicaoFormOptions = ['Manual (RH atualiza o resultado)', 'Automática (calculada pelo sistema)'] as const;
+
+const metaStatusOptions = ['Aberta', 'Atingida', 'Não atingida', 'Cancelada'] as const;
+const metaStatusLabelToValue: Record<string, RhMetaStatus> = {
+  Aberta: 'aberta',
+  Atingida: 'atingida',
+  'Não atingida': 'nao_atingida',
+  Cancelada: 'cancelada',
+};
+
+type MetaFormValues = {
+  titulo: string;
+  descricao: string;
+  inicio: string;
+  fim: string;
+  metaAlvo: string;
+  valePara: MetaValePara;
+  alvoNome: string;
+  alvoId: string | null;
+  medicao: (typeof metaMedicaoFormOptions)[number];
+  fonteAuto: string;
+  status: (typeof metaStatusOptions)[number];
+};
+
+function emptyMetaForm(): MetaFormValues {
+  return {
+    titulo: '',
+    descricao: '',
+    inicio: '',
+    fim: '',
+    metaAlvo: '',
+    valePara: 'Todos os colaboradores',
+    alvoNome: '',
+    alvoId: null,
+    medicao: 'Manual (RH atualiza o resultado)',
+    fonteAuto: '',
+    status: 'Aberta',
+  };
+}
+
+function metaToFormValues(item: RhMetaItem): MetaFormValues {
+  const valePara: MetaValePara =
+    item.publico === 'colaborador'
+      ? 'Colaborador'
+      : item.publico === 'empresa'
+        ? 'Unidade'
+        : item.publico === 'cargo'
+          ? 'Cargo'
+          : 'Todos os colaboradores';
+  const alvoNome =
+    item.publico === 'colaborador'
+      ? (item.colaborador_nome ?? item.colaboradores_nomes?.[0] ?? '')
+      : item.publico === 'empresa'
+        ? (item.empresa_nome ?? item.empresas_nomes?.[0] ?? '')
+        : '';
+  const alvoId =
+    item.publico === 'colaborador'
+      ? (item.colaborador_ids?.[0] ?? null)
+      : item.publico === 'empresa'
+        ? (item.empresa_ids?.[0] ?? null)
+        : null;
+  const fonteAuto = item.fonte_auto
+    ? (metaFonteAutoOptions.find((option) => option.value === item.fonte_auto)?.label ?? '')
+    : '';
+
+  return {
+    titulo: item.titulo,
+    descricao: item.descricao ?? '',
+    inicio: formatIsoDateBR(item.periodo_inicio),
+    fim: formatIsoDateBR(item.periodo_fim),
+    metaAlvo: formatMetaNumero(item.meta_alvo),
+    valePara,
+    alvoNome,
+    alvoId,
+    medicao:
+      item.medicao === 'automatica' ? 'Automática (calculada pelo sistema)' : 'Manual (RH atualiza o resultado)',
+    fonteAuto,
+    status: (metaStatusValueToLabel[item.status] as (typeof metaStatusOptions)[number]) ?? 'Aberta',
+  };
+}
+
+// Picker de colaborador com busca real no servidor (a lista pode ter
+// milhares de linhas — diferente do RHSimplePickerModal, que só serve pra
+// opções fixas em memória).
+function RHColaboradorPickerModal({
+  visible,
+  selectedId,
+  onSelect,
+  onClose,
+  inline,
+}: {
+  visible: boolean;
+  selectedId: string | null;
+  onSelect: (id: string, nome: string) => void;
+  onClose: () => void;
+  inline?: boolean;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<RhColaboradorRaw[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    let isActive = true;
+    setIsLoading(true);
+    const timeout = setTimeout(() => {
+      fetchRhColaboradores({ q: query || undefined })
+        .then((rows) => {
+          if (isActive) setResults(rows.slice(0, 40));
+        })
+        .catch(() => {
+          if (isActive) setResults([]);
+        })
+        .finally(() => {
+          if (isActive) setIsLoading(false);
+        });
+    }, 300);
+    return () => {
+      isActive = false;
+      clearTimeout(timeout);
+    };
+  }, [visible, query]);
+
+  if (inline && !visible) return null;
+
+  const content = (
+    <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+      <Pressable style={styles.simpleListCard} onPress={() => {}}>
+        <Text style={styles.simpleListTitle}>Selecionar colaborador</Text>
+        <View style={rhStyles.searchRow}>
+          <Feather name="search" size={16} color="#9AA1B5" />
+          <TextInput
+            style={rhStyles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Buscar por nome..."
+            placeholderTextColor="#A7AEC2"
+          />
+        </View>
+        <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+          {isLoading ? (
+            <Text style={rhStyles.filterFieldLabel}>Buscando...</Text>
+          ) : results.length === 0 ? (
+            <Text style={rhStyles.filterFieldLabel}>Nenhum colaborador encontrado.</Text>
+          ) : (
+            results.map((colaborador) => {
+              const isSelected = colaborador.id === selectedId;
+              return (
+                <Pressable
+                  key={colaborador.id}
+                  style={[styles.templateOptionRow, isSelected ? styles.templateOptionRowActive : null]}
+                  onPress={() => {
+                    onSelect(colaborador.id, colaborador.nome_completo ?? 'Sem nome');
+                    onClose();
+                  }}
+                >
+                  <View style={styles.templateOptionLeft}>
+                    <Text style={[styles.templateOptionText, isSelected ? styles.templateOptionTextActive : null]}>
+                      {colaborador.nome_completo ?? 'Sem nome'}
+                    </Text>
+                  </View>
+                  {isSelected ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
+                </Pressable>
+              );
+            })
+          )}
+        </ScrollView>
+      </Pressable>
+    </Pressable>
+  );
+
+  if (inline) {
+    return <View style={rhStyles.inlinePickerLayer}>{content}</View>;
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      {content}
+    </Modal>
+  );
+}
+
+function RHMetaFormModal({
+  visible,
+  editingItem,
+  unidades,
+  cargos,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  editingItem: RhMetaItem | null;
+  unidades: RhUnidadeItem[];
+  cargos: { id: string; nome: string }[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [form, setForm] = useState<MetaFormValues>(emptyMetaForm());
+  const [isSaving, setIsSaving] = useState(false);
+  const [isValeParaPickerOpen, setIsValeParaPickerOpen] = useState(false);
+  const [isAlvoPickerOpen, setIsAlvoPickerOpen] = useState(false);
+  const [isColaboradorPickerOpen, setIsColaboradorPickerOpen] = useState(false);
+  const [isMedicaoPickerOpen, setIsMedicaoPickerOpen] = useState(false);
+  const [isFonteAutoPickerOpen, setIsFonteAutoPickerOpen] = useState(false);
+  const [isStatusPickerOpen, setIsStatusPickerOpen] = useState(false);
+  const [isInicioPickerOpen, setIsInicioPickerOpen] = useState(false);
+  const [isFimPickerOpen, setIsFimPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setForm(editingItem ? metaToFormValues(editingItem) : emptyMetaForm());
+    }
+  }, [visible, editingItem]);
+
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
+
+  const handleSubmit = () => {
+    const tituloTrim = form.titulo.trim();
+    const inicioIso = brDateLabelToIso(form.inicio);
+    const fimIso = brDateLabelToIso(form.fim);
+    const metaAlvoNum = Number(form.metaAlvo.replace(',', '.'));
+
+    if (!tituloTrim) {
+      Alert.alert('Título obrigatório', 'Informe um título para a meta.');
+      return;
+    }
+    if (!inicioIso || !fimIso) {
+      Alert.alert('Período obrigatório', 'Informe as datas de início e fim.');
+      return;
+    }
+    if (!form.metaAlvo || Number.isNaN(metaAlvoNum)) {
+      Alert.alert('Meta alvo obrigatória', 'Informe um número válido pra meta alvo.');
+      return;
+    }
+    if (form.valePara !== 'Todos os colaboradores' && !form.alvoId) {
+      Alert.alert(
+        'Selecione o alvo',
+        `Escolha ${form.valePara === 'Colaborador' ? 'o colaborador' : form.valePara === 'Unidade' ? 'a unidade' : 'o cargo'} pra essa meta.`
+      );
+      return;
+    }
+    const isAutomatica = form.medicao.startsWith('Automática');
+    if (isAutomatica && !form.fonteAuto) {
+      Alert.alert('Fonte automática obrigatória', 'Escolha de onde vem o cálculo automático dessa meta.');
+      return;
+    }
+
+    const publico: RhMetaPublico =
+      form.valePara === 'Colaborador'
+        ? 'colaborador'
+        : form.valePara === 'Unidade'
+          ? 'empresa'
+          : form.valePara === 'Cargo'
+            ? 'cargo'
+            : 'todos';
+
+    const body: RhMetaCreateBody = {
+      titulo: tituloTrim,
+      descricao: form.descricao.trim() || null,
+      periodo_inicio: inicioIso,
+      periodo_fim: fimIso,
+      meta_alvo: metaAlvoNum,
+      publico,
+      medicao: isAutomatica ? 'automatica' : 'manual',
+      status: metaStatusLabelToValue[form.status] ?? 'aberta',
+    };
+    if (isAutomatica) {
+      const fonteEntry = metaFonteAutoOptions.find((option) => option.label === form.fonteAuto);
+      if (fonteEntry) body.fonte_auto = fonteEntry.value;
+    }
+    if (publico === 'colaborador' && form.alvoId) body.colaborador_ids = [form.alvoId];
+    if (publico === 'empresa' && form.alvoId) body.empresa_ids = [form.alvoId];
+    if (publico === 'cargo' && form.alvoId) body.cargo_ids = [form.alvoId];
+
+    setIsSaving(true);
+    const request = editingItem
+      ? updateRhMeta(editingItem.id, body, identity?.profileId)
+      : createRhMeta(body, identity?.profileId);
+    request
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar a meta.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={handleClose}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>{editingItem ? 'Editar meta' : 'Nova meta'}</Text>
+            <Pressable onPress={handleClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.requestFieldLabel}>Título *</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.titulo}
+              onChangeText={(text) => setForm((current) => ({ ...current, titulo: text }))}
+              placeholder="Ex.: Redução de perdas no estoque"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição</Text>
+            <TextInput
+              style={[styles.processTextInput, styles.processTextArea]}
+              value={form.descricao}
+              onChangeText={(text) => setForm((current) => ({ ...current, descricao: text }))}
+              placeholder="Detalhe o objetivo..."
+              placeholderTextColor="#A7AEC2"
+              multiline
+              textAlignVertical="top"
+            />
+
+            <RHSelectField
+              label="Início"
+              required
+              icon="calendar"
+              value={form.inicio}
+              placeholder="Selecione a data"
+              onPress={() => setIsInicioPickerOpen(true)}
+            />
+            <RHSelectField
+              label="Fim"
+              required
+              icon="calendar"
+              value={form.fim}
+              placeholder="Selecione a data"
+              onPress={() => setIsFimPickerOpen(true)}
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Meta alvo *</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.metaAlvo}
+              onChangeText={(text) =>
+                setForm((current) => ({ ...current, metaAlvo: text.replace(/[^0-9,.-]/g, '') }))
+              }
+              placeholder="Ex.: 100"
+              placeholderTextColor="#A7AEC2"
+              keyboardType="numeric"
+            />
+
+            <RHSelectField label="Vale para" required value={form.valePara} onPress={() => setIsValeParaPickerOpen(true)} />
+            {form.valePara !== 'Todos os colaboradores' ? (
+              <RHSelectField
+                label={form.valePara === 'Colaborador' ? 'Colaborador' : form.valePara === 'Unidade' ? 'Unidade' : 'Cargo'}
+                required
+                value={form.alvoNome}
+                placeholder="Selecione..."
+                onPress={() =>
+                  form.valePara === 'Colaborador' ? setIsColaboradorPickerOpen(true) : setIsAlvoPickerOpen(true)
+                }
+              />
+            ) : null}
+
+            <RHSelectField label="Medição" required value={form.medicao} onPress={() => setIsMedicaoPickerOpen(true)} />
+            {form.medicao.startsWith('Automática') ? (
+              <RHSelectField
+                label="Fonte automática"
+                required
+                value={form.fonteAuto}
+                placeholder="Selecione..."
+                onPress={() => setIsFonteAutoPickerOpen(true)}
+              />
+            ) : null}
+
+            <RHSelectField label="Status" value={form.status} onPress={() => setIsStatusPickerOpen(true)} />
+
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>
+                {isSaving ? 'Salvando...' : editingItem ? 'Salvar alterações' : 'Cadastrar meta'}
+              </Text>
+            </Pressable>
+          </ScrollView>
+
+          <RHDatePickerModal
+            inline
+            visible={isInicioPickerOpen}
+            title="Início"
+            value={form.inicio}
+            onSelect={(value) => setForm((current) => ({ ...current, inicio: value }))}
+            onClose={() => setIsInicioPickerOpen(false)}
+          />
+          <RHDatePickerModal
+            inline
+            visible={isFimPickerOpen}
+            title="Fim"
+            value={form.fim}
+            onSelect={(value) => setForm((current) => ({ ...current, fim: value }))}
+            onClose={() => setIsFimPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isValeParaPickerOpen}
+            title="Vale para"
+            options={[...metaValeParaOptions]}
+            selectedValue={form.valePara}
+            onSelect={(value) =>
+              setForm((current) => ({ ...current, valePara: value as MetaValePara, alvoNome: '', alvoId: null }))
+            }
+            onClose={() => setIsValeParaPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isAlvoPickerOpen}
+            title={form.valePara === 'Unidade' ? 'Unidade' : 'Cargo'}
+            options={(form.valePara === 'Unidade' ? unidades : cargos).map((entry) => entry.nome)}
+            selectedValue={form.alvoNome}
+            onSelect={(nome) => {
+              const list = form.valePara === 'Unidade' ? unidades : cargos;
+              const found = list.find((entry) => entry.nome === nome);
+              setForm((current) => ({ ...current, alvoNome: nome, alvoId: found?.id ?? null }));
+            }}
+            onClose={() => setIsAlvoPickerOpen(false)}
+          />
+          <RHColaboradorPickerModal
+            inline
+            visible={isColaboradorPickerOpen}
+            selectedId={form.alvoId}
+            onSelect={(id, nome) => setForm((current) => ({ ...current, alvoId: id, alvoNome: nome }))}
+            onClose={() => setIsColaboradorPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isMedicaoPickerOpen}
+            title="Medição"
+            options={[...metaMedicaoFormOptions]}
+            selectedValue={form.medicao}
+            onSelect={(value) =>
+              setForm((current) => ({ ...current, medicao: value as (typeof metaMedicaoFormOptions)[number] }))
+            }
+            onClose={() => setIsMedicaoPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isFonteAutoPickerOpen}
+            title="Fonte automática"
+            options={metaFonteAutoOptions.map((option) => option.label)}
+            selectedValue={form.fonteAuto}
+            onSelect={(value) => setForm((current) => ({ ...current, fonteAuto: value }))}
+            onClose={() => setIsFonteAutoPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isStatusPickerOpen}
+            title="Status"
+            options={[...metaStatusOptions]}
+            selectedValue={form.status}
+            onSelect={(value) => setForm((current) => ({ ...current, status: value as (typeof metaStatusOptions)[number] }))}
+            onClose={() => setIsStatusPickerOpen(false)}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function RHMetaResultadoModal({
+  visible,
+  item,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  item: RhMetaItem | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [value, setValue] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible && item) {
+      setValue(item.resultado !== null && item.resultado !== undefined ? String(item.resultado) : '');
+    }
+  }, [visible, item]);
+
+  if (!item) return null;
+
+  const handleSave = () => {
+    const numero = Number(value.replace(',', '.'));
+    if (value.trim() === '' || Number.isNaN(numero)) {
+      Alert.alert('Resultado inválido', 'Informe um número válido.');
+      return;
+    }
+    setIsSaving(true);
+    updateRhMeta(item.id, { resultado: numero }, identity?.profileId)
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível atualizar o resultado.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.simpleListCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.simpleListTitle}>Atualizar resultado</Text>
+              <Text style={rhStyles.filterFieldLabel}>{item.titulo}</Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>
+            Resultado atual (meta alvo: {formatMetaNumero(item.meta_alvo)})
+          </Text>
+          <TextInput
+            style={styles.processTextInput}
+            value={value}
+            onChangeText={(text) => setValue(text.replace(/[^0-9,.-]/g, ''))}
+            keyboardType="numeric"
+            autoFocus
+          />
+
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+            <Pressable style={[styles.secondaryButton, { flex: 1, minHeight: 44 }]} onPress={onClose}>
+              <Text style={styles.secondaryButtonText}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, { flex: 1, minHeight: 44 }, isSaving ? styles.primaryButtonDisabled : null]}
+              onPress={handleSave}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Salvando...' : 'Salvar'}</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 export function RHMetasScreen({ navigation }: ScreenProps<'RHMetas'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [items, setItems] = useState<RhMetaItem[]>([]);
+  const [resumo, setResumo] = useState<RhMetasResumo>({ total: 0, abertas: 0, atingidas: 0, automaticas: 0 });
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilterLabel, setStatusFilterLabel] = useState('Todos os status');
+  const [medicaoFilterLabel, setMedicaoFilterLabel] = useState('Toda medição');
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const [isMedicaoFilterOpen, setIsMedicaoFilterOpen] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<RhMetaItem | null>(null);
+  const [resultadoItem, setResultadoItem] = useState<RhMetaItem | null>(null);
+  const [isRecalculando, setIsRecalculando] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [unidades, setUnidades] = useState<RhUnidadeItem[]>([]);
+  const [cargos, setCargos] = useState<{ id: string; nome: string }[]>([]);
+
+  useEffect(() => {
+    fetchRhUnidades().then(setUnidades).catch(() => setUnidades([]));
+    fetchRhCargos().then(setCargos).catch(() => setCargos([]));
+  }, []);
+
+  const statusFilterOptions = ['Todos os status', ...metaStatusOptions];
+  const medicaoFilterOptions = ['Toda medição', 'Manual', 'Automática'];
+
+  const loadMetas = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    const status =
+      statusFilterLabel === 'Todos os status' ? undefined : metaStatusLabelToValue[statusFilterLabel];
+    const medicao =
+      medicaoFilterLabel === 'Toda medição' ? undefined : medicaoFilterLabel === 'Manual' ? 'manual' : 'automatica';
+    fetchRhMetas({ busca: search || undefined, status, medicao })
+      .then((result) => {
+        setItems(result.items);
+        setResumo(result.resumo);
+      })
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as metas.'))
+      .finally(() => setIsLoading(false));
+  }, [search, statusFilterLabel, medicaoFilterLabel]);
+
+  useEffect(() => {
+    loadMetas();
+  }, [loadMetas]);
+
+  const handleDelete = (item: RhMetaItem) => {
+    Alert.alert('Excluir meta', `Tem certeza que quer excluir "${item.titulo}"? Essa ação não pode ser desfeita.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          setDeletingId(item.id);
+          deleteRhMeta(item.id, identity?.profileId)
+            .then(loadMetas)
+            .catch((err) => showRhSaveError(err, 'Não foi possível excluir a meta.'))
+            .finally(() => setDeletingId(null));
+        },
+      },
+    ]);
+  };
+
+  const handleRecalcular = () => {
+    setIsRecalculando(true);
+    recalcularRhMetas(undefined, identity?.profileId)
+      .then(({ total, atualizadas }) => {
+        Alert.alert('Metas recalculadas', `${atualizadas} de ${total} metas automáticas foram atualizadas.`);
+        loadMetas();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível recalcular as metas automáticas.'))
+      .finally(() => setIsRecalculando(false));
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -11155,37 +11854,179 @@ export function RHMetasScreen({ navigation }: ScreenProps<'RHMetas'>) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <RHPageHeader icon="target" title="Metas" subtitle="Metas individuais e por posto" />
+        <RHPageHeader icon="target" title="Metas" subtitle="Defina e acompanhe metas individuais e por posto." />
 
-        <View style={rhStyles.tripleStatRow}>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={rhStyles.tripleStatValue}>{rhGoalStats.noPrazo}</Text>
-            <Text style={rhStyles.tripleStatLabel}>No prazo</Text>
+        <View style={rhStyles.importStatsRow}>
+          <View style={rhStyles.importStatCard}>
+            <Text style={rhStyles.importStatValue}>{resumo.total}</Text>
+            <Text style={rhStyles.importStatLabel}>Metas cadastradas</Text>
           </View>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, { color: '#E6213D' }]}>{rhGoalStats.emRisco}</Text>
-            <Text style={rhStyles.tripleStatLabel}>Em risco</Text>
+          <View style={rhStyles.importStatCard}>
+            <Text style={[rhStyles.importStatValue, { color: '#3457D5' }]}>{resumo.abertas}</Text>
+            <Text style={rhStyles.importStatLabel}>Em aberto</Text>
           </View>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueBlue]}>{rhGoalStats.concluidas}</Text>
-            <Text style={rhStyles.tripleStatLabel}>Concluídas</Text>
+          <View style={rhStyles.importStatCard}>
+            <Text style={[rhStyles.importStatValue, { color: '#18955A' }]}>{resumo.atingidas}</Text>
+            <Text style={rhStyles.importStatLabel}>Atingidas</Text>
+          </View>
+          <View style={rhStyles.importStatCard}>
+            <Text style={[rhStyles.importStatValue, { color: '#B07A1E' }]}>{resumo.automaticas}</Text>
+            <Text style={rhStyles.importStatLabel}>Automáticas</Text>
           </View>
         </View>
 
-        {rhGoals.map((goal) => {
-          const tone = getProgressTone(goal.progressPct);
-          return (
-            <View key={goal.id} style={rhStyles.goalCard}>
-              <View style={rhStyles.goalTopRow}>
-                <Text style={rhStyles.goalTitle}>{goal.title}</Text>
-                <Text style={[rhStyles.goalPct, { color: tone }]}>{goal.progressPct}%</Text>
+        <View style={rhStyles.searchRow}>
+          <Feather name="search" size={16} color="#9AA1B5" />
+          <TextInput
+            style={rhStyles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Buscar meta..."
+            placeholderTextColor="#A7AEC2"
+          />
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+          <RHFilterPill label={statusFilterLabel} onPress={() => setIsStatusFilterOpen(true)} compact />
+          <RHFilterPill label={medicaoFilterLabel} onPress={() => setIsMedicaoFilterOpen(true)} compact />
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+          <Pressable
+            style={[
+              styles.secondaryButton,
+              { flex: 1, minHeight: 44, flexDirection: 'row', gap: 6 },
+              isRecalculando ? styles.primaryButtonDisabled : null,
+            ]}
+            onPress={handleRecalcular}
+            disabled={isRecalculando}
+          >
+            <Feather name="refresh-cw" size={14} color="#2E468F" />
+            <Text style={styles.secondaryButtonText}>{isRecalculando ? 'Recalculando...' : 'Recalcular'}</Text>
+          </Pressable>
+          <Pressable
+            style={[rhStyles.primaryButtonGreen, { flex: 1, minHeight: 44, flexDirection: 'row', gap: 6 }]}
+            onPress={() => {
+              setEditingItem(null);
+              setIsFormOpen(true);
+            }}
+          >
+            <Feather name="plus" size={16} color="#FFFFFF" />
+            <Text style={styles.primaryButtonText}>Nova meta</Text>
+          </Pressable>
+        </View>
+
+        {isLoading ? (
+          <Text style={styles.conversaEmptyText}>Carregando metas...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : items.length === 0 ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Nenhuma meta encontrada.</Text>
+          </View>
+        ) : (
+          items.map((item) => {
+            const percentual =
+              item.percentual ?? (item.meta_alvo ? Math.round(((item.resultado ?? 0) / item.meta_alvo) * 100) : 0);
+            const tone = getProgressTone(Math.max(0, Math.min(100, percentual)));
+            const statusMeta = metaStatusColors[item.status] ?? metaStatusColors.aberta;
+            const escopo = metaEscopoLabel(item);
+
+            return (
+              <View key={item.id} style={rhStyles.goalCard}>
+                <View style={rhStyles.importRecordTopRow}>
+                  <Text style={rhStyles.goalTitle} numberOfLines={1}>
+                    {item.titulo}
+                  </Text>
+                  <View style={[rhStyles.importTypePillSmall, { backgroundColor: statusMeta.bg }]}>
+                    <Text style={[rhStyles.importTypePillText, { color: statusMeta.color }]}>
+                      {metaStatusValueToLabel[item.status] ?? item.status}
+                    </Text>
+                  </View>
+                </View>
+                {item.descricao ? <Text style={rhStyles.goalSubtitle}>{item.descricao}</Text> : null}
+
+                <View style={rhStyles.importRecordBottomRow}>
+                  <View style={[rhStyles.importTypePillSmall, { backgroundColor: '#EEF0F6' }]}>
+                    <Text style={[rhStyles.importTypePillText, { color: '#5C6580' }]}>{escopo.badge}</Text>
+                  </View>
+                  {escopo.detail ? <Text style={rhStyles.goalSubtitle}>{escopo.detail}</Text> : null}
+                  <Text style={rhStyles.goalSubtitle}>
+                    {formatIsoDateBR(item.periodo_inicio)} a {formatIsoDateBR(item.periodo_fim)}
+                  </Text>
+                  <Text style={rhStyles.goalSubtitle}>{metaMedicaoLabels[item.medicao]}</Text>
+                </View>
+
+                <View style={rhStyles.goalTopRow}>
+                  <Text style={rhStyles.goalSubtitle}>
+                    {formatMetaNumero(item.resultado)} / {formatMetaNumero(item.meta_alvo)}
+                  </Text>
+                  <Text style={[rhStyles.goalPct, { color: tone }]}>{percentual}%</Text>
+                </View>
+                <RHProgressBar pct={percentual} color={tone} />
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 12 }}>
+                  {item.medicao === 'manual' ? (
+                    <Pressable onPress={() => setResultadoItem(item)} hitSlop={8}>
+                      <Feather name="refresh-cw" size={16} color="#677089" />
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    onPress={() => {
+                      setEditingItem(item);
+                      setIsFormOpen(true);
+                    }}
+                    hitSlop={8}
+                  >
+                    <Feather name="edit-2" size={16} color="#677089" />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleDelete(item)}
+                    disabled={deletingId === item.id}
+                    hitSlop={8}
+                    style={{ opacity: deletingId === item.id ? 0.4 : 1 }}
+                  >
+                    <Feather name="trash-2" size={16} color="#E6213D" />
+                  </Pressable>
+                </View>
               </View>
-              <Text style={rhStyles.goalSubtitle}>{goal.subtitle}</Text>
-              <RHProgressBar pct={goal.progressPct} color={tone} />
-            </View>
-          );
-        })}
+            );
+          })
+        )}
       </ScrollView>
+
+      <RHSimplePickerModal
+        visible={isStatusFilterOpen}
+        title="Status"
+        options={statusFilterOptions}
+        selectedValue={statusFilterLabel}
+        onSelect={setStatusFilterLabel}
+        onClose={() => setIsStatusFilterOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isMedicaoFilterOpen}
+        title="Medição"
+        options={medicaoFilterOptions}
+        selectedValue={medicaoFilterLabel}
+        onSelect={setMedicaoFilterLabel}
+        onClose={() => setIsMedicaoFilterOpen(false)}
+      />
+
+      <RHMetaFormModal
+        visible={isFormOpen}
+        editingItem={editingItem}
+        unidades={unidades}
+        cargos={cargos}
+        onClose={() => setIsFormOpen(false)}
+        onSaved={loadMetas}
+      />
+
+      <RHMetaResultadoModal
+        visible={resultadoItem !== null}
+        item={resultadoItem}
+        onClose={() => setResultadoItem(null)}
+        onSaved={loadMetas}
+      />
     </SafeAreaView>
   );
 }

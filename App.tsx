@@ -2746,18 +2746,27 @@ async function goToTargetOrTwoFactor(
     identity?.role === 'administrador' ||
     identity?.availableRoles?.includes('administrador');
   if (contaEhDeTeste) {
-    navigation.replace(targetRoute);
+    // targetRoute é dinâmico (keyof RootStackParamList) — cada tela exige um
+    // formato de params diferente, então o TS não consegue casar isso com o
+    // overload de .replace() sem um cast explícito aqui.
+    navigation.replace(targetRoute as any);
     return;
   }
 
   if (!isTwoFactorEnabled || !identity?.profileId) {
-    navigation.replace(targetRoute);
+    // targetRoute é dinâmico (keyof RootStackParamList) — cada tela exige um
+    // formato de params diferente, então o TS não consegue casar isso com o
+    // overload de .replace() sem um cast explícito aqui.
+    navigation.replace(targetRoute as any);
     return;
   }
 
   const precisaVerificar = await needsTwoFactorVerification(identity.profileId);
   if (!precisaVerificar) {
-    navigation.replace(targetRoute);
+    // targetRoute é dinâmico (keyof RootStackParamList) — cada tela exige um
+    // formato de params diferente, então o TS não consegue casar isso com o
+    // overload de .replace() sem um cast explícito aqui.
+    navigation.replace(targetRoute as any);
     return;
   }
 
@@ -3253,7 +3262,10 @@ function TwoFactorVerificationScreen({ navigation, route }: ScreenProps<'TwoFact
         const result = await verify2faCode(profileId, codigo);
         if (result.ok) {
           await setLastTwoFactorVerifiedNow(profileId);
-          navigation.replace(targetRoute);
+          // targetRoute é dinâmico (keyof RootStackParamList) — cada tela exige um
+    // formato de params diferente, então o TS não consegue casar isso com o
+    // overload de .replace() sem um cast explícito aqui.
+    navigation.replace(targetRoute as any);
           return;
         }
 
@@ -3883,6 +3895,22 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
   const currentLessonId = getCurrentRealLessonId(lessonIds, progress);
   const unlockedLessonIds = getUnlockedRealLessonIds(lessonIds, progress);
 
+  // Aulas que o colaborador pulou manualmente (botão "Próxima aula") sem
+  // terminar de assistir a anterior — destrava só nesta sessão, sem fingir
+  // que a aula anterior foi concluída (isso continua registrado como
+  // "Em andamento" pro RH, com a posição real em que parou).
+  const [skippedLessonIds, setSkippedLessonIds] = useState<Set<string>>(new Set());
+
+  // Libera a prova quando o colaborador já chegou na última aula — mesmo
+  // pulando aulas sem terminar de assistir (registrado à parte pro RH),
+  // igual ao web: "posso passar pra próxima, mas fica registrado lá".
+  const [hasReachedLastLesson, setHasReachedLastLesson] = useState(false);
+  useEffect(() => {
+    if (lessonIds.length > 0 && selectedLessonId === lessonIds[lessonIds.length - 1]) {
+      setHasReachedLastLesson(true);
+    }
+  }, [selectedLessonId, lessonIds]);
+
   useEffect(() => {
     if (lessonIds.length === 0) return;
     if (!selectedLessonId || !lessonIds.includes(selectedLessonId)) {
@@ -3900,7 +3928,8 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
     completed: false,
   };
   const selectedLessonDurationSeconds = (selectedLesson?.duracao_min ?? 0) * 60;
-  const isSelectedLessonCurrent = selectedLesson?.id === currentLessonId;
+  const isSelectedLessonCurrent =
+    selectedLesson?.id === currentLessonId || (!!selectedLesson && skippedLessonIds.has(selectedLesson.id));
   const latestAttempt = progress?.examAttempt;
   const minimumScore = treinamento?.prova_min_acerto ?? 70;
   const examDurationSeconds = (treinamento?.prova_tempo_limite_min ?? 0) * 60;
@@ -3915,6 +3944,11 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
   const [videoContainerWidth, setVideoContainerWidth] = useState(0);
   const youtubePlayerRef = useRef<YoutubeIframeRef>(null);
   const [youtubePlaying, setYoutubePlaying] = useState(false);
+  // Ponto máximo já assistido de verdade (não arrastado) — usado pra
+  // detectar e desfazer tentativas de "adiantar" o vídeo pela barra nativa,
+  // sem precisar esconder os controles nativos (que são bem mais confiáveis
+  // que um play/pause customizado, principalmente no embed do YouTube).
+  const maxWatchedSecRef = useRef(0);
 
   const player = useVideoPlayer(!isExternalVideo && selectedLesson?.video_url ? selectedLesson.video_url : null, (p) => {
     p.timeUpdateEventInterval = 2;
@@ -3922,9 +3956,12 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
 
   useEffect(() => {
     setVideoLoadError(false);
+    setYoutubePlaying(false);
+    maxWatchedSecRef.current = selectedLessonProgress.watchedSeconds || 0;
     if (selectedLesson?.video_url && !isExternalVideo) {
       player.replace(selectedLesson.video_url);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLesson?.video_url, isExternalVideo, player]);
 
   useEventListener(player, 'statusChange', ({ status }) => {
@@ -3957,6 +3994,49 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
     },
     [inscricaoId, identity?.profileId]
   );
+
+  // Posição/duração atuais do player em uso, seja qual for o tipo de vídeo.
+  // Pra Vimeo (WebView sem API) não tem como pegar a posição real — não
+  // fabrica número, só retorna null (o skip ainda funciona, só não manda
+  // uma posição inventada).
+  const getCurrentPlaybackInfo = useCallback(async (): Promise<{ posicao: number; duracao: number } | null> => {
+    if (youtubeVideoId) {
+      const [posicao, duracao] = await Promise.all([
+        Promise.resolve(youtubePlayerRef.current?.getCurrentTime()).then((v) => v ?? 0),
+        Promise.resolve(youtubePlayerRef.current?.getDuration()).then((v) => v ?? 0),
+      ]);
+      return duracao > 0 ? { posicao, duracao } : null;
+    }
+    if (!isExternalVideo) {
+      const duracao = player.duration || selectedLessonDurationSeconds || 0;
+      return duracao > 0 ? { posicao: player.currentTime ?? 0, duracao } : null;
+    }
+    return null;
+  }, [youtubeVideoId, isExternalVideo, player, selectedLessonDurationSeconds]);
+
+  // Botão "Próxima aula": avança mesmo sem terminar de assistir, mas grava
+  // no servidor até onde a pessoa chegou antes de pular (sem marcar como
+  // concluída) — pra continuar aparecendo certinho pro RH.
+  const handleSkipToNextLesson = useCallback(() => {
+    if (!selectedLesson) return;
+    const currentIndex = effectiveLessons.findIndex((lesson) => lesson.id === selectedLesson.id);
+    if (currentIndex === -1 || currentIndex >= effectiveLessons.length - 1) return;
+    const nextLesson = effectiveLessons[currentIndex + 1];
+    const lessonId = selectedLesson.id;
+
+    getCurrentPlaybackInfo().then((info) => {
+      if (!info) return;
+      updateLessonWatchTime(courseId, lessonId, Math.floor(info.posicao), info.duracao);
+      syncProgressoAula(lessonId, info.posicao, info.duracao, false, true);
+    });
+
+    setSkippedLessonIds((current) => {
+      const next = new Set(current);
+      next.add(nextLesson.id);
+      return next;
+    });
+    setSelectedLessonId(nextLesson.id);
+  }, [selectedLesson, effectiveLessons, getCurrentPlaybackInfo, courseId, updateLessonWatchTime, syncProgressoAula]);
 
   // Vídeos externos sem API própria (Vimeo via WebView) não disparam os
   // eventos do player nativo. Registra o mesmo "começou o treinamento" que
@@ -3996,8 +4076,19 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
       Promise.all([youtubePlayerRef.current?.getCurrentTime(), youtubePlayerRef.current?.getDuration()])
         .then(([currentTime, duration]) => {
           if (!currentTime || !duration || duration <= 0) return;
-          updateLessonWatchTime(courseId, selectedLesson.id, Math.floor(currentTime), duration);
-          syncProgressoAula(selectedLesson.id, currentTime, duration, false);
+
+          // Detecta tentativa de "adiantar" pela barra nativa do YouTube (o
+          // controls:true fica ligado pra garantir play/pause confiável) e
+          // volta pro ponto máximo já assistido de verdade.
+          const tolerance = 6;
+          if (currentTime > maxWatchedSecRef.current + tolerance) {
+            youtubePlayerRef.current?.seekTo(maxWatchedSecRef.current, true);
+            return;
+          }
+
+          maxWatchedSecRef.current = Math.max(maxWatchedSecRef.current, currentTime);
+          updateLessonWatchTime(courseId, selectedLesson.id, Math.floor(maxWatchedSecRef.current), duration);
+          syncProgressoAula(selectedLesson.id, maxWatchedSecRef.current, duration, false);
           if (inscricaoId && !hasMarkedStartedRef.current) {
             hasMarkedStartedRef.current = true;
             updateRhTreinamentoInscricao(
@@ -4034,10 +4125,19 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
     if (!selectedLesson || !isSelectedLessonCurrent || selectedLessonProgress.completed) return;
 
     const duration = player.duration || selectedLessonDurationSeconds || 0;
-    if (duration > 0) {
-      updateLessonWatchTime(courseId, selectedLesson.id, Math.floor(currentTime), duration);
-      syncProgressoAula(selectedLesson.id, currentTime, duration, false);
+    if (duration <= 0) return;
+
+    // Detecta tentativa de "adiantar" pela barra nativa (controls ligado pra
+    // garantir play/pause confiável) e volta pro ponto máximo já assistido.
+    const tolerance = 6;
+    if (currentTime > maxWatchedSecRef.current + tolerance) {
+      player.currentTime = maxWatchedSecRef.current;
+      return;
     }
+
+    maxWatchedSecRef.current = Math.max(maxWatchedSecRef.current, currentTime);
+    updateLessonWatchTime(courseId, selectedLesson.id, Math.floor(maxWatchedSecRef.current), duration);
+    syncProgressoAula(selectedLesson.id, maxWatchedSecRef.current, duration, false);
 
     // Registra que o colaborador começou o treinamento — PATCH real em
     // rh_treinamento_inscricoes, uma vez por sessão nesta tela (o progresso
@@ -4122,12 +4222,17 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
                   >
                     {youtubeVideoId ? (
                       videoContainerWidth > 0 ? (
+                        // Controles nativos do YouTube ligados (play/pause pela barra
+                        // deles, bem mais confiável que um botão customizado). O
+                        // "adiantar" pela barra é bloqueado por outro caminho: o
+                        // polling abaixo detecta o salto e volta a posição.
                         <YoutubePlayer
                           ref={youtubePlayerRef}
                           height={190}
                           width={videoContainerWidth}
                           videoId={youtubeVideoId}
-                          play={false}
+                          play={youtubePlaying}
+                          initialPlayerParams={{ controls: true, modestbranding: true, rel: false }}
                           onChangeState={handleYoutubeStateChange}
                           onError={() => setVideoLoadError(true)}
                           webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false }}
@@ -4151,6 +4256,10 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
                       />
                     ) : selectedLesson.video_url ? (
                       <View style={{ width: '100%', height: '100%', position: 'relative' }}>
+                        {/* Controles nativos ligados (play/pause/tela cheia
+                            confiáveis). O "adiantar" pela barra é bloqueado por
+                            outro caminho: o timeUpdate detecta o salto e volta a
+                            posição pro ponto máximo já assistido de verdade. */}
                         <VideoView
                           player={player}
                           style={{ width: '100%', height: '100%' }}
@@ -4205,6 +4314,14 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
                       {selectedLessonProgress.completed ? 'Concluída' : 'Em andamento'}
                     </Text>
                   </View>
+
+                  {effectiveLessons.findIndex((lesson) => lesson.id === selectedLesson.id) <
+                  effectiveLessons.length - 1 ? (
+                    <Pressable style={styles.trainingSkipButton} onPress={handleSkipToNextLesson}>
+                      <Text style={styles.trainingSkipButtonText}>Pular para a próxima aula</Text>
+                      <Feather name="chevron-right" size={16} color="#29448D" />
+                    </Pressable>
+                  ) : null}
                 </>
               ) : (
                 <Text style={styles.conversaEmptyText}>
@@ -4223,7 +4340,7 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
                   const lessonPercent = lessonDurationSeconds
                     ? Math.min(100, Math.round((lessonProgress.watchedSeconds / lessonDurationSeconds) * 100))
                     : 0;
-                  const isUnlocked = unlockedLessonIds.includes(lesson.id);
+                  const isUnlocked = unlockedLessonIds.includes(lesson.id) || skippedLessonIds.has(lesson.id);
                   const isCurrent = lesson.id === currentLessonId;
                   const statusLabel = lessonProgress.completed
                     ? 'Concluída'
@@ -4325,18 +4442,20 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
               <Pressable
                 style={[
                   styles.primaryButton,
-                  !summary.allLessonsCompleted || questoesCount === 0 ? styles.trainingDisabledButton : null,
+                  (!summary.allLessonsCompleted && !hasReachedLastLesson) || questoesCount === 0
+                    ? styles.trainingDisabledButton
+                    : null,
                 ]}
                 onPress={() => navigation.navigate('TrainingExam', { courseId })}
-                disabled={!summary.allLessonsCompleted || questoesCount === 0}
+                disabled={(!summary.allLessonsCompleted && !hasReachedLastLesson) || questoesCount === 0}
               >
                 <Text style={styles.primaryButtonText}>{latestAttempt ? 'Refazer prova' : 'Iniciar prova'}</Text>
               </Pressable>
 
               {questoesCount === 0 ? (
                 <Text style={styles.trainingPausedHint}>Este treinamento ainda não tem perguntas cadastradas.</Text>
-              ) : !summary.allLessonsCompleted ? (
-                <Text style={styles.trainingPausedHint}>A prova libera somente após assistir todas as aulas.</Text>
+              ) : !summary.allLessonsCompleted && !hasReachedLastLesson ? (
+                <Text style={styles.trainingPausedHint}>A prova libera após assistir (ou passar por) todas as aulas.</Text>
               ) : null}
             </View>
           </>
@@ -7946,7 +8065,16 @@ function SalesScreen({ navigation }: ScreenProps<'Sales'>) {
           margemPct: pickNum(seg, ['margem_pct']),
         };
       })
-      .filter((item): item is { produto: string; faturamento: number; volumeLitros: number | null; margemPct: number | null } => item !== null);
+      .filter(
+        (
+          item
+        ): item is {
+          produto: 'GASOLINA' | 'ETANOL' | 'DIESEL';
+          faturamento: number;
+          volumeLitros: number | null;
+          margemPct: number | null;
+        } => item !== null
+      );
   }, [combustiveisLiquidos]);
 
   return (
@@ -14458,6 +14586,22 @@ export const styles = StyleSheet.create({
     textAlign: 'right',
     flexShrink: 0,
   },
+  trainingSkipButton: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DCE1EE',
+  },
+  trainingSkipButtonText: {
+    color: '#29448D',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   trainingCourseFooter: {
     marginTop: 10,
     flexDirection: 'row',
@@ -14631,6 +14775,16 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
+  },
+  trainingVideoPlayOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
   trainingVideoMockTitle: {
     color: '#FFFFFF',

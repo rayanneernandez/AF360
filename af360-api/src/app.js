@@ -32,6 +32,7 @@ const rhDocumentosUploadRoutes = require('./routes/rhDocumentosUpload');
 const rhAdmissaoConformidadeRoutes = require('./routes/rhAdmissaoConformidade');
 const rhComunicadosUploadRoutes = require('./routes/rhComunicadosUpload');
 const rhImportacoesPdfRoutes = require('./routes/rhImportacoesPdf');
+const rhMetasRoutes = require('./routes/rhMetas');
 
 const app = express();
 
@@ -76,6 +77,7 @@ app.use('/api/rh/documentos', rhDocumentosUploadRoutes);
 app.use('/api/rh/admissao-conformidade', rhAdmissaoConformidadeRoutes);
 app.use('/api/rh/comunicados-upload', rhComunicadosUploadRoutes);
 app.use('/api/rh/importacoes-pdf', rhImportacoesPdfRoutes);
+app.use('/api/rh/metas', rhMetasRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'af360-api', message: 'Veja /api/health' });

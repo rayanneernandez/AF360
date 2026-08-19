@@ -1888,6 +1888,132 @@ export async function deleteRhPdfImport(id: string, actorId?: string | null): Pr
   await api.delete(withActorId(`/api/rh/importacoes-pdf/${encodeURIComponent(id)}`, actorId));
 }
 
+// --- Metas de RH (rh_metas) — endpoint confirmado pela Lovable em
+// 19/08/2026 (/api/public/internal/rh-metas via nosso proxy /api/rh/metas).
+// "publico" define o escopo (todos/empresa/grupo/cargo/colaborador); os
+// campos *_ids cobrem escopo múltiplo quando publico não é "todos".
+// "medicao" automática exige "fonte_auto" e é recalculada sob demanda
+// (recalcularRhMetas), lendo o espelho Quality no período/escopo da meta.
+export type RhMetaPublico = 'todos' | 'empresa' | 'grupo' | 'cargo' | 'colaborador';
+export type RhMetaMedicao = 'manual' | 'automatica';
+export type RhMetaStatus = 'aberta' | 'atingida' | 'nao_atingida' | 'cancelada';
+export type RhMetaFonteAuto =
+  | 'faturamento'
+  | 'cupons'
+  | 'litros_total'
+  | 'litros_gasolina'
+  | 'litros_etanol'
+  | 'litros_diesel'
+  | 'litros_gnv';
+
+export type RhMetaItem = {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  periodo_inicio: string;
+  periodo_fim: string;
+  meta_alvo: number;
+  resultado: number | null;
+  status: RhMetaStatus;
+  avaliacao: string | null;
+  publico: RhMetaPublico;
+  medicao: RhMetaMedicao;
+  fonte_auto: RhMetaFonteAuto | null;
+  resultado_atualizado_em: string | null;
+  empresa_id: string | null;
+  grupo_id: string | null;
+  cargo_id: string | null;
+  empresa_ids: string[] | null;
+  grupo_ids: string[] | null;
+  cargo_ids: string[] | null;
+  colaborador_ids: string[] | null;
+  colaborador_nome?: string | null;
+  colaboradores_nomes?: string[] | null;
+  empresa_nome?: string | null;
+  empresas_nomes?: string[] | null;
+  percentual?: number | null;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: string | null;
+  [key: string]: unknown;
+};
+
+export type RhMetasResumo = { total: number; abertas: number; atingidas: number; automaticas: number };
+
+export async function fetchRhMetas(
+  params: {
+    busca?: string;
+    status?: RhMetaStatus;
+    medicao?: RhMetaMedicao;
+    colaboradorId?: string;
+    empresaId?: string;
+    limit?: number;
+    offset?: number;
+  } = {}
+): Promise<{ items: RhMetaItem[]; count: number; resumo: RhMetasResumo }> {
+  const search = new URLSearchParams();
+  if (params.busca) search.set('busca', params.busca);
+  if (params.status) search.set('status', params.status);
+  if (params.medicao) search.set('medicao', params.medicao);
+  if (params.colaboradorId) search.set('colaboradorId', params.colaboradorId);
+  if (params.empresaId) search.set('empresaId', params.empresaId);
+  if (params.limit !== undefined) search.set('limit', String(params.limit));
+  if (params.offset !== undefined) search.set('offset', String(params.offset));
+  const qs = search.toString();
+  const json = await api.get(`/api/rh/metas${qs ? `?${qs}` : ''}`);
+  return {
+    items: (json.data as RhMetaItem[]) ?? [],
+    count: json.count ?? 0,
+    resumo: json.resumo ?? { total: 0, abertas: 0, atingidas: 0, automaticas: 0 },
+  };
+}
+
+export type RhMetaCreateBody = {
+  titulo: string;
+  descricao?: string | null;
+  periodo_inicio: string;
+  periodo_fim: string;
+  meta_alvo: number;
+  publico?: RhMetaPublico;
+  medicao?: RhMetaMedicao;
+  fonte_auto?: RhMetaFonteAuto;
+  status?: RhMetaStatus;
+  empresa_ids?: string[];
+  grupo_ids?: string[];
+  cargo_ids?: string[];
+  colaborador_ids?: string[];
+};
+
+export async function createRhMeta(body: RhMetaCreateBody, actorId?: string | null): Promise<RhMetaItem> {
+  const json = await api.post(withActorId('/api/rh/metas', actorId), body);
+  return json.data as RhMetaItem;
+}
+
+export async function updateRhMeta(
+  id: string,
+  body: Partial<RhMetaCreateBody> & { resultado?: number; avaliacao?: string },
+  actorId?: string | null
+): Promise<RhMetaItem> {
+  const json = await api.patch(withActorId(`/api/rh/metas/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhMetaItem;
+}
+
+export async function deleteRhMeta(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/metas/${encodeURIComponent(id)}`, actorId));
+}
+
+// Sem id, recalcula todas as metas automáticas da rede; com id, só uma.
+export async function recalcularRhMetas(
+  metaId?: string,
+  actorId?: string | null
+): Promise<{ total: number; atualizadas: number }> {
+  const path = metaId
+    ? `/api/rh/metas/recalcular?id=${encodeURIComponent(metaId)}`
+    : '/api/rh/metas/recalcular';
+  const json = await api.post(withActorId(path, actorId), {});
+  return { total: json.total ?? 0, atualizadas: json.atualizadas ?? 0 };
+}
+
 export async function marcarComunicadoLido(
   comunicadoId: string,
   colaboradorId: string,
