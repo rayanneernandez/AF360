@@ -13135,6 +13135,14 @@ function experienciaPrazoLabel(diasRestantes: number): string {
   return `${diasRestantes}d restantes`;
 }
 
+// "empresa" pode vir como string pronta ou como o objeto bruto da junção
+// (id/razao_social/nome_fantasia/apelido) — nunca renderizar o valor cru.
+function experienciaEmpresaLabel(empresa: RhExperienciaListItem['empresa']): string {
+  if (!empresa) return 'Sem unidade';
+  if (typeof empresa === 'string') return empresa;
+  return empresa.nome_fantasia ?? empresa.apelido ?? empresa.razao_social ?? 'Sem unidade';
+}
+
 function RHExperienciaDecisaoModal({
   visible,
   item,
@@ -13433,7 +13441,7 @@ export function RHExperienciaScreen({ navigation }: ScreenProps<'RHExperiencia'>
                 </View>
                 <Text style={rhStyles.employeeRoleUnit}>
                   {item.matricula ? `Matrícula ${item.matricula} · ` : ''}
-                  {item.empresa ?? 'Sem unidade'}
+                  {experienciaEmpresaLabel(item.empresa)}
                 </Text>
                 <Text style={rhStyles.employeeMeta}>
                   {item.cargo ?? 'Sem cargo'}

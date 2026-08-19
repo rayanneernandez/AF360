@@ -849,6 +849,15 @@ export type RhExperienciaEtapa = 'primeira_45' | 'segunda_90';
 export type RhExperienciaDecisao = 'aprovado' | 'nao_aprovado';
 export type RhExperienciaUrgencia = 'vencido' | 'critico' | 'atencao' | 'ok' | 'tranquilo';
 
+// "empresa" pode vir como string já resolvida ou como o objeto bruto da
+// junção com a tabela empresas (ex: { id, razao_social, nome_fantasia,
+// apelido }), dependendo de como a Lovable monta a linha — nunca renderizar
+// direto, sempre resolver com experienciaEmpresaLabel() (RH.tsx).
+export type RhExperienciaEmpresaRef =
+  | string
+  | { id: string; razao_social?: string | null; nome_fantasia?: string | null; apelido?: string | null }
+  | null;
+
 export type RhExperienciaListItem = {
   colaborador_id: string;
   nome_completo: string;
@@ -856,7 +865,7 @@ export type RhExperienciaListItem = {
   cargo: string | null;
   setor: string | null;
   data_admissao: string;
-  empresa: string | null;
+  empresa: RhExperienciaEmpresaRef;
   etapa: RhExperienciaEtapa;
   etapa_label: string;
   vencimento: string;
