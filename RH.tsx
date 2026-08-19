@@ -13009,8 +13009,15 @@ export function RHFeriasScreen({ navigation }: ScreenProps<'RHFerias'>) {
           filteredItens.map((item) => (
             <View key={item.id} style={rhStyles.announcementCard}>
               <View style={rhStyles.announcementTopRow}>
-                <Text style={rhStyles.employeeName}>{item.nome}</Text>
-                <View style={[rhStyles.employeeStatusPill, { backgroundColor: item.statusTint }]}>
+                <Text style={[rhStyles.employeeName, { flex: 1, flexShrink: 1 }]} numberOfLines={1}>
+                  {item.nome}
+                </Text>
+                <View
+                  style={[
+                    rhStyles.employeeStatusPill,
+                    { backgroundColor: item.statusTint, flexShrink: 0, marginLeft: 6 },
+                  ]}
+                >
                   <Text style={[rhStyles.employeeStatusText, { color: item.statusColor }]}>{item.statusLabel}</Text>
                 </View>
                 <Pressable
@@ -13432,8 +13439,15 @@ export function RHExperienciaScreen({ navigation }: ScreenProps<'RHExperiencia'>
             return (
               <View key={`${item.colaborador_id}-${item.etapa}`} style={rhStyles.experienceCard}>
                 <View style={rhStyles.announcementTopRow}>
-                  <Text style={rhStyles.employeeName}>{item.nome_completo}</Text>
-                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: urgencia.tint }]}>
+                  <Text style={[rhStyles.employeeName, { flex: 1, flexShrink: 1 }]} numberOfLines={1}>
+                    {item.nome_completo}
+                  </Text>
+                  <View
+                    style={[
+                      rhStyles.employeeStatusPill,
+                      { backgroundColor: urgencia.tint, flexShrink: 0, marginLeft: 6 },
+                    ]}
+                  >
                     <Text style={[rhStyles.employeeStatusText, { color: urgencia.color }]}>
                       {experienciaPrazoLabel(item.dias_restantes)}
                     </Text>
