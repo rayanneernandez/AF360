@@ -782,13 +782,23 @@ export async function fetchRhDemissoesDetalhe(params: {
 
 // --- RH: Férias (rh_ferias) ---
 
+export type RhFeriasStatusValue = 'programada' | 'em_andamento' | 'concluida' | 'cancelada';
+
 export type RhFeriasItem = {
   id: string;
+  colaboradorId: string | null;
   nome: string;
+  matricula: string | null;
+  empresaId: string | null;
+  empresaNome: string | null;
   unidade: string;
+  periodoInicioIso: string | null;
+  periodoFimIso: string | null;
   inicioLabel: string;
   fimLabel: string;
   dias: number | null;
+  observacoes: string | null;
+  ano: number | null;
   statusRaw: string;
   statusLabel: string;
   statusColor: string;
@@ -796,8 +806,9 @@ export type RhFeriasItem = {
 };
 
 export type RhFeriasDetalhe = {
-  stats: { andamento: number; programadas: number; concluidas: number };
+  stats: { andamento: number; programadas: number; concluidasEsteAno: number };
   itens: RhFeriasItem[];
+  anos: number[];
 };
 
 export async function fetchRhFeriasDetalhe(): Promise<RhFeriasDetalhe> {
@@ -805,26 +816,111 @@ export async function fetchRhFeriasDetalhe(): Promise<RhFeriasDetalhe> {
   return json.data as RhFeriasDetalhe;
 }
 
-// --- RH: Período de Experiência (derivado de rh_colaboradores) ---
+export type RhFeriasCreateBody = {
+  colaborador_id: string;
+  data_inicio?: string | null;
+  data_fim?: string | null;
+  dias_planejados?: number | null;
+  status?: RhFeriasStatusValue;
+  observacoes?: string | null;
+};
 
-export type RhExperienciaItem = {
+export async function createRhFerias(body: RhFeriasCreateBody, actorId?: string | null): Promise<unknown> {
+  const json = await api.post(withActorId('/api/rh/ferias', actorId), body);
+  return json.data;
+}
+
+export async function updateRhFerias(
+  id: string,
+  body: Partial<RhFeriasCreateBody>,
+  actorId?: string | null
+): Promise<unknown> {
+  const json = await api.patch(withActorId(`/api/rh/ferias/${encodeURIComponent(id)}`, actorId), body);
+  return json.data;
+}
+
+// --- RH: Período de Experiência (rh_experiencia_avaliacoes) — endpoint
+// confirmado pela Lovable em 19/08/2026 (/api/public/internal/rh-experiencia
+// via nosso proxy /api/rh/experiencia). Não existe tabela de "etapas" — elas
+// são derivadas de rh_colaboradores.data_admissao do lado deles (1ª = +45d,
+// 2ª = +90d); o que é persistido são as decisões (aprovado/nao_aprovado).
+
+export type RhExperienciaEtapa = 'primeira_45' | 'segunda_90';
+export type RhExperienciaDecisao = 'aprovado' | 'nao_aprovado';
+export type RhExperienciaUrgencia = 'vencido' | 'critico' | 'atencao' | 'ok' | 'tranquilo';
+
+export type RhExperienciaListItem = {
+  colaborador_id: string;
+  nome_completo: string;
+  matricula: string | null;
+  cargo: string | null;
+  setor: string | null;
+  data_admissao: string;
+  empresa: string | null;
+  etapa: RhExperienciaEtapa;
+  etapa_label: string;
+  vencimento: string;
+  dias_restantes: number;
+  urgencia: RhExperienciaUrgencia;
+  primeira_avaliacao?: unknown;
+};
+
+export async function fetchRhExperienciaLista(
+  params: { busca?: string; empresaId?: string; limit?: number; offset?: number } = {}
+): Promise<{ items: RhExperienciaListItem[]; total: number; paginas: number; hoje: string | null }> {
+  const search = new URLSearchParams();
+  if (params.busca) search.set('busca', params.busca);
+  if (params.empresaId) search.set('empresaId', params.empresaId);
+  if (params.limit !== undefined) search.set('limit', String(params.limit));
+  if (params.offset !== undefined) search.set('offset', String(params.offset));
+  const qs = search.toString();
+  const json = await api.get(`/api/rh/experiencia${qs ? `?${qs}` : ''}`);
+  return {
+    items: (json.data as RhExperienciaListItem[]) ?? [],
+    total: json.total ?? 0,
+    paginas: json.paginas ?? 1,
+    hoje: json.hoje ?? null,
+  };
+}
+
+export type RhExperienciaHistoricoItem = {
   id: string;
-  nome: string;
-  cargo: string;
-  unidade: string;
-  totalDays: number | null;
-  remainingDays: number;
-  dueLabel: string;
+  colaborador_id: string;
+  etapa: RhExperienciaEtapa;
+  vencimento: string;
+  decisao: RhExperienciaDecisao;
+  justificativa: string;
+  desligar: boolean;
+  avaliado_por: string | null;
+  avaliado_em: string | null;
+  created_at?: string;
 };
 
-export type RhExperienciaDetalhe = {
-  stats: { emExperiencia: number; vencem7d: number; vencem30d: number };
-  itens: RhExperienciaItem[];
+export async function fetchRhExperienciaHistorico(colaboradorId: string): Promise<RhExperienciaHistoricoItem[]> {
+  const json = await api.get(`/api/rh/experiencia/historico?colaboradorId=${encodeURIComponent(colaboradorId)}`);
+  return (json.data as RhExperienciaHistoricoItem[]) ?? [];
+}
+
+export type RhExperienciaAvaliacaoBody = {
+  colaborador_id: string;
+  etapa: RhExperienciaEtapa;
+  decisao: RhExperienciaDecisao;
+  justificativa: string;
+  desligar?: boolean;
+  vencimento?: string;
 };
 
-export async function fetchRhExperienciaDetalhe(): Promise<RhExperienciaDetalhe> {
-  const json = await api.get('/api/rh/dashboard/experiencia');
-  return json.data as RhExperienciaDetalhe;
+export async function createRhExperienciaAvaliacao(
+  body: RhExperienciaAvaliacaoBody,
+  actorId?: string | null
+): Promise<unknown> {
+  const json = await api.post(withActorId('/api/rh/experiencia', actorId), body);
+  return json.data;
+}
+
+export async function deleteRhExperienciaAvaliacao(id: string, actorId?: string | null): Promise<{ aviso: string | null }> {
+  const json = await api.delete(withActorId(`/api/rh/experiencia/${encodeURIComponent(id)}`, actorId));
+  return { aviso: json.aviso ?? null };
 }
 
 // --- RH: Transferências (rh_transferencias) ---

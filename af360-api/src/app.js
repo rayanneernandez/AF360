@@ -34,6 +34,7 @@ const rhComunicadosUploadRoutes = require('./routes/rhComunicadosUpload');
 const rhImportacoesPdfRoutes = require('./routes/rhImportacoesPdf');
 const rhMetasRoutes = require('./routes/rhMetas');
 const rhJornadasRoutes = require('./routes/rhJornadas');
+const rhExperienciaRoutes = require('./routes/rhExperiencia');
 
 const app = express();
 
@@ -80,6 +81,7 @@ app.use('/api/rh/comunicados-upload', rhComunicadosUploadRoutes);
 app.use('/api/rh/importacoes-pdf', rhImportacoesPdfRoutes);
 app.use('/api/rh/metas', rhMetasRoutes);
 app.use('/api/rh/jornadas', rhJornadasRoutes);
+app.use('/api/rh/experiencia', rhExperienciaRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'af360-api', message: 'Veja /api/health' });

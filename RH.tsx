@@ -59,7 +59,20 @@ import {
   fetchRhTransferenciasDetalhe,
   fetchRhFolhaDetalhe,
   fetchRhFeriasDetalhe,
-  fetchRhExperienciaDetalhe,
+  createRhFerias,
+  updateRhFerias,
+  type RhFeriasStatusValue,
+  type RhFeriasCreateBody,
+  type RhFeriasItem,
+  fetchRhExperienciaLista,
+  fetchRhExperienciaHistorico,
+  createRhExperienciaAvaliacao,
+  deleteRhExperienciaAvaliacao,
+  type RhExperienciaListItem,
+  type RhExperienciaHistoricoItem,
+  type RhExperienciaEtapa,
+  type RhExperienciaDecisao,
+  type RhExperienciaUrgencia,
   fetchRhUnidades,
   fetchRhCargos,
   fetchRhSetores,
@@ -82,7 +95,6 @@ import {
   type RhTransferenciasDetalhe,
   type RhFolhaDetalhe,
   type RhFeriasDetalhe,
-  type RhExperienciaDetalhe,
   type RhBeneficiosColaborador,
   type RhHistoricoContratacaoItem,
   fetchRhComunicados,
@@ -12569,33 +12581,344 @@ export function RHPontoScreen({ navigation }: ScreenProps<'RHPonto'>) {
 
 // ---------- Férias ----------
 // Dados reais vêm de fetchRhFeriasDetalhe (rh_ferias + rh_colaboradores,
-// calculados no af360-api) — o mock antigo foi removido.
+// calculados no af360-api). Escrita (Lançar férias / editar) confirmada pela
+// Lovable em 03/08/2026 via POST/PATCH /api/rh/ferias — mesmo padrão de
+// filtros e cadastro do painel web (busca por nome/matrícula, status,
+// empresa, ano; datas do lançamento são opcionais).
+
+const feriasStatusOptions = ['Programada', 'Em andamento', 'Concluída', 'Cancelada'] as const;
+
+const feriasStatusLabelToValue: Record<string, RhFeriasStatusValue> = {
+  Programada: 'programada',
+  'Em andamento': 'em_andamento',
+  Concluída: 'concluida',
+  Cancelada: 'cancelada',
+};
+
+const feriasStatusValueToLabel: Record<string, string> = {
+  programada: 'Programada',
+  em_andamento: 'Em andamento',
+  andamento: 'Em andamento',
+  concluida: 'Concluída',
+  cancelada: 'Cancelada',
+};
+
+type FeriasFormValues = {
+  colaboradorId: string | null;
+  colaboradorNome: string;
+  inicio: string;
+  fim: string;
+  diasPlanejados: string;
+  status: (typeof feriasStatusOptions)[number];
+  observacoes: string;
+};
+
+function emptyFeriasForm(): FeriasFormValues {
+  return {
+    colaboradorId: null,
+    colaboradorNome: '',
+    inicio: '',
+    fim: '',
+    diasPlanejados: '',
+    status: 'Programada',
+    observacoes: '',
+  };
+}
+
+function feriasToFormValues(item: RhFeriasItem): FeriasFormValues {
+  return {
+    colaboradorId: item.colaboradorId,
+    colaboradorNome: item.nome,
+    inicio: formatIsoDateBR(item.periodoInicioIso),
+    fim: formatIsoDateBR(item.periodoFimIso),
+    diasPlanejados: item.dias !== null && item.dias !== undefined ? String(item.dias) : '',
+    status: (feriasStatusValueToLabel[item.statusRaw] as (typeof feriasStatusOptions)[number]) ?? 'Programada',
+    observacoes: item.observacoes ?? '',
+  };
+}
+
+function RHFeriasFormModal({
+  visible,
+  editingItem,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  editingItem: RhFeriasItem | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [form, setForm] = useState<FeriasFormValues>(emptyFeriasForm());
+  const [isSaving, setIsSaving] = useState(false);
+  const [isColaboradorPickerOpen, setIsColaboradorPickerOpen] = useState(false);
+  const [isInicioPickerOpen, setIsInicioPickerOpen] = useState(false);
+  const [isFimPickerOpen, setIsFimPickerOpen] = useState(false);
+  const [isStatusPickerOpen, setIsStatusPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setForm(editingItem ? feriasToFormValues(editingItem) : emptyFeriasForm());
+    }
+  }, [visible, editingItem]);
+
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
+
+  const handleSugerirDias = () => {
+    const inicioDate = parseDateBR(form.inicio);
+    const fimDate = parseDateBR(form.fim);
+    if (!inicioDate || !fimDate) {
+      Alert.alert('Informe as datas', 'Preencha início e fim para sugerir os dias planejados.');
+      return;
+    }
+    const dias = Math.round((fimDate.getTime() - inicioDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    if (dias <= 0) {
+      Alert.alert('Período inválido', 'A data de fim precisa ser depois da data de início.');
+      return;
+    }
+    setForm((current) => ({ ...current, diasPlanejados: String(dias) }));
+  };
+
+  const handleSubmit = () => {
+    if (!form.colaboradorId) {
+      Alert.alert('Selecione o colaborador', 'Escolha quem vai entrar de férias.');
+      return;
+    }
+    if (form.inicio && !brDateLabelToIso(form.inicio)) {
+      Alert.alert('Data de início inválida', 'Informe uma data válida ou deixe em branco.');
+      return;
+    }
+    if (form.fim && !brDateLabelToIso(form.fim)) {
+      Alert.alert('Data de fim inválida', 'Informe uma data válida ou deixe em branco.');
+      return;
+    }
+    let diasNum: number | null = null;
+    if (form.diasPlanejados.trim()) {
+      diasNum = Number(form.diasPlanejados);
+      if (Number.isNaN(diasNum) || diasNum <= 0) {
+        Alert.alert('Dias planejados inválido', 'Informe um número de dias válido ou deixe em branco.');
+        return;
+      }
+    }
+
+    const body: RhFeriasCreateBody = {
+      colaborador_id: form.colaboradorId,
+      data_inicio: brDateLabelToIso(form.inicio),
+      data_fim: brDateLabelToIso(form.fim),
+      dias_planejados: diasNum,
+      status: feriasStatusLabelToValue[form.status] ?? 'programada',
+      observacoes: form.observacoes.trim() || null,
+    };
+
+    setIsSaving(true);
+    const request = editingItem
+      ? updateRhFerias(editingItem.id, body, identity?.profileId)
+      : createRhFerias(body, identity?.profileId);
+    request
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar as férias.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={handleClose}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.requestModalTitle, { flex: undefined }]}>
+                {editingItem ? 'Editar férias' : 'Lançar férias'}
+              </Text>
+              <Text style={rhStyles.modalSubtitle}>
+                Datas são opcionais — você pode apenas registrar quem está de férias e ajustar o período depois.
+              </Text>
+            </View>
+            <Pressable onPress={handleClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <RHSelectField
+              label="Colaborador"
+              required
+              value={form.colaboradorNome}
+              placeholder="Selecione o colaborador"
+              onPress={() => setIsColaboradorPickerOpen(true)}
+            />
+
+            <RHSelectField
+              label="Início"
+              icon="calendar"
+              value={form.inicio}
+              placeholder="dd/mm/aaaa"
+              onPress={() => setIsInicioPickerOpen(true)}
+            />
+            <RHSelectField
+              label="Fim"
+              icon="calendar"
+              value={form.fim}
+              placeholder="dd/mm/aaaa"
+              onPress={() => setIsFimPickerOpen(true)}
+            />
+
+            <View style={[rhStyles.sectionHeaderRow, styles.spacingTop]}>
+              <Text style={styles.requestFieldLabel}>Dias planejados</Text>
+              <Pressable onPress={handleSugerirDias} hitSlop={8}>
+                <Text style={rhStyles.linkText}>Sugerir</Text>
+              </Pressable>
+            </View>
+            <TextInput
+              style={styles.processTextInput}
+              value={form.diasPlanejados}
+              onChangeText={(text) =>
+                setForm((current) => ({ ...current, diasPlanejados: text.replace(/\D/g, '') }))
+              }
+              placeholder="Auto"
+              placeholderTextColor="#A7AEC2"
+              keyboardType="numeric"
+            />
+
+            <RHSelectField label="Status" value={form.status} onPress={() => setIsStatusPickerOpen(true)} />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Observações</Text>
+            <TextInput
+              style={[styles.processTextInput, styles.processTextArea]}
+              value={form.observacoes}
+              onChangeText={(text) => setForm((current) => ({ ...current, observacoes: text }))}
+              placeholder="Opcional..."
+              placeholderTextColor="#A7AEC2"
+              multiline
+              textAlignVertical="top"
+            />
+
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Salvando...' : editingItem ? 'Salvar alterações' : 'Lançar'}</Text>
+            </Pressable>
+          </ScrollView>
+
+          <RHColaboradorPickerModal
+            inline
+            visible={isColaboradorPickerOpen}
+            selectedId={form.colaboradorId}
+            onSelect={(id, nome) => setForm((current) => ({ ...current, colaboradorId: id, colaboradorNome: nome }))}
+            onClose={() => setIsColaboradorPickerOpen(false)}
+          />
+          <RHDatePickerModal
+            inline
+            visible={isInicioPickerOpen}
+            title="Início"
+            value={form.inicio}
+            onSelect={(value) => setForm((current) => ({ ...current, inicio: value }))}
+            onClose={() => setIsInicioPickerOpen(false)}
+          />
+          <RHDatePickerModal
+            inline
+            visible={isFimPickerOpen}
+            title="Fim"
+            value={form.fim}
+            onSelect={(value) => setForm((current) => ({ ...current, fim: value }))}
+            onClose={() => setIsFimPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isStatusPickerOpen}
+            title="Status"
+            options={[...feriasStatusOptions]}
+            selectedValue={form.status}
+            onSelect={(value) =>
+              setForm((current) => ({ ...current, status: value as (typeof feriasStatusOptions)[number] }))
+            }
+            onClose={() => setIsStatusPickerOpen(false)}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
 
 export function RHFeriasScreen({ navigation }: ScreenProps<'RHFerias'>) {
+  const { identity } = useContext(AuthIdentityContext);
   const [data, setData] = useState<RhFeriasDetalhe | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [unidades, setUnidades] = useState<RhUnidadeItem[]>([]);
+  const [statusFilterLabel, setStatusFilterLabel] = useState('Todos os status');
+  const [empresaFilterLabel, setEmpresaFilterLabel] = useState('Todas as empresas');
+  const [anoFilterLabel, setAnoFilterLabel] = useState('Todos os anos');
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const [isEmpresaFilterOpen, setIsEmpresaFilterOpen] = useState(false);
+  const [isAnoFilterOpen, setIsAnoFilterOpen] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<RhFeriasItem | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
+    fetchRhUnidades().then(setUnidades).catch(() => setUnidades([]));
+  }, []);
+
+  const loadFerias = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
     fetchRhFeriasDetalhe()
-      .then((result) => {
-        if (isMounted) setData(result);
-      })
-      .catch((err) => {
-        if (isMounted) {
-          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as férias.');
-        }
-      })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
-    return () => {
-      isMounted = false;
-    };
+      .then((result) => setData(result))
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as férias.'))
+      .finally(() => setIsLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadFerias();
+  }, [loadFerias]);
+
+  const statusFilterOptions = ['Todos os status', ...feriasStatusOptions];
+  const empresaFilterOptions = ['Todas as empresas', ...unidades.map((u) => u.nome)];
+  const anoFilterOptions = ['Todos os anos', ...(data?.anos ?? []).map((ano) => String(ano))];
+
+  const filteredItens = useMemo(() => {
+    if (!data) return [];
+    const query = search.trim().toLowerCase();
+    return data.itens.filter((item) => {
+      if (query) {
+        const matchesNome = item.nome.toLowerCase().includes(query);
+        const matchesMatricula = (item.matricula ?? '').toLowerCase().includes(query);
+        if (!matchesNome && !matchesMatricula) return false;
+      }
+      if (statusFilterLabel !== 'Todos os status') {
+        const statusValue = feriasStatusLabelToValue[statusFilterLabel];
+        if (item.statusRaw !== statusValue && !(statusValue === 'em_andamento' && item.statusRaw === 'andamento')) {
+          return false;
+        }
+      }
+      if (empresaFilterLabel !== 'Todas as empresas') {
+        const unidade = unidades.find((u) => u.nome === empresaFilterLabel);
+        if (!unidade || item.empresaId !== unidade.id) return false;
+      }
+      if (anoFilterLabel !== 'Todos os anos') {
+        if (String(item.ano ?? '') !== anoFilterLabel) return false;
+      }
+      return true;
+    });
+  }, [data, search, statusFilterLabel, empresaFilterLabel, anoFilterLabel, unidades]);
+
+  const handleToggleCancelar = (item: RhFeriasItem) => {
+    setBusyId(item.id);
+    updateRhFerias(item.id, { status: 'cancelada' }, identity?.profileId)
+      .then(loadFerias)
+      .catch((err) => showRhSaveError(err, 'Não foi possível cancelar as férias.'))
+      .finally(() => setBusyId(null));
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -12609,34 +12932,62 @@ export function RHFeriasScreen({ navigation }: ScreenProps<'RHFerias'>) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <RHPageHeader icon="sun" title="Férias" subtitle="Programação e concessão" />
+        <RHPageHeader icon="sun" title="Férias" subtitle="Programação e concessão de férias." />
 
-        <View style={rhStyles.tripleStatRow}>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueGreen]}>
-              {data ? data.stats.andamento : '—'}
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14, overflow: 'hidden' }}>
+          <View style={rhStyles.feriasStatCard}>
+            <Text style={rhStyles.feriasStatValue}>{data?.stats.andamento ?? 0}</Text>
+            <Text style={rhStyles.feriasStatLabel} numberOfLines={2}>
+              Em andamento
             </Text>
-            <Text style={rhStyles.tripleStatLabel}>Em andamento</Text>
           </View>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueBlue]}>
-              {data ? data.stats.programadas : '—'}
+          <View style={rhStyles.feriasStatCard}>
+            <Text style={rhStyles.feriasStatValue}>{data?.stats.programadas ?? 0}</Text>
+            <Text style={rhStyles.feriasStatLabel} numberOfLines={2}>
+              Programada(s)
             </Text>
-            <Text style={rhStyles.tripleStatLabel}>Programadas</Text>
           </View>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={rhStyles.tripleStatValue}>{data ? data.stats.concluidas : '—'}</Text>
-            <Text style={rhStyles.tripleStatLabel}>Concluídas</Text>
+          <View style={rhStyles.feriasStatCard}>
+            <Text style={rhStyles.feriasStatValue}>{data?.stats.concluidasEsteAno ?? 0}</Text>
+            <Text style={rhStyles.feriasStatLabel} numberOfLines={2}>
+              Concluída(s) este ano
+            </Text>
           </View>
         </View>
 
         <Pressable
-          style={rhStyles.primaryButtonNavy}
-          onPress={() => Alert.alert('Lançar férias', 'Cadastro de férias em breve.')}
+          style={[rhStyles.primaryButtonGreen, { flexDirection: 'row', gap: 6, marginBottom: 16 }]}
+          onPress={() => {
+            setEditingItem(null);
+            setIsFormOpen(true);
+          }}
         >
           <Feather name="plus" size={16} color="#FFFFFF" />
           <Text style={styles.primaryButtonText}>Lançar férias</Text>
         </Pressable>
+
+        <View style={rhStyles.searchRow}>
+          <Feather name="search" size={16} color="#9AA1B5" />
+          <TextInput
+            style={rhStyles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Buscar por nome ou matrícula..."
+            placeholderTextColor="#A7AEC2"
+          />
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
+          <View style={{ flex: 1 }}>
+            <RHFilterPill label={statusFilterLabel} onPress={() => setIsStatusFilterOpen(true)} compact />
+          </View>
+          <View style={{ flex: 1 }}>
+            <RHFilterPill label={empresaFilterLabel} onPress={() => setIsEmpresaFilterOpen(true)} compact />
+          </View>
+          <View style={{ flex: 1 }}>
+            <RHFilterPill label={anoFilterLabel} onPress={() => setIsAnoFilterOpen(true)} compact />
+          </View>
+        </View>
 
         {isLoading ? (
           <View style={styles.processEmptyCard}>
@@ -12646,71 +12997,382 @@ export function RHFeriasScreen({ navigation }: ScreenProps<'RHFerias'>) {
           <View style={styles.processEmptyCard}>
             <Text style={styles.processEmptyText}>{errorMessage}</Text>
           </View>
-        ) : !data || data.itens.length === 0 ? (
+        ) : filteredItens.length === 0 ? (
           <View style={styles.processEmptyCard}>
-            <Text style={styles.processEmptyText}>Nenhuma férias lançada.</Text>
+            <Text style={styles.processEmptyText}>
+              {data && data.itens.length > 0
+                ? 'Nenhuma férias encontrada com esses filtros.'
+                : 'Nenhuma férias registrada. Clique em Lançar férias para começar.'}
+            </Text>
           </View>
         ) : (
-          data.itens.map((item) => (
+          filteredItens.map((item) => (
             <View key={item.id} style={rhStyles.announcementCard}>
               <View style={rhStyles.announcementTopRow}>
                 <Text style={rhStyles.employeeName}>{item.nome}</Text>
                 <View style={[rhStyles.employeeStatusPill, { backgroundColor: item.statusTint }]}>
                   <Text style={[rhStyles.employeeStatusText, { color: item.statusColor }]}>{item.statusLabel}</Text>
                 </View>
+                <Pressable
+                  onPress={(e) => {
+                    const { pageX, pageY } = e.nativeEvent;
+                    setMenuAnchor({ id: item.id, x: pageX, y: pageY });
+                  }}
+                  hitSlop={8}
+                  style={{ marginLeft: 8 }}
+                  disabled={busyId === item.id}
+                >
+                  <Feather name="more-vertical" size={18} color="#677089" />
+                </Pressable>
               </View>
               <Text style={rhStyles.employeeRoleUnit}>
                 {item.inicioLabel} a {item.fimLabel} · {item.dias !== null ? `${item.dias} dias` : '— dias'}
               </Text>
-              <Text style={rhStyles.employeeMeta}>{item.unidade}</Text>
+              <Text style={rhStyles.employeeMeta}>
+                {item.empresaNome ?? item.unidade}
+                {item.matricula ? ` · Matrícula ${item.matricula}` : ''}
+              </Text>
+              {item.observacoes ? <Text style={rhStyles.goalSubtitle}>{item.observacoes}</Text> : null}
             </View>
           ))
         )}
       </ScrollView>
+
+      <Modal visible={menuAnchor !== null} transparent animationType="fade" onRequestClose={() => setMenuAnchor(null)}>
+        <Pressable style={{ flex: 1 }} onPress={() => setMenuAnchor(null)}>
+          {menuAnchor
+            ? (() => {
+                const menuItem = data?.itens.find((entry) => entry.id === menuAnchor.id);
+                if (!menuItem) return null;
+                return (
+                  <Pressable
+                    style={[rhStyles.rowActionsMenu, { top: menuAnchor.y + 8, right: 16 }]}
+                    onPress={() => {}}
+                  >
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        setEditingItem(menuItem);
+                        setIsFormOpen(true);
+                      }}
+                    >
+                      <Feather name="edit-2" size={15} color="#5E667D" />
+                      <Text style={rhStyles.rowActionsMenuItemText}>Editar</Text>
+                    </Pressable>
+                    {menuItem.statusRaw !== 'cancelada' ? (
+                      <Pressable
+                        style={rhStyles.rowActionsMenuItem}
+                        onPress={() => {
+                          setMenuAnchor(null);
+                          handleToggleCancelar(menuItem);
+                        }}
+                      >
+                        <Feather name="x-circle" size={15} color="#E6213D" />
+                        <Text style={[rhStyles.rowActionsMenuItemText, { color: '#E6213D' }]}>Cancelar férias</Text>
+                      </Pressable>
+                    ) : null}
+                  </Pressable>
+                );
+              })()
+            : null}
+        </Pressable>
+      </Modal>
+
+      <RHSimplePickerModal
+        visible={isStatusFilterOpen}
+        title="Status"
+        options={statusFilterOptions}
+        selectedValue={statusFilterLabel}
+        onSelect={setStatusFilterLabel}
+        onClose={() => setIsStatusFilterOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isEmpresaFilterOpen}
+        title="Empresa"
+        options={empresaFilterOptions}
+        selectedValue={empresaFilterLabel}
+        onSelect={setEmpresaFilterLabel}
+        onClose={() => setIsEmpresaFilterOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isAnoFilterOpen}
+        title="Ano"
+        options={anoFilterOptions}
+        selectedValue={anoFilterLabel}
+        onSelect={setAnoFilterLabel}
+        onClose={() => setIsAnoFilterOpen(false)}
+      />
+
+      <RHFeriasFormModal
+        visible={isFormOpen}
+        editingItem={editingItem}
+        onClose={() => setIsFormOpen(false)}
+        onSaved={loadFerias}
+      />
     </SafeAreaView>
   );
 }
 
 // ---------- Período de Experiência ----------
-// Não existe tabela própria: derivado de rh_colaboradores.vencimento_experiencia
-// + status = 'ativo' (fetchRhExperienciaDetalhe, calculado no af360-api).
-// O mock antigo foi removido.
+// rh_experiencia_avaliacoes — endpoint confirmado pela Lovable em 19/08/2026.
+// Não existe tabela de "etapas": elas são derivadas de
+// rh_colaboradores.data_admissao do lado deles (1ª = +45d, 2ª = +90d); o que
+// é persistido são as decisões (aprovado/nao_aprovado). Aprovar não mexe no
+// cadastro (efetivação é implícita — o colaborador some da lista); reprovar
+// com "desligar" dispara um trigger deles que desliga de verdade.
 
-function getExperienceTone(remainingDays: number) {
-  if (remainingDays <= 7) {
-    return { pillColor: '#E6213D', pillTint: '#FCE8EC', barColor: '#E6213D' };
-  }
-  if (remainingDays <= 30) {
-    return { pillColor: '#B07A1E', pillTint: '#FCEFDA', barColor: '#B07A1E' };
-  }
-  return { pillColor: '#3457D5', pillTint: '#E9EEFF', barColor: '#18955A' };
+const experienciaUrgenciaMeta: Record<RhExperienciaUrgencia, { label: string; color: string; tint: string }> = {
+  vencido: { label: 'Vencido', color: '#E6213D', tint: '#FCE8EC' },
+  critico: { label: 'Crítico', color: '#E6213D', tint: '#FCE8EC' },
+  atencao: { label: 'Atenção', color: '#B07A1E', tint: '#FCEFDA' },
+  ok: { label: 'Ok', color: '#3457D5', tint: '#E9EEFF' },
+  tranquilo: { label: 'Tranquilo', color: '#18955A', tint: '#E3F5EA' },
+};
+
+function experienciaPrazoLabel(diasRestantes: number): string {
+  if (diasRestantes < 0) return 'Vencido';
+  return `${diasRestantes}d restantes`;
 }
 
-export function RHExperienciaScreen({ navigation }: ScreenProps<'RHExperiencia'>) {
-  const [data, setData] = useState<RhExperienciaDetalhe | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+function RHExperienciaDecisaoModal({
+  visible,
+  item,
+  decisao,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  item: RhExperienciaListItem | null;
+  decisao: RhExperienciaDecisao | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [justificativa, setJustificativa] = useState('');
+  const [desligar, setDesligar] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setJustificativa('');
+      setDesligar(false);
+    }
+  }, [visible, item]);
+
+  if (!item || !decisao) return null;
+
+  const isReprovar = decisao === 'nao_aprovado';
+
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
+
+  const handleSubmit = () => {
+    if (justificativa.trim().length < 5) {
+      Alert.alert('Justificativa obrigatória', 'Informe uma justificativa com pelo menos 5 caracteres.');
+      return;
+    }
+    setIsSaving(true);
+    createRhExperienciaAvaliacao(
+      {
+        colaborador_id: item.colaborador_id,
+        etapa: item.etapa,
+        decisao,
+        justificativa: justificativa.trim(),
+        desligar: isReprovar ? desligar : undefined,
+      },
+      identity?.profileId
+    )
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível registrar a decisão.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={handleClose}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.requestModalTitle, { flex: undefined }]}>
+                {isReprovar ? 'Não aprovar período de experiência' : 'Aprovar período de experiência'}
+              </Text>
+              <Text style={rhStyles.modalSubtitle}>
+                {item.nome_completo} · {item.etapa_label}
+              </Text>
+            </View>
+            <Pressable onPress={handleClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <Text style={styles.requestFieldLabel}>Justificativa *</Text>
+          <TextInput
+            style={[styles.processTextInput, styles.processTextArea]}
+            value={justificativa}
+            onChangeText={setJustificativa}
+            placeholder="Descreva o motivo da decisão..."
+            placeholderTextColor="#A7AEC2"
+            multiline
+            textAlignVertical="top"
+            autoFocus
+          />
+
+          {isReprovar ? (
+            <Pressable
+              style={[rhStyles.sectionHeaderRow, styles.spacingTop]}
+              onPress={() => setDesligar((current) => !current)}
+            >
+              <Text style={rhStyles.filterFieldLabel}>Efetivar desligamento agora</Text>
+              <ToggleSwitch value={desligar} onValueChange={() => setDesligar((current) => !current)} />
+            </Pressable>
+          ) : null}
+
+          <Pressable
+            style={[
+              isReprovar ? rhStyles.primaryButtonRed : rhStyles.primaryButtonGreen,
+              styles.spacingTop,
+              isSaving ? styles.primaryButtonDisabled : null,
+            ]}
+            onPress={handleSubmit}
+            disabled={isSaving}
+          >
+            <Text style={styles.primaryButtonText}>
+              {isSaving ? 'Salvando...' : isReprovar ? 'Não aprovar' : 'Aprovar'}
+            </Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function RHExperienciaHistoricoModal({
+  visible,
+  colaboradorId,
+  colaboradorNome,
+  onClose,
+}: {
+  visible: boolean;
+  colaboradorId: string | null;
+  colaboradorNome: string;
+  onClose: () => void;
+}) {
+  const [itens, setItens] = useState<RhExperienciaHistoricoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
+    if (!visible || !colaboradorId) return;
     setIsLoading(true);
     setErrorMessage(null);
-    fetchRhExperienciaDetalhe()
+    fetchRhExperienciaHistorico(colaboradorId)
+      .then(setItens)
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar o histórico.'))
+      .finally(() => setIsLoading(false));
+  }, [visible, colaboradorId]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.simpleListCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.simpleListTitle, { marginBottom: 0 }]}>Histórico de avaliações</Text>
+              <Text style={rhStyles.modalSubtitle}>{colaboradorNome}</Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+            {isLoading ? (
+              <Text style={rhStyles.filterFieldLabel}>Carregando...</Text>
+            ) : errorMessage ? (
+              <Text style={rhStyles.filterFieldLabel}>{errorMessage}</Text>
+            ) : itens.length === 0 ? (
+              <Text style={rhStyles.filterFieldLabel}>Nenhuma avaliação registrada.</Text>
+            ) : (
+              itens.map((entry) => (
+                <View key={entry.id} style={rhStyles.experienceCard}>
+                  <View style={rhStyles.announcementTopRow}>
+                    <Text style={rhStyles.employeeName}>
+                      {entry.etapa === 'primeira_45' ? '1ª etapa (45 dias)' : '2ª etapa (90 dias)'}
+                    </Text>
+                    <View
+                      style={[
+                        rhStyles.employeeStatusPill,
+                        { backgroundColor: entry.decisao === 'aprovado' ? '#E3F5EA' : '#FCE8EC' },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          rhStyles.employeeStatusText,
+                          { color: entry.decisao === 'aprovado' ? '#18955A' : '#E6213D' },
+                        ]}
+                      >
+                        {entry.decisao === 'aprovado' ? 'Aprovado' : 'Não aprovado'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={rhStyles.employeeRoleUnit}>{entry.justificativa}</Text>
+                  <Text style={rhStyles.employeeMeta}>
+                    Vencimento {formatIsoDateBR(entry.vencimento)}
+                    {entry.desligar ? ' · Desligamento efetivado' : ''}
+                  </Text>
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const RH_EXPERIENCIA_PAGE_SIZE = 10;
+
+export function RHExperienciaScreen({ navigation }: ScreenProps<'RHExperiencia'>) {
+  const [items, setItems] = useState<RhExperienciaListItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [paginas, setPaginas] = useState(1);
+  const [page, setPage] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [decisaoState, setDecisaoState] = useState<{ item: RhExperienciaListItem; decisao: RhExperienciaDecisao } | null>(
+    null
+  );
+  const [historicoItem, setHistoricoItem] = useState<RhExperienciaListItem | null>(null);
+
+  const loadLista = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhExperienciaLista({ busca: search || undefined, limit: RH_EXPERIENCIA_PAGE_SIZE, offset: page * RH_EXPERIENCIA_PAGE_SIZE })
       .then((result) => {
-        if (isMounted) setData(result);
+        setItems(result.items);
+        setTotal(result.total);
+        setPaginas(result.paginas);
       })
-      .catch((err) => {
-        if (isMounted) {
-          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar o período de experiência.');
-        }
-      })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+      .catch((err) =>
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar o período de experiência.')
+      )
+      .finally(() => setIsLoading(false));
+  }, [search, page]);
+
+  useEffect(() => {
+    loadLista();
+  }, [loadLista]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [search]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -12724,25 +13386,23 @@ export function RHExperienciaScreen({ navigation }: ScreenProps<'RHExperiencia'>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <RHPageHeader icon="shield" title="Período de Experiência" subtitle="Contratos de 45 e 90 dias" />
+        <RHPageHeader
+          icon="shield"
+          title="Período de Experiência"
+          subtitle="Contratos de experiência 45+45 dias: avaliação, aprovação e histórico."
+        />
 
-        <View style={rhStyles.tripleStatRow}>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={rhStyles.tripleStatValue}>{data ? data.stats.emExperiencia : '—'}</Text>
-            <Text style={rhStyles.tripleStatLabel}>Em experiência</Text>
-          </View>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, { color: '#E6213D' }]}>
-              {data ? data.stats.vencem7d : '—'}
-            </Text>
-            <Text style={rhStyles.tripleStatLabel}>Vencem em 7d</Text>
-          </View>
-          <View style={rhStyles.tripleStatCard}>
-            <Text style={[rhStyles.tripleStatValue, rhStyles.tripleStatValueGold]}>
-              {data ? data.stats.vencem30d : '—'}
-            </Text>
-            <Text style={rhStyles.tripleStatLabel}>Vencem em 30d</Text>
-          </View>
+        <Text style={rhStyles.filterFieldLabel}>{total} colaborador(es) em período de experiência</Text>
+
+        <View style={[rhStyles.searchRow, styles.spacingTop]}>
+          <Feather name="search" size={16} color="#9AA1B5" />
+          <TextInput
+            style={rhStyles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Buscar por nome, matrícula, cargo..."
+            placeholderTextColor="#A7AEC2"
+          />
         </View>
 
         {isLoading ? (
@@ -12753,42 +13413,101 @@ export function RHExperienciaScreen({ navigation }: ScreenProps<'RHExperiencia'>
           <View style={styles.processEmptyCard}>
             <Text style={styles.processEmptyText}>{errorMessage}</Text>
           </View>
-        ) : !data || data.itens.length === 0 ? (
+        ) : items.length === 0 ? (
           <View style={styles.processEmptyCard}>
             <Text style={styles.processEmptyText}>Nenhum colaborador em período de experiência.</Text>
           </View>
         ) : (
-          data.itens.map((item) => {
-            const tone = getExperienceTone(item.remainingDays);
-            const elapsedPct =
-              item.totalDays !== null ? ((item.totalDays - item.remainingDays) / item.totalDays) * 100 : 0;
-            const remainingLabel = item.remainingDays < 0 ? 'Vencido' : `${item.remainingDays} dias`;
+          items.map((item) => {
+            const urgencia = experienciaUrgenciaMeta[item.urgencia] ?? experienciaUrgenciaMeta.ok;
 
             return (
-              <View key={item.id} style={rhStyles.experienceCard}>
+              <View key={`${item.colaborador_id}-${item.etapa}`} style={rhStyles.experienceCard}>
                 <View style={rhStyles.announcementTopRow}>
-                  <Text style={rhStyles.employeeName}>{item.nome}</Text>
-                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: tone.pillTint }]}>
-                    <Text style={[rhStyles.employeeStatusText, { color: tone.pillColor }]}>{remainingLabel}</Text>
+                  <Text style={rhStyles.employeeName}>{item.nome_completo}</Text>
+                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: urgencia.tint }]}>
+                    <Text style={[rhStyles.employeeStatusText, { color: urgencia.color }]}>
+                      {experienciaPrazoLabel(item.dias_restantes)}
+                    </Text>
                   </View>
                 </View>
                 <Text style={rhStyles.employeeRoleUnit}>
-                  {item.cargo} · {item.unidade}
+                  {item.matricula ? `Matrícula ${item.matricula} · ` : ''}
+                  {item.empresa ?? 'Sem unidade'}
                 </Text>
-                <View style={rhStyles.experienceProgressRow}>
-                  <Text style={rhStyles.experienceProgressLabel}>
-                    {item.totalDays !== null ? `${item.totalDays} dias` : '— dias'}
-                  </Text>
-                  <View style={rhStyles.experienceProgressBarWrap}>
-                    <RHProgressBar pct={elapsedPct} color={tone.barColor} />
-                  </View>
-                  <Text style={rhStyles.experienceProgressLabel}>Vence {item.dueLabel}</Text>
+                <Text style={rhStyles.employeeMeta}>
+                  {item.cargo ?? 'Sem cargo'}
+                  {item.setor ? ` · ${item.setor}` : ''}
+                </Text>
+                <Text style={rhStyles.employeeMeta}>
+                  {item.etapa_label} · Admissão {formatIsoDateBR(item.data_admissao)} · Vencimento{' '}
+                  {formatIsoDateBR(item.vencimento)}
+                </Text>
+
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+                  <Pressable
+                    style={rhStyles.experienciaActionButton}
+                    onPress={() => setHistoricoItem(item)}
+                    hitSlop={8}
+                  >
+                    <Feather name="clock" size={16} color="#5E667D" />
+                  </Pressable>
+                  <Pressable
+                    style={[rhStyles.experienciaActionButton, { backgroundColor: '#FCE8EC' }]}
+                    onPress={() => setDecisaoState({ item, decisao: 'nao_aprovado' })}
+                    hitSlop={8}
+                  >
+                    <Feather name="x-circle" size={16} color="#E6213D" />
+                  </Pressable>
+                  <Pressable
+                    style={[rhStyles.experienciaActionButton, { backgroundColor: '#E3F5EA' }]}
+                    onPress={() => setDecisaoState({ item, decisao: 'aprovado' })}
+                    hitSlop={8}
+                  >
+                    <Feather name="check-circle" size={16} color="#18955A" />
+                  </Pressable>
                 </View>
               </View>
             );
           })
         )}
+
+        {paginas > 1 ? (
+          <View style={[rhStyles.sectionHeaderRow, styles.spacingTop]}>
+            <Pressable
+              onPress={() => setPage((current) => Math.max(0, current - 1))}
+              disabled={page <= 0}
+              hitSlop={8}
+            >
+              <Text style={[rhStyles.linkText, page <= 0 ? { color: '#C7CCDA' } : null]}>Anterior</Text>
+            </Pressable>
+            <Text style={rhStyles.filterFieldLabel}>
+              Página {page + 1} de {paginas}
+            </Text>
+            <Pressable
+              onPress={() => setPage((current) => Math.min(paginas - 1, current + 1))}
+              disabled={page >= paginas - 1}
+              hitSlop={8}
+            >
+              <Text style={[rhStyles.linkText, page >= paginas - 1 ? { color: '#C7CCDA' } : null]}>Próxima</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </ScrollView>
+
+      <RHExperienciaDecisaoModal
+        visible={decisaoState !== null}
+        item={decisaoState?.item ?? null}
+        decisao={decisaoState?.decisao ?? null}
+        onClose={() => setDecisaoState(null)}
+        onSaved={loadLista}
+      />
+      <RHExperienciaHistoricoModal
+        visible={historicoItem !== null}
+        colaboradorId={historicoItem?.colaborador_id ?? null}
+        colaboradorNome={historicoItem?.nome_completo ?? ''}
+        onClose={() => setHistoricoItem(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -14495,6 +15214,25 @@ const rhStyles = StyleSheet.create({
     gap: 8,
     marginBottom: 16,
   },
+  primaryButtonRed: {
+    marginTop: 0,
+    minHeight: 50,
+    borderRadius: 999,
+    backgroundColor: '#B3273E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  experienciaActionButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: '#F1F2F7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   categoryRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -15558,6 +16296,41 @@ const rhStyles = StyleSheet.create({
     color: '#15203E',
     fontSize: 14,
     fontWeight: '600',
+  },
+  linkText: {
+    color: '#3457D5',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  feriasStatCard: {
+    flex: 1,
+    flexBasis: 0,
+    flexShrink: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  feriasStatValue: {
+    alignSelf: 'stretch',
+    flexShrink: 1,
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0C1736',
+    textAlign: 'center',
+  },
+  feriasStatLabel: {
+    alignSelf: 'stretch',
+    flexShrink: 1,
+    marginTop: 2,
+    fontSize: 8,
+    fontWeight: '600',
+    color: '#9AA1B5',
+    textAlign: 'center',
   },
   experienceCard: {
     backgroundColor: '#FFFFFF',

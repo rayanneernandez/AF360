@@ -220,7 +220,7 @@ async function loadColaboradoresEEmpresas() {
     // sem repetir nem pular linhas.
     fetchAllRows('rh_colaboradores', {
       select:
-        'id,nome_completo,empresa_id,cargo,status,setor,posto_trabalho,sexo,salario_base,data_admissao,data_demissao,motivo_desligamento,valor_rescisao_liquida,vencimento_experiencia,portal_status,portal_ativado_em',
+        'id,nome_completo,matricula,empresa_id,cargo,status,setor,posto_trabalho,sexo,salario_base,data_admissao,data_demissao,motivo_desligamento,valor_rescisao_liquida,vencimento_experiencia,portal_status,portal_ativado_em',
       order: 'id:asc',
     }),
     fetchAllRows('empresas', { select: 'id,regiao,nome_fantasia,razao_social', order: 'id:asc' }),
@@ -317,6 +317,9 @@ router.get('/ferias', async (req, res) => {
     const colaboradoresById = new Map();
     base.colaboradores.forEach((c) => colaboradoresById.set(c.id, c));
 
+    const currentYear = new Date().getUTCFullYear();
+    const anosSet = new Set([currentYear]);
+
     const itens = (feriasJson.data || []).map((f) => {
       const colaborador = f.colaborador_id ? colaboradoresById.get(f.colaborador_id) : null;
       const inicioMs = parseDateOnly(f.data_inicio);
@@ -329,14 +332,25 @@ router.get('/ferias', async (req, res) => {
           ? Math.round((fimMs - inicioMs) / MS_PER_DAY) + 1
           : null;
       const meta = vacationStatusMeta(f.status);
+      const ano = inicioMs !== null ? new Date(inicioMs).getUTCFullYear() : null;
+      if (ano) anosSet.add(ano);
+      const empresaId = colaborador?.empresa_id || null;
 
       return {
         id: String(f.id),
+        colaboradorId: f.colaborador_id ? String(f.colaborador_id) : null,
         nome: colaborador?.nome_completo || '(sem nome)',
+        matricula: colaborador?.matricula || null,
+        empresaId,
+        empresaNome: (empresaId ? base.empresaNomeById.get(empresaId) : null) || null,
         unidade: colaborador?.posto_trabalho || 'Sem unidade',
+        periodoInicioIso: f.data_inicio || null,
+        periodoFimIso: f.data_fim || null,
         inicioLabel: inicioMs !== null ? formatDiaMes(inicioMs) : '—',
         fimLabel: fimMs !== null ? formatDiaMesAno(fimMs) : '—',
         dias,
+        observacoes: f.observacoes || null,
+        ano,
         statusRaw: meta.raw,
         statusLabel: meta.label,
         statusColor: meta.color,
@@ -355,10 +369,12 @@ router.get('/ferias', async (req, res) => {
     const stats = {
       andamento: itens.filter((i) => i.statusRaw === 'em_andamento' || i.statusRaw === 'andamento').length,
       programadas: itens.filter((i) => i.statusRaw === 'programada').length,
-      concluidas: itens.filter((i) => i.statusRaw === 'concluida').length,
+      concluidasEsteAno: itens.filter((i) => i.statusRaw === 'concluida' && i.ano === currentYear).length,
     };
 
-    res.json({ ok: true, data: { stats, itens } });
+    const anos = Array.from(anosSet).sort((a, b) => b - a);
+
+    res.json({ ok: true, data: { stats, itens, anos } });
   } catch (err) {
     console.error('[rh/dashboard/ferias] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });

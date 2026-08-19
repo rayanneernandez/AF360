@@ -1236,6 +1236,51 @@ function deleteRhJornada(id, actorId) {
   return lovableDelete('/api/public/internal/rh-jornadas', { id }, actorId);
 }
 
+// --- Período de Experiência (rh_experiencia_avaliacoes) — endpoint
+// confirmado pela Lovable em 19/08/2026: /api/public/internal/rh-experiencia
+// (mesma auth: x-internal-secret + x-actor-id). Não existe tabela de
+// "etapas": as etapas (1ª=45d / 2ª=90d) são derivadas de
+// rh_colaboradores.data_admissao pelo próprio endpoint; o que é persistido
+// são as decisões (aprovado/nao_aprovado) em rh_experiencia_avaliacoes.
+//
+// GET ?recurso=lista&busca=&empresa_id=&limit=&offset= — retorna
+// { hoje, total, paginas, data: [{ colaborador_id, nome_completo, matricula,
+// cargo, setor, data_admissao, empresa, etapa, etapa_label, vencimento,
+// dias_restantes, urgencia, primeira_avaliacao }] }. urgencia: vencido|
+// critico|atencao|ok|tranquilo. Busca cobre nome, matrícula e cargo.
+// GET ?recurso=historico&colaboradorId= — avaliações já lançadas p/ o
+// colaborador (ícone de histórico, só leitura).
+// POST { colaborador_id, etapa, decisao, justificativa, desligar?,
+// vencimento? } — registra a decisão; reprovar com desligar=true dispara
+// trigger deles que desliga o colaborador de verdade (status='desligado' +
+// data_demissao). vencimento é calculado do lado deles se omitido.
+// DELETE ?id= — desfaz uma decisão lançada por engano; NÃO reverte um
+// desligamento já efetivado (aviso vem no corpo da resposta deles).
+
+function getRhExperienciaLista({ busca, empresaId, limit, offset } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-experiencia',
+    { recurso: 'lista', busca, empresa_id: empresaId, limit, offset },
+    actorId
+  );
+}
+
+function getRhExperienciaHistorico(colaboradorId, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-experiencia',
+    { recurso: 'historico', colaboradorId },
+    actorId
+  );
+}
+
+function postRhExperienciaAvaliacao(body, actorId) {
+  return lovablePost('/api/public/internal/rh-experiencia', {}, body, actorId);
+}
+
+function deleteRhExperienciaAvaliacao(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-experiencia', { id }, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -1391,4 +1436,8 @@ module.exports = {
   postRhJornada,
   patchRhJornada,
   deleteRhJornada,
+  getRhExperienciaLista,
+  getRhExperienciaHistorico,
+  postRhExperienciaAvaliacao,
+  deleteRhExperienciaAvaliacao,
 };
