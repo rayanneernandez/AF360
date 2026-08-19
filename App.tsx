@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { WebView } from 'react-native-webview';
+import YoutubePlayer, { type YoutubeIframeRef } from 'react-native-youtube-iframe';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as ScreenCapture from 'expo-screen-capture';
@@ -3904,25 +3905,27 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
   const minimumScore = treinamento?.prova_min_acerto ?? 70;
   const examDurationSeconds = (treinamento?.prova_tempo_limite_min ?? 0) * 60;
 
+  const youtubeVideoId = useMemo(() => getYoutubeVideoId(selectedLesson?.video_url), [selectedLesson?.video_url]);
   const externalVideoEmbedUrl = useMemo(
-    () => getExternalVideoEmbedUrl(selectedLesson?.video_url),
-    [selectedLesson?.video_url]
+    () => (youtubeVideoId ? null : getExternalVideoEmbedUrl(selectedLesson?.video_url)),
+    [selectedLesson?.video_url, youtubeVideoId]
   );
+  const isExternalVideo = Boolean(youtubeVideoId || externalVideoEmbedUrl);
   const [videoLoadError, setVideoLoadError] = useState(false);
+  const [videoContainerWidth, setVideoContainerWidth] = useState(0);
+  const youtubePlayerRef = useRef<YoutubeIframeRef>(null);
+  const [youtubePlaying, setYoutubePlaying] = useState(false);
 
-  const player = useVideoPlayer(
-    !externalVideoEmbedUrl && selectedLesson?.video_url ? selectedLesson.video_url : null,
-    (p) => {
-      p.timeUpdateEventInterval = 2;
-    }
-  );
+  const player = useVideoPlayer(!isExternalVideo && selectedLesson?.video_url ? selectedLesson.video_url : null, (p) => {
+    p.timeUpdateEventInterval = 2;
+  });
 
   useEffect(() => {
     setVideoLoadError(false);
-    if (selectedLesson?.video_url && !externalVideoEmbedUrl) {
+    if (selectedLesson?.video_url && !isExternalVideo) {
       player.replace(selectedLesson.video_url);
     }
-  }, [selectedLesson?.video_url, externalVideoEmbedUrl, player]);
+  }, [selectedLesson?.video_url, isExternalVideo, player]);
 
   useEventListener(player, 'statusChange', ({ status }) => {
     if (status === 'error') {
@@ -3955,9 +3958,10 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
     [inscricaoId, identity?.profileId]
   );
 
-  // Vídeos externos (YouTube/Vimeo) tocam via WebView, então os eventos do
-  // player (timeUpdate) não disparam pra eles. Registra o mesmo "começou o
-  // treinamento" que o player nativo registraria, pra não perder esse sinal.
+  // Vídeos externos sem API própria (Vimeo via WebView) não disparam os
+  // eventos do player nativo. Registra o mesmo "começou o treinamento" que
+  // o player nativo registraria, pra não perder esse sinal. YouTube tem
+  // tratamento próprio logo abaixo, com posição/tempo reais via IFrame API.
   useEffect(() => {
     if (!externalVideoEmbedUrl || !inscricaoId || hasMarkedStartedRef.current) return;
     hasMarkedStartedRef.current = true;
@@ -3967,6 +3971,54 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
       identity?.profileId
     ).catch(() => {});
   }, [externalVideoEmbedUrl, inscricaoId, identity?.profileId]);
+
+  // YouTube toca via react-native-youtube-iframe, que expõe getCurrentTime/
+  // getDuration de verdade pela IFrame API — dá pra registrar posição
+  // assistida real, igual ao player nativo, em vez de só marcar "começou".
+  const handleYoutubeStateChange = useCallback(
+    (state: string) => {
+      setYoutubePlaying(state === 'playing');
+      if (state === 'ended' && selectedLesson) {
+        youtubePlayerRef.current?.getDuration().then((duration: number) => {
+          if (duration > 0) {
+            updateLessonWatchTime(courseId, selectedLesson.id, duration, duration);
+            syncProgressoAula(selectedLesson.id, duration, duration, true, true);
+          }
+        });
+      }
+    },
+    [selectedLesson, courseId, updateLessonWatchTime, syncProgressoAula]
+  );
+
+  useEffect(() => {
+    if (!youtubePlaying || !selectedLesson) return;
+    const interval = setInterval(() => {
+      Promise.all([youtubePlayerRef.current?.getCurrentTime(), youtubePlayerRef.current?.getDuration()])
+        .then(([currentTime, duration]) => {
+          if (!currentTime || !duration || duration <= 0) return;
+          updateLessonWatchTime(courseId, selectedLesson.id, Math.floor(currentTime), duration);
+          syncProgressoAula(selectedLesson.id, currentTime, duration, false);
+          if (inscricaoId && !hasMarkedStartedRef.current) {
+            hasMarkedStartedRef.current = true;
+            updateRhTreinamentoInscricao(
+              inscricaoId,
+              { status: 'em_andamento', iniciado_em: new Date().toISOString() },
+              identity?.profileId
+            ).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [
+    youtubePlaying,
+    selectedLesson,
+    courseId,
+    updateLessonWatchTime,
+    syncProgressoAula,
+    inscricaoId,
+    identity?.profileId,
+  ]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -4064,13 +4116,37 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
                     </View>
                   </View>
 
-                  <View style={styles.trainingVideoPlayer}>
-                    {externalVideoEmbedUrl ? (
+                  <View
+                    style={styles.trainingVideoPlayer}
+                    onLayout={(e) => setVideoContainerWidth(e.nativeEvent.layout.width)}
+                  >
+                    {youtubeVideoId ? (
+                      videoContainerWidth > 0 ? (
+                        <YoutubePlayer
+                          ref={youtubePlayerRef}
+                          height={190}
+                          width={videoContainerWidth}
+                          videoId={youtubeVideoId}
+                          play={false}
+                          onChangeState={handleYoutubeStateChange}
+                          onError={() => setVideoLoadError(true)}
+                          webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false }}
+                        />
+                      ) : null
+                    ) : externalVideoEmbedUrl ? (
                       <WebView
-                        source={{ uri: externalVideoEmbedUrl }}
+                        source={{
+                          html: buildEmbeddedVideoHtml(externalVideoEmbedUrl),
+                          baseUrl: 'https://player.vimeo.com',
+                        }}
+                        originWhitelist={['*']}
                         style={{ width: '100%', height: '100%', backgroundColor: '#000' }}
                         allowsFullscreenVideo
+                        allowsInlineMediaPlayback
+                        javaScriptEnabled
+                        domStorageEnabled
                         mediaPlaybackRequiresUserAction={false}
+                        mixedContentMode="always"
                         onError={() => setVideoLoadError(true)}
                       />
                     ) : selectedLesson.video_url ? (
@@ -12898,6 +12974,31 @@ function formatSeconds(totalSeconds: number) {
 // cadastra um link externo (YouTube/Vimeo — página HTML, não um arquivo de
 // vídeo), o player nativo falha silenciosamente. Aqui detectamos esses casos
 // e devolvemos uma URL de embed pra tocar via WebView em vez do VideoView.
+// Extrai só o ID do vídeo, pra tocar via react-native-youtube-iframe (usa a
+// IFrame API de verdade, com handshake de origin correto — diferente de um
+// <iframe src="/embed/ID"> cru, que o YouTube às vezes rejeita com "Erro
+// 153/150" num WebView por não reconhecer a origem da requisição).
+function getYoutubeVideoId(rawUrl?: string | null): string | null {
+  if (!rawUrl) return null;
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./, '').toLowerCase();
+
+  if (host === 'youtu.be') {
+    return url.pathname.split('/').filter(Boolean)[0] ?? null;
+  }
+  if (host === 'youtube.com' || host === 'm.youtube.com') {
+    if (url.pathname === '/watch') return url.searchParams.get('v');
+    if (url.pathname.startsWith('/embed/')) return url.pathname.split('/').filter(Boolean)[1] ?? null;
+    if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/').filter(Boolean)[1] ?? null;
+  }
+  return null;
+}
+
 function getExternalVideoEmbedUrl(rawUrl?: string | null): string | null {
   if (!rawUrl) return null;
   let url: URL;
@@ -12934,6 +13035,34 @@ function getExternalVideoEmbedUrl(rawUrl?: string | null): string | null {
   }
 
   return null;
+}
+
+// Carregar a URL de embed direto como source.uri do WebView faz o YouTube
+// tratar a navegação como se não tivesse vindo de dentro de um iframe (sem
+// origin/referrer válidos) e devolver o "Erro 153 — configuração do player".
+// Envolvendo em uma página HTML própria com um <iframe> de verdade (e
+// baseUrl apontando pro domínio do YouTube), o embed passa a ser aceito.
+function buildEmbeddedVideoHtml(embedUrl: string): string {
+  const separator = embedUrl.includes('?') ? '&' : '?';
+  const src = `${embedUrl}${separator}playsinline=1&modestbranding=1&rel=0`;
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <style>
+      html, body { margin: 0; padding: 0; background: #000; height: 100%; }
+      iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+    </style>
+  </head>
+  <body>
+    <iframe
+      src="${src}"
+      frameborder="0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowfullscreen
+    ></iframe>
+  </body>
+</html>`;
 }
 
 // Versões genéricas (operam em cima de uma lista de ids de aula reais —
