@@ -57,7 +57,31 @@ import {
   fetchRhAdmissoesDetalhe,
   fetchRhDemissoesDetalhe,
   fetchRhTransferenciasDetalhe,
-  fetchRhFolhaDetalhe,
+  fetchRhFolhaCompetencias,
+  fetchRhFolhaCompetenciaDetalhe,
+  fetchRhFolhaColaboradorDetalhe,
+  fetchRhFolhaHistorico,
+  createRhFolhaCompetencia,
+  calcularRhFolha,
+  fecharRhFolhaCompetencia,
+  reabrirRhFolhaCompetencia,
+  enviarContrachequesRhFolha,
+  createRhFolhaLancamento,
+  deleteRhFolhaLancamento,
+  salvarRhFolhaPonto,
+  updateRhFolhaSalario,
+  deleteRhFolhaCompetencia,
+  type RhFolhaStatus,
+  type RhFolhaCompetenciaItem,
+  type RhFolhaCompetenciaDetalhe,
+  type RhFolhaColaboradorResumo,
+  type RhFolhaColaboradorDetalhe,
+  type RhFolhaLancamento,
+  type RhRubrica,
+  type RhPontoApuracao,
+  type RhFolhaAuditoriaItem,
+  type RhFolhaCreateBody,
+  type RhFolhaLancamentoCreateBody,
   fetchRhFeriasDetalhe,
   createRhFerias,
   updateRhFerias,
@@ -93,7 +117,6 @@ import {
   type RhAdmissoesDetalhe,
   type RhDemissoesDetalhe,
   type RhTransferenciasDetalhe,
-  type RhFolhaDetalhe,
   type RhFeriasDetalhe,
   type RhBeneficiosColaborador,
   type RhHistoricoContratacaoItem,
@@ -13535,35 +13558,92 @@ export function RHExperienciaScreen({ navigation }: ScreenProps<'RHExperiencia'>
 }
 
 // ---------- Folha de Pagamento ----------
-// Competências (rh_folha_competencias) agora vêm de fetchRhFolhaDetalhe —
-// cada item já traz status/cor calculados no af360-api (folhaStatusMeta),
-// então não precisamos mais de um mapa estático de status aqui.
+// rh_folha_competencias + rh_folha + rh_rubricas + rh_folha_lancamentos +
+// rh_ponto_apuracao + rh_folha_auditoria — endpoint unificado confirmado
+// pela Lovable em 19/08/2026. INSS/IRRF/FGTS são calculados 100% do lado
+// deles (RPC calcular_folha) — o app só chama /calcular e lê o resultado.
+
+const folhaMesNomes = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+const folhaStatusMeta: Record<RhFolhaStatus, { label: string; color: string; tint: string }> = {
+  aberta: { label: 'Aberta', color: '#3457D5', tint: '#E9EEFF' },
+  em_calculo: { label: 'Em cálculo', color: '#B07A1E', tint: '#FCEFDA' },
+  fechada: { label: 'Fechada', color: '#5E667D', tint: '#EEF0F6' },
+  paga: { label: 'Paga', color: '#18955A', tint: '#E3F5EA' },
+  cancelada: { label: 'Cancelada', color: '#E6213D', tint: '#FCE8EC' },
+};
+
+function folhaIsAberta(status: RhFolhaStatus): boolean {
+  return status === 'aberta' || status === 'em_calculo';
+}
+
+function folhaCompetenciaLabel(item: { mes: number; ano: number }): string {
+  const nome = folhaMesNomes[item.mes - 1] ?? `Mês ${item.mes}`;
+  return `${nome} ${item.ano}`;
+}
+
+function formatBRL(value: number | string | null | undefined): string {
+  if (value === null || value === undefined) return '—';
+  const num = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(num)) return '—';
+  return `R$ ${num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatDateIsoBR(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
 
 export function RHFolhaPagamentoScreen({ navigation }: ScreenProps<'RHFolhaPagamento'>) {
-  const [data, setData] = useState<RhFolhaDetalhe | null>(null);
+  const [items, setItems] = useState<RhFolhaCompetenciaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [openCompetenciaId, setOpenCompetenciaId] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
+  const loadCompetencias = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchRhFolhaDetalhe()
-      .then((result) => {
-        if (isMounted) setData(result);
-      })
+    fetchRhFolhaCompetencias()
+      .then((result) => setItems(result.items))
       .catch((err) => {
-        if (isMounted) {
-          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar a folha de pagamento.');
-        }
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar a folha de pagamento.');
       })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
-    return () => {
-      isMounted = false;
-    };
+      .finally(() => setIsLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadCompetencias();
+  }, [loadCompetencias]);
+
+  const handleExcluir = (item: RhFolhaCompetenciaItem) => {
+    Alert.alert(
+      'Excluir competência',
+      `Excluir a folha de ${folhaCompetenciaLabel(item)}? Isso remove em cascata os lançamentos calculados.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: () => {
+            setBusyId(item.id);
+            deleteRhFolhaCompetencia(item.id)
+              .then(() => loadCompetencias())
+              .catch((err) => showRhSaveError(err, 'Não foi possível excluir essa competência.'))
+              .finally(() => setBusyId(null));
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -13579,69 +13659,999 @@ export function RHFolhaPagamentoScreen({ navigation }: ScreenProps<'RHFolhaPagam
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <RHPageHeader icon="credit-card" title="Folha de Pagamento" subtitle="Rubricas, INSS, IRRF, FGTS" />
 
-        <Pressable
-          style={styles.primaryButton}
-          onPress={() => Alert.alert('Nova competência', 'A criação de competência será conectada em breve.')}
-        >
+        <Pressable style={styles.primaryButton} onPress={() => setIsFormOpen(true)}>
           <Feather name="plus" size={16} color="#FFFFFF" />
           <Text style={styles.primaryButtonText}>Nova competência</Text>
         </Pressable>
         <Text style={rhStyles.payrollHelperText}>
-          Crie a competência do mês e calcule a folha. INSS/IRRF conforme tabela 2026.
+          Crie a competência do mês e calcule a folha. INSS/IRRF/FGTS conforme tabela vigente.
         </Text>
 
-        {!data ? (
+        {isLoading ? (
           <View style={styles.processEmptyCard}>
-            <Text style={styles.processEmptyText}>
-              {isLoading ? 'Carregando folha de pagamento...' : errorMessage ?? 'Sem dados.'}
-            </Text>
+            <Text style={styles.processEmptyText}>Carregando folha de pagamento...</Text>
           </View>
-        ) : data.items.length === 0 ? (
+        ) : errorMessage ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>{errorMessage}</Text>
+          </View>
+        ) : items.length === 0 ? (
           <View style={styles.processEmptyCard}>
             <Text style={styles.processEmptyText}>Nenhuma competência de folha cadastrada.</Text>
           </View>
         ) : (
-          data.items.map((item) => (
-            <View key={item.id} style={rhStyles.sectionCard}>
-              <View style={rhStyles.announcementTopRow}>
-                <Text style={rhStyles.employeeName}>{item.label}</Text>
-                <View style={[rhStyles.employeeStatusPill, { backgroundColor: item.statusTint }]}>
-                  <Text style={[rhStyles.employeeStatusText, { color: item.statusColor }]}>{item.statusLabel}</Text>
+          items.map((item) => {
+            const statusMeta = folhaStatusMeta[item.status] ?? folhaStatusMeta.aberta;
+            const dataPagamentoLabel = formatDateIsoBR(item.data_pagamento);
+            const dataPrevistaLabel = formatDateIsoBR(item.data_prevista_pagamento);
+            return (
+              <View key={item.id} style={rhStyles.sectionCard}>
+                <View style={rhStyles.announcementTopRow}>
+                  <Text style={[rhStyles.employeeName, { flex: 1, flexShrink: 1 }]} numberOfLines={1}>
+                    {folhaCompetenciaLabel(item)}
+                  </Text>
+                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: statusMeta.tint, flexShrink: 0 }]}>
+                    <Text style={[rhStyles.employeeStatusText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
+                  </View>
+                  <Pressable
+                    onPress={(e) => {
+                      const { pageX, pageY } = e.nativeEvent;
+                      setMenuAnchor({ id: item.id, x: pageX, y: pageY });
+                    }}
+                    hitSlop={8}
+                    style={{ marginLeft: 8 }}
+                    disabled={busyId === item.id}
+                  >
+                    <Feather name="more-vertical" size={18} color="#677089" />
+                  </Pressable>
                 </View>
+                <View style={rhStyles.payrollStatsRow}>
+                  <View style={rhStyles.payrollStatItem}>
+                    <Text style={rhStyles.payrollStatLabel}>Bruto</Text>
+                    <Text style={rhStyles.payrollStatValue}>{formatBRL(item.total_bruto)}</Text>
+                  </View>
+                  <View style={rhStyles.payrollStatItem}>
+                    <Text style={rhStyles.payrollStatLabel}>Líquido</Text>
+                    <Text style={rhStyles.payrollStatValue}>{formatBRL(item.total_liquido)}</Text>
+                  </View>
+                  <View style={rhStyles.payrollStatItem}>
+                    <Text style={rhStyles.payrollStatLabel}>FGTS</Text>
+                    <Text style={rhStyles.payrollStatValue}>{formatBRL(item.total_fgts)}</Text>
+                  </View>
+                </View>
+                <Text style={rhStyles.historyCardMeta}>
+                  {item.total_colaboradores != null ? `${item.total_colaboradores} colaborador(es)` : 'Colaboradores: —'}
+                  {dataPagamentoLabel
+                    ? ` · Pago em ${dataPagamentoLabel}`
+                    : dataPrevistaLabel
+                    ? ` · Previsão de pagamento: ${dataPrevistaLabel}`
+                    : ''}
+                </Text>
+                <Pressable style={rhStyles.outlineButton} onPress={() => setOpenCompetenciaId(item.id)}>
+                  <Text style={rhStyles.outlineButtonText}>Abrir</Text>
+                </Pressable>
               </View>
+            );
+          })
+        )}
+      </ScrollView>
+
+      <Modal visible={menuAnchor !== null} transparent animationType="fade" onRequestClose={() => setMenuAnchor(null)}>
+        <Pressable style={{ flex: 1 }} onPress={() => setMenuAnchor(null)}>
+          {menuAnchor
+            ? (() => {
+                const menuItem = items.find((entry) => entry.id === menuAnchor.id);
+                if (!menuItem) return null;
+                return (
+                  <Pressable
+                    style={[rhStyles.rowActionsMenu, { top: menuAnchor.y + 8, right: 16 }]}
+                    onPress={() => {}}
+                  >
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        setOpenCompetenciaId(menuItem.id);
+                      }}
+                    >
+                      <Feather name="folder" size={15} color="#5E667D" />
+                      <Text style={rhStyles.rowActionsMenuItemText}>Abrir</Text>
+                    </Pressable>
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        handleExcluir(menuItem);
+                      }}
+                    >
+                      <Feather name="trash-2" size={15} color="#E6213D" />
+                      <Text style={[rhStyles.rowActionsMenuItemText, { color: '#E6213D' }]}>Excluir</Text>
+                    </Pressable>
+                  </Pressable>
+                );
+              })()
+            : null}
+        </Pressable>
+      </Modal>
+
+      <RHFolhaCompetenciaFormModal
+        visible={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        onSaved={loadCompetencias}
+      />
+
+      <RHFolhaCompetenciaDetalheModal
+        visible={openCompetenciaId !== null}
+        competenciaId={openCompetenciaId}
+        onClose={() => setOpenCompetenciaId(null)}
+        onChanged={loadCompetencias}
+      />
+    </SafeAreaView>
+  );
+}
+
+function RHFolhaCompetenciaFormModal({
+  visible,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const currentYear = new Date().getFullYear();
+  const [mesLabel, setMesLabel] = useState(folhaMesNomes[new Date().getMonth()]);
+  const [ano, setAno] = useState(String(currentYear));
+  const [dataPrevista, setDataPrevista] = useState('');
+  const [isMesPickerOpen, setIsMesPickerOpen] = useState(false);
+  const [isDataPickerOpen, setIsDataPickerOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setMesLabel(folhaMesNomes[new Date().getMonth()]);
+      setAno(String(currentYear));
+      setDataPrevista('');
+    }
+  }, [visible, currentYear]);
+
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
+
+  const handleSubmit = () => {
+    const mesIndex = folhaMesNomes.indexOf(mesLabel);
+    const anoNum = Number(ano);
+    if (mesIndex < 0 || !Number.isFinite(anoNum) || anoNum < 2000) {
+      Alert.alert('Dados inválidos', 'Selecione o mês e informe um ano válido.');
+      return;
+    }
+    if (dataPrevista && !brDateLabelToIso(dataPrevista)) {
+      Alert.alert('Data inválida', 'Informe uma data prevista de pagamento válida ou deixe em branco.');
+      return;
+    }
+    const body: RhFolhaCreateBody = {
+      mes: mesIndex + 1,
+      ano: anoNum,
+      data_pagamento: brDateLabelToIso(dataPrevista),
+    };
+    setIsSaving(true);
+    createRhFolhaCompetencia(body, identity?.profileId)
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível criar a competência.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={handleClose}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Nova competência</Text>
+            <Pressable onPress={handleClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <RHSelectField label="Mês" required value={mesLabel} onPress={() => setIsMesPickerOpen(true)} />
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Ano *</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={ano}
+              onChangeText={(text) => setAno(text.replace(/\D/g, '').slice(0, 4))}
+              placeholder="Ex.: 2026"
+              placeholderTextColor="#A7AEC2"
+              keyboardType="numeric"
+            />
+            <RHSelectField
+              label="Data prevista de pagamento"
+              icon="calendar"
+              value={dataPrevista}
+              placeholder="dd/mm/aaaa (opcional)"
+              onPress={() => setIsDataPickerOpen(true)}
+            />
+
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Criando...' : 'Criar'}</Text>
+            </Pressable>
+          </ScrollView>
+
+          <RHSimplePickerModal
+            inline
+            visible={isMesPickerOpen}
+            title="Mês"
+            options={folhaMesNomes}
+            selectedValue={mesLabel}
+            onSelect={setMesLabel}
+            onClose={() => setIsMesPickerOpen(false)}
+          />
+          <RHDatePickerModal
+            inline
+            visible={isDataPickerOpen}
+            title="Data prevista de pagamento"
+            value={dataPrevista}
+            onSelect={setDataPrevista}
+            onClose={() => setIsDataPickerOpen(false)}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function RHFolhaCompetenciaDetalheModal({
+  visible,
+  competenciaId,
+  onClose,
+  onChanged,
+}: {
+  visible: boolean;
+  competenciaId: string | null;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [detalhe, setDetalhe] = useState<RhFolhaCompetenciaDetalhe | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [isHistoricoOpen, setIsHistoricoOpen] = useState(false);
+  const [selectedColaborador, setSelectedColaborador] = useState<{ id: string; nome: string; matricula: string | null } | null>(null);
+
+  const load = useCallback(() => {
+    if (!competenciaId) return;
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhFolhaCompetenciaDetalhe(competenciaId)
+      .then((result) => setDetalhe(result))
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar a competência.'))
+      .finally(() => setIsLoading(false));
+  }, [competenciaId]);
+
+  useEffect(() => {
+    if (visible && competenciaId) {
+      load();
+    } else if (!visible) {
+      setDetalhe(null);
+    }
+  }, [visible, competenciaId, load]);
+
+  if (!visible) return null;
+
+  const competencia = detalhe?.competencia ?? null;
+  const statusMeta = competencia ? folhaStatusMeta[competencia.status] ?? folhaStatusMeta.aberta : folhaStatusMeta.aberta;
+  const aberta = competencia ? folhaIsAberta(competencia.status) : true;
+
+  const handleCalcularTodos = () => {
+    if (!competenciaId) return;
+    setIsBusy(true);
+    calcularRhFolha({ competencia_id: competenciaId }, identity?.profileId)
+      .then((result) => {
+        load();
+        onChanged();
+        if (result.erros && result.erros.length > 0) {
+          Alert.alert(
+            'Cálculo concluído com avisos',
+            `${result.calculados} de ${result.total} colaborador(es) calculado(s). ${result.erros.length} erro(s) — verifique o histórico.`
+          );
+        }
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível calcular a folha.'))
+      .finally(() => setIsBusy(false));
+  };
+
+  const handleFecharReabrir = () => {
+    if (!competenciaId || !competencia) return;
+    if (aberta) {
+      Alert.alert('Fechar competência', 'Depois de fechada, não será mais possível recalcular ou lançar valores manuais. Confirma?', [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Fechar',
+          onPress: () => {
+            setIsBusy(true);
+            fecharRhFolhaCompetencia(competenciaId, identity?.profileId)
+              .then(() => {
+                load();
+                onChanged();
+              })
+              .catch((err) => showRhSaveError(err, 'Não foi possível fechar a competência.'))
+              .finally(() => setIsBusy(false));
+          },
+        },
+      ]);
+    } else {
+      setIsBusy(true);
+      reabrirRhFolhaCompetencia(competenciaId, identity?.profileId)
+        .then(() => {
+          load();
+          onChanged();
+        })
+        .catch((err) => showRhSaveError(err, 'Não foi possível reabrir a competência.'))
+        .finally(() => setIsBusy(false));
+    }
+  };
+
+  const handleEnviarContracheques = () => {
+    if (!competenciaId) return;
+    Alert.alert('Enviar contracheques', 'Enviar os contracheques desta competência para os colaboradores?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Enviar',
+        onPress: () => {
+          setIsBusy(true);
+          enviarContrachequesRhFolha(competenciaId, identity?.profileId)
+            .then(() => {
+              load();
+              onChanged();
+            })
+            .catch((err) => showRhSaveError(err, 'Não foi possível enviar os contracheques.'))
+            .finally(() => setIsBusy(false));
+        },
+      },
+    ]);
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={onClose}>
+        <Pressable style={[styles.requestModalCard, { maxHeight: '92%' }]} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.requestModalTitle, { flex: undefined }]} numberOfLines={1}>
+                Folha — {competencia ? folhaCompetenciaLabel(competencia) : '...'}
+              </Text>
+              {competencia ? (
+                <Text style={rhStyles.modalSubtitle}>
+                  {detalhe?.resumo.totalColaboradores ?? 0} colaborador(es) ativo(s) · {detalhe?.resumo.calculadas ?? 0} folha(s) calculada(s)
+                </Text>
+              ) : null}
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          {isLoading ? (
+            <View style={styles.processEmptyCard}>
+              <Text style={styles.processEmptyText}>Carregando...</Text>
+            </View>
+          ) : errorMessage ? (
+            <View style={styles.processEmptyCard}>
+              <Text style={styles.processEmptyText}>{errorMessage}</Text>
+            </View>
+          ) : detalhe ? (
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={[rhStyles.employeeStatusPill, { backgroundColor: statusMeta.tint, alignSelf: 'flex-start', marginBottom: 10 }]}>
+                <Text style={[rhStyles.employeeStatusText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
+              </View>
+
               <View style={rhStyles.payrollStatsRow}>
                 <View style={rhStyles.payrollStatItem}>
-                  <Text style={rhStyles.payrollStatLabel}>Bruto</Text>
-                  <Text style={rhStyles.payrollStatValue}>{item.totalBruto ?? '—'}</Text>
+                  <Text style={rhStyles.payrollStatLabel}>Proventos</Text>
+                  <Text style={rhStyles.payrollStatValue}>{formatBRL(detalhe.resumo.proventos)}</Text>
+                </View>
+                <View style={rhStyles.payrollStatItem}>
+                  <Text style={rhStyles.payrollStatLabel}>Descontos</Text>
+                  <Text style={rhStyles.payrollStatValue}>{formatBRL(detalhe.resumo.descontos)}</Text>
                 </View>
                 <View style={rhStyles.payrollStatItem}>
                   <Text style={rhStyles.payrollStatLabel}>Líquido</Text>
-                  <Text style={rhStyles.payrollStatValue}>{item.totalLiquido ?? '—'}</Text>
-                </View>
-                <View style={rhStyles.payrollStatItem}>
-                  <Text style={rhStyles.payrollStatLabel}>FGTS</Text>
-                  <Text style={rhStyles.payrollStatValue}>{item.totalFgts ?? '—'}</Text>
+                  <Text style={rhStyles.payrollStatValue}>{formatBRL(detalhe.resumo.liquido)}</Text>
                 </View>
               </View>
-              <Text style={rhStyles.historyCardMeta}>
-                {item.totalColaboradores != null ? `${item.totalColaboradores} colaborador(es)` : 'Colaboradores: —'}
-                {item.dataPagamentoLabel
-                  ? ` · Pago em ${item.dataPagamentoLabel}`
-                  : item.dataPrevistaPagamentoLabel
-                  ? ` · Previsão de pagamento: ${item.dataPrevistaPagamentoLabel}`
-                  : ''}
+
+              <View style={rhStyles.folhaActionsRow}>
+                <Pressable style={rhStyles.folhaActionButton} onPress={handleCalcularTodos} disabled={isBusy || !aberta}>
+                  <Feather name="refresh-cw" size={13} color="#29448D" />
+                  <Text style={rhStyles.folhaActionButtonText}>Calcular todos</Text>
+                </Pressable>
+                <Pressable style={rhStyles.folhaActionButton} onPress={handleFecharReabrir} disabled={isBusy}>
+                  <Feather name={aberta ? 'lock' : 'unlock'} size={13} color="#29448D" />
+                  <Text style={rhStyles.folhaActionButtonText}>{aberta ? 'Fechar competência' : 'Reabrir'}</Text>
+                </Pressable>
+                {!aberta ? (
+                  <Pressable style={rhStyles.folhaActionButton} onPress={handleEnviarContracheques} disabled={isBusy}>
+                    <Feather name="send" size={13} color="#29448D" />
+                    <Text style={rhStyles.folhaActionButtonText}>Enviar contracheques</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable style={rhStyles.folhaActionButton} onPress={() => setIsHistoricoOpen(true)} disabled={isBusy}>
+                  <Feather name="clock" size={13} color="#29448D" />
+                  <Text style={rhStyles.folhaActionButtonText}>Histórico</Text>
+                </Pressable>
+              </View>
+
+              {detalhe.colaboradores.length === 0 ? (
+                <View style={styles.processEmptyCard}>
+                  <Text style={styles.processEmptyText}>Nenhum colaborador ativo encontrado.</Text>
+                </View>
+              ) : (
+                detalhe.colaboradores.map((colaborador: RhFolhaColaboradorResumo) => {
+                  const folha = colaborador.folha;
+                  const nome = (colaborador.nome_completo as string | undefined) ?? 'Sem nome';
+                  const matricula = (colaborador.matricula as string | null | undefined) ?? null;
+                  return (
+                    <View key={colaborador.colaborador_id} style={rhStyles.folhaColaboradorRow}>
+                      <View style={rhStyles.folhaColaboradorTopRow}>
+                        <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                          {nome}
+                        </Text>
+                        <Pressable
+                          style={rhStyles.outlineButtonSmall}
+                          onPress={() => setSelectedColaborador({ id: colaborador.colaborador_id, nome, matricula })}
+                        >
+                          <Text style={rhStyles.outlineButtonSmallText}>Detalhar</Text>
+                        </Pressable>
+                      </View>
+                      {matricula ? <Text style={rhStyles.folhaColaboradorMeta}>Matrícula {matricula}</Text> : null}
+                      <View style={rhStyles.folhaValuesRow}>
+                        <View style={rhStyles.folhaValueItem}>
+                          <Text style={rhStyles.folhaValueLabel}>Salário base</Text>
+                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(folha?.salario_base)}</Text>
+                        </View>
+                        <View style={rhStyles.folhaValueItem}>
+                          <Text style={rhStyles.folhaValueLabel}>Proventos</Text>
+                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(folha?.total_proventos)}</Text>
+                        </View>
+                        <View style={rhStyles.folhaValueItem}>
+                          <Text style={rhStyles.folhaValueLabel}>Descontos</Text>
+                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(folha?.total_descontos)}</Text>
+                        </View>
+                        <View style={rhStyles.folhaValueItem}>
+                          <Text style={rhStyles.folhaValueLabel}>Líquido</Text>
+                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(folha?.liquido)}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          ) : null}
+
+          <RHFolhaHistoricoModal
+            inline
+            visible={isHistoricoOpen}
+            competenciaId={competenciaId}
+            colaboradorId={null}
+            onClose={() => setIsHistoricoOpen(false)}
+          />
+        </Pressable>
+      </Pressable>
+
+      <RHFolhaColaboradorDetalheModal
+        visible={selectedColaborador !== null}
+        competenciaId={competenciaId}
+        competenciaLabel={competencia ? folhaCompetenciaLabel(competencia) : ''}
+        colaboradorId={selectedColaborador?.id ?? null}
+        colaboradorNome={selectedColaborador?.nome ?? ''}
+        matricula={selectedColaborador?.matricula ?? null}
+        aberta={aberta}
+        onClose={() => setSelectedColaborador(null)}
+        onChanged={() => {
+          load();
+          onChanged();
+        }}
+      />
+    </Modal>
+  );
+}
+
+function RHFolhaHistoricoModal({
+  visible,
+  competenciaId,
+  colaboradorId,
+  onClose,
+  inline,
+}: {
+  visible: boolean;
+  competenciaId: string | null;
+  colaboradorId: string | null;
+  onClose: () => void;
+  inline?: boolean;
+}) {
+  const [items, setItems] = useState<RhFolhaAuditoriaItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    setIsLoading(true);
+    fetchRhFolhaHistorico({ competenciaId: competenciaId ?? undefined, colaboradorId: colaboradorId ?? undefined })
+      .then(setItems)
+      .catch(() => setItems([]))
+      .finally(() => setIsLoading(false));
+  }, [visible, competenciaId, colaboradorId]);
+
+  if (inline && !visible) return null;
+
+  const content = (
+    <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+      <Pressable style={styles.simpleListCard} onPress={() => {}}>
+        <Text style={styles.simpleListTitle}>Histórico</Text>
+        <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+          {isLoading ? (
+            <Text style={rhStyles.filterFieldLabel}>Carregando...</Text>
+          ) : items.length === 0 ? (
+            <Text style={rhStyles.filterFieldLabel}>Nenhum registro de histórico.</Text>
+          ) : (
+            items.map((entry) => (
+              <View key={entry.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EEF0F6' }}>
+                <Text style={rhStyles.employeeName}>{(entry.acao as string | undefined) ?? 'Ação registrada'}</Text>
+                {entry.descricao ? <Text style={rhStyles.goalSubtitle}>{entry.descricao as string}</Text> : null}
+                {entry.created_at ? (
+                  <Text style={rhStyles.folhaColaboradorMeta}>{formatDateIsoBR(entry.created_at as string) ?? entry.created_at as string}</Text>
+                ) : null}
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </Pressable>
+    </Pressable>
+  );
+
+  if (inline) {
+    return <View style={rhStyles.inlinePickerLayer}>{content}</View>;
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      {content}
+    </Modal>
+  );
+}
+
+type FolhaColaboradorTab = 'folha' | 'ponto' | 'salarial' | 'historico';
+
+function RHFolhaColaboradorDetalheModal({
+  visible,
+  competenciaId,
+  competenciaLabel,
+  colaboradorId,
+  colaboradorNome,
+  matricula,
+  aberta,
+  onClose,
+  onChanged,
+}: {
+  visible: boolean;
+  competenciaId: string | null;
+  competenciaLabel: string;
+  colaboradorId: string | null;
+  colaboradorNome: string;
+  matricula: string | null;
+  aberta: boolean;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [tab, setTab] = useState<FolhaColaboradorTab>('folha');
+  const [detalhe, setDetalhe] = useState<RhFolhaColaboradorDetalhe | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isBusy, setIsBusy] = useState(false);
+  const [isRubricaPickerOpen, setIsRubricaPickerOpen] = useState(false);
+  const [lancRubricaId, setLancRubricaId] = useState<string | null>(null);
+  const [lancRubricaLabel, setLancRubricaLabel] = useState('');
+  const [lancValor, setLancValor] = useState('');
+  const [lancObservacao, setLancObservacao] = useState('');
+
+  const [pontoHoras, setPontoHoras] = useState('');
+  const [pontoHe50, setPontoHe50] = useState('');
+  const [pontoHe100, setPontoHe100] = useState('');
+  const [pontoFaltas, setPontoFaltas] = useState('');
+  const [pontoDsr, setPontoDsr] = useState('');
+  const [pontoNoturno, setPontoNoturno] = useState('');
+
+  const [salarioBase, setSalarioBase] = useState('');
+  const [dependentesIrrf, setDependentesIrrf] = useState('');
+
+  const load = useCallback(() => {
+    if (!competenciaId || !colaboradorId) return;
+    setIsLoading(true);
+    fetchRhFolhaColaboradorDetalhe(competenciaId, colaboradorId)
+      .then((result) => {
+        setDetalhe(result);
+        setPontoHoras(result.ponto?.horas_trabalhadas != null ? String(result.ponto.horas_trabalhadas) : '');
+        setPontoHe50(result.ponto?.he_50 != null ? String(result.ponto.he_50) : '');
+        setPontoHe100(result.ponto?.he_100 != null ? String(result.ponto.he_100) : '');
+        setPontoFaltas(result.ponto?.faltas_dias != null ? String(result.ponto.faltas_dias) : '');
+        setPontoDsr(result.ponto?.dsr_perdido_dias != null ? String(result.ponto.dsr_perdido_dias) : '');
+        setPontoNoturno(result.ponto?.adicional_noturno_horas != null ? String(result.ponto.adicional_noturno_horas) : '');
+        setSalarioBase(
+          result.dadosSalariais?.salario_base != null
+            ? result.dadosSalariais.salario_base.toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+            : ''
+        );
+        setDependentesIrrf(result.dadosSalariais?.dependentes_irrf != null ? String(result.dadosSalariais.dependentes_irrf) : '');
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível carregar os dados do colaborador.'))
+      .finally(() => setIsLoading(false));
+  }, [competenciaId, colaboradorId]);
+
+  useEffect(() => {
+    if (visible && competenciaId && colaboradorId) {
+      setTab('folha');
+      setLancRubricaId(null);
+      setLancRubricaLabel('');
+      setLancValor('');
+      setLancObservacao('');
+      load();
+    } else if (!visible) {
+      setDetalhe(null);
+    }
+  }, [visible, competenciaId, colaboradorId, load]);
+
+  if (!visible) return null;
+
+  const folha = detalhe?.folha ?? null;
+
+  const handleRecalcular = () => {
+    if (!competenciaId || !colaboradorId) return;
+    setIsBusy(true);
+    calcularRhFolha({ competencia_id: competenciaId, colaborador_id: colaboradorId }, identity?.profileId)
+      .then(() => {
+        load();
+        onChanged();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível recalcular.'))
+      .finally(() => setIsBusy(false));
+  };
+
+  const handleAddLancamento = () => {
+    if (!competenciaId || !colaboradorId) return;
+    if (!lancRubricaId) {
+      Alert.alert('Selecione a rubrica', 'Escolha qual rubrica lançar.');
+      return;
+    }
+    const valorNum = parseCurrencyBRToNumber(lancValor);
+    if (!valorNum) {
+      Alert.alert('Valor inválido', 'Informe um valor maior que zero.');
+      return;
+    }
+    setIsBusy(true);
+    const body: RhFolhaLancamentoCreateBody = {
+      competencia_id: competenciaId,
+      colaborador_id: colaboradorId,
+      rubrica_id: lancRubricaId,
+      valor: valorNum,
+      observacao: lancObservacao.trim() || null,
+    };
+    createRhFolhaLancamento(body, identity?.profileId)
+      .then(() => {
+        setLancRubricaId(null);
+        setLancRubricaLabel('');
+        setLancValor('');
+        setLancObservacao('');
+        load();
+        onChanged();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível adicionar o lançamento.'))
+      .finally(() => setIsBusy(false));
+  };
+
+  const handleDeleteLancamento = (lancamento: RhFolhaLancamento) => {
+    Alert.alert('Excluir lançamento', 'Remover este lançamento manual?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          setIsBusy(true);
+          deleteRhFolhaLancamento(lancamento.id, identity?.profileId)
+            .then(() => {
+              load();
+              onChanged();
+            })
+            .catch((err) => showRhSaveError(err, 'Não foi possível excluir o lançamento.'))
+            .finally(() => setIsBusy(false));
+        },
+      },
+    ]);
+  };
+
+  const handleSalvarPonto = () => {
+    if (!competenciaId || !colaboradorId) return;
+    const ponto: RhPontoApuracao = {
+      competencia_id: competenciaId,
+      colaborador_id: colaboradorId,
+      horas_trabalhadas: pontoHoras.trim() ? Number(pontoHoras.replace(',', '.')) : null,
+      he_50: pontoHe50.trim() ? Number(pontoHe50.replace(',', '.')) : null,
+      he_100: pontoHe100.trim() ? Number(pontoHe100.replace(',', '.')) : null,
+      faltas_dias: pontoFaltas.trim() ? Number(pontoFaltas.replace(',', '.')) : null,
+      dsr_perdido_dias: pontoDsr.trim() ? Number(pontoDsr.replace(',', '.')) : null,
+      adicional_noturno_horas: pontoNoturno.trim() ? Number(pontoNoturno.replace(',', '.')) : null,
+    };
+    setIsBusy(true);
+    salvarRhFolhaPonto(ponto, identity?.profileId)
+      .then(() => {
+        load();
+        onChanged();
+        Alert.alert('Ponto salvo', 'Apuração de ponto atualizada.');
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar a apuração de ponto.'))
+      .finally(() => setIsBusy(false));
+  };
+
+  const handleSalvarSalario = () => {
+    if (!colaboradorId) return;
+    setIsBusy(true);
+    updateRhFolhaSalario(
+      colaboradorId,
+      {
+        salario_base: parseCurrencyBRToNumber(salarioBase),
+        dependentes_irrf: dependentesIrrf.trim() ? Number(dependentesIrrf) : 0,
+      },
+      identity?.profileId
+    )
+      .then(() => {
+        load();
+        onChanged();
+        Alert.alert('Dados salariais salvos', 'As alterações foram registradas.');
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar os dados salariais.'))
+      .finally(() => setIsBusy(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={onClose}>
+        <Pressable style={[styles.requestModalCard, { maxHeight: '92%' }]} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.requestModalTitle, { flex: undefined }]} numberOfLines={1}>
+                {colaboradorNome}
               </Text>
-              <Pressable
-                style={rhStyles.outlineButton}
-                onPress={() => Alert.alert(item.label, 'Detalhamento da folha em breve.')}
-              >
-                <Text style={rhStyles.outlineButtonText}>Abrir</Text>
-              </Pressable>
+              <Text style={rhStyles.modalSubtitle}>
+                {competenciaLabel}
+                {matricula ? ` · Mat. ${matricula}` : ''}
+              </Text>
             </View>
-          ))
-        )}
-      </ScrollView>
-    </SafeAreaView>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <View style={rhStyles.tabBarRow}>
+            {(
+              [
+                ['folha', 'Folha'],
+                ['ponto', 'Ponto'],
+                ['salarial', 'Dados salariais'],
+                ['historico', 'Histórico'],
+              ] as [FolhaColaboradorTab, string][]
+            ).map(([key, label]) => (
+              <Pressable
+                key={key}
+                style={[rhStyles.tabBarItem, tab === key ? rhStyles.tabBarItemActive : null]}
+                onPress={() => setTab(key)}
+              >
+                <Text style={[rhStyles.tabBarItemText, tab === key ? rhStyles.tabBarItemTextActive : null]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {isLoading ? (
+            <View style={styles.processEmptyCard}>
+              <Text style={styles.processEmptyText}>Carregando...</Text>
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {tab === 'folha' ? (
+                <>
+                  <View style={rhStyles.payrollStatsRow}>
+                    <View style={rhStyles.payrollStatItem}>
+                      <Text style={rhStyles.payrollStatLabel}>Proventos</Text>
+                      <Text style={rhStyles.payrollStatValue}>{formatBRL(folha?.total_proventos)}</Text>
+                    </View>
+                    <View style={rhStyles.payrollStatItem}>
+                      <Text style={rhStyles.payrollStatLabel}>Descontos</Text>
+                      <Text style={rhStyles.payrollStatValue}>{formatBRL(folha?.total_descontos)}</Text>
+                    </View>
+                    <View style={rhStyles.payrollStatItem}>
+                      <Text style={rhStyles.payrollStatLabel}>Líquido</Text>
+                      <Text style={rhStyles.payrollStatValue}>{formatBRL(folha?.liquido)}</Text>
+                    </View>
+                    <View style={rhStyles.payrollStatItem}>
+                      <Text style={rhStyles.payrollStatLabel}>FGTS (info.)</Text>
+                      <Text style={rhStyles.payrollStatValue}>{formatBRL(folha?.valor_fgts)}</Text>
+                    </View>
+                  </View>
+
+                  <Pressable
+                    style={[rhStyles.outlineButtonSmall, { alignSelf: 'flex-start', marginBottom: 12 }]}
+                    onPress={handleRecalcular}
+                    disabled={isBusy || !aberta}
+                  >
+                    <Text style={rhStyles.outlineButtonSmallText}>Recalcular</Text>
+                  </Pressable>
+
+                  {(detalhe?.lancamentos ?? []).length === 0 ? (
+                    <Text style={rhStyles.goalSubtitle}>Nenhuma rubrica lançada ainda.</Text>
+                  ) : (
+                    (detalhe?.lancamentos ?? []).map((lancamento) => {
+                      const rubrica = lancamento.rubrica;
+                      const tipo = rubrica?.tipo ?? 'informativa';
+                      const color = tipo === 'provento' ? '#18955A' : tipo === 'desconto' ? '#E6213D' : '#5E667D';
+                      return (
+                        <View key={lancamento.id} style={rhStyles.rubricaRow}>
+                          <View style={rhStyles.rubricaRowLeft}>
+                            <Text style={rhStyles.rubricaCodigoNome} numberOfLines={1}>
+                              {rubrica ? `${rubrica.codigo} ${rubrica.nome}` : 'Rubrica'}
+                            </Text>
+                            {lancamento.referencia ? (
+                              <Text style={rhStyles.rubricaReferencia}>{lancamento.referencia}</Text>
+                            ) : null}
+                          </View>
+                          <Text style={[rhStyles.rubricaValor, { color }]}>{formatBRL(lancamento.valor)}</Text>
+                          {lancamento.origem === 'manual' ? (
+                            <Pressable onPress={() => handleDeleteLancamento(lancamento)} hitSlop={8} style={{ marginLeft: 8 }}>
+                              <Feather name="x" size={16} color="#9AA1B5" />
+                            </Pressable>
+                          ) : null}
+                        </View>
+                      );
+                    })
+                  )}
+
+                  {aberta ? (
+                    <View style={{ marginTop: 16 }}>
+                      <Text style={styles.requestFieldLabel}>Adicionar lançamento manual</Text>
+                      <RHSelectField
+                        label="Rubrica"
+                        value={lancRubricaLabel}
+                        placeholder="Selecione a rubrica"
+                        onPress={() => setIsRubricaPickerOpen(true)}
+                      />
+                      <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Valor (R$)</Text>
+                      <TextInput
+                        style={styles.processTextInput}
+                        value={lancValor}
+                        onChangeText={(text) => setLancValor(formatCurrencyInput(text))}
+                        placeholder="0,00"
+                        placeholderTextColor="#A7AEC2"
+                        keyboardType="numeric"
+                      />
+                      <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Observação</Text>
+                      <TextInput
+                        style={styles.processTextInput}
+                        value={lancObservacao}
+                        onChangeText={setLancObservacao}
+                        placeholder="Opcional..."
+                        placeholderTextColor="#A7AEC2"
+                      />
+                      <Pressable
+                        style={[rhStyles.primaryButtonGreen, styles.spacingTop, isBusy ? styles.primaryButtonDisabled : null]}
+                        onPress={handleAddLancamento}
+                        disabled={isBusy}
+                      >
+                        <Feather name="plus" size={16} color="#FFFFFF" />
+                        <Text style={styles.primaryButtonText}>Adicionar</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
+
+              {tab === 'ponto' ? (
+                <>
+                  <Text style={rhStyles.goalSubtitle}>
+                    Apuração usada no cálculo desta competência (horas extras, faltas e adicional noturno).
+                  </Text>
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Horas trabalhadas</Text>
+                  <TextInput style={styles.processTextInput} value={pontoHoras} onChangeText={setPontoHoras} keyboardType="numeric" placeholder="0" placeholderTextColor="#A7AEC2" />
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Horas extras 50%</Text>
+                  <TextInput style={styles.processTextInput} value={pontoHe50} onChangeText={setPontoHe50} keyboardType="numeric" placeholder="0" placeholderTextColor="#A7AEC2" />
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Horas extras 100%</Text>
+                  <TextInput style={styles.processTextInput} value={pontoHe100} onChangeText={setPontoHe100} keyboardType="numeric" placeholder="0" placeholderTextColor="#A7AEC2" />
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Faltas (dias)</Text>
+                  <TextInput style={styles.processTextInput} value={pontoFaltas} onChangeText={setPontoFaltas} keyboardType="numeric" placeholder="0" placeholderTextColor="#A7AEC2" />
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>DSR perdido (dias)</Text>
+                  <TextInput style={styles.processTextInput} value={pontoDsr} onChangeText={setPontoDsr} keyboardType="numeric" placeholder="0" placeholderTextColor="#A7AEC2" />
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Adicional noturno (horas)</Text>
+                  <TextInput style={styles.processTextInput} value={pontoNoturno} onChangeText={setPontoNoturno} keyboardType="numeric" placeholder="0" placeholderTextColor="#A7AEC2" />
+                  <Pressable
+                    style={[rhStyles.primaryButtonGreen, styles.spacingTop, isBusy ? styles.primaryButtonDisabled : null]}
+                    onPress={handleSalvarPonto}
+                    disabled={isBusy || !aberta}
+                  >
+                    <Text style={styles.primaryButtonText}>Salvar apuração</Text>
+                  </Pressable>
+                </>
+              ) : null}
+
+              {tab === 'salarial' ? (
+                <>
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Salário base (R$)</Text>
+                  <TextInput
+                    style={styles.processTextInput}
+                    value={salarioBase}
+                    onChangeText={(text) => setSalarioBase(formatCurrencyInput(text))}
+                    keyboardType="numeric"
+                    placeholder="0,00"
+                    placeholderTextColor="#A7AEC2"
+                  />
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Dependentes (IRRF)</Text>
+                  <TextInput
+                    style={styles.processTextInput}
+                    value={dependentesIrrf}
+                    onChangeText={(text) => setDependentesIrrf(text.replace(/\D/g, ''))}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor="#A7AEC2"
+                  />
+                  <Pressable
+                    style={[rhStyles.primaryButtonGreen, styles.spacingTop, isBusy ? styles.primaryButtonDisabled : null]}
+                    onPress={handleSalvarSalario}
+                    disabled={isBusy}
+                  >
+                    <Text style={styles.primaryButtonText}>Salvar dados salariais</Text>
+                  </Pressable>
+                </>
+              ) : null}
+
+              {tab === 'historico' ? (
+                (detalhe?.historico ?? []).length === 0 ? (
+                  <Text style={rhStyles.goalSubtitle}>Nenhum registro de histórico para este colaborador.</Text>
+                ) : (
+                  (detalhe?.historico ?? []).map((entry) => (
+                    <View key={entry.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EEF0F6' }}>
+                      <Text style={rhStyles.employeeName}>{(entry.acao as string | undefined) ?? 'Ação registrada'}</Text>
+                      {entry.descricao ? <Text style={rhStyles.goalSubtitle}>{entry.descricao as string}</Text> : null}
+                      {entry.created_at ? (
+                        <Text style={rhStyles.folhaColaboradorMeta}>{formatDateIsoBR(entry.created_at as string) ?? (entry.created_at as string)}</Text>
+                      ) : null}
+                    </View>
+                  ))
+                )
+              ) : null}
+            </ScrollView>
+          )}
+
+          <RHSimplePickerModal
+            inline
+            visible={isRubricaPickerOpen}
+            title="Rubrica"
+            options={(detalhe?.rubricas ?? []).map((r) => `${r.codigo} - ${r.nome}`)}
+            selectedValue={lancRubricaLabel}
+            onSelect={(value) => {
+              const rubrica = (detalhe?.rubricas ?? []).find((r) => `${r.codigo} - ${r.nome}` === value);
+              setLancRubricaId(rubrica?.id ?? null);
+              setLancRubricaLabel(value);
+            }}
+            onClose={() => setIsRubricaPickerOpen(false)}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -16919,5 +17929,124 @@ const rhStyles = StyleSheet.create({
     color: '#7A8299',
     fontSize: 12,
     fontWeight: '600',
+  },
+  folhaActionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  folhaActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D7DCE8',
+    backgroundColor: '#FFFFFF',
+  },
+  folhaActionButtonText: {
+    color: '#29448D',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  folhaColaboradorRow: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 12,
+    marginBottom: 10,
+  },
+  folhaColaboradorTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 6,
+  },
+  folhaColaboradorNome: {
+    flex: 1,
+    flexShrink: 1,
+    color: '#15203E',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  folhaColaboradorMeta: {
+    color: '#8B93A8',
+    fontSize: 11,
+    marginBottom: 8,
+  },
+  folhaValuesRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  folhaValueItem: {
+    flex: 1,
+  },
+  folhaValueLabel: {
+    color: '#9AA1B5',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  folhaValueAmount: {
+    marginTop: 2,
+    color: '#15203E',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  tabBarRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E6F0',
+    marginBottom: 14,
+  },
+  tabBarItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabBarItemActive: {
+    borderBottomColor: '#3457D5',
+  },
+  tabBarItemText: {
+    color: '#8B93A8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  tabBarItemTextActive: {
+    color: '#3457D5',
+  },
+  rubricaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF0F6',
+  },
+  rubricaRowLeft: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
+  },
+  rubricaCodigoNome: {
+    color: '#15203E',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  rubricaReferencia: {
+    color: '#9AA1B5',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  rubricaValor: {
+    fontSize: 13,
+    fontWeight: '800',
   },
 });

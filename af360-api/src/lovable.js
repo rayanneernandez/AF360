@@ -1281,6 +1281,115 @@ function deleteRhExperienciaAvaliacao(id, actorId) {
   return lovableDelete('/api/public/internal/rh-experiencia', { id }, actorId);
 }
 
+// --- Folha de Pagamento (rh_folha_competencias + rh_folha + rh_rubricas +
+// rh_folha_lancamentos + rh_ponto_apuracao + rh_folha_auditoria) — endpoint
+// unificado confirmado pela Lovable em 19/08/2026:
+// /api/public/internal/rh-folha (mesma auth: x-internal-secret +
+// x-actor-id). INSS/IRRF são calculados 100% do lado deles (RPC
+// calcular_folha, lendo rh_tabela_inss/rh_tabela_irrf) — nunca replicar
+// tabela de alíquotas aqui. status da competência (rh_folha_status) tem 5
+// valores (aberta|em_calculo|fechada|paga|cancelada), mas a UI só trata
+// aberta/em_calculo como "aberta" e o resto como "fechada".
+//
+// recurso=competencias&ano=&status=  — lista + totais.
+// recurso=competencia&id=            — competência + colaboradores ativos +
+//   folhas + resumo.
+// recurso=detalhe&competenciaId=&colaboradorId= — folha, lançamentos (com
+//   rubrica), catálogo de rubricas ativas, ponto e dados salariais + histórico.
+// recurso=historico&competenciaId=|folhaId=|colaboradorId= — auditoria.
+
+function getRhFolhaCompetencias({ ano, status } = {}, actorId) {
+  return lovableGet('/api/public/internal/rh-folha', { recurso: 'competencias', ano, status }, actorId);
+}
+
+function getRhFolhaCompetencia(id, actorId) {
+  return lovableGet('/api/public/internal/rh-folha', { recurso: 'competencia', id }, actorId);
+}
+
+function getRhFolhaDetalheColaborador({ competenciaId, colaboradorId } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-folha',
+    { recurso: 'detalhe', competenciaId, colaboradorId },
+    actorId
+  );
+}
+
+function getRhFolhaHistorico({ competenciaId, folhaId, colaboradorId } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-folha',
+    { recurso: 'historico', competenciaId, folhaId, colaboradorId },
+    actorId
+  );
+}
+
+// Body: { mes, ano, data_pagamento? }. 409 se já existir o mês/ano.
+function postRhFolhaCompetencia(body, actorId) {
+  return lovablePost('/api/public/internal/rh-folha', { recurso: 'competencia' }, body, actorId);
+}
+
+// Body: { competencia_id, colaborador_id? }. Sem colaborador_id roda todos os
+// ativos com salário > 0 (recalcula quem já tinha sido calculado também).
+// Retorna {total, calculados, erros[]}. 409 se a competência estiver fechada.
+function postRhFolhaCalcular(body, actorId) {
+  return lovablePost('/api/public/internal/rh-folha', { recurso: 'calcular' }, body, actorId);
+}
+
+// Body: { competencia_id }. Exige >=1 folha calculada.
+function postRhFolhaFechar(competenciaId, actorId) {
+  return lovablePost('/api/public/internal/rh-folha', { recurso: 'fechar' }, { competencia_id: competenciaId }, actorId);
+}
+
+function postRhFolhaReabrir(competenciaId, actorId) {
+  return lovablePost('/api/public/internal/rh-folha', { recurso: 'reabrir' }, { competencia_id: competenciaId }, actorId);
+}
+
+// Só depois de fechada — marca status_envio='enviado' + data_envio em cada
+// rh_folha ainda nao_enviado (libera o holerite no portal do colaborador).
+function postRhFolhaEnviarContracheques(competenciaId, actorId) {
+  return lovablePost(
+    '/api/public/internal/rh-folha',
+    { recurso: 'enviar-contracheques' },
+    { competencia_id: competenciaId },
+    actorId
+  );
+}
+
+// Body: { competencia_id, colaborador_id (ou folha_id), rubrica_id, valor,
+// observacao?, referencia? }. Exige folha já calculada.
+function postRhFolhaLancamento(body, actorId) {
+  return lovablePost('/api/public/internal/rh-folha', { recurso: 'lancamento' }, body, actorId);
+}
+
+// Só remove lançamentos manuais (origem='manual').
+function deleteRhFolhaLancamento(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-folha', { recurso: 'lancamento', id }, actorId);
+}
+
+// Upsert da apuração de ponto da competência (rh_ponto_apuracao). Body:
+// { competencia_id, colaborador_id, horas_trabalhadas?, he_50?, he_100?,
+// faltas_dias?, dsr_perdido_dias?, adicional_noturno_horas? }. Precisa
+// recalcular depois pra refletir na folha.
+function postRhFolhaPonto(body, actorId) {
+  return lovablePost('/api/public/internal/rh-folha', { recurso: 'ponto' }, body, actorId);
+}
+
+// Edita data/observação/status da competência.
+function patchRhFolhaCompetencia(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-folha', { recurso: 'competencia', id }, body, actorId);
+}
+
+// Body: { salario_base, dependentes_irrf } — grava rh_salario_historico
+// automaticamente quando o salário muda.
+function patchRhFolhaSalario(colaboradorId, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-folha', { recurso: 'salario', colaboradorId }, body, actorId);
+}
+
+// Exclusão real em cascata (folhas, lançamentos, ponto); bloqueada só se
+// status='paga'.
+function deleteRhFolhaCompetencia(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-folha', { recurso: 'competencia', id }, actorId);
+}
+
 module.exports = {
   fetchTable,
   fetchAllRows,
@@ -1440,4 +1549,19 @@ module.exports = {
   getRhExperienciaHistorico,
   postRhExperienciaAvaliacao,
   deleteRhExperienciaAvaliacao,
+  getRhFolhaCompetencias,
+  getRhFolhaCompetencia,
+  getRhFolhaDetalheColaborador,
+  getRhFolhaHistorico,
+  postRhFolhaCompetencia,
+  postRhFolhaCalcular,
+  postRhFolhaFechar,
+  postRhFolhaReabrir,
+  postRhFolhaEnviarContracheques,
+  postRhFolhaLancamento,
+  deleteRhFolhaLancamento,
+  postRhFolhaPonto,
+  patchRhFolhaCompetencia,
+  patchRhFolhaSalario,
+  deleteRhFolhaCompetencia,
 };

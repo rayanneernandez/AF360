@@ -973,34 +973,281 @@ export async function fetchRhTransferenciasDetalhe(): Promise<RhTransferenciasDe
   return json.data as RhTransferenciasDetalhe;
 }
 
-// --- RH: Folha de Pagamento (rh_folha_competencias) ---
+// --- RH: Folha de Pagamento (rh_folha_competencias + rh_folha + rh_rubricas
+// + rh_folha_lancamentos + rh_ponto_apuracao + rh_folha_auditoria) —
+// endpoint unificado confirmado pela Lovable em 19/08/2026
+// (/api/public/internal/rh-folha via nosso proxy /api/rh/folha-pagamento).
+// INSS/IRRF são calculados 100% do lado deles (RPC calcular_folha) — nunca
+// replicar tabela de alíquotas no app, só chamar o endpoint e ler o
+// resultado. status tem 5 valores mas a UI só trata aberta/em_calculo como
+// "aberta" e o resto como "fechada".
 
-export type RhFolhaCompetencia = {
+export type RhFolhaStatus = 'aberta' | 'em_calculo' | 'fechada' | 'paga' | 'cancelada';
+export type RhRubricaTipo = 'provento' | 'desconto' | 'informativa';
+export type RhStatusEnvioFolha = 'nao_enviado' | 'enviado' | 'recebido';
+export type RhLancamentoOrigem = 'manual' | 'calculado' | 'ponto' | 'beneficio' | 'rubrica_fixa';
+
+export type RhFolhaCompetenciaItem = {
   id: string;
   ano: number;
   mes: number;
-  label: string;
-  status: string | null;
-  statusLabel: string;
-  statusColor: string;
-  statusTint: string;
-  totalColaboradores: number | null;
-  totalBruto: string | null;
-  totalLiquido: string | null;
-  totalFgts: string | null;
-  dataPagamentoLabel: string | null;
-  dataPrevistaPagamentoLabel: string | null;
+  status: RhFolhaStatus;
+  data_pagamento: string | null;
+  data_prevista_pagamento: string | null;
   observacao: string | null;
+  fechada_em: string | null;
+  fechada_por: string | null;
+  total_colaboradores: number | null;
+  total_bruto: number | null;
+  total_liquido: number | null;
+  total_fgts: number | null;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
-export type RhFolhaDetalhe = {
-  items: RhFolhaCompetencia[];
-  total: number;
+export type RhFolhaCreateBody = {
+  mes: number;
+  ano: number;
+  data_pagamento?: string | null;
 };
 
-export async function fetchRhFolhaDetalhe(): Promise<RhFolhaDetalhe> {
-  const json = await api.get('/api/rh/dashboard/folha');
-  return json.data as RhFolhaDetalhe;
+export async function fetchRhFolhaCompetencias(
+  params: { ano?: number; status?: RhFolhaStatus } = {}
+): Promise<{ items: RhFolhaCompetenciaItem[] }> {
+  const search = new URLSearchParams();
+  if (params.ano !== undefined) search.set('ano', String(params.ano));
+  if (params.status) search.set('status', params.status);
+  const qs = search.toString();
+  const json = await api.get(`/api/rh/folha-pagamento${qs ? `?${qs}` : ''}`);
+  return { items: (json.data as RhFolhaCompetenciaItem[]) ?? [] };
+}
+
+export async function createRhFolhaCompetencia(
+  body: RhFolhaCreateBody,
+  actorId?: string | null
+): Promise<RhFolhaCompetenciaItem> {
+  const json = await api.post(withActorId('/api/rh/folha-pagamento', actorId), body);
+  return json.data as RhFolhaCompetenciaItem;
+}
+
+export async function updateRhFolhaCompetencia(
+  id: string,
+  body: Partial<{ data_pagamento: string | null; data_prevista_pagamento: string | null; observacao: string | null }>,
+  actorId?: string | null
+): Promise<RhFolhaCompetenciaItem> {
+  const json = await api.patch(withActorId(`/api/rh/folha-pagamento/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhFolhaCompetenciaItem;
+}
+
+export async function deleteRhFolhaCompetencia(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/folha-pagamento/${encodeURIComponent(id)}`, actorId));
+}
+
+// Linha de rh_folha (uma por colaborador x competência), já com o
+// colaborador embutido quando vem de "competência" (recurso=competencia) —
+// campos do colaborador ficam soltos (Record) porque o formato exato de
+// aninhamento não foi 100% detalhado pela Lovable.
+export type RhFolhaLinha = {
+  id?: string;
+  competencia_id?: string;
+  colaborador_id: string;
+  salario_base: number | null;
+  dias_trabalhados: number | null;
+  total_proventos: number | null;
+  total_descontos: number | null;
+  base_inss: number | null;
+  base_irrf: number | null;
+  base_fgts: number | null;
+  valor_inss: number | null;
+  valor_irrf: number | null;
+  valor_fgts: number | null;
+  liquido: number | null;
+  valor_vt: number | null;
+  valor_vr: number | null;
+  valor_adiantamento: number | null;
+  outros_proventos: number | null;
+  outros_descontos: number | null;
+  dependentes_irrf_snapshot: number | null;
+  observacao: string | null;
+  calculado_em: string | null;
+  status: string | null;
+  status_envio: RhStatusEnvioFolha | null;
+  data_envio: string | null;
+  data_recebimento: string | null;
+  assinatura_base64: string | null;
+  ip_assinatura: string | null;
+  [key: string]: unknown;
+};
+
+export type RhFolhaColaboradorResumo = {
+  colaborador_id: string;
+  nome_completo?: string;
+  matricula?: string | null;
+  cargo?: string | null;
+  folha: RhFolhaLinha | null;
+  [key: string]: unknown;
+};
+
+export type RhFolhaCompetenciaResumo = {
+  proventos: number;
+  descontos: number;
+  liquido: number;
+  fgts: number;
+  totalColaboradores: number;
+  calculadas: number;
+  enviados: number;
+  recebidos: number;
+};
+
+export type RhFolhaCompetenciaDetalhe = {
+  competencia: RhFolhaCompetenciaItem;
+  colaboradores: RhFolhaColaboradorResumo[];
+  resumo: RhFolhaCompetenciaResumo;
+};
+
+export async function fetchRhFolhaCompetenciaDetalhe(id: string): Promise<RhFolhaCompetenciaDetalhe> {
+  const json = await api.get(`/api/rh/folha-pagamento/${encodeURIComponent(id)}`);
+  return json.data as RhFolhaCompetenciaDetalhe;
+}
+
+export type RhRubrica = {
+  id: string;
+  codigo: string;
+  nome: string;
+  tipo: RhRubricaTipo;
+  incide_inss: boolean;
+  incide_irrf: boolean;
+  incide_fgts: boolean;
+  ativo: boolean;
+  ordem: number | null;
+  descricao: string | null;
+};
+
+export type RhFolhaLancamento = {
+  id: string;
+  folha_id: string;
+  rubrica_id: string;
+  referencia: string | null;
+  quantidade: number | null;
+  valor: number;
+  origem: RhLancamentoOrigem;
+  observacao: string | null;
+  rubrica?: RhRubrica | null;
+};
+
+export type RhPontoApuracao = {
+  id?: string;
+  competencia_id: string;
+  colaborador_id: string;
+  horas_trabalhadas: number | null;
+  he_50: number | null;
+  he_100: number | null;
+  faltas_dias: number | null;
+  dsr_perdido_dias: number | null;
+  adicional_noturno_horas: number | null;
+};
+
+export type RhFolhaDadosSalariais = {
+  salario_base: number | null;
+  dependentes_irrf: number | null;
+};
+
+export type RhFolhaAuditoriaItem = {
+  id: string;
+  acao?: string;
+  descricao?: string;
+  created_at?: string;
+  created_by?: string | null;
+  [key: string]: unknown;
+};
+
+export type RhFolhaColaboradorDetalhe = {
+  folha: RhFolhaLinha | null;
+  lancamentos: RhFolhaLancamento[];
+  rubricas: RhRubrica[];
+  ponto: RhPontoApuracao | null;
+  dadosSalariais: RhFolhaDadosSalariais | null;
+  historico: RhFolhaAuditoriaItem[];
+};
+
+export async function fetchRhFolhaColaboradorDetalhe(
+  competenciaId: string,
+  colaboradorId: string
+): Promise<RhFolhaColaboradorDetalhe> {
+  const json = await api.get(
+    `/api/rh/folha-pagamento/detalhe?competenciaId=${encodeURIComponent(competenciaId)}&colaboradorId=${encodeURIComponent(colaboradorId)}`
+  );
+  return json.data as RhFolhaColaboradorDetalhe;
+}
+
+export async function fetchRhFolhaHistorico(
+  params: { competenciaId?: string; folhaId?: string; colaboradorId?: string } = {}
+): Promise<RhFolhaAuditoriaItem[]> {
+  const search = new URLSearchParams();
+  if (params.competenciaId) search.set('competenciaId', params.competenciaId);
+  if (params.folhaId) search.set('folhaId', params.folhaId);
+  if (params.colaboradorId) search.set('colaboradorId', params.colaboradorId);
+  const json = await api.get(`/api/rh/folha-pagamento/historico?${search.toString()}`);
+  return (json.data as RhFolhaAuditoriaItem[]) ?? [];
+}
+
+export async function calcularRhFolha(
+  body: { competencia_id: string; colaborador_id?: string },
+  actorId?: string | null
+): Promise<{ total: number; calculados: number; erros: unknown[] }> {
+  const json = await api.post(withActorId('/api/rh/folha-pagamento/calcular', actorId), body);
+  return { total: json.total ?? 0, calculados: json.calculados ?? 0, erros: json.erros ?? [] };
+}
+
+export async function fecharRhFolhaCompetencia(id: string, actorId?: string | null): Promise<void> {
+  await api.post(withActorId(`/api/rh/folha-pagamento/${encodeURIComponent(id)}/fechar`, actorId), {});
+}
+
+export async function reabrirRhFolhaCompetencia(id: string, actorId?: string | null): Promise<void> {
+  await api.post(withActorId(`/api/rh/folha-pagamento/${encodeURIComponent(id)}/reabrir`, actorId), {});
+}
+
+export async function enviarContrachequesRhFolha(id: string, actorId?: string | null): Promise<void> {
+  await api.post(withActorId(`/api/rh/folha-pagamento/${encodeURIComponent(id)}/enviar-contracheques`, actorId), {});
+}
+
+export type RhFolhaLancamentoCreateBody = {
+  competencia_id: string;
+  colaborador_id?: string;
+  folha_id?: string;
+  rubrica_id: string;
+  valor: number;
+  observacao?: string | null;
+  referencia?: string | null;
+};
+
+export async function createRhFolhaLancamento(
+  body: RhFolhaLancamentoCreateBody,
+  actorId?: string | null
+): Promise<RhFolhaLancamento> {
+  const json = await api.post(withActorId('/api/rh/folha-pagamento/lancamento', actorId), body);
+  return json.data as RhFolhaLancamento;
+}
+
+export async function deleteRhFolhaLancamento(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/folha-pagamento/lancamento/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function salvarRhFolhaPonto(body: RhPontoApuracao, actorId?: string | null): Promise<RhPontoApuracao> {
+  const json = await api.post(withActorId('/api/rh/folha-pagamento/ponto', actorId), body);
+  return json.data as RhPontoApuracao;
+}
+
+export async function updateRhFolhaSalario(
+  colaboradorId: string,
+  body: { salario_base?: number; dependentes_irrf?: number },
+  actorId?: string | null
+): Promise<void> {
+  await api.patch(
+    withActorId(`/api/rh/folha-pagamento/salario/${encodeURIComponent(colaboradorId)}`, actorId),
+    body
+  );
 }
 
 // --- Autenticação (login real via Supabase Auth, por trás da af360-api) ---
