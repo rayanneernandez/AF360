@@ -1530,8 +1530,8 @@ function getRhWorkflowColaboradores(actorId) {
   return lovableGet('/api/public/internal/rh-workflow', { recurso: 'colaboradores' }, actorId);
 }
 
-function getRhWorkflowFluxos(actorId) {
-  return lovableGet('/api/public/internal/rh-workflow', { recurso: 'fluxos' }, actorId);
+function getRhWorkflowFluxos({ id } = {}, actorId) {
+  return lovableGet('/api/public/internal/rh-workflow', { recurso: 'fluxos', id }, actorId);
 }
 
 function getRhWorkflowInstancias(params = {}, actorId) {

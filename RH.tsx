@@ -16,6 +16,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -67,6 +68,8 @@ import {
   fetchRhWorkflowLideranca,
   fetchRhWorkflowHistorico,
   fetchRhWorkflowFluxos,
+  fetchRhWorkflowFluxoDetalhe,
+  updateRhWorkflowFluxo,
   atribuirRhWorkflowLideranca,
   encerrarRhWorkflowLideranca,
   type RhWorkflowPosto,
@@ -75,7 +78,6 @@ import {
   type RhWorkflowHistoricoItem,
   type RhWorkflowTipoLideranca,
   type RhWorkflowFluxoTemplate,
-  type RhWorkflowFluxosPayload,
   fecharRhFolhaCompetencia,
   reabrirRhFolhaCompetencia,
   enviarContrachequesRhFolha,
@@ -16031,9 +16033,10 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
   const [isFiltroPickerOpen, setIsFiltroPickerOpen] = useState(false);
   const [postoSelecionado, setPostoSelecionado] = useState<RhWorkflowPosto | null>(null);
 
-  const [fluxosPayload, setFluxosPayload] = useState<RhWorkflowFluxosPayload>({ templates: [], instancias_ativas: [] });
+  const [fluxos, setFluxos] = useState<RhWorkflowFluxoTemplate[]>([]);
   const [isLoadingFluxos, setIsLoadingFluxos] = useState(false);
   const [hasLoadedFluxos, setHasLoadedFluxos] = useState(false);
+  const [fluxoSelecionado, setFluxoSelecionado] = useState<RhWorkflowFluxoTemplate | null>(null);
 
   const loadPostos = useCallback(() => {
     setIsLoadingPostos(true);
@@ -16055,17 +16058,29 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
     return () => clearTimeout(timeout);
   }, [loadPostos]);
 
-  useEffect(() => {
-    if (activeTab !== 'fluxos' || hasLoadedFluxos) return;
+  const loadFluxos = useCallback(() => {
     setIsLoadingFluxos(true);
     fetchRhWorkflowFluxos()
       .then((payload) => {
-        setFluxosPayload(payload);
+        setFluxos(payload.data);
         setHasLoadedFluxos(true);
       })
-      .catch(() => setFluxosPayload({ templates: [], instancias_ativas: [] }))
+      .catch(() => setFluxos([]))
       .finally(() => setIsLoadingFluxos(false));
-  }, [activeTab, hasLoadedFluxos]);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'fluxos' || hasLoadedFluxos) return;
+    loadFluxos();
+  }, [activeTab, hasLoadedFluxos, loadFluxos]);
+
+  const handleToggleFluxoAtivo = (fluxo: RhWorkflowFluxoTemplate) => {
+    setFluxos((prev) => prev.map((f) => (f.id === fluxo.id ? { ...f, ativo: !fluxo.ativo } : f)));
+    updateRhWorkflowFluxo(fluxo.id, { ativo: !fluxo.ativo }).catch((err) => {
+      setFluxos((prev) => prev.map((f) => (f.id === fluxo.id ? { ...f, ativo: fluxo.ativo } : f)));
+      showRhSaveError(err, 'Não foi possível atualizar o fluxo.');
+    });
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -16205,30 +16220,28 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
 
         {activeTab === 'fluxos' ? (
           <>
-            {isLoadingFluxos ? (
-              <RHEmptyTabState message="Carregando fluxos de aprovação..." />
-            ) : fluxosPayload.templates.length === 0 && fluxosPayload.instancias_ativas.length === 0 ? (
-              <RHEmptyTabState message="Nenhum fluxo de aprovação configurado." />
-            ) : (
-              <>
-                {fluxosPayload.templates.length > 0 ? (
-                  <View style={{ marginBottom: 16 }}>
-                    <Text style={rhStyles.sectionTitle}>Modelos de fluxo</Text>
-                    {fluxosPayload.templates.map((template: RhWorkflowFluxoTemplate, index: number) => (
-                      <RHWorkflowFluxoCard key={String(template.id ?? index)} item={template} />
-                    ))}
-                  </View>
-                ) : null}
-                {fluxosPayload.instancias_ativas.length > 0 ? (
-                  <View>
-                    <Text style={rhStyles.sectionTitle}>Instâncias ativas</Text>
-                    {fluxosPayload.instancias_ativas.map((instancia: RhWorkflowFluxoTemplate, index: number) => (
-                      <RHWorkflowFluxoCard key={String(instancia.id ?? index)} item={instancia} />
-                    ))}
-                  </View>
-                ) : null}
-              </>
-            )}
+            <Text style={rhStyles.sectionTitle}>Fluxos de Aprovação</Text>
+            <Text style={rhStyles.employeeRoleUnit}>
+              O construtor visual (canvas) fica disponível no painel web — aqui você acompanha status, ativa/desativa e
+              vê os passos de cada fluxo.
+            </Text>
+
+            <View style={{ marginTop: 14 }}>
+              {isLoadingFluxos ? (
+                <RHEmptyTabState message="Carregando fluxos de aprovação..." />
+              ) : fluxos.length === 0 ? (
+                <RHEmptyTabState message="Nenhum fluxo de aprovação configurado." />
+              ) : (
+                fluxos.map((fluxo) => (
+                  <RHWorkflowFluxoCard
+                    key={fluxo.id}
+                    item={fluxo}
+                    onToggleAtivo={() => handleToggleFluxoAtivo(fluxo)}
+                    onEditar={() => setFluxoSelecionado(fluxo)}
+                  />
+                ))
+              )}
+            </View>
           </>
         ) : null}
       </ScrollView>
@@ -16248,27 +16261,184 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
         onClose={() => setPostoSelecionado(null)}
         onSaved={loadPostos}
       />
+
+      <RHWorkflowFluxoDetalheModal
+        fluxo={fluxoSelecionado}
+        onClose={() => setFluxoSelecionado(null)}
+        onSaved={(atualizado) => {
+          setFluxos((prev) => prev.map((f) => (f.id === atualizado.id ? atualizado : f)));
+        }}
+      />
     </SafeAreaView>
   );
 }
 
 // Fluxos de Aprovação: formato exato dos templates/instâncias ainda não
 // confirmado pela Lovable — renderiza de forma defensiva os campos mais
-// prováveis (nome/titulo, descricao, status/ativo) sem inventar dado.
-function RHWorkflowFluxoCard({ item }: { item: RhWorkflowFluxoTemplate }) {
-  const nome = (item.nome ?? item.titulo ?? item.name ?? 'Fluxo sem nome') as string;
-  const descricao = (item.descricao ?? item.description ?? null) as string | null;
-  const status = (item.status ?? (item.ativo === false ? 'Inativo' : item.ativo === true ? 'Ativo' : null)) as
-    | string
-    | null;
+function RHWorkflowFluxoCard({
+  item,
+  onToggleAtivo,
+  onEditar,
+}: {
+  item: RhWorkflowFluxoTemplate;
+  onToggleAtivo: () => void;
+  onEditar: () => void;
+}) {
+  const statusLabel = item.publicado ? 'Publicado' : 'Rascunho';
+  const statusColor = item.publicado ? { bg: '#E4F5EE', color: '#18955A' } : { bg: '#F1F2F6', color: '#5E667D' };
   return (
-    <View style={rhStyles.workflowUnitCard}>
-      <View style={rhStyles.employeeInfo}>
-        <Text style={rhStyles.employeeName}>{nome}</Text>
-        {descricao ? <Text style={rhStyles.employeeRoleUnit}>{descricao}</Text> : null}
+    <View style={[rhStyles.workflowUnitCard, { flexDirection: 'column', alignItems: 'stretch' }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text style={rhStyles.employeeName}>{item.nome}</Text>
+          <View
+            style={{
+              alignSelf: 'flex-start',
+              backgroundColor: statusColor.bg,
+              borderRadius: 6,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+              marginTop: 4,
+            }}
+          >
+            <Text style={{ color: statusColor.color, fontSize: 11, fontWeight: '700' }}>{statusLabel}</Text>
+          </View>
+        </View>
+        <View
+          style={{
+            alignSelf: 'flex-start',
+            backgroundColor: '#EAF1FF',
+            borderRadius: 6,
+            paddingHorizontal: 8,
+            paddingVertical: 3,
+          }}
+        >
+          <Text style={{ color: '#3457D5', fontSize: 11, fontWeight: '700' }}>{item.categoria}</Text>
+        </View>
       </View>
-      {status ? <Text style={rhStyles.folhaColaboradorMeta}>{status}</Text> : null}
+      {item.descricao ? <Text style={[rhStyles.employeeRoleUnit, { marginTop: 6 }]}>{item.descricao}</Text> : null}
+      <Text style={[rhStyles.folhaColaboradorMeta, { marginTop: 6 }]}>{item.instancias_ativas} instâncias ativas</Text>
+
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginTop: 10,
+          paddingTop: 10,
+          borderTopWidth: 1,
+          borderTopColor: '#EEF0F6',
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Switch value={item.ativo} onValueChange={onToggleAtivo} />
+          <Text style={rhStyles.folhaColaboradorMeta}>Ativo</Text>
+        </View>
+        <Pressable style={rhStyles.outlineButtonSmall} onPress={onEditar}>
+          <Feather name="edit-2" size={14} color="#29448D" />
+          <Text style={rhStyles.outlineButtonSmallText}>Editar</Text>
+        </Pressable>
+      </View>
     </View>
+  );
+}
+
+function RHWorkflowFluxoDetalheModal({
+  fluxo,
+  onClose,
+  onSaved,
+}: {
+  fluxo: RhWorkflowFluxoTemplate | null;
+  onClose: () => void;
+  onSaved: (atualizado: RhWorkflowFluxoTemplate) => void;
+}) {
+  const visible = fluxo !== null;
+  const [nome, setNome] = useState('');
+  const [descricao, setDescricao] = useState('');
+  const [detalhe, setDetalhe] = useState<RhWorkflowFluxoTemplate | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!fluxo) return;
+    setNome(fluxo.nome);
+    setDescricao(fluxo.descricao ?? '');
+    setDetalhe(fluxo);
+    setIsLoading(true);
+    fetchRhWorkflowFluxoDetalhe(fluxo.id)
+      .then((completo) => setDetalhe(completo))
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, [fluxo?.id]);
+
+  if (!fluxo) return null;
+
+  const nodes = detalhe?.nodes_json ?? [];
+
+  const handleSalvar = () => {
+    setIsSaving(true);
+    updateRhWorkflowFluxo(fluxo.id, { nome: nome.trim(), descricao: descricao.trim() || null })
+      .then((atualizado) => {
+        onSaved(atualizado);
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar o fluxo.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.simpleListCard} onPress={() => {}}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={[styles.simpleListTitle, { flex: 1, marginRight: 8 }]} numberOfLines={1}>
+              Editar fluxo
+            </Text>
+            <Pressable onPress={onClose}>
+              <Feather name="x" size={20} color="#5E667D" />
+            </Pressable>
+          </View>
+
+          <ScrollView style={{ marginTop: 12 }} showsVerticalScrollIndicator={false}>
+            <Text style={styles.requestFieldLabel}>Nome</Text>
+            <TextInput style={styles.processTextInput} value={nome} onChangeText={setNome} />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição</Text>
+            <TextInput
+              style={[styles.processTextInput, { minHeight: 70 }]}
+              value={descricao}
+              onChangeText={setDescricao}
+              multiline
+            />
+
+            <Text style={[rhStyles.sectionTitle, { marginTop: 16 }]}>Passos do fluxo</Text>
+            {isLoading ? (
+              <Text style={rhStyles.filterFieldLabel}>Carregando...</Text>
+            ) : nodes.length === 0 ? (
+              <Text style={rhStyles.filterFieldLabel}>Sem passos configurados ainda (edite pelo painel web).</Text>
+            ) : (
+              nodes.map((node, index) => (
+                <Text key={node.id} style={rhStyles.folhaColaboradorMeta}>
+                  {index + 1}. {node.data?.label ?? node.type}
+                </Text>
+              ))
+            )}
+            <Text style={[rhStyles.employeeRoleUnit, { marginTop: 10 }]}>
+              O desenho completo (canvas) só pode ser editado no painel web.
+            </Text>
+
+            <Pressable
+              style={[styles.primaryButton, { backgroundColor: '#5D6BFF', marginTop: 16 }, isSaving ? { opacity: 0.6 } : null]}
+              onPress={handleSalvar}
+              disabled={isSaving}
+            >
+              <Feather name="save" size={16} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Salvando...' : 'Salvar'}</Text>
+            </Pressable>
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 

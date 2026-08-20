@@ -1419,23 +1419,79 @@ export async function transferirRhWorkflowLideranca(
   await api.post(withActorId('/api/rh/workflow/transferir', actorId), body);
 }
 
-// Fluxos de Aprovação — formato exato dos templates/instâncias ainda não
-// confirmado pela Lovable (só sabemos que existe "templates" +
-// "instancias_ativas"); tipado como registro flexível pra não inventar
-// nomes de campo, renderizado de forma defensiva na tela.
-export type RhWorkflowFluxoTemplate = { [key: string]: unknown };
-export type RhWorkflowFluxosPayload = {
-  templates: RhWorkflowFluxoTemplate[];
-  instancias_ativas: RhWorkflowFluxoTemplate[];
+// Fluxos de Aprovação (rh_workflow_templates) — formato confirmado pela
+// Lovable em 20/08/2026. O desenho (canvas) fica em nodes_json/edges_json
+// no formato React Flow; o construtor visual continua só no painel web por
+// enquanto — o app lê/alterna "ativo" e mostra os nós em texto.
+export type RhWorkflowFluxoNode = {
+  id: string;
+  type: 'inicio' | 'fim_aprovado' | 'fim_rejeitado' | 'decisao' | 'divisao' | 'aprovacao' | 'notificacao' | 'prazo' | string;
+  position?: { x: number; y: number };
+  data?: { label?: string; [key: string]: unknown };
+  [key: string]: unknown;
 };
 
-export async function fetchRhWorkflowFluxos(): Promise<RhWorkflowFluxosPayload> {
+export type RhWorkflowFluxoEdge = {
+  id: string;
+  source: string;
+  target: string;
+  [key: string]: unknown;
+};
+
+export type RhWorkflowFluxoTemplate = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  categoria: string;
+  ativo: boolean;
+  publicado: boolean;
+  versao?: number;
+  nodes_json?: RhWorkflowFluxoNode[];
+  edges_json?: RhWorkflowFluxoEdge[];
+  instancias_ativas: number;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+};
+
+export async function fetchRhWorkflowFluxos(): Promise<{ data: RhWorkflowFluxoTemplate[]; categorias: string[] }> {
   const json = await api.get('/api/rh/workflow/fluxos');
-  const data = (json.data ?? {}) as Partial<RhWorkflowFluxosPayload>;
   return {
-    templates: data.templates ?? [],
-    instancias_ativas: data.instancias_ativas ?? [],
+    data: (json.data as RhWorkflowFluxoTemplate[]) ?? [],
+    categorias: (json.categorias as string[]) ?? [],
   };
+}
+
+export async function fetchRhWorkflowFluxoDetalhe(id: string): Promise<RhWorkflowFluxoTemplate> {
+  const json = await api.get(`/api/rh/workflow/fluxos?id=${encodeURIComponent(id)}`);
+  return json.data as RhWorkflowFluxoTemplate;
+}
+
+export async function updateRhWorkflowFluxo(
+  id: string,
+  body: Partial<
+    Pick<RhWorkflowFluxoTemplate, 'nome' | 'descricao' | 'categoria' | 'ativo' | 'publicado' | 'nodes_json' | 'edges_json'>
+  >,
+  actorId?: string | null
+): Promise<RhWorkflowFluxoTemplate> {
+  const json = await api.patch(withActorId(`/api/rh/workflow/fluxo/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhWorkflowFluxoTemplate;
+}
+
+export type RhWorkflowInstancia = {
+  id: string;
+  template_id?: string;
+  colaborador_id?: string;
+  status: string;
+  rh_workflow_templates?: RhWorkflowFluxoTemplate | null;
+  rh_colaboradores?: RhColaboradorRaw | null;
+  rh_workflow_aprovacoes?: unknown[];
+  [key: string]: unknown;
+};
+
+export async function fetchRhWorkflowInstancias(templateId: string): Promise<RhWorkflowInstancia[]> {
+  const json = await api.get(`/api/rh/workflow/instancias?templateId=${encodeURIComponent(templateId)}`);
+  return (json.data as RhWorkflowInstancia[]) ?? [];
 }
 
 // --- Autenticação (login real via Supabase Auth, por trás da af360-api) ---

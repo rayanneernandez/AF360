@@ -74,11 +74,12 @@ router.get('/colaboradores', async (req, res) => {
   }
 });
 
-// GET /api/rh/workflow/fluxos?actorId=
+// GET /api/rh/workflow/fluxos?id=&actorId= — sem id: lista; com id: detalhe
 router.get('/fluxos', async (req, res) => {
   try {
-    const json = await getRhWorkflowFluxos(req.query.actorId);
-    res.json({ ok: true, data: json?.data ?? json });
+    const { id, actorId } = req.query;
+    const json = await getRhWorkflowFluxos({ id }, actorId);
+    res.json({ ok: true, data: json?.data ?? (id ? null : []), categorias: json?.categorias ?? [] });
   } catch (err) {
     console.error('[rh/workflow fluxos] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
