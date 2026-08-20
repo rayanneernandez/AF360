@@ -1157,21 +1157,38 @@ export type RhPontoApuracao = {
   adicional_noturno_horas: number | null;
 };
 
+export type RhFolhaSalarioHistoricoItem = {
+  id?: string;
+  salario_anterior?: number | null;
+  salario_novo?: number | null;
+  created_at?: string;
+  [key: string]: unknown;
+};
+
 export type RhFolhaDadosSalariais = {
   salario_base: number | null;
   dependentes_irrf: number | null;
+  cargo?: string | null;
+  jornada_id?: string | null;
+  regime_jornada?: string | null;
+  data_admissao?: string | null;
+  historico?: RhFolhaSalarioHistoricoItem[];
 };
 
+// rh_folha_auditoria — confirmado pela Lovable em 20/08/2026. "diferencas" é
+// um mapa { campo: { de, para } } com o antes/depois de cada alteração.
 export type RhFolhaAuditoriaItem = {
-  id: string;
-  acao?: string;
-  descricao?: string;
+  id?: string;
+  acao: 'criar' | 'atualizar' | 'excluir' | 'calcular' | 'fechar' | 'reabrir' | 'pagar' | string;
+  entidade: 'folha' | 'lancamento' | 'competencia' | 'salario' | string;
+  diferencas?: Record<string, { de: unknown; para: unknown }> | null;
+  usuario_email?: string | null;
   created_at?: string;
-  created_by?: string | null;
   [key: string]: unknown;
 };
 
 export type RhFolhaColaboradorDetalhe = {
+  colaborador?: RhColaboradorRaw;
   folha: RhFolhaLinha | null;
   lancamentos: RhFolhaLancamento[];
   rubricas: RhRubrica[];
@@ -1187,7 +1204,17 @@ export async function fetchRhFolhaColaboradorDetalhe(
   const json = await api.get(
     `/api/rh/folha-pagamento/detalhe?competenciaId=${encodeURIComponent(competenciaId)}&colaboradorId=${encodeURIComponent(colaboradorId)}`
   );
-  return json.data as RhFolhaColaboradorDetalhe;
+  const data = (json.data ?? {}) as RhFolhaColaboradorDetalhe & {
+    dados_salariais?: RhFolhaDadosSalariais;
+    auditoria?: RhFolhaAuditoriaItem[];
+  };
+  // Lovable devolve dados_salariais (snake_case) e historico com alias
+  // auditoria — normaliza pros nomes que o resto do app usa.
+  return {
+    ...data,
+    dadosSalariais: data.dados_salariais ?? data.dadosSalariais ?? null,
+    historico: data.historico ?? data.auditoria ?? [],
+  };
 }
 
 export async function fetchRhFolhaHistorico(

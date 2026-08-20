@@ -13628,6 +13628,58 @@ function formatDateIsoBR(iso: string | null | undefined): string | null {
   return `${day}/${month}/${year}`;
 }
 
+// rh_folha_auditoria — confirmado pela Lovable em 20/08/2026.
+const folhaAcaoLabel: Record<string, string> = {
+  criar: 'Criou',
+  atualizar: 'Editou',
+  excluir: 'Excluiu',
+  calcular: 'Calculou',
+  fechar: 'Fechou',
+  reabrir: 'Reabriu',
+  pagar: 'Pagou',
+};
+const folhaEntidadeLabel: Record<string, string> = {
+  folha: 'folha',
+  lancamento: 'lançamento',
+  competencia: 'competência',
+  salario: 'salário',
+};
+
+function folhaAuditoriaTitulo(entry: RhFolhaAuditoriaItem): string {
+  const acao = folhaAcaoLabel[entry.acao] ?? entry.acao;
+  const entidade = folhaEntidadeLabel[entry.entidade] ?? entry.entidade;
+  return `${acao} ${entidade}`;
+}
+
+function formatFolhaDiffValor(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'number') return formatBRL(value);
+  return String(value);
+}
+
+// Renderiza o "de -> para" de cada campo alterado num evento de auditoria.
+function RHFolhaAuditoriaEntry({ entry }: { entry: RhFolhaAuditoriaItem }) {
+  const diffEntries = entry.diferencas ? Object.entries(entry.diferencas) : [];
+  return (
+    <View style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EEF0F6' }}>
+      <Text style={rhStyles.employeeName}>{folhaAuditoriaTitulo(entry)}</Text>
+      {diffEntries.length > 0 ? (
+        <View style={{ marginTop: 4 }}>
+          {diffEntries.map(([campo, diff]) => (
+            <Text key={campo} style={rhStyles.folhaColaboradorMeta}>
+              {campo}: {formatFolhaDiffValor(diff.de)} → {formatFolhaDiffValor(diff.para)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      <Text style={rhStyles.folhaColaboradorMeta}>
+        {entry.usuario_email ?? 'Sistema'}
+        {entry.created_at ? ` · ${formatDateIsoBR(entry.created_at) ?? entry.created_at}` : ''}
+      </Text>
+    </View>
+  );
+}
+
 export function RHFolhaPagamentoScreen({ navigation }: ScreenProps<'RHFolhaPagamento'>) {
   const [items, setItems] = useState<RhFolhaCompetenciaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -14259,15 +14311,7 @@ function RHFolhaHistoricoModal({
           ) : items.length === 0 ? (
             <Text style={rhStyles.filterFieldLabel}>Nenhum registro de histórico.</Text>
           ) : (
-            items.map((entry) => (
-              <View key={entry.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EEF0F6' }}>
-                <Text style={rhStyles.employeeName}>{(entry.acao as string | undefined) ?? 'Ação registrada'}</Text>
-                {entry.descricao ? <Text style={rhStyles.goalSubtitle}>{entry.descricao as string}</Text> : null}
-                {entry.created_at ? (
-                  <Text style={rhStyles.folhaColaboradorMeta}>{formatDateIsoBR(entry.created_at as string) ?? entry.created_at as string}</Text>
-                ) : null}
-              </View>
-            ))
+            items.map((entry, index) => <RHFolhaAuditoriaEntry key={entry.id ?? index} entry={entry} />)
           )}
         </ScrollView>
       </Pressable>
@@ -14685,14 +14729,8 @@ function RHFolhaColaboradorDetalheModal({
                 (detalhe?.historico ?? []).length === 0 ? (
                   <Text style={rhStyles.goalSubtitle}>Nenhum registro de histórico para este colaborador.</Text>
                 ) : (
-                  (detalhe?.historico ?? []).map((entry) => (
-                    <View key={entry.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EEF0F6' }}>
-                      <Text style={rhStyles.employeeName}>{(entry.acao as string | undefined) ?? 'Ação registrada'}</Text>
-                      {entry.descricao ? <Text style={rhStyles.goalSubtitle}>{entry.descricao as string}</Text> : null}
-                      {entry.created_at ? (
-                        <Text style={rhStyles.folhaColaboradorMeta}>{formatDateIsoBR(entry.created_at as string) ?? (entry.created_at as string)}</Text>
-                      ) : null}
-                    </View>
+                  (detalhe?.historico ?? []).map((entry, index) => (
+                    <RHFolhaAuditoriaEntry key={entry.id ?? index} entry={entry} />
                   ))
                 )
               ) : null}
