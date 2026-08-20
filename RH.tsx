@@ -14099,23 +14099,47 @@ function RHFolhaCompetenciaDetalheModal({
               </View>
 
               <View style={rhStyles.folhaActionsRow}>
-                <Pressable style={rhStyles.folhaActionButton} onPress={handleCalcularTodos} disabled={isBusy || !aberta}>
-                  <Feather name="refresh-cw" size={13} color="#29448D" />
-                  <Text style={rhStyles.folhaActionButtonText}>Calcular todos</Text>
+                <Pressable
+                  style={[rhStyles.folhaActionButton, rhStyles.folhaActionButtonCompact]}
+                  onPress={handleCalcularTodos}
+                  disabled={isBusy || !aberta}
+                >
+                  <Feather name="refresh-cw" size={12} color="#29448D" />
+                  <Text style={[rhStyles.folhaActionButtonText, rhStyles.folhaActionButtonTextCompact]} numberOfLines={1}>
+                    Calcular
+                  </Text>
                 </Pressable>
-                <Pressable style={rhStyles.folhaActionButton} onPress={handleFecharReabrir} disabled={isBusy}>
-                  <Feather name={aberta ? 'lock' : 'unlock'} size={13} color="#29448D" />
-                  <Text style={rhStyles.folhaActionButtonText}>{aberta ? 'Fechar competência' : 'Reabrir'}</Text>
+                <Pressable
+                  style={[rhStyles.folhaActionButton, rhStyles.folhaActionButtonCompact]}
+                  onPress={handleFecharReabrir}
+                  disabled={isBusy}
+                >
+                  <Feather name={aberta ? 'lock' : 'unlock'} size={12} color="#29448D" />
+                  <Text style={[rhStyles.folhaActionButtonText, rhStyles.folhaActionButtonTextCompact]} numberOfLines={1}>
+                    {aberta ? 'Fechar' : 'Reabrir'}
+                  </Text>
                 </Pressable>
                 {!aberta ? (
-                  <Pressable style={rhStyles.folhaActionButton} onPress={handleEnviarContracheques} disabled={isBusy}>
-                    <Feather name="send" size={13} color="#29448D" />
-                    <Text style={rhStyles.folhaActionButtonText}>Enviar contracheques</Text>
+                  <Pressable
+                    style={[rhStyles.folhaActionButton, rhStyles.folhaActionButtonCompact]}
+                    onPress={handleEnviarContracheques}
+                    disabled={isBusy}
+                  >
+                    <Feather name="send" size={12} color="#29448D" />
+                    <Text style={[rhStyles.folhaActionButtonText, rhStyles.folhaActionButtonTextCompact]} numberOfLines={1}>
+                      Enviar
+                    </Text>
                   </Pressable>
                 ) : null}
-                <Pressable style={rhStyles.folhaActionButton} onPress={() => setIsHistoricoOpen(true)} disabled={isBusy}>
-                  <Feather name="clock" size={13} color="#29448D" />
-                  <Text style={rhStyles.folhaActionButtonText}>Histórico</Text>
+                <Pressable
+                  style={[rhStyles.folhaActionButton, rhStyles.folhaActionButtonCompact]}
+                  onPress={() => setIsHistoricoOpen(true)}
+                  disabled={isBusy}
+                >
+                  <Feather name="clock" size={12} color="#29448D" />
+                  <Text style={[rhStyles.folhaActionButtonText, rhStyles.folhaActionButtonTextCompact]} numberOfLines={1}>
+                    Histórico
+                  </Text>
                 </Pressable>
               </View>
 
@@ -14500,20 +14524,28 @@ function RHFolhaColaboradorDetalheModal({
                 <>
                   <View style={rhStyles.payrollStatsRow}>
                     <View style={rhStyles.payrollStatItem}>
-                      <Text style={rhStyles.payrollStatLabel}>Proventos</Text>
-                      <Text style={rhStyles.payrollStatValue}>{formatBRL(folha?.total_proventos)}</Text>
+                      <Text style={rhStyles.payrollStatLabel} numberOfLines={1}>Proventos</Text>
+                      <Text style={[rhStyles.payrollStatValue, rhStyles.payrollStatValueCompact]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                        {formatBRL(folha?.total_proventos)}
+                      </Text>
                     </View>
                     <View style={rhStyles.payrollStatItem}>
-                      <Text style={rhStyles.payrollStatLabel}>Descontos</Text>
-                      <Text style={rhStyles.payrollStatValue}>{formatBRL(folha?.total_descontos)}</Text>
+                      <Text style={rhStyles.payrollStatLabel} numberOfLines={1}>Descontos</Text>
+                      <Text style={[rhStyles.payrollStatValue, rhStyles.payrollStatValueCompact]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                        {formatBRL(folha?.total_descontos)}
+                      </Text>
                     </View>
                     <View style={rhStyles.payrollStatItem}>
-                      <Text style={rhStyles.payrollStatLabel}>Líquido</Text>
-                      <Text style={rhStyles.payrollStatValue}>{formatBRL(folha?.liquido)}</Text>
+                      <Text style={rhStyles.payrollStatLabel} numberOfLines={1}>Líquido</Text>
+                      <Text style={[rhStyles.payrollStatValue, rhStyles.payrollStatValueCompact]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                        {formatBRL(folha?.liquido)}
+                      </Text>
                     </View>
                     <View style={rhStyles.payrollStatItem}>
-                      <Text style={rhStyles.payrollStatLabel}>FGTS (info.)</Text>
-                      <Text style={rhStyles.payrollStatValue}>{formatBRL(folha?.valor_fgts)}</Text>
+                      <Text style={rhStyles.payrollStatLabel} numberOfLines={1}>FGTS</Text>
+                      <Text style={[rhStyles.payrollStatValue, rhStyles.payrollStatValueCompact]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                        {formatBRL(folha?.valor_fgts)}
+                      </Text>
                     </View>
                   </View>
 
@@ -18543,6 +18575,11 @@ const rhStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
+  // Usado quando a linha tem 4 colunas (Proventos/Descontos/Líquido/FGTS) em
+  // vez de 3 — fonte um pouco menor pra "R$ 1.497,88" não estourar a coluna.
+  payrollStatValueCompact: {
+    fontSize: 12,
+  },
   resourceCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -19064,26 +19101,36 @@ const rhStyles = StyleSheet.create({
   },
   folhaActionsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
     marginTop: 12,
     marginBottom: 4,
   },
   folhaActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: '#D7DCE8',
     backgroundColor: '#FFFFFF',
   },
+  // Linha com até 4 botões (Calcular/Fechar/Enviar/Histórico) — flex:1 pra
+  // dividir a largura igualmente e caber tudo numa linha só no mobile.
+  folhaActionButtonCompact: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 6,
+  },
   folhaActionButtonText: {
     color: '#29448D',
     fontSize: 12,
     fontWeight: '800',
+  },
+  folhaActionButtonTextCompact: {
+    fontSize: 11,
   },
   folhaColaboradorRow: {
     backgroundColor: '#FFFFFF',
