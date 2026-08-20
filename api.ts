@@ -1081,28 +1081,37 @@ export type RhFolhaLinha = {
 };
 
 export type RhFolhaColaboradorResumo = {
-  colaborador_id: string;
-  nome_completo?: string;
-  matricula?: string | null;
-  cargo?: string | null;
-  folha: RhFolhaLinha | null;
+  // rh_colaboradores.id — chave de cruzamento com folhas[].colaborador_id
+  // (confirmado pela Lovable em 20/08/2026: a folha NÃO vem embutida aqui,
+  // vem num array irmão "folhas").
+  id: string;
+  nome_completo: string;
+  matricula: string | null;
+  salario_base: number | null;
+  cargo: string | null;
+  empresa_id?: string | null;
+  dependentes_irrf?: number | null;
   [key: string]: unknown;
 };
 
 export type RhFolhaCompetenciaResumo = {
+  colaboradores_ativos: number;
+  folhas_calculadas: number;
+  enviados: number;
+  recebidos: number;
   proventos: number;
   descontos: number;
   liquido: number;
   fgts: number;
-  totalColaboradores: number;
-  calculadas: number;
-  enviados: number;
-  recebidos: number;
 };
 
 export type RhFolhaCompetenciaDetalhe = {
   competencia: RhFolhaCompetenciaItem;
+  fechada: boolean;
   colaboradores: RhFolhaColaboradorResumo[];
+  // Uma linha por colaborador que já teve folha calculada — cruzar com
+  // colaboradores via folhas.find(f => f.colaborador_id === colaborador.id).
+  folhas: RhFolhaLinha[];
   resumo: RhFolhaCompetenciaResumo;
 };
 

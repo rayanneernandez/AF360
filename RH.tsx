@@ -14060,7 +14060,7 @@ function RHFolhaCompetenciaDetalheModal({
               </Text>
               {competencia ? (
                 <Text style={rhStyles.modalSubtitle}>
-                  {detalhe?.resumo.totalColaboradores ?? 0} colaborador(es) ativo(s) · {detalhe?.resumo.calculadas ?? 0} folha(s) calculada(s)
+                  {detalhe?.resumo.colaboradores_ativos ?? 0} colaborador(es) ativo(s) · {detalhe?.resumo.folhas_calculadas ?? 0} folha(s) calculada(s)
                 </Text>
               ) : null}
             </View>
@@ -14125,18 +14125,21 @@ function RHFolhaCompetenciaDetalheModal({
                 </View>
               ) : (
                 detalhe.colaboradores.map((colaborador: RhFolhaColaboradorResumo) => {
-                  const folha = colaborador.folha;
-                  const nome = (colaborador.nome_completo as string | undefined) ?? 'Sem nome';
-                  const matricula = (colaborador.matricula as string | null | undefined) ?? null;
+                  // A folha calculada não vem embutida — cruza com o array
+                  // irmão "folhas" pelo colaborador_id (confirmado pela
+                  // Lovable em 20/08/2026).
+                  const folha = (detalhe.folhas ?? []).find((f) => f.colaborador_id === colaborador.id);
+                  const nome = colaborador.nome_completo ?? 'Sem nome';
+                  const matricula = colaborador.matricula ?? null;
                   return (
-                    <View key={colaborador.colaborador_id} style={rhStyles.folhaColaboradorRow}>
+                    <View key={colaborador.id} style={rhStyles.folhaColaboradorRow}>
                       <View style={rhStyles.folhaColaboradorTopRow}>
                         <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
                           {nome}
                         </Text>
                         <Pressable
                           style={rhStyles.outlineButtonSmall}
-                          onPress={() => setSelectedColaborador({ id: colaborador.colaborador_id, nome, matricula })}
+                          onPress={() => setSelectedColaborador({ id: colaborador.id, nome, matricula })}
                         >
                           <Text style={rhStyles.outlineButtonSmallText}>Detalhar</Text>
                         </Pressable>
@@ -14145,7 +14148,7 @@ function RHFolhaCompetenciaDetalheModal({
                       <View style={rhStyles.folhaValuesRow}>
                         <View style={rhStyles.folhaValueItem}>
                           <Text style={rhStyles.folhaValueLabel}>Salário base</Text>
-                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(folha?.salario_base)}</Text>
+                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(colaborador.salario_base)}</Text>
                         </View>
                         <View style={rhStyles.folhaValueItem}>
                           <Text style={rhStyles.folhaValueLabel}>Proventos</Text>
