@@ -1720,9 +1720,11 @@ export type RhUniformePedido = {
   aprovador_id: string | null;
   aprovado_em: string | null;
   motivo_recusa: string | null;
+  observacoes?: string | null;
   ciencia_em: string | null;
   entregue_em: string | null;
   entregue_por: string | null;
+  created_at?: string;
   itens?: RhUniformePedidoItem[];
   [key: string]: unknown;
 };
@@ -1739,15 +1741,30 @@ export async function fetchRhUniformesEntregas(colaboradorId: string): Promise<R
   return (json.data as RhUniformeEntrega[]) ?? [];
 }
 
+// tipo/limit/offset/id adicionados em 20/08/2026 pra suportar a tela admin
+// "Recursos Operacionais" (filtro por tipo, paginação e detalhe de um pedido).
 export async function fetchRhUniformesPedidos(
-  params: { colaboradorId?: string; status?: string } = {}
+  params: { colaboradorId?: string; status?: string; tipo?: string; limit?: number; offset?: number } = {}
 ): Promise<RhUniformePedido[]> {
   const search = new URLSearchParams();
   search.set('recurso', 'pedidos');
   if (params.colaboradorId) search.set('colaboradorId', params.colaboradorId);
   if (params.status) search.set('status', params.status);
+  if (params.tipo) search.set('tipo', params.tipo);
+  if (params.limit !== undefined) search.set('limit', String(params.limit));
+  if (params.offset !== undefined) search.set('offset', String(params.offset));
   const json = await api.get(`/api/rh/uniformes?${search.toString()}`);
-  return (json.data as RhUniformePedido[]) ?? [];
+  const data = json.data;
+  return (Array.isArray(data) ? data : data ? [data] : []) as RhUniformePedido[];
+}
+
+// Detalhe de um pedido específico (usado no modal "Detalhes do pedido" —
+// espera-se que venha com `itens` embutido).
+export async function fetchRhUniformePedidoDetalhe(id: string): Promise<RhUniformePedido | null> {
+  const json = await api.get(`/api/rh/uniformes?recurso=pedidos&id=${encodeURIComponent(id)}`);
+  const data = json.data;
+  if (Array.isArray(data)) return (data[0] as RhUniformePedido) ?? null;
+  return (data as RhUniformePedido) ?? null;
 }
 
 export async function fetchRhUniformesItens(): Promise<RhUniformeItemCatalogo[]> {
@@ -1792,6 +1809,250 @@ export async function registrarEntregaUniforme(body: {
 }): Promise<RhUniformeEntrega> {
   const json = await api.post('/api/rh/uniformes/entregas', body);
   return json.data as RhUniformeEntrega;
+}
+
+// --- Recursos Operacionais (admin) — cobranças, estoque, itens & grade com
+// escrita, kit por cargo com escrita e termo de responsabilidade versionado.
+// Contrato estendido confirmado pela Lovable em 20/08/2026, mesmo endpoint
+// unificado /api/rh/uniformes (recurso=cobrancas/estoque/movimentacoes/
+// categorias/termo/termos via querystring, escritas em rotas dedicadas).
+
+export type RhUniformeCobrancaStatus = 'pendente' | 'lancada' | 'cancelada';
+
+export type RhUniformeCobranca = {
+  id: string;
+  colaborador_id: string;
+  pedido_id: string | null;
+  pedido_item_id: string | null;
+  valor: number;
+  descricao: string | null;
+  competencia: string | null;
+  status: RhUniformeCobrancaStatus;
+  lancamento_folha_id: string | null;
+  motivo_cancelamento: string | null;
+  created_at?: string;
+  [key: string]: unknown;
+};
+
+export async function fetchRhUniformesCobrancas(
+  params: { status?: RhUniformeCobrancaStatus; colaboradorId?: string } = {}
+): Promise<RhUniformeCobranca[]> {
+  const search = new URLSearchParams();
+  search.set('recurso', 'cobrancas');
+  if (params.status) search.set('status', params.status);
+  if (params.colaboradorId) search.set('colaboradorId', params.colaboradorId);
+  const json = await api.get(`/api/rh/uniformes?${search.toString()}`);
+  return (json.data as RhUniformeCobranca[]) ?? [];
+}
+
+export async function createRhUniformeCobranca(
+  body: {
+    colaborador_id: string;
+    pedido_id?: string;
+    pedido_item_id?: string;
+    valor: number;
+    descricao: string;
+    competencia?: string;
+  },
+  actorId?: string | null
+): Promise<RhUniformeCobranca> {
+  const json = await api.post(withActorId('/api/rh/uniformes/cobrancas', actorId), body);
+  return json.data as RhUniformeCobranca;
+}
+
+export async function updateRhUniformeCobranca(
+  id: string,
+  body: { status: RhUniformeCobrancaStatus; motivo_cancelamento?: string },
+  actorId?: string | null
+): Promise<RhUniformeCobranca> {
+  const json = await api.patch(withActorId(`/api/rh/uniformes/cobrancas/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhUniformeCobranca;
+}
+
+export async function deleteRhUniformeCobranca(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/uniformes/cobrancas/${encodeURIComponent(id)}`, actorId));
+}
+
+export type RhUniformeEstoqueLinha = {
+  item_id: string;
+  tamanho: string | null;
+  saldo: number;
+  item?: RhUniformeItemCatalogo;
+  [key: string]: unknown;
+};
+
+export async function fetchRhUniformesEstoque(): Promise<RhUniformeEstoqueLinha[]> {
+  const json = await api.get('/api/rh/uniformes?recurso=estoque');
+  return (json.data as RhUniformeEstoqueLinha[]) ?? [];
+}
+
+export type RhUniformeMovimentacaoTipo = 'entrada' | 'saida' | 'ajuste' | 'devolucao';
+
+export type RhUniformeMovimentacao = {
+  id: string;
+  item_id: string;
+  tamanho: string | null;
+  tipo: RhUniformeMovimentacaoTipo;
+  quantidade: number;
+  pedido_id: string | null;
+  motivo: string | null;
+  created_at?: string;
+  [key: string]: unknown;
+};
+
+export async function fetchRhUniformesMovimentacoes(
+  params: { itemId?: string; limit?: number } = {}
+): Promise<RhUniformeMovimentacao[]> {
+  const search = new URLSearchParams();
+  search.set('recurso', 'movimentacoes');
+  if (params.itemId) search.set('itemId', params.itemId);
+  if (params.limit !== undefined) search.set('limit', String(params.limit));
+  const json = await api.get(`/api/rh/uniformes?${search.toString()}`);
+  return (json.data as RhUniformeMovimentacao[]) ?? [];
+}
+
+export async function createRhUniformeMovimentacao(
+  body: {
+    item_id: string;
+    tamanho?: string | null;
+    tipo: RhUniformeMovimentacaoTipo;
+    quantidade: number;
+    pedido_id?: string;
+    motivo?: string;
+  },
+  actorId?: string | null
+): Promise<RhUniformeMovimentacao> {
+  const json = await api.post(withActorId('/api/rh/uniformes/movimentacoes', actorId), body);
+  return json.data as RhUniformeMovimentacao;
+}
+
+export async function deleteRhUniformeMovimentacao(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/uniformes/movimentacoes/${encodeURIComponent(id)}`, actorId));
+}
+
+export type RhUniformeCategoria = {
+  id: string;
+  slug: 'uniforme' | 'epi' | 'outros';
+  nome?: string;
+  [key: string]: unknown;
+};
+
+export async function fetchRhUniformesCategorias(): Promise<RhUniformeCategoria[]> {
+  const json = await api.get('/api/rh/uniformes?recurso=categorias');
+  return (json.data as RhUniformeCategoria[]) ?? [];
+}
+
+export type RhUniformeTamanho = {
+  id: string;
+  item_id: string;
+  tamanho: string;
+  ordem: number | null;
+  ativo: boolean;
+};
+
+export type RhUniformeItemCreateBody = {
+  categoria_id: string;
+  nome: string;
+  descricao?: string;
+  possui_grade: boolean;
+  unidade?: string;
+  prazo_troca_meses?: number;
+  faixa_gerente_pct?: number;
+  valor_unit?: number;
+  tamanhos?: string[];
+};
+
+export async function createRhUniformeItem(
+  body: RhUniformeItemCreateBody,
+  actorId?: string | null
+): Promise<RhUniformeItemCatalogo> {
+  const json = await api.post(withActorId('/api/rh/uniformes/itens', actorId), body);
+  return json.data as RhUniformeItemCatalogo;
+}
+
+export async function updateRhUniformeItem(
+  id: string,
+  body: Partial<Omit<RhUniformeItemCreateBody, 'tamanhos'>> & { ativo?: boolean },
+  actorId?: string | null
+): Promise<RhUniformeItemCatalogo> {
+  const json = await api.patch(withActorId(`/api/rh/uniformes/itens/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhUniformeItemCatalogo;
+}
+
+export async function deleteRhUniformeItem(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/uniformes/itens/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function createRhUniformeTamanho(
+  body: { item_id: string; tamanho: string; ordem?: number },
+  actorId?: string | null
+): Promise<RhUniformeTamanho> {
+  const json = await api.post(withActorId('/api/rh/uniformes/tamanhos', actorId), body);
+  return json.data as RhUniformeTamanho;
+}
+
+export async function updateRhUniformeTamanho(
+  id: string,
+  body: Partial<{ tamanho: string; ordem: number; ativo: boolean }>,
+  actorId?: string | null
+): Promise<RhUniformeTamanho> {
+  const json = await api.patch(withActorId(`/api/rh/uniformes/tamanhos/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhUniformeTamanho;
+}
+
+export async function deleteRhUniformeTamanho(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/uniformes/tamanhos/${encodeURIComponent(id)}`, actorId));
+}
+
+// Kit por cargo — POST substitui a lista inteira do cargo.
+export async function saveRhUniformeKitCargo(
+  body: { cargo_id: string; itens: Array<{ item_id: string; quantidade: number }> },
+  actorId?: string | null
+): Promise<RhUniformeKitItem[]> {
+  const json = await api.post(withActorId('/api/rh/uniformes/kit', actorId), body);
+  return (json.data as RhUniformeKitItem[]) ?? [];
+}
+
+export async function deleteRhUniformeKitItem(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/uniformes/kit/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function deleteRhUniformeKitCargo(cargoId: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/uniformes/kit-cargo/${encodeURIComponent(cargoId)}`, actorId));
+}
+
+export type RhUniformeTermo = {
+  id: string;
+  versao: number;
+  titulo: string;
+  conteudo: string;
+  ativo: boolean;
+  vigencia_inicio: string | null;
+  created_at?: string;
+  created_by?: string | null;
+};
+
+// Versão ativa (a que aparece no app pro colaborador dar ciência).
+export async function fetchRhUniformeTermo(): Promise<RhUniformeTermo | null> {
+  const json = await api.get('/api/rh/uniformes?recurso=termo');
+  const data = json.data;
+  if (Array.isArray(data)) return (data[0] as RhUniformeTermo) ?? null;
+  return (data as RhUniformeTermo) ?? null;
+}
+
+// Histórico de versões (mais recente primeiro).
+export async function fetchRhUniformeTermos(): Promise<RhUniformeTermo[]> {
+  const json = await api.get('/api/rh/uniformes?recurso=termos');
+  return (json.data as RhUniformeTermo[]) ?? [];
+}
+
+// Cria versão nova e desativa a anterior — nunca sobrescreve a existente.
+export async function saveRhUniformeTermo(
+  body: { titulo: string; conteudo: string },
+  actorId?: string | null
+): Promise<RhUniformeTermo> {
+  const json = await api.post(withActorId('/api/rh/uniformes/termo', actorId), body);
+  return json.data as RhUniformeTermo;
 }
 
 // --- Calendário (rh_calendario_eventos; endpoint confirmado pela Lovable em

@@ -876,10 +876,17 @@ function patchRhSolicitacao(id, body, actorId) {
 // Aprovar/recusar usa PATCH ?id=&acao=; registrar entrega fecha o pedido
 // como entregue. ---
 
-function getRhUniformes({ recurso, cargoId, colaboradorId, devolvido, status } = {}, actorId) {
+// id/tipo/limit/offset adicionados em 20/08/2026 pra suportar a tela admin
+// "Recursos Operacionais" (lista de pedidos por status/tipo com paginação) —
+// mesma função, mesmos recursos de sempre (kit/entregas/pedidos/itens),
+// só com mais filtros passados direto pro Lovable.
+function getRhUniformes(
+  { recurso, cargoId, colaboradorId, devolvido, status, tipo, id, limit, offset } = {},
+  actorId
+) {
   return lovableGet(
     '/api/public/internal/rh-uniformes',
-    { recurso, cargo_id: cargoId, colaborador_id: colaboradorId, devolvido, status },
+    { recurso, cargo_id: cargoId, colaborador_id: colaboradorId, devolvido, status, tipo, id, limit, offset },
     actorId
   );
 }
@@ -1390,7 +1397,134 @@ function deleteRhFolhaCompetencia(id, actorId) {
   return lovableDelete('/api/public/internal/rh-folha', { recurso: 'competencia', id }, actorId);
 }
 
+// --- RH: Recursos Operacionais — parte ADMIN (cobranças, estoque,
+// itens & grade com escrita, kit com escrita, termo de responsabilidade)
+// da mesma tabela rh_op_* usada acima pelo fluxo colaborador/liderança.
+// Contrato estendido confirmado pela Lovable em 20/08/2026, mesmo endpoint
+// (/api/public/internal/rh-uniformes). Leituras de pedidos/kit/entregas/itens
+// continuam pela função getRhUniformes() genérica acima — as funções abaixo
+// cobrem só os recursos/ações que não existiam antes: cobrancas, estoque,
+// movimentacoes, categorias, escrita de item/tamanho/kit, termo.
+
+function getRhUniformesCobrancas({ status, colaboradorId } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-uniformes',
+    { recurso: 'cobrancas', status, colaborador_id: colaboradorId },
+    actorId
+  );
+}
+
+// Body: { colaborador_id, pedido_id?, pedido_item_id?, valor, descricao, competencia? }
+function postRhUniformeCobranca(body, actorId) {
+  return lovablePost('/api/public/internal/rh-uniformes', { acao: 'cobranca' }, body, actorId);
+}
+
+// Body: { status } (lancada|cancelada) — cancelar exige motivo_cancelamento no body.
+function patchRhUniformeCobranca(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-uniformes', { recurso: 'cobranca', id }, body, actorId);
+}
+
+function deleteRhUniformeCobranca(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-uniformes', { recurso: 'cobranca', id }, actorId);
+}
+
+function getRhUniformesEstoque(actorId) {
+  return lovableGet('/api/public/internal/rh-uniformes', { recurso: 'estoque' }, actorId);
+}
+
+function getRhUniformesMovimentacoes({ itemId, limit } = {}, actorId) {
+  return lovableGet('/api/public/internal/rh-uniformes', { recurso: 'movimentacoes', item_id: itemId, limit }, actorId);
+}
+
+// Body: { item_id, tamanho?, tipo (entrada|saida|ajuste|devolucao), quantidade, pedido_id?, motivo? }
+function postRhUniformeMovimentacao(body, actorId) {
+  return lovablePost('/api/public/internal/rh-uniformes', { acao: 'movimentacao' }, body, actorId);
+}
+
+function deleteRhUniformeMovimentacao(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-uniformes', { recurso: 'movimentacao', id }, actorId);
+}
+
+function getRhUniformesCategorias(actorId) {
+  return lovableGet('/api/public/internal/rh-uniformes', { recurso: 'categorias' }, actorId);
+}
+
+// Body: { categoria_id, nome, descricao?, possui_grade, unidade?, prazo_troca_meses?,
+// faixa_gerente_pct?, valor_unit?, tamanhos?: ["P","M","G"] }
+function postRhUniformeItem(body, actorId) {
+  return lovablePost('/api/public/internal/rh-uniformes', { acao: 'item' }, body, actorId);
+}
+
+// Body: { item_id, tamanho, ordem? }
+function postRhUniformeTamanho(body, actorId) {
+  return lovablePost('/api/public/internal/rh-uniformes', { acao: 'tamanho' }, body, actorId);
+}
+
+function patchRhUniformeItem(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-uniformes', { recurso: 'item', id }, body, actorId);
+}
+
+function patchRhUniformeTamanho(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-uniformes', { recurso: 'tamanho', id }, body, actorId);
+}
+
+function deleteRhUniformeItem(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-uniformes', { recurso: 'item', id }, actorId);
+}
+
+function deleteRhUniformeTamanho(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-uniformes', { recurso: 'tamanho', id }, actorId);
+}
+
+// Body: { cargo_id, itens: [{item_id, quantidade}] } — substitui o kit inteiro.
+function postRhUniformeKitCargo(body, actorId) {
+  return lovablePost('/api/public/internal/rh-uniformes', { acao: 'kit' }, body, actorId);
+}
+
+function deleteRhUniformeKitItem(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-uniformes', { recurso: 'kit', id }, actorId);
+}
+
+function deleteRhUniformeKitCargo(cargoId, actorId) {
+  return lovableDelete('/api/public/internal/rh-uniformes', { recurso: 'kit-cargo', cargo_id: cargoId }, actorId);
+}
+
+// Versão ativa do termo de responsabilidade.
+function getRhUniformeTermo(actorId) {
+  return lovableGet('/api/public/internal/rh-uniformes', { recurso: 'termo' }, actorId);
+}
+
+function getRhUniformeTermos(actorId) {
+  return lovableGet('/api/public/internal/rh-uniformes', { recurso: 'termos' }, actorId);
+}
+
+// Body: { titulo, conteudo } — cria versão nova e desativa a anterior.
+function postRhUniformeTermo(body, actorId) {
+  return lovablePost('/api/public/internal/rh-uniformes', { acao: 'termo' }, body, actorId);
+}
+
 module.exports = {
+  getRhUniformesCobrancas,
+  postRhUniformeCobranca,
+  patchRhUniformeCobranca,
+  deleteRhUniformeCobranca,
+  getRhUniformesEstoque,
+  getRhUniformesMovimentacoes,
+  postRhUniformeMovimentacao,
+  deleteRhUniformeMovimentacao,
+  getRhUniformesCategorias,
+  postRhUniformeItem,
+  postRhUniformeTamanho,
+  patchRhUniformeItem,
+  patchRhUniformeTamanho,
+  deleteRhUniformeItem,
+  deleteRhUniformeTamanho,
+  postRhUniformeKitCargo,
+  deleteRhUniformeKitItem,
+  deleteRhUniformeKitCargo,
+  getRhUniformeTermo,
+  getRhUniformeTermos,
+  postRhUniformeTermo,
   fetchTable,
   fetchAllRows,
   fetchRhStats,

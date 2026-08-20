@@ -82,6 +82,34 @@ import {
   type RhFolhaAuditoriaItem,
   type RhFolhaCreateBody,
   type RhFolhaLancamentoCreateBody,
+  fetchRhUniformesPedidos,
+  fetchRhUniformePedidoDetalhe,
+  fetchRhUniformesCobrancas,
+  createRhUniformeCobranca,
+  updateRhUniformeCobranca,
+  deleteRhUniformeCobranca,
+  fetchRhUniformesEstoque,
+  fetchRhUniformesMovimentacoes,
+  createRhUniformeMovimentacao,
+  fetchRhUniformesItens,
+  fetchRhUniformesCategorias,
+  createRhUniformeItem,
+  updateRhUniformeItem,
+  fetchRhUniformesKit,
+  saveRhUniformeKitCargo,
+  fetchRhUniformeTermo,
+  saveRhUniformeTermo,
+  type RhUniformePedido,
+  type RhUniformePedidoItem,
+  type RhUniformeCobranca,
+  type RhUniformeCobrancaStatus,
+  type RhUniformeEstoqueLinha,
+  type RhUniformeMovimentacaoTipo,
+  type RhUniformeItemCatalogo,
+  type RhUniformeItemCreateBody,
+  type RhUniformeCategoria,
+  type RhUniformeKitItem,
+  type RhUniformeTermo,
   fetchRhFeriasDetalhe,
   createRhFerias,
   updateRhFerias,
@@ -14656,33 +14684,306 @@ function RHFolhaColaboradorDetalheModal({
 }
 
 // ---------- Recursos Operacionais ----------
+// Uniformes/EPI (tabelas rh_op_*) — endpoint unificado confirmado pela
+// Lovable em 03/08/2026 (fluxo colaborador/liderança) e ampliado em
+// 20/08/2026 pra cobrir esta tela admin (cobranças, estoque, itens & grade
+// com escrita, kit com escrita, termo versionado).
 
-type ResourceStatus = 'disponivel' | 'baixo' | 'ativo';
-type ResourceTab = 'pedidos' | 'cobrancas' | 'estoque' | 'itens';
-type OperationalResourceItem = { id: string; title: string; subtitle: string; status: ResourceStatus };
-
-const rhResourceStatusMeta: Record<ResourceStatus, { label: string; color: string; tint: string }> = {
-  disponivel: { label: 'Disponível', color: '#18955A', tint: '#E3F5EA' },
-  baixo: { label: 'Baixo', color: '#B07A1E', tint: '#FCEFDA' },
-  ativo: { label: 'Ativo', color: '#3457D5', tint: '#E9EEFF' },
-};
-
-const rhResourceItems: OperationalResourceItem[] = [
-  { id: 'res-1', title: 'Camisa polo American Fuel', subtitle: 'Grade P-GG · 320 em estoque', status: 'disponivel' },
-  { id: 'res-2', title: 'Botina de segurança', subtitle: 'Nº 38-44 · 45 em estoque', status: 'baixo' },
-  { id: 'res-3', title: 'Jaqueta corta-vento', subtitle: 'Grade M-GG · 12 em estoque', status: 'baixo' },
-  { id: 'res-4', title: 'Kit frentista (3 peças)', subtitle: 'Kit por cargo · padrão', status: 'ativo' },
-];
+type ResourceTab = 'pedidos' | 'cobrancas' | 'estoque' | 'itens' | 'kit' | 'termo';
 
 const rhResourceTabs: Array<{ key: ResourceTab; label: string }> = [
   { key: 'pedidos', label: 'Pedidos' },
   { key: 'cobrancas', label: 'Cobranças' },
   { key: 'estoque', label: 'Estoque' },
   { key: 'itens', label: 'Itens & Grade' },
+  { key: 'kit', label: 'Kit por cargo' },
+  { key: 'termo', label: 'Termo' },
 ];
 
+const uniformePedidoStatusMeta: Record<string, { label: string; color: string; tint: string }> = {
+  pendente_ciencia: { label: 'Pendente de ciência', color: '#B07A1E', tint: '#FCEFDA' },
+  em_aprovacao: { label: 'Em aprovação', color: '#3457D5', tint: '#E9EEFF' },
+  aguardando_gerente: { label: 'Aguardando gerente', color: '#3457D5', tint: '#E9EEFF' },
+  aguardando_gestao: { label: 'Aguardando gestão', color: '#3457D5', tint: '#E9EEFF' },
+  aprovado: { label: 'Aprovado', color: '#18955A', tint: '#E3F5EA' },
+  pendente_entrega: { label: 'Pendente de entrega', color: '#B07A1E', tint: '#FCEFDA' },
+  entregue: { label: 'Entregue', color: '#18955A', tint: '#E3F5EA' },
+  recusado: { label: 'Recusado', color: '#E6213D', tint: '#FCE8EC' },
+  cancelado: { label: 'Cancelado', color: '#5E667D', tint: '#EEF0F6' },
+};
+
+const uniformePedidoTipoLabel: Record<string, string> = {
+  admissao: 'Admissão',
+  reposicao: 'Reposição',
+  desligamento: 'Desligamento',
+};
+
+const uniformeCobrancaStatusMeta: Record<RhUniformeCobrancaStatus, { label: string; color: string; tint: string }> = {
+  pendente: { label: 'Pendente', color: '#B07A1E', tint: '#FCEFDA' },
+  lancada: { label: 'Lançada', color: '#18955A', tint: '#E3F5EA' },
+  cancelada: { label: 'Cancelada', color: '#E6213D', tint: '#FCE8EC' },
+};
+
+const uniformeMovimentacaoTipoLabel: Record<RhUniformeMovimentacaoTipo, string> = {
+  entrada: 'Entrada',
+  saida: 'Saída',
+  ajuste: 'Ajuste',
+  devolucao: 'Devolução',
+};
+
+function uniformeStatusLabel(status: string): string {
+  return uniformePedidoStatusMeta[status]?.label ?? status;
+}
+
 export function RHRecursosOperacionaisScreen({ navigation }: ScreenProps<'RHRecursosOperacionais'>) {
+  const { identity } = useContext(AuthIdentityContext);
   const [activeTab, setActiveTab] = useState<ResourceTab>('pedidos');
+
+  // Compartilhado entre abas — mapa colaborador_id -> nome/matrícula (dados
+  // reais de rh_colaboradores) e catálogo de itens, pra resolver nomes sem
+  // depender de o endpoint de uniformes embutir isso.
+  const [colaboradoresMap, setColaboradoresMap] = useState<Record<string, { nome: string; matricula: string | null }>>({});
+  const [itensCatalogo, setItensCatalogo] = useState<RhUniformeItemCatalogo[]>([]);
+  const itensMap = useMemo(() => {
+    const map: Record<string, RhUniformeItemCatalogo> = {};
+    itensCatalogo.forEach((item) => {
+      map[item.id] = item;
+    });
+    return map;
+  }, [itensCatalogo]);
+
+  useEffect(() => {
+    fetchRhColaboradores()
+      .then((rows) => {
+        const map: Record<string, { nome: string; matricula: string | null }> = {};
+        rows.forEach((row) => {
+          map[row.id] = { nome: row.nome_completo ?? 'Sem nome', matricula: (row.matricula as string | null) ?? null };
+        });
+        setColaboradoresMap(map);
+      })
+      .catch(() => setColaboradoresMap({}));
+    fetchRhUniformesItens()
+      .then(setItensCatalogo)
+      .catch(() => setItensCatalogo([]));
+  }, []);
+
+  // ---- Pedidos ----
+  const [pedidos, setPedidos] = useState<RhUniformePedido[]>([]);
+  const [isLoadingPedidos, setIsLoadingPedidos] = useState(true);
+  const [pedidosErro, setPedidosErro] = useState<string | null>(null);
+  const [statusFilterLabel, setStatusFilterLabel] = useState('Todos os status');
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const [detalhePedido, setDetalhePedido] = useState<RhUniformePedido | null>(null);
+  const [isLoadingDetalhe, setIsLoadingDetalhe] = useState(false);
+
+  const statusFilterOptions = ['Todos os status', ...Object.values(uniformePedidoStatusMeta).map((m) => m.label)];
+  const statusLabelToValue: Record<string, string> = {};
+  Object.entries(uniformePedidoStatusMeta).forEach(([value, meta]) => {
+    statusLabelToValue[meta.label] = value;
+  });
+
+  const loadPedidos = useCallback(() => {
+    setIsLoadingPedidos(true);
+    setPedidosErro(null);
+    const statusValue = statusFilterLabel !== 'Todos os status' ? statusLabelToValue[statusFilterLabel] : undefined;
+    fetchRhUniformesPedidos({ status: statusValue })
+      .then(setPedidos)
+      .catch((err) => setPedidosErro(err instanceof Error ? err.message : 'Não foi possível carregar os pedidos.'))
+      .finally(() => setIsLoadingPedidos(false));
+  }, [statusFilterLabel]);
+
+  useEffect(() => {
+    if (activeTab === 'pedidos') loadPedidos();
+  }, [activeTab, loadPedidos]);
+
+  const handleAbrirDetalhe = (pedido: RhUniformePedido) => {
+    setIsLoadingDetalhe(true);
+    setDetalhePedido(pedido);
+    fetchRhUniformePedidoDetalhe(pedido.id)
+      .then((full) => {
+        if (full) setDetalhePedido(full);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingDetalhe(false));
+  };
+
+  // ---- Cobranças ----
+  const [cobrancas, setCobrancas] = useState<RhUniformeCobranca[]>([]);
+  const [isLoadingCobrancas, setIsLoadingCobrancas] = useState(false);
+  const [cobrancasCarregadas, setCobrancasCarregadas] = useState(false);
+  const [cobrancaStatusFilterLabel, setCobrancaStatusFilterLabel] = useState('Pendentes');
+  const [isCobrancaStatusFilterOpen, setIsCobrancaStatusFilterOpen] = useState(false);
+  const [cobrancaMenuAnchor, setCobrancaMenuAnchor] = useState<{ id: string; y: number } | null>(null);
+  const cobrancaStatusOptions = ['Pendentes', 'Lançadas', 'Canceladas', 'Todas'];
+  const cobrancaFilterToStatus: Record<string, RhUniformeCobrancaStatus | undefined> = {
+    Pendentes: 'pendente',
+    Lançadas: 'lancada',
+    Canceladas: 'cancelada',
+    Todas: undefined,
+  };
+
+  const loadCobrancas = useCallback(() => {
+    setIsLoadingCobrancas(true);
+    fetchRhUniformesCobrancas({ status: cobrancaFilterToStatus[cobrancaStatusFilterLabel] })
+      .then((rows) => {
+        setCobrancas(rows);
+        setCobrancasCarregadas(true);
+      })
+      .catch(() => setCobrancas([]))
+      .finally(() => setIsLoadingCobrancas(false));
+  }, [cobrancaStatusFilterLabel]);
+
+  useEffect(() => {
+    if (activeTab === 'cobrancas') loadCobrancas();
+  }, [activeTab, loadCobrancas]);
+
+  const handleMarcarLancada = (cobranca: RhUniformeCobranca) => {
+    updateRhUniformeCobranca(cobranca.id, { status: 'lancada' }, identity?.profileId)
+      .then(loadCobrancas)
+      .catch((err) => showRhSaveError(err, 'Não foi possível marcar como lançada.'));
+  };
+
+  const handleCancelarCobranca = (cobranca: RhUniformeCobranca) => {
+    Alert.alert('Cancelar cobrança', 'Deseja cancelar esta cobrança?', [
+      { text: 'Voltar', style: 'cancel' },
+      {
+        text: 'Cancelar cobrança',
+        style: 'destructive',
+        onPress: () => {
+          updateRhUniformeCobranca(cobranca.id, { status: 'cancelada', motivo_cancelamento: 'Cancelada pelo RH' }, identity?.profileId)
+            .then(loadCobrancas)
+            .catch((err) => showRhSaveError(err, 'Não foi possível cancelar a cobrança.'));
+        },
+      },
+    ]);
+  };
+
+  const handleExcluirCobranca = (cobranca: RhUniformeCobranca) => {
+    Alert.alert('Excluir cobrança', 'Remover este registro permanentemente?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteRhUniformeCobranca(cobranca.id, identity?.profileId)
+            .then(loadCobrancas)
+            .catch((err) => showRhSaveError(err, 'Não foi possível excluir a cobrança.'));
+        },
+      },
+    ]);
+  };
+
+  // ---- Estoque ----
+  const [estoque, setEstoque] = useState<RhUniformeEstoqueLinha[]>([]);
+  const [isLoadingEstoque, setIsLoadingEstoque] = useState(false);
+  const [isMovimentacaoFormOpen, setIsMovimentacaoFormOpen] = useState(false);
+
+  const loadEstoque = useCallback(() => {
+    setIsLoadingEstoque(true);
+    fetchRhUniformesEstoque()
+      .then(setEstoque)
+      .catch(() => setEstoque([]))
+      .finally(() => setIsLoadingEstoque(false));
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'estoque') loadEstoque();
+  }, [activeTab, loadEstoque]);
+
+  // ---- Itens & Grade ----
+  const [categorias, setCategorias] = useState<RhUniformeCategoria[]>([]);
+  const [isItemFormOpen, setIsItemFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<RhUniformeItemCatalogo | null>(null);
+
+  useEffect(() => {
+    if (activeTab === 'itens' && categorias.length === 0) {
+      fetchRhUniformesCategorias().then(setCategorias).catch(() => setCategorias([]));
+    }
+  }, [activeTab, categorias.length]);
+
+  const reloadItensCatalogo = useCallback(() => {
+    fetchRhUniformesItens().then(setItensCatalogo).catch(() => {});
+  }, []);
+
+  // ---- Kit por cargo ----
+  const [cargos, setCargos] = useState<{ id: string; nome: string }[]>([]);
+  const [selectedCargoId, setSelectedCargoId] = useState<string | null>(null);
+  const [isCargoPickerOpen, setIsCargoPickerOpen] = useState(false);
+  const [kitItens, setKitItens] = useState<RhUniformeKitItem[]>([]);
+  const [isLoadingKit, setIsLoadingKit] = useState(false);
+  const [isKitAddOpen, setIsKitAddOpen] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'kit' && cargos.length === 0) {
+      fetchRhCargos().then(setCargos).catch(() => setCargos([]));
+    }
+  }, [activeTab, cargos.length]);
+
+  const loadKit = useCallback(() => {
+    if (!selectedCargoId) return;
+    setIsLoadingKit(true);
+    fetchRhUniformesKit(selectedCargoId)
+      .then(setKitItens)
+      .catch(() => setKitItens([]))
+      .finally(() => setIsLoadingKit(false));
+  }, [selectedCargoId]);
+
+  useEffect(() => {
+    if (activeTab === 'kit' && selectedCargoId) loadKit();
+  }, [activeTab, selectedCargoId, loadKit]);
+
+  const handleRemoverItemKit = (itemId: string) => {
+    if (!selectedCargoId) return;
+    const novaLista = kitItens.filter((k) => k.item_id !== itemId).map((k) => ({ item_id: k.item_id, quantidade: (k.quantidade as number) ?? 1 }));
+    saveRhUniformeKitCargo({ cargo_id: selectedCargoId, itens: novaLista }, identity?.profileId)
+      .then(loadKit)
+      .catch((err) => showRhSaveError(err, 'Não foi possível atualizar o kit.'));
+  };
+
+  // ---- Termo ----
+  const [termo, setTermo] = useState<RhUniformeTermo | null>(null);
+  const [termoTitulo, setTermoTitulo] = useState('');
+  const [termoConteudo, setTermoConteudo] = useState('');
+  const [isLoadingTermo, setIsLoadingTermo] = useState(false);
+  const [isSavingTermo, setIsSavingTermo] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'termo') {
+      setIsLoadingTermo(true);
+      fetchRhUniformeTermo()
+        .then((result) => {
+          setTermo(result);
+          setTermoTitulo(result?.titulo ?? 'Termo de Responsabilidade — Uniformes e EPI');
+          setTermoConteudo(result?.conteudo ?? '');
+        })
+        .catch(() => {})
+        .finally(() => setIsLoadingTermo(false));
+    }
+  }, [activeTab]);
+
+  const handleSalvarTermo = () => {
+    if (!termoTitulo.trim() || !termoConteudo.trim()) {
+      Alert.alert('Campos obrigatórios', 'Preencha título e conteúdo do termo.');
+      return;
+    }
+    Alert.alert(
+      'Salvar como nova versão',
+      'Isso cria uma nova versão do termo e desativa a anterior. Confirma?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Salvar',
+          onPress: () => {
+            setIsSavingTermo(true);
+            saveRhUniformeTermo({ titulo: termoTitulo.trim(), conteudo: termoConteudo }, identity?.profileId)
+              .then((result) => setTermo(result))
+              .catch((err) => showRhSaveError(err, 'Não foi possível salvar o termo.'))
+              .finally(() => setIsSavingTermo(false));
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -14717,29 +15018,855 @@ export function RHRecursosOperacionaisScreen({ navigation }: ScreenProps<'RHRecu
 
         <View style={styles.spacingTop}>
           {activeTab === 'pedidos' ? (
-            rhResourceItems.map((item) => {
-              const meta = rhResourceStatusMeta[item.status];
-              return (
-                <View key={item.id} style={rhStyles.resourceCard}>
-                  <View style={rhStyles.resourceIconShell}>
-                    <Feather name="package" size={18} color="#5E667D" />
+            <>
+              <View style={rhStyles.sectionHeaderRow}>
+                <RHFilterPill label={statusFilterLabel} onPress={() => setIsStatusFilterOpen(true)} />
+                <Text style={rhStyles.sectionHeaderMeta}>{pedidos.length} pedido(s)</Text>
+              </View>
+
+              {isLoadingPedidos ? (
+                <RHEmptyTabState message="Carregando pedidos..." />
+              ) : pedidosErro ? (
+                <RHEmptyTabState message={pedidosErro} />
+              ) : pedidos.length === 0 ? (
+                <RHEmptyTabState message="Nenhum pedido encontrado." />
+              ) : (
+                pedidos.map((pedido) => {
+                  const meta = uniformePedidoStatusMeta[pedido.status] ?? { label: pedido.status, color: '#5E667D', tint: '#EEF0F6' };
+                  const colaborador = colaboradoresMap[pedido.colaborador_id];
+                  const criadoLabel = formatDateIsoBR((pedido.created_at as string | undefined) ?? null);
+                  return (
+                    <View key={pedido.id} style={rhStyles.folhaColaboradorRow}>
+                      <View style={rhStyles.folhaColaboradorTopRow}>
+                        <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                          {colaborador?.nome ?? pedido.colaborador_id}
+                        </Text>
+                        <Pressable style={rhStyles.outlineButtonSmall} onPress={() => handleAbrirDetalhe(pedido)}>
+                          <Feather name="eye" size={14} color="#29448D" />
+                        </Pressable>
+                      </View>
+                      <View style={[rhStyles.employeeStatusPill, { backgroundColor: meta.tint, alignSelf: 'flex-start', marginBottom: 6 }]}>
+                        <Text style={[rhStyles.employeeStatusText, { color: meta.color }]}>{meta.label}</Text>
+                      </View>
+                      <Text style={rhStyles.folhaColaboradorMeta}>
+                        {uniformePedidoTipoLabel[pedido.tipo ?? ''] ?? pedido.tipo ?? '—'}
+                        {pedido.itens ? ` · ${pedido.itens.length} item(ns)` : ''}
+                        {criadoLabel ? ` · Criado em ${criadoLabel}` : ''}
+                      </Text>
+                      <Text style={rhStyles.folhaColaboradorMeta}>
+                        Ciência: {pedido.ciencia_em ? formatDateIsoBR(pedido.ciencia_em) : '—'}
+                      </Text>
+                    </View>
+                  );
+                })
+              )}
+            </>
+          ) : null}
+
+          {activeTab === 'cobrancas' ? (
+            <>
+              <View style={rhStyles.sectionHeaderRow}>
+                <Text style={rhStyles.employeeName}>Cobranças de uniformes/EPI</Text>
+                <RHFilterPill label={cobrancaStatusFilterLabel} onPress={() => setIsCobrancaStatusFilterOpen(true)} compact />
+              </View>
+
+              {isLoadingCobrancas ? (
+                <RHEmptyTabState message="Carregando cobranças..." />
+              ) : cobrancas.length === 0 ? (
+                <RHEmptyTabState message="Nenhuma cobrança." />
+              ) : (
+                cobrancas.map((cobranca) => {
+                  const meta = uniformeCobrancaStatusMeta[cobranca.status];
+                  const colaborador = colaboradoresMap[cobranca.colaborador_id];
+                  return (
+                    <View key={cobranca.id} style={rhStyles.folhaColaboradorRow}>
+                      <View style={rhStyles.folhaColaboradorTopRow}>
+                        <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                          {colaborador?.nome ?? cobranca.colaborador_id}
+                        </Text>
+                        <Pressable
+                          onPress={(e) => setCobrancaMenuAnchor({ id: cobranca.id, y: e.nativeEvent.pageY })}
+                          hitSlop={8}
+                        >
+                          <Feather name="more-vertical" size={18} color="#677089" />
+                        </Pressable>
+                      </View>
+                      <View style={[rhStyles.employeeStatusPill, { backgroundColor: meta.tint, alignSelf: 'flex-start', marginBottom: 6 }]}>
+                        <Text style={[rhStyles.employeeStatusText, { color: meta.color }]}>{meta.label}</Text>
+                      </View>
+                      <Text style={rhStyles.folhaValueAmount}>{formatBRL(cobranca.valor)}</Text>
+                      {cobranca.descricao ? <Text style={rhStyles.folhaColaboradorMeta}>{cobranca.descricao}</Text> : null}
+                    </View>
+                  );
+                })
+              )}
+            </>
+          ) : null}
+
+          {activeTab === 'estoque' ? (
+            <>
+              <Pressable
+                style={[styles.primaryButton, { backgroundColor: '#E6213D' }]}
+                onPress={() => setIsMovimentacaoFormOpen(true)}
+              >
+                <Feather name="plus" size={16} color="#FFFFFF" />
+                <Text style={styles.primaryButtonText}>Movimentação de estoque</Text>
+              </Pressable>
+
+              <View style={{ marginTop: 14 }}>
+                {isLoadingEstoque ? (
+                  <RHEmptyTabState message="Carregando estoque..." />
+                ) : estoque.length === 0 ? (
+                  <RHEmptyTabState message="Nenhum item em estoque." />
+                ) : (
+                  estoque.map((linha, index) => {
+                    const item = itensMap[linha.item_id];
+                    return (
+                      <View key={`${linha.item_id}-${linha.tamanho ?? index}`} style={rhStyles.resourceCard}>
+                        <View style={rhStyles.resourceIconShell}>
+                          <Feather name="package" size={18} color="#5E667D" />
+                        </View>
+                        <View style={rhStyles.employeeInfo}>
+                          <Text style={rhStyles.employeeName}>{item?.nome ?? linha.item_id}</Text>
+                          <Text style={rhStyles.employeeRoleUnit}>{linha.tamanho ?? 'Sem tamanhos cadastrados'}</Text>
+                        </View>
+                        <Text style={rhStyles.folhaValueAmount}>{linha.saldo}</Text>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            </>
+          ) : null}
+
+          {activeTab === 'itens' ? (
+            <>
+              <Pressable
+                style={[styles.primaryButton, { backgroundColor: '#E6213D' }]}
+                onPress={() => {
+                  setEditingItem(null);
+                  setIsItemFormOpen(true);
+                }}
+              >
+                <Feather name="plus" size={16} color="#FFFFFF" />
+                <Text style={styles.primaryButtonText}>Novo Item</Text>
+              </Pressable>
+
+              <View style={{ marginTop: 14 }}>
+                {itensCatalogo.length === 0 ? (
+                  <RHEmptyTabState message="Nenhum item cadastrado." />
+                ) : (
+                  itensCatalogo.map((item) => (
+                    <View key={item.id} style={rhStyles.folhaColaboradorRow}>
+                      <View style={rhStyles.folhaColaboradorTopRow}>
+                        <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                          {item.nome}
+                        </Text>
+                        <Pressable
+                          style={rhStyles.outlineButtonSmall}
+                          onPress={() => {
+                            setEditingItem(item);
+                            setIsItemFormOpen(true);
+                          }}
+                        >
+                          <Feather name="edit-2" size={14} color="#29448D" />
+                        </Pressable>
+                      </View>
+                      <View style={rhStyles.folhaValuesRow}>
+                        <View style={rhStyles.folhaValueItem}>
+                          <Text style={rhStyles.folhaValueLabel}>Grade</Text>
+                          <Text style={rhStyles.folhaValueAmount}>{item.possui_grade ? 'Sim' : 'Não'}</Text>
+                        </View>
+                        <View style={rhStyles.folhaValueItem}>
+                          <Text style={rhStyles.folhaValueLabel}>Prazo (m)</Text>
+                          <Text style={rhStyles.folhaValueAmount}>{(item.prazo_troca_meses as number | null) ?? '—'}</Text>
+                        </View>
+                        <View style={rhStyles.folhaValueItem}>
+                          <Text style={rhStyles.folhaValueLabel}>% Gerente</Text>
+                          <Text style={rhStyles.folhaValueAmount}>
+                            {item.faixa_gerente_pct != null ? `${item.faixa_gerente_pct}%` : '—'}
+                          </Text>
+                        </View>
+                        <View style={rhStyles.folhaValueItem}>
+                          <Text style={rhStyles.folhaValueLabel}>Valor</Text>
+                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(item.valor_unit as number | null)}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            </>
+          ) : null}
+
+          {activeTab === 'kit' ? (
+            <>
+              <RHSelectField
+                label="Cargo"
+                value={cargos.find((c) => c.id === selectedCargoId)?.nome ?? ''}
+                placeholder="Selecione o cargo..."
+                onPress={() => setIsCargoPickerOpen(true)}
+              />
+
+              {!selectedCargoId ? (
+                <RHEmptyTabState message="Selecione um cargo para configurar o kit mínimo entregue na admissão." />
+              ) : isLoadingKit ? (
+                <RHEmptyTabState message="Carregando kit..." />
+              ) : (
+                <>
+                  <Pressable
+                    style={[rhStyles.outlineButtonSmall, { alignSelf: 'flex-start', marginVertical: 12 }]}
+                    onPress={() => setIsKitAddOpen(true)}
+                  >
+                    <Text style={rhStyles.outlineButtonSmallText}>+ Adicionar item</Text>
+                  </Pressable>
+                  {kitItens.length === 0 ? (
+                    <RHEmptyTabState message="Nenhum item configurado neste kit." />
+                  ) : (
+                    kitItens.map((kitItem) => (
+                      <View key={kitItem.item_id} style={rhStyles.rubricaRow}>
+                        <View style={rhStyles.rubricaRowLeft}>
+                          <Text style={rhStyles.rubricaCodigoNome}>{kitItem.item?.nome ?? itensMap[kitItem.item_id]?.nome ?? kitItem.item_id}</Text>
+                          <Text style={rhStyles.rubricaReferencia}>Qtd: {(kitItem.quantidade as number) ?? 1}</Text>
+                        </View>
+                        <Pressable onPress={() => handleRemoverItemKit(kitItem.item_id)} hitSlop={8}>
+                          <Feather name="x" size={16} color="#9AA1B5" />
+                        </Pressable>
+                      </View>
+                    ))
+                  )}
+                </>
+              )}
+            </>
+          ) : null}
+
+          {activeTab === 'termo' ? (
+            <>
+              <View style={rhStyles.sectionHeaderRow}>
+                <Text style={rhStyles.employeeName}>Termo de responsabilidade</Text>
+                {termo ? (
+                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: '#E3F5EA' }]}>
+                    <Text style={[rhStyles.employeeStatusText, { color: '#18955A' }]}>Versão atual: {termo.versao}</Text>
                   </View>
-                  <View style={rhStyles.employeeInfo}>
-                    <Text style={rhStyles.employeeName}>{item.title}</Text>
-                    <Text style={rhStyles.employeeRoleUnit}>{item.subtitle}</Text>
-                  </View>
-                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: meta.tint }]}>
-                    <Text style={[rhStyles.employeeStatusText, { color: meta.color }]}>{meta.label}</Text>
-                  </View>
-                </View>
-              );
-            })
-          ) : (
-            <RHEmptyTabState message="Nenhum registro nesta aba ainda." />
-          )}
+                ) : null}
+              </View>
+              <Text style={rhStyles.goalSubtitle}>
+                Salvar gera uma nova versão e desativa a anterior. O texto aceita markdown simples (#, **negrito**, listas).
+              </Text>
+
+              {isLoadingTermo ? (
+                <RHEmptyTabState message="Carregando termo..." />
+              ) : (
+                <>
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Título</Text>
+                  <TextInput
+                    style={styles.processTextInput}
+                    value={termoTitulo}
+                    onChangeText={setTermoTitulo}
+                    placeholder="Título do termo"
+                    placeholderTextColor="#A7AEC2"
+                  />
+                  <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Conteúdo</Text>
+                  <TextInput
+                    style={[styles.processTextInput, styles.processTextArea, { minHeight: 260 }]}
+                    value={termoConteudo}
+                    onChangeText={setTermoConteudo}
+                    placeholder="Conteúdo do termo..."
+                    placeholderTextColor="#A7AEC2"
+                    multiline
+                    textAlignVertical="top"
+                  />
+                  <Pressable
+                    style={[
+                      { backgroundColor: '#E6213D', borderRadius: 999, minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 16 },
+                      isSavingTermo ? styles.primaryButtonDisabled : null,
+                    ]}
+                    onPress={handleSalvarTermo}
+                    disabled={isSavingTermo}
+                  >
+                    <Text style={styles.primaryButtonText}>{isSavingTermo ? 'Salvando...' : 'Salvar como nova versão'}</Text>
+                  </Pressable>
+                </>
+              )}
+            </>
+          ) : null}
         </View>
       </ScrollView>
+
+      <RHSimplePickerModal
+        visible={isStatusFilterOpen}
+        title="Status"
+        options={statusFilterOptions}
+        selectedValue={statusFilterLabel}
+        onSelect={setStatusFilterLabel}
+        onClose={() => setIsStatusFilterOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isCobrancaStatusFilterOpen}
+        title="Status"
+        options={cobrancaStatusOptions}
+        selectedValue={cobrancaStatusFilterLabel}
+        onSelect={setCobrancaStatusFilterLabel}
+        onClose={() => setIsCobrancaStatusFilterOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isCargoPickerOpen}
+        title="Cargo"
+        options={cargos.map((c) => c.nome)}
+        selectedValue={cargos.find((c) => c.id === selectedCargoId)?.nome ?? ''}
+        onSelect={(nome) => setSelectedCargoId(cargos.find((c) => c.nome === nome)?.id ?? null)}
+        onClose={() => setIsCargoPickerOpen(false)}
+      />
+
+      <Modal
+        visible={cobrancaMenuAnchor !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCobrancaMenuAnchor(null)}
+      >
+        <Pressable style={{ flex: 1 }} onPress={() => setCobrancaMenuAnchor(null)}>
+          {cobrancaMenuAnchor
+            ? (() => {
+                const cobranca = cobrancas.find((c) => c.id === cobrancaMenuAnchor.id);
+                if (!cobranca) return null;
+                return (
+                  <Pressable style={[rhStyles.rowActionsMenu, { top: cobrancaMenuAnchor.y + 8, right: 16 }]} onPress={() => {}}>
+                    {cobranca.status === 'pendente' ? (
+                      <Pressable
+                        style={rhStyles.rowActionsMenuItem}
+                        onPress={() => {
+                          setCobrancaMenuAnchor(null);
+                          handleMarcarLancada(cobranca);
+                        }}
+                      >
+                        <Feather name="check" size={15} color="#18955A" />
+                        <Text style={[rhStyles.rowActionsMenuItemText, { color: '#18955A' }]}>Marcar como lançada</Text>
+                      </Pressable>
+                    ) : null}
+                    {cobranca.status !== 'cancelada' ? (
+                      <Pressable
+                        style={rhStyles.rowActionsMenuItem}
+                        onPress={() => {
+                          setCobrancaMenuAnchor(null);
+                          handleCancelarCobranca(cobranca);
+                        }}
+                      >
+                        <Feather name="x-circle" size={15} color="#B07A1E" />
+                        <Text style={[rhStyles.rowActionsMenuItemText, { color: '#B07A1E' }]}>Cancelar</Text>
+                      </Pressable>
+                    ) : null}
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setCobrancaMenuAnchor(null);
+                        handleExcluirCobranca(cobranca);
+                      }}
+                    >
+                      <Feather name="trash-2" size={15} color="#E6213D" />
+                      <Text style={[rhStyles.rowActionsMenuItemText, { color: '#E6213D' }]}>Excluir</Text>
+                    </Pressable>
+                  </Pressable>
+                );
+              })()
+            : null}
+        </Pressable>
+      </Modal>
+
+      <RHPedidoUniformeDetalheModal
+        visible={detalhePedido !== null}
+        pedido={detalhePedido}
+        isLoading={isLoadingDetalhe}
+        colaboradorNome={detalhePedido ? colaboradoresMap[detalhePedido.colaborador_id]?.nome ?? detalhePedido.colaborador_id : ''}
+        itensMap={itensMap}
+        onClose={() => setDetalhePedido(null)}
+      />
+
+      <RHMovimentacaoEstoqueFormModal
+        visible={isMovimentacaoFormOpen}
+        itensCatalogo={itensCatalogo}
+        onClose={() => setIsMovimentacaoFormOpen(false)}
+        onSaved={loadEstoque}
+      />
+
+      <RHUniformeItemFormModal
+        visible={isItemFormOpen}
+        editingItem={editingItem}
+        categorias={categorias}
+        onClose={() => setIsItemFormOpen(false)}
+        onSaved={reloadItensCatalogo}
+      />
+
+      <RHKitAddItemModal
+        visible={isKitAddOpen}
+        cargoId={selectedCargoId}
+        itensCatalogo={itensCatalogo}
+        kitAtual={kitItens}
+        onClose={() => setIsKitAddOpen(false)}
+        onSaved={loadKit}
+      />
     </SafeAreaView>
+  );
+}
+
+function RHPedidoUniformeDetalheModal({
+  visible,
+  pedido,
+  isLoading,
+  colaboradorNome,
+  itensMap,
+  onClose,
+}: {
+  visible: boolean;
+  pedido: RhUniformePedido | null;
+  isLoading: boolean;
+  colaboradorNome: string;
+  itensMap: Record<string, RhUniformeItemCatalogo>;
+  onClose: () => void;
+}) {
+  if (!visible || !pedido) return null;
+  const meta = uniformePedidoStatusMeta[pedido.status] ?? { label: pedido.status, color: '#5E667D', tint: '#EEF0F6' };
+  const criadoLabel = formatDateIsoBR((pedido.created_at as string | undefined) ?? null);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={onClose}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Detalhes do pedido</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={rhStyles.folhaColaboradorMeta}>
+              Colaborador: {colaboradorNome} · Tipo: {uniformePedidoTipoLabel[pedido.tipo ?? ''] ?? pedido.tipo ?? '—'}
+            </Text>
+            <View style={[rhStyles.employeeStatusPill, { backgroundColor: meta.tint, alignSelf: 'flex-start', marginVertical: 8 }]}>
+              <Text style={[rhStyles.employeeStatusText, { color: meta.color }]}>{meta.label}</Text>
+            </View>
+            {criadoLabel ? <Text style={rhStyles.folhaColaboradorMeta}>Criado em: {criadoLabel}</Text> : null}
+
+            {isLoading ? (
+              <Text style={rhStyles.goalSubtitle}>Carregando itens...</Text>
+            ) : (pedido.itens ?? []).length > 0 ? (
+              (pedido.itens ?? []).map((item, index) => (
+                <View key={`${item.item_id}-${index}`} style={rhStyles.rubricaRow}>
+                  <View style={rhStyles.rubricaRowLeft}>
+                    <Text style={rhStyles.rubricaCodigoNome}>{itensMap[item.item_id]?.nome ?? item.item_id}</Text>
+                    <Text style={rhStyles.rubricaReferencia}>Tamanho: {item.tamanho ?? '—'}</Text>
+                  </View>
+                  <Text style={rhStyles.rubricaValor}>{item.quantidade}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={rhStyles.goalSubtitle}>Nenhum item neste pedido.</Text>
+            )}
+
+            {pedido.observacoes ? (
+              <>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Observações</Text>
+                <Text style={rhStyles.goalSubtitle}>{pedido.observacoes}</Text>
+              </>
+            ) : null}
+            {pedido.justificativa ? (
+              <>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Justificativa do colaborador</Text>
+                <Text style={rhStyles.goalSubtitle}>{pedido.justificativa}</Text>
+              </>
+            ) : null}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function RHMovimentacaoEstoqueFormModal({
+  visible,
+  itensCatalogo,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  itensCatalogo: RhUniformeItemCatalogo[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [itemId, setItemId] = useState<string | null>(null);
+  const [itemLabel, setItemLabel] = useState('');
+  const [tamanho, setTamanho] = useState('');
+  const [tipo, setTipo] = useState<RhUniformeMovimentacaoTipo>('entrada');
+  const [isTipoPickerOpen, setIsTipoPickerOpen] = useState(false);
+  const [isItemPickerOpen, setIsItemPickerOpen] = useState(false);
+  const [quantidade, setQuantidade] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setItemId(null);
+      setItemLabel('');
+      setTamanho('');
+      setTipo('entrada');
+      setQuantidade('');
+      setMotivo('');
+    }
+  }, [visible]);
+
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
+
+  const handleSubmit = () => {
+    if (!itemId) {
+      Alert.alert('Selecione o item', 'Escolha qual item movimentar.');
+      return;
+    }
+    const qtdNum = Number(quantidade);
+    if (!Number.isFinite(qtdNum) || qtdNum <= 0) {
+      Alert.alert('Quantidade inválida', 'Informe uma quantidade maior que zero.');
+      return;
+    }
+    setIsSaving(true);
+    createRhUniformeMovimentacao(
+      { item_id: itemId, tamanho: tamanho.trim() || null, tipo, quantidade: qtdNum, motivo: motivo.trim() || undefined },
+      identity?.profileId
+    )
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível registrar a movimentação.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={handleClose}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Movimentação de estoque</Text>
+            <Pressable onPress={handleClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <RHSelectField label="Item" required value={itemLabel} placeholder="Selecione o item" onPress={() => setIsItemPickerOpen(true)} />
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Tamanho (se houver grade)</Text>
+            <TextInput style={styles.processTextInput} value={tamanho} onChangeText={setTamanho} placeholder="Ex.: M" placeholderTextColor="#A7AEC2" />
+            <RHSelectField label="Tipo" required value={uniformeMovimentacaoTipoLabel[tipo]} onPress={() => setIsTipoPickerOpen(true)} />
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Quantidade</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={quantidade}
+              onChangeText={(text) => setQuantidade(text.replace(/\D/g, ''))}
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor="#A7AEC2"
+            />
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Motivo</Text>
+            <TextInput style={styles.processTextInput} value={motivo} onChangeText={setMotivo} placeholder="Opcional..." placeholderTextColor="#A7AEC2" />
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Salvando...' : 'Registrar'}</Text>
+            </Pressable>
+          </ScrollView>
+
+          <RHSimplePickerModal
+            inline
+            visible={isItemPickerOpen}
+            title="Item"
+            options={itensCatalogo.map((i) => i.nome)}
+            selectedValue={itemLabel}
+            onSelect={(nome) => {
+              const found = itensCatalogo.find((i) => i.nome === nome);
+              setItemId(found?.id ?? null);
+              setItemLabel(nome);
+            }}
+            onClose={() => setIsItemPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isTipoPickerOpen}
+            title="Tipo"
+            options={Object.values(uniformeMovimentacaoTipoLabel)}
+            selectedValue={uniformeMovimentacaoTipoLabel[tipo]}
+            onSelect={(label) => {
+              const found = (Object.entries(uniformeMovimentacaoTipoLabel) as [RhUniformeMovimentacaoTipo, string][]).find(
+                ([, l]) => l === label
+              );
+              if (found) setTipo(found[0]);
+            }}
+            onClose={() => setIsTipoPickerOpen(false)}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function RHUniformeItemFormModal({
+  visible,
+  editingItem,
+  categorias,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  editingItem: RhUniformeItemCatalogo | null;
+  categorias: RhUniformeCategoria[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [nome, setNome] = useState('');
+  const [categoriaId, setCategoriaId] = useState<string | null>(null);
+  const [categoriaLabel, setCategoriaLabel] = useState('');
+  const [isCategoriaPickerOpen, setIsCategoriaPickerOpen] = useState(false);
+  const [possuiGrade, setPossuiGrade] = useState(false);
+  const [prazoMeses, setPrazoMeses] = useState('');
+  const [faixaGerentePct, setFaixaGerentePct] = useState('');
+  const [valorUnit, setValorUnit] = useState('');
+  const [tamanhosTexto, setTamanhosTexto] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setNome(editingItem?.nome ?? '');
+      setCategoriaId((editingItem?.categoria_id as string | undefined) ?? null);
+      setCategoriaLabel('');
+      setPossuiGrade(Boolean(editingItem?.possui_grade));
+      setPrazoMeses(editingItem?.prazo_troca_meses != null ? String(editingItem.prazo_troca_meses) : '');
+      setFaixaGerentePct(editingItem?.faixa_gerente_pct != null ? String(editingItem.faixa_gerente_pct) : '');
+      setValorUnit(editingItem?.valor_unit != null ? formatCurrencyInput(String(Math.round((editingItem.valor_unit as number) * 100))) : '');
+      setTamanhosTexto('');
+    }
+  }, [visible, editingItem]);
+
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
+
+  const handleSubmit = () => {
+    if (!nome.trim()) {
+      Alert.alert('Nome obrigatório', 'Informe o nome do item.');
+      return;
+    }
+    setIsSaving(true);
+    const body: RhUniformeItemCreateBody = {
+      categoria_id: categoriaId ?? '',
+      nome: nome.trim(),
+      possui_grade: possuiGrade,
+      prazo_troca_meses: prazoMeses.trim() ? Number(prazoMeses) : undefined,
+      faixa_gerente_pct: faixaGerentePct.trim() ? Number(faixaGerentePct) : undefined,
+      valor_unit: valorUnit.trim() ? parseCurrencyBRToNumber(valorUnit) : undefined,
+      tamanhos: possuiGrade && tamanhosTexto.trim() ? tamanhosTexto.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
+    };
+    const request = editingItem
+      ? updateRhUniformeItem(editingItem.id, body, identity?.profileId)
+      : createRhUniformeItem(body, identity?.profileId);
+    request
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar o item.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={handleClose}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>{editingItem ? 'Editar item' : 'Novo item'}</Text>
+            <Pressable onPress={handleClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.requestFieldLabel}>Nome *</Text>
+            <TextInput style={styles.processTextInput} value={nome} onChangeText={setNome} placeholder="Ex.: Camisa" placeholderTextColor="#A7AEC2" />
+            {!editingItem ? (
+              <RHSelectField label="Categoria" value={categoriaLabel} placeholder="Selecione" onPress={() => setIsCategoriaPickerOpen(true)} />
+            ) : null}
+            <View style={[rhStyles.sectionHeaderRow, styles.spacingTop]}>
+              <Text style={styles.requestFieldLabel}>Possui grade (tamanhos)?</Text>
+              <ToggleSwitch value={possuiGrade} onValueChange={() => setPossuiGrade((v) => !v)} />
+            </View>
+            {possuiGrade && !editingItem ? (
+              <>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Tamanhos (separados por vírgula)</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={tamanhosTexto}
+                  onChangeText={setTamanhosTexto}
+                  placeholder="P, M, G, GG"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </>
+            ) : null}
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Prazo de troca (meses)</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={prazoMeses}
+              onChangeText={(text) => setPrazoMeses(text.replace(/\D/g, ''))}
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor="#A7AEC2"
+            />
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>% que o gerente pode aprovar</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={faixaGerentePct}
+              onChangeText={(text) => setFaixaGerentePct(text.replace(/\D/g, ''))}
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor="#A7AEC2"
+            />
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Valor unitário (R$)</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={valorUnit}
+              onChangeText={(text) => setValorUnit(formatCurrencyInput(text))}
+              keyboardType="numeric"
+              placeholder="0,00"
+              placeholderTextColor="#A7AEC2"
+            />
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Salvando...' : editingItem ? 'Salvar alterações' : 'Criar item'}</Text>
+            </Pressable>
+          </ScrollView>
+
+          <RHSimplePickerModal
+            inline
+            visible={isCategoriaPickerOpen}
+            title="Categoria"
+            options={categorias.map((c) => c.nome ?? c.slug)}
+            selectedValue={categoriaLabel}
+            onSelect={(label) => {
+              const found = categorias.find((c) => (c.nome ?? c.slug) === label);
+              setCategoriaId(found?.id ?? null);
+              setCategoriaLabel(label);
+            }}
+            onClose={() => setIsCategoriaPickerOpen(false)}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function RHKitAddItemModal({
+  visible,
+  cargoId,
+  itensCatalogo,
+  kitAtual,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  cargoId: string | null;
+  itensCatalogo: RhUniformeItemCatalogo[];
+  kitAtual: RhUniformeKitItem[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [itemId, setItemId] = useState<string | null>(null);
+  const [itemLabel, setItemLabel] = useState('');
+  const [isItemPickerOpen, setIsItemPickerOpen] = useState(false);
+  const [quantidade, setQuantidade] = useState('1');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setItemId(null);
+      setItemLabel('');
+      setQuantidade('1');
+    }
+  }, [visible]);
+
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
+
+  const handleSubmit = () => {
+    if (!cargoId || !itemId) {
+      Alert.alert('Selecione o item', 'Escolha qual item adicionar ao kit.');
+      return;
+    }
+    const qtdNum = Number(quantidade) || 1;
+    const listaAtual = kitAtual
+      .filter((k) => k.item_id !== itemId)
+      .map((k) => ({ item_id: k.item_id, quantidade: (k.quantidade as number) ?? 1 }));
+    listaAtual.push({ item_id: itemId, quantidade: qtdNum });
+    setIsSaving(true);
+    saveRhUniformeKitCargo({ cargo_id: cargoId, itens: listaAtual }, identity?.profileId)
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível atualizar o kit.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+      <Pressable style={styles.requestModalBackdrop} onPress={handleClose}>
+        <Pressable style={styles.requestModalCard} onPress={() => {}}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Adicionar item ao kit</Text>
+            <Pressable onPress={handleClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+          <RHSelectField label="Item" required value={itemLabel} placeholder="Selecione o item" onPress={() => setIsItemPickerOpen(true)} />
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Quantidade</Text>
+          <TextInput
+            style={styles.processTextInput}
+            value={quantidade}
+            onChangeText={(text) => setQuantidade(text.replace(/\D/g, ''))}
+            keyboardType="numeric"
+            placeholder="1"
+            placeholderTextColor="#A7AEC2"
+          />
+          <Pressable
+            style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? styles.primaryButtonDisabled : null]}
+            onPress={handleSubmit}
+            disabled={isSaving}
+          >
+            <Text style={styles.primaryButtonText}>{isSaving ? 'Salvando...' : 'Adicionar'}</Text>
+          </Pressable>
+
+          <RHSimplePickerModal
+            inline
+            visible={isItemPickerOpen}
+            title="Item"
+            options={itensCatalogo.map((i) => i.nome)}
+            selectedValue={itemLabel}
+            onSelect={(nome) => {
+              const found = itensCatalogo.find((i) => i.nome === nome);
+              setItemId(found?.id ?? null);
+              setItemLabel(nome);
+            }}
+            onClose={() => setIsItemPickerOpen(false)}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
