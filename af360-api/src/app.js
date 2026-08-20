@@ -37,6 +37,7 @@ const rhJornadasRoutes = require('./routes/rhJornadas');
 const rhExperienciaRoutes = require('./routes/rhExperiencia');
 const rhFolhaRoutes = require('./routes/rhFolha');
 const rhWorkflowRoutes = require('./routes/rhWorkflow');
+const rhRelatoriosRoutes = require('./routes/rhRelatorios');
 
 const app = express();
 
@@ -86,6 +87,7 @@ app.use('/api/rh/jornadas', rhJornadasRoutes);
 app.use('/api/rh/experiencia', rhExperienciaRoutes);
 app.use('/api/rh/folha-pagamento', rhFolhaRoutes);
 app.use('/api/rh/workflow', rhWorkflowRoutes);
+app.use('/api/rh/relatorios', rhRelatoriosRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'af360-api', message: 'Veja /api/health' });

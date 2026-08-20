@@ -1508,6 +1508,87 @@ export async function fetchRhWorkflowInstancias(templateId: string): Promise<RhW
   return (json.data as RhWorkflowInstancia[]) ?? [];
 }
 
+// --- Relatórios: Reincidência/Recontratação — endpoint confirmado pela
+// Lovable em 20/08/2026. Cálculo (regras de Recontratado x Reincidente,
+// custo de rescisões, filtro de período) é feito inteiramente no servidor.
+
+export type RhRelatorioPeriodoTipo = 'mes' | 'ano' | 'tudo' | 'custom';
+export type RhRelatorioTipoFiltro = 'todos' | 'recontratado' | 'reincidente';
+
+export type RhRelatorioVinculoDetalhe = {
+  empresa_id?: string;
+  posto?: string;
+  cargo?: string;
+  data_admissao: string | null;
+  data_demissao: string | null;
+  atual: boolean;
+  motivo_desligamento?: string | null;
+  valor_rescisao_liquida?: number | null;
+  descricao?: string | null;
+  [key: string]: unknown;
+};
+
+export type RhRelatorioReincidenciaItem = {
+  colaborador_id: string;
+  nome: string;
+  cpf: string | null;
+  tipo: 'Recontratado' | 'Reincidente';
+  status_atual?: string | null;
+  vinculos: number;
+  postos: string[];
+  vinculos_detalhe: RhRelatorioVinculoDetalhe[];
+  primeira_admissao: string | null;
+  ultima_movimentacao: string | null;
+  motivos: string[];
+  total_rescisao: number;
+  [key: string]: unknown;
+};
+
+export type RhRelatorioResumo = {
+  total: number;
+  recontratados: number;
+  reincidentes: number;
+  custo_rescisoes: number;
+  integridade_sem_posto?: number;
+};
+
+export type RhRelatorioPeriodoInfo = {
+  inicio?: string | null;
+  fim?: string | null;
+  label?: string | null;
+};
+
+export type RhRelatorioReincidenciaPayload = {
+  data: RhRelatorioReincidenciaItem[];
+  resumo: RhRelatorioResumo | null;
+  periodo: RhRelatorioPeriodoInfo | null;
+  tipo: RhRelatorioTipoFiltro;
+};
+
+export async function fetchRhRelatorioReincidencia(params: {
+  periodo: RhRelatorioPeriodoTipo;
+  ano?: number;
+  mes?: number;
+  dataIni?: string;
+  dataFim?: string;
+  tipo?: RhRelatorioTipoFiltro;
+}): Promise<RhRelatorioReincidenciaPayload> {
+  const query = new URLSearchParams();
+  query.set('periodo', params.periodo);
+  if (params.ano) query.set('ano', String(params.ano));
+  if (params.mes) query.set('mes', String(params.mes));
+  if (params.dataIni) query.set('dataIni', params.dataIni);
+  if (params.dataFim) query.set('dataFim', params.dataFim);
+  if (params.tipo) query.set('tipo', params.tipo);
+  const json = await api.get(`/api/rh/relatorios/reincidencia?${query.toString()}`);
+  return {
+    data: (json.data as RhRelatorioReincidenciaItem[]) ?? [],
+    resumo: (json.resumo as RhRelatorioResumo) ?? null,
+    periodo: (json.periodo as RhRelatorioPeriodoInfo) ?? null,
+    tipo: (json.tipo as RhRelatorioTipoFiltro) ?? 'todos',
+  };
+}
+
 // --- Autenticação (login real via Supabase Auth, por trás da af360-api) ---
 
 export type AuthIdentity = {

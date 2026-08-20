@@ -5,6 +5,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import * as Print from 'expo-print';
+import * as XLSX from 'xlsx';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { Feather } from '@expo/vector-icons';
 import {
@@ -71,6 +73,11 @@ import {
   fetchRhWorkflowFluxoDetalhe,
   createRhWorkflowFluxo,
   updateRhWorkflowFluxo,
+  fetchRhRelatorioReincidencia,
+  type RhRelatorioPeriodoTipo,
+  type RhRelatorioTipoFiltro,
+  type RhRelatorioReincidenciaItem,
+  type RhRelatorioReincidenciaPayload,
   atribuirRhWorkflowLideranca,
   encerrarRhWorkflowLideranca,
   type RhWorkflowPosto,
@@ -16250,7 +16257,7 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
               </Pressable>
             </View>
             <Text style={[rhStyles.employeeRoleUnit, { marginTop: 6 }]}>
-              O construtor visual (canvas) fica disponível no painel web — aqui você acompanha status,
+              O construtor visual (canvas) fica disponível no painel web aqui você acompanha status,
               ativa/desativa e vê os passos de cada fluxo.
             </Text>
 
@@ -16857,37 +16864,233 @@ function RHWorkflowHistoricoEntry({ entry }: { entry: RhWorkflowHistoricoItem })
 }
 
 // ---------- Relatórios ----------
+// Reincidência/Recontratação — endpoint confirmado pela Lovable em
+// 20/08/2026 (/api/public/internal/rh-relatorios). Cálculo (regras de
+// Recontratado x Reincidente, custo de rescisões, filtro de período) é
+// feito inteiramente no servidor; aqui só exibimos e exportamos Excel/PDF
+// a partir dos mesmos dados (mesma lógica do painel web: xlsx no cliente).
 
-type ReportTag = 'recontratado' | 'reincidente';
-type ReportItem = {
-  id: string;
-  name: string;
-  tag: ReportTag;
-  value: string;
-  vinculos: number;
-  firstAdmLabel: string;
-  lastMovLabel: string;
+const rhReportTagMeta: Record<'Recontratado' | 'Reincidente', { color: string; tint: string }> = {
+  Recontratado: { color: '#B07A1E', tint: '#FCEFDA' },
+  Reincidente: { color: '#E6213D', tint: '#FCE8EC' },
 };
 
-const rhReportTagMeta: Record<ReportTag, { label: string; color: string; tint: string }> = {
-  recontratado: { label: 'Recontratado', color: '#B07A1E', tint: '#FCEFDA' },
-  reincidente: { label: 'Reincidente', color: '#E6213D', tint: '#FCE8EC' },
-};
+const rhRelatorioPeriodoOptions = ['Mensal', 'Anual', 'Tudo'] as const;
+type RhRelatorioPeriodoLabel = (typeof rhRelatorioPeriodoOptions)[number];
 
-const rhReportStats = { total: 11, recontratados: 1, reincidentes: 10, custoRescisoes: 'R$ 55.793' };
+const rhRelatorioTipoOptions = ['Todos', 'Recontratado', 'Reincidente'] as const;
+type RhRelatorioTipoLabel = (typeof rhRelatorioTipoOptions)[number];
 
-const rhReportItems: ReportItem[] = [
-  { id: 'rep-1', name: 'Matheus Martins Correia', tag: 'recontratado', value: 'R$ 313,46', vinculos: 2, firstAdmLabel: '02/09/2021', lastMovLabel: '25/06/2026' },
-  { id: 'rep-2', name: 'Bruno Eduardo R. da Silva', tag: 'reincidente', value: 'R$ 10.332,91', vinculos: 2, firstAdmLabel: '13/06/2019', lastMovLabel: '05/06/2026' },
-  { id: 'rep-3', name: 'Breno Carvalho da Silva', tag: 'reincidente', value: 'R$ 6.886,81', vinculos: 2, firstAdmLabel: '19/08/2022', lastMovLabel: '01/06/2026' },
-  { id: 'rep-4', name: 'Gabriel Keller da Silva', tag: 'reincidente', value: 'R$ 725,59', vinculos: 2, firstAdmLabel: '05/10/2024', lastMovLabel: '17/05/2026' },
+function relatorioPeriodoLabelToTipo(label: RhRelatorioPeriodoLabel): RhRelatorioPeriodoTipo {
+  if (label === 'Mensal') return 'mes';
+  if (label === 'Anual') return 'ano';
+  return 'tudo';
+}
+
+function relatorioTipoLabelToFiltro(label: RhRelatorioTipoLabel): RhRelatorioTipoFiltro {
+  if (label === 'Recontratado') return 'recontratado';
+  if (label === 'Reincidente') return 'reincidente';
+  return 'todos';
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatBRLPlain(value: number | null | undefined): string {
+  const n = value ?? 0;
+  return `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+const rhRelatorioMesNomes = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
 
 export function RHRelatoriosScreen({ navigation }: ScreenProps<'RHRelatorios'>) {
   const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
 
-  const handleExport = (format: string) => {
-    Alert.alert('Exportar', `Exportação em ${format} será conectada em breve.`);
+  const [periodoLabel, setPeriodoLabel] = useState<RhRelatorioPeriodoLabel>('Anual');
+  const [isPeriodoPickerOpen, setIsPeriodoPickerOpen] = useState(false);
+  const [ano, setAno] = useState(currentYear);
+  const [isAnoPickerOpen, setIsAnoPickerOpen] = useState(false);
+  const [mes, setMes] = useState(currentMonth);
+  const [isMesPickerOpen, setIsMesPickerOpen] = useState(false);
+  const [tipoLabel, setTipoLabel] = useState<RhRelatorioTipoLabel>('Todos');
+  const [isTipoPickerOpen, setIsTipoPickerOpen] = useState(false);
+
+  const [payload, setPayload] = useState<RhRelatorioReincidenciaPayload | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const anoOptions = useMemo(() => {
+    const anos: number[] = [];
+    for (let y = currentYear; y >= currentYear - 6; y -= 1) anos.push(y);
+    return anos;
+  }, [currentYear]);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    fetchRhRelatorioReincidencia({
+      periodo: relatorioPeriodoLabelToTipo(periodoLabel),
+      ano,
+      mes: periodoLabel === 'Mensal' ? mes : undefined,
+      tipo: relatorioTipoLabelToFiltro(tipoLabel),
+    })
+      .then(setPayload)
+      .catch(() => setPayload(null))
+      .finally(() => setIsLoading(false));
+  }, [periodoLabel, ano, mes, tipoLabel]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const itens = payload?.data ?? [];
+  const resumo = payload?.resumo ?? null;
+
+  const buildLinhas = () =>
+    itens.map((item) => ({
+      Tipo: item.tipo,
+      Nome: item.nome,
+      CPF: item.cpf ?? '',
+      'Status atual': item.status_atual ?? '',
+      Vínculos: item.vinculos,
+      '1ª Admissão': formatDateIsoBR(item.primeira_admissao) ?? '',
+      'Última movimentação': formatDateIsoBR(item.ultima_movimentacao) ?? '',
+      'Postos / Histórico': (item.postos ?? []).join('\n'),
+      Motivos: (item.motivos ?? []).join(', '),
+      'Total rescisão (R$)': item.total_rescisao ?? 0,
+    }));
+
+  const periodoArquivoLabel =
+    periodoLabel === 'Mensal' ? `${String(mes).padStart(2, '0')}_${ano}` : String(ano);
+
+  const handleExportExcel = async () => {
+    if (itens.length === 0) {
+      Alert.alert('Nada para exportar', 'Não há registros no período selecionado.');
+      return;
+    }
+    setIsExportingExcel(true);
+    try {
+      const linhas = buildLinhas();
+      const worksheet = XLSX.utils.json_to_sheet(linhas);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Relatorio');
+      const base64 = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
+
+      const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!baseDirectory) {
+        Alert.alert('Exportação indisponível', 'Não foi possível gerar o Excel neste dispositivo.');
+        return;
+      }
+      const fileUri = `${baseDirectory}relatorio_reincidencia_${periodoArquivoLabel}.xlsx`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          dialogTitle: 'Exportar relatório (Excel)',
+          UTI: 'org.openxmlformats.spreadsheetml.sheet',
+        });
+      } else {
+        Alert.alert('Excel gerado', `Arquivo salvo em:\n${fileUri}`);
+      }
+    } catch {
+      Alert.alert('Erro ao exportar', 'Não foi possível gerar o Excel agora.');
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (itens.length === 0) {
+      Alert.alert('Nada para exportar', 'Não há registros no período selecionado.');
+      return;
+    }
+    setIsExportingPdf(true);
+    try {
+      const geradoEm = new Date().toLocaleString('pt-BR');
+      const linhasHtml = itens
+        .map((item) => {
+          const postosHtml = (item.postos ?? [])
+            .map((linha) => `<div>${escapeHtml(linha)}</div>`)
+            .join('');
+          return `<tr>
+            <td>${escapeHtml(item.tipo)}</td>
+            <td>${escapeHtml(item.nome)}</td>
+            <td>${escapeHtml(item.cpf ?? '')}</td>
+            <td>${item.vinculos}</td>
+            <td>${formatDateIsoBR(item.primeira_admissao) ?? ''}</td>
+            <td>${formatDateIsoBR(item.ultima_movimentacao) ?? ''}</td>
+            <td>${postosHtml}</td>
+            <td>${formatBRLPlain(item.total_rescisao)}</td>
+          </tr>`;
+        })
+        .join('');
+
+      const html = `
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              body { font-family: Helvetica, Arial, sans-serif; padding: 24px; color: #1B2540; }
+              h1 { font-size: 20px; margin-bottom: 4px; }
+              .meta { font-size: 12px; color: #5E667D; margin-bottom: 16px; }
+              table { width: 100%; border-collapse: collapse; font-size: 10px; }
+              th { background: #1B6E3A; color: #FFFFFF; text-align: left; padding: 6px; }
+              td { border-bottom: 1px solid #EEF0F6; padding: 6px; vertical-align: top; }
+            </style>
+          </head>
+          <body>
+            <h1>Relatório de Reincidência e Recontratação</h1>
+            <div class="meta">
+              Período: ${escapeHtml(payload?.periodo?.label ?? periodoLabel)} &nbsp;•&nbsp;
+              Total: ${resumo?.total ?? 0} &nbsp;•&nbsp;
+              Recontratados: ${resumo?.recontratados ?? 0} &nbsp;•&nbsp;
+              Reincidentes: ${resumo?.reincidentes ?? 0} &nbsp;•&nbsp;
+              Total rescisões: ${formatBRLPlain(resumo?.custo_rescisoes)}<br />
+              Gerado em ${geradoEm}
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Tipo</th><th>Nome</th><th>CPF</th><th>Vínc.</th>
+                  <th>1ª Adm.</th><th>Últ. Mov.</th><th>Postos / Histórico</th><th>R$ Rescisão</th>
+                </tr>
+              </thead>
+              <tbody>${linhasHtml}</tbody>
+            </table>
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html });
+      const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      const destino = baseDirectory ? `${baseDirectory}relatorio_reincidencia_${periodoArquivoLabel}.pdf` : uri;
+      if (baseDirectory) {
+        await FileSystem.copyAsync({ from: uri, to: destino });
+      }
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(destino, { mimeType: 'application/pdf', dialogTitle: 'Exportar relatório (PDF)' });
+      } else {
+        Alert.alert('PDF gerado', `Arquivo salvo em:\n${destino}`);
+      }
+    } catch {
+      Alert.alert('Erro ao exportar', 'Não foi possível gerar o PDF agora.');
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   return (
@@ -16905,17 +17108,47 @@ export function RHRelatoriosScreen({ navigation }: ScreenProps<'RHRelatorios'>) 
         <RHPageHeader
           icon="bar-chart-2"
           title="Relatórios"
-          subtitle={`Reincidência e recontratação · ${currentYear}`}
+          subtitle="Relatórios gerenciais: reincidência, recontratação. Exporta Excel e PDF."
         />
 
-        <View style={rhStyles.exportButtonsRow}>
-          <Pressable style={rhStyles.exportButtonGreen} onPress={() => handleExport('Excel')}>
-            <Feather name="file-text" size={15} color="#18955A" />
-            <Text style={rhStyles.exportButtonTextGreen}>Excel</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          <View style={{ minWidth: 110 }}>
+            <RHSelectField label="Período" value={periodoLabel} onPress={() => setIsPeriodoPickerOpen(true)} />
+          </View>
+          {periodoLabel === 'Mensal' ? (
+            <View style={{ minWidth: 100 }}>
+              <RHSelectField
+                label="Mês"
+                value={rhRelatorioMesNomes[mes - 1]}
+                onPress={() => setIsMesPickerOpen(true)}
+              />
+            </View>
+          ) : null}
+          {periodoLabel !== 'Tudo' ? (
+            <View style={{ minWidth: 90 }}>
+              <RHSelectField label="Ano" value={String(ano)} onPress={() => setIsAnoPickerOpen(true)} />
+            </View>
+          ) : null}
+          <View style={{ minWidth: 110 }}>
+            <RHSelectField label="Tipo" value={tipoLabel} onPress={() => setIsTipoPickerOpen(true)} />
+          </View>
+        </View>
+
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+          <Pressable
+            style={[rhStyles.outlineButtonSmall, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+            onPress={load}
+          >
+            <Feather name="refresh-cw" size={13} color="#29448D" />
+            <Text style={rhStyles.outlineButtonSmallText}>Atualizar</Text>
           </Pressable>
-          <Pressable style={rhStyles.exportButtonRed} onPress={() => handleExport('PDF')}>
+          <Pressable style={rhStyles.exportButtonGreen} onPress={handleExportExcel} disabled={isExportingExcel}>
+            <Feather name="file-text" size={15} color="#18955A" />
+            <Text style={rhStyles.exportButtonTextGreen}>{isExportingExcel ? 'Gerando...' : 'Excel'}</Text>
+          </Pressable>
+          <Pressable style={rhStyles.exportButtonRed} onPress={handleExportPdf} disabled={isExportingPdf}>
             <Feather name="file" size={15} color="#E6213D" />
-            <Text style={rhStyles.exportButtonTextRed}>PDF</Text>
+            <Text style={rhStyles.exportButtonTextRed}>{isExportingPdf ? 'Gerando...' : 'PDF'}</Text>
           </Pressable>
         </View>
 
@@ -16923,50 +17156,104 @@ export function RHRelatoriosScreen({ navigation }: ScreenProps<'RHRelatorios'>) 
           <View style={styles.gridItem}>
             <View style={rhStyles.kpiCard}>
               <Text style={rhStyles.kpiLabel}>TOTAL NO PERÍODO</Text>
-              <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGreen]}>{rhReportStats.total}</Text>
+              <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGreen]}>{resumo?.total ?? '—'}</Text>
             </View>
           </View>
           <View style={styles.gridItem}>
             <View style={rhStyles.kpiCard}>
               <Text style={rhStyles.kpiLabel}>RECONTRATADOS</Text>
               <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGold]}>
-                {rhReportStats.recontratados}
+                {resumo?.recontratados ?? '—'}
               </Text>
             </View>
           </View>
           <View style={styles.gridItem}>
             <View style={rhStyles.kpiCard}>
               <Text style={rhStyles.kpiLabel}>REINCIDENTES</Text>
-              <Text style={[rhStyles.sectionBigValue, { color: '#E6213D' }]}>{rhReportStats.reincidentes}</Text>
+              <Text style={[rhStyles.sectionBigValue, { color: '#E6213D' }]}>{resumo?.reincidentes ?? '—'}</Text>
             </View>
           </View>
           <View style={styles.gridItem}>
             <View style={rhStyles.kpiCard}>
               <Text style={rhStyles.kpiLabel}>CUSTO DE RESCISÕES</Text>
-              <Text style={rhStyles.sectionBigValue}>{rhReportStats.custoRescisoes}</Text>
+              <Text style={rhStyles.sectionBigValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                {resumo ? formatBRLPlain(resumo.custo_rescisoes) : '—'}
+              </Text>
             </View>
           </View>
         </View>
 
-        {rhReportItems.map((item) => {
-          const meta = rhReportTagMeta[item.tag];
-          return (
-            <View key={item.id} style={rhStyles.sectionCard}>
-              <View style={rhStyles.announcementTopRow}>
-                <View style={[rhStyles.employeeStatusPill, { backgroundColor: meta.tint }]}>
-                  <Text style={[rhStyles.employeeStatusText, { color: meta.color }]}>{meta.label}</Text>
-                </View>
-                <Text style={rhStyles.reportValue}>{item.value}</Text>
-              </View>
-              <Text style={rhStyles.employeeName}>{item.name}</Text>
-              <Text style={rhStyles.employeeRoleUnit}>
-                {item.vinculos} vínculos · 1ª adm. {item.firstAdmLabel} · últ. mov. {item.lastMovLabel}
-              </Text>
-            </View>
-          );
-        })}
+        {isLoading ? (
+          <RHEmptyTabState message="Carregando relatório..." />
+        ) : itens.length === 0 ? (
+          <RHEmptyTabState message="Nenhum registro no período selecionado." />
+        ) : (
+          itens.map((item) => <RHRelatorioItemCard key={item.colaborador_id} item={item} />)
+        )}
       </ScrollView>
+
+      <RHSimplePickerModal
+        visible={isPeriodoPickerOpen}
+        title="Período"
+        options={[...rhRelatorioPeriodoOptions]}
+        selectedValue={periodoLabel}
+        onSelect={(value) => setPeriodoLabel(value as RhRelatorioPeriodoLabel)}
+        onClose={() => setIsPeriodoPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isMesPickerOpen}
+        title="Mês"
+        options={rhRelatorioMesNomes}
+        selectedValue={rhRelatorioMesNomes[mes - 1]}
+        onSelect={(value) => setMes(rhRelatorioMesNomes.indexOf(value) + 1)}
+        onClose={() => setIsMesPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isAnoPickerOpen}
+        title="Ano"
+        options={anoOptions.map(String)}
+        selectedValue={String(ano)}
+        onSelect={(value) => setAno(Number(value))}
+        onClose={() => setIsAnoPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isTipoPickerOpen}
+        title="Tipo"
+        options={[...rhRelatorioTipoOptions]}
+        selectedValue={tipoLabel}
+        onSelect={(value) => setTipoLabel(value as RhRelatorioTipoLabel)}
+        onClose={() => setIsTipoPickerOpen(false)}
+      />
     </SafeAreaView>
+  );
+}
+
+function RHRelatorioItemCard({ item }: { item: RhRelatorioReincidenciaItem }) {
+  const meta = rhReportTagMeta[item.tipo];
+  return (
+    <View style={rhStyles.sectionCard}>
+      <View style={rhStyles.announcementTopRow}>
+        <View style={[rhStyles.employeeStatusPill, { backgroundColor: meta.tint }]}>
+          <Text style={[rhStyles.employeeStatusText, { color: meta.color }]}>{item.tipo}</Text>
+        </View>
+        <Text style={rhStyles.reportValue}>{formatBRLPlain(item.total_rescisao)}</Text>
+      </View>
+      <Text style={rhStyles.employeeName}>{item.nome}</Text>
+      {item.cpf ? <Text style={rhStyles.employeeRoleUnit}>{item.cpf}</Text> : null}
+      <Text style={rhStyles.employeeRoleUnit}>
+        {item.vinculos} vínculos · 1ª adm. {formatDateIsoBR(item.primeira_admissao) ?? '—'} · últ. mov.{' '}
+        {formatDateIsoBR(item.ultima_movimentacao) ?? '—'}
+      </Text>
+      {(item.postos ?? []).length > 0 ? (
+        <View style={{ marginTop: 6 }}>
+          {(item.postos ?? []).map((linha, index) => (
+            <Text key={index} style={rhStyles.folhaColaboradorMeta}>
+              • {linha}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 

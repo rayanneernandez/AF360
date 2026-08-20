@@ -1577,6 +1577,19 @@ function deleteRhWorkflowFluxo(id, actorId) {
   return lovableDelete('/api/public/internal/rh-workflow', { recurso: 'fluxo', id }, actorId);
 }
 
+// --- Relatórios: Reincidência/Recontratação — endpoint criado pela
+// Lovable em 20/08/2026 (/api/public/internal/rh-relatorios). Cálculo real
+// feito no servidor (cruza rh_colaboradores + rh_historico_contratacoes +
+// empresas) — nunca refazer essa conta aqui.
+
+function getRhRelatorioReincidencia({ periodo, ano, mes, dataIni, dataFim, tipo } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-relatorios',
+    { recurso: 'reincidencia', periodo, ano, mes, dataIni, dataFim, tipo },
+    actorId
+  );
+}
+
 module.exports = {
   getRhUniformesCobrancas,
   postRhUniformeCobranca,
@@ -1787,4 +1800,5 @@ module.exports = {
   deleteRhWorkflowLideranca,
   patchRhWorkflowFluxo,
   deleteRhWorkflowFluxo,
+  getRhRelatorioReincidencia,
 };
