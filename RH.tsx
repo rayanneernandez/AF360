@@ -78,6 +78,39 @@ import {
   type RhRelatorioTipoFiltro,
   type RhRelatorioReincidenciaItem,
   type RhRelatorioReincidenciaPayload,
+  fetchRhConfigCargos,
+  createRhConfigCargo,
+  updateRhConfigCargo,
+  fetchRhConfigSetores,
+  createRhConfigSetor,
+  updateRhConfigSetor,
+  type RhConfigCargo,
+  fetchRhConfigRubricas,
+  createRhConfigRubrica,
+  updateRhConfigRubrica,
+  type RhConfigRubrica,
+  type RhConfigRubricaTipo,
+  type RhConfigRubricaCreateBody,
+  fetchRhConfigTabelaInss,
+  createRhConfigTabelaInss,
+  type RhConfigFaixaInss,
+  type RhConfigVigenciaInss,
+  fetchRhConfigTabelaIrrf,
+  createRhConfigTabelaIrrf,
+  type RhConfigVigenciaIrrf,
+  fetchRhConfigSalarioMinimo,
+  createRhConfigSalarioMinimo,
+  type RhConfigSalarioMinimoVigencia,
+  fetchRhConfigParametros,
+  updateRhConfigParametro,
+  type RhConfigParametro,
+  fetchRhConfigReajustes,
+  createRhConfigReajuste,
+  deleteRhConfigReajuste,
+  aplicarRhConfigReajuste,
+  type RhConfigReajuste,
+  type RhConfigReajusteTipo,
+  type RhConfigReajusteModo,
   atribuirRhWorkflowLideranca,
   encerrarRhWorkflowLideranca,
   type RhWorkflowPosto,
@@ -17258,77 +17291,107 @@ function RHRelatorioItemCard({ item }: { item: RhRelatorioReincidenciaItem }) {
 }
 
 // ---------- Configurações ----------
+// Cargos/Setores/Rubricas/Tabela INSS/Tabela IRRF/Salário Mínimo/
+// Parâmetros/Reajustes — endpoint confirmado pela Lovable em 20/08/2026
+// (/api/public/internal/rh-config).
 
 type ConfigTab = 'cargos' | 'setores' | 'folha' | 'reajustes';
-type ConfigRole = { id: string; name: string; active: boolean };
+type ConfigFolhaSubTab = 'rubricas' | 'inss' | 'irrf' | 'salario' | 'parametros';
 
 const rhConfigTabs: Array<{ key: ConfigTab; label: string }> = [
   { key: 'cargos', label: 'Cargos' },
   { key: 'setores', label: 'Setores' },
-  { key: 'folha', label: 'Folha' },
+  { key: 'folha', label: 'Folha de Pagamento' },
   { key: 'reajustes', label: 'Reajustes' },
 ];
 
-const rhConfigRoles: ConfigRole[] = [
-  { id: 'role-1', name: 'Analista de Recursos Humanos', active: true },
-  { id: 'role-2', name: 'Analista de RH', active: true },
-  { id: 'role-3', name: 'Analista de TI', active: true },
-  { id: 'role-4', name: 'Analista Financeiro I', active: true },
-  { id: 'role-5', name: 'Aprendiz de Frentista', active: true },
-  { id: 'role-6', name: 'Assist. Administrativo', active: true },
-  { id: 'role-7', name: 'Assistente Financeiro', active: true },
-  { id: 'role-8', name: 'Atendente', active: true },
-  { id: 'role-9', name: 'Atendente de Loja', active: true },
-  { id: 'role-10', name: 'Aux. Administrativo', active: true },
+const rhConfigFolhaSubTabs: Array<{ key: ConfigFolhaSubTab; label: string }> = [
+  { key: 'rubricas', label: 'Rubricas' },
+  { key: 'inss', label: 'Tabela INSS' },
+  { key: 'irrf', label: 'Tabela IRRF' },
+  { key: 'salario', label: 'Salário Mínimo' },
+  { key: 'parametros', label: 'Parâmetros' },
 ];
 
-function RoleFormModal({
+function RHConfigStatusPill({ ativo }: { ativo: boolean }) {
+  return (
+    <View
+      style={[
+        rhStyles.employeeStatusPill,
+        { backgroundColor: ativo ? '#E3F5EA' : '#F1F2F6' },
+      ]}
+    >
+      <Text style={[rhStyles.employeeStatusText, { color: ativo ? '#18955A' : '#5E667D' }]}>
+        {ativo ? 'Ativo' : 'Inativo'}
+      </Text>
+    </View>
+  );
+}
+
+// --- Cargos / Setores (mesma estrutura: nome, descricao, ativo) ---
+
+function RHConfigCargoSetorFormModal({
   visible,
+  tipoLabel,
+  editingItem,
   onClose,
   onSave,
 }: {
   visible: boolean;
+  tipoLabel: string;
+  editingItem: RhConfigCargo | null;
   onClose: () => void;
-  onSave: (role: ConfigRole) => void;
+  onSave: (body: { nome: string; descricao: string | null; ativo: boolean }) => void;
 }) {
-  const [name, setName] = useState('');
+  const [nome, setNome] = useState('');
+  const [descricao, setDescricao] = useState('');
+  const [ativo, setAtivo] = useState(true);
 
-  const handleClose = () => {
-    setName('');
-    onClose();
-  };
+  useEffect(() => {
+    if (visible) {
+      setNome(editingItem?.nome ?? '');
+      setDescricao(editingItem?.descricao ?? '');
+      setAtivo(editingItem?.ativo ?? true);
+    }
+  }, [visible, editingItem]);
 
   const handleSubmit = () => {
-    if (!name.trim()) {
-      Alert.alert('Campo obrigatório', 'Preencha o nome do cargo.');
+    if (!nome.trim()) {
+      Alert.alert('Campo obrigatório', `Preencha o nome do ${tipoLabel.toLowerCase()}.`);
       return;
     }
-    onSave({ id: `role-${Date.now()}`, name: name.trim(), active: true });
-    setName('');
+    onSave({ nome: nome.trim(), descricao: descricao.trim() || null, ativo });
   };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.requestModalBackdrop}>
         <View style={styles.requestModalCard}>
           <View style={styles.requestModalHeader}>
-            <Text style={styles.requestModalTitle}>Novo cargo</Text>
-            <Pressable onPress={handleClose} hitSlop={8}>
+            <Text style={styles.requestModalTitle}>{editingItem ? `Editar ${tipoLabel.toLowerCase()}` : `Novo ${tipoLabel.toLowerCase()}`}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
               <Feather name="x" size={20} color="#677089" />
             </Pressable>
           </View>
 
-          <Text style={styles.requestFieldLabel}>Nome do cargo *</Text>
+          <Text style={styles.requestFieldLabel}>Nome *</Text>
+          <TextInput style={styles.processTextInput} value={nome} onChangeText={setNome} placeholderTextColor="#A7AEC2" />
+
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição</Text>
           <TextInput
             style={styles.processTextInput}
-            value={name}
-            onChangeText={setName}
-            placeholder="Ex.: Analista de Folha"
+            value={descricao}
+            onChangeText={setDescricao}
             placeholderTextColor="#A7AEC2"
           />
 
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 }}>
+            <Switch value={ativo} onValueChange={setAtivo} />
+            <Text style={rhStyles.folhaColaboradorMeta}>Ativo</Text>
+          </View>
+
           <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={handleSubmit}>
-            <Text style={styles.primaryButtonText}>Salvar cargo</Text>
+            <Text style={styles.primaryButtonText}>Salvar</Text>
           </Pressable>
         </View>
       </View>
@@ -17336,15 +17399,1234 @@ function RoleFormModal({
   );
 }
 
-export function RHConfiguracoesScreen({ navigation }: ScreenProps<'RHConfiguracoes'>) {
-  const [activeTab, setActiveTab] = useState<ConfigTab>('cargos');
-  const [roles, setRoles] = useState<ConfigRole[]>(rhConfigRoles);
+function RHConfigCargoSetorTab({ tipo }: { tipo: 'cargos' | 'setores' }) {
+  const { identity } = useContext(AuthIdentityContext);
+  const tipoLabel = tipo === 'cargos' ? 'Cargo' : 'Setor';
+  const [itens, setItens] = useState<RhConfigCargo[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<RhConfigCargo | null>(null);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    const fetcher = tipo === 'cargos' ? fetchRhConfigCargos : fetchRhConfigSetores;
+    fetcher()
+      .then(setItens)
+      .catch(() => setItens([]))
+      .finally(() => setIsLoading(false));
+  }, [tipo]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSave = (body: { nome: string; descricao: string | null; ativo: boolean }) => {
+    const criar = tipo === 'cargos' ? createRhConfigCargo : createRhConfigSetor;
+    const atualizar = tipo === 'cargos' ? updateRhConfigCargo : updateRhConfigSetor;
+    const promessa = editingItem ? atualizar(editingItem.id, body, identity?.profileId) : criar(body, identity?.profileId);
+    promessa
+      .then(() => {
+        setIsFormOpen(false);
+        setEditingItem(null);
+        load();
+      })
+      .catch((err) => showRhSaveError(err, `Não foi possível salvar o ${tipoLabel.toLowerCase()}.`));
+  };
+
+  return (
+    <>
+      <View style={[styles.directorNotifHeaderRow, styles.spacingTop]}>
+        <Text style={styles.directorNotifCountLabel}>{itens.length} registros</Text>
+        <Pressable
+          style={styles.directorNotifNewButton}
+          onPress={() => {
+            setEditingItem(null);
+            setIsFormOpen(true);
+          }}
+        >
+          <Feather name="plus" size={15} color="#FFFFFF" />
+          <Text style={styles.directorNotifNewButtonText}>Novo {tipoLabel.toLowerCase()}</Text>
+        </Pressable>
+      </View>
+
+      {isLoading ? (
+        <RHEmptyTabState message="Carregando..." />
+      ) : itens.length === 0 ? (
+        <RHEmptyTabState message="Nenhum registro ainda." />
+      ) : (
+        itens.map((item) => (
+          <View key={item.id} style={rhStyles.configRoleCard}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={rhStyles.rankName}>{item.nome}</Text>
+              {item.descricao ? <Text style={rhStyles.employeeRoleUnit}>{item.descricao}</Text> : null}
+            </View>
+            <View style={rhStyles.configRoleRight}>
+              <RHConfigStatusPill ativo={item.ativo} />
+              <Pressable
+                hitSlop={8}
+                onPress={() => {
+                  setEditingItem(item);
+                  setIsFormOpen(true);
+                }}
+              >
+                <Feather name="edit-2" size={15} color="#9AA1B5" />
+              </Pressable>
+            </View>
+          </View>
+        ))
+      )}
+
+      <RHConfigCargoSetorFormModal
+        visible={isFormOpen}
+        tipoLabel={tipoLabel}
+        editingItem={editingItem}
+        onClose={() => {
+          setIsFormOpen(false);
+          setEditingItem(null);
+        }}
+        onSave={handleSave}
+      />
+    </>
+  );
+}
+
+// --- Rubricas ---
+
+const rhConfigRubricaTipoLabels: Record<RhConfigRubricaTipo, string> = {
+  provento: 'Provento',
+  desconto: 'Desconto',
+  informativa: 'Informativa',
+};
+
+function RHConfigRubricaFormModal({
+  visible,
+  editingItem,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  editingItem: RhConfigRubrica | null;
+  onClose: () => void;
+  onSave: (body: RhConfigRubricaCreateBody) => void;
+}) {
+  const [codigo, setCodigo] = useState('');
+  const [ordem, setOrdem] = useState('100');
+  const [nome, setNome] = useState('');
+  const [tipo, setTipo] = useState<RhConfigRubricaTipo>('provento');
+  const [isTipoPickerOpen, setIsTipoPickerOpen] = useState(false);
+  const [incideInss, setIncideInss] = useState(false);
+  const [incideIrrf, setIncideIrrf] = useState(false);
+  const [incideFgts, setIncideFgts] = useState(false);
+  const [descricao, setDescricao] = useState('');
+  const [ativo, setAtivo] = useState(true);
+
+  useEffect(() => {
+    if (visible) {
+      setCodigo(editingItem?.codigo ?? '');
+      setOrdem(String(editingItem?.ordem ?? 100));
+      setNome(editingItem?.nome ?? '');
+      setTipo(editingItem?.tipo ?? 'provento');
+      setIncideInss(editingItem?.incide_inss ?? false);
+      setIncideIrrf(editingItem?.incide_irrf ?? false);
+      setIncideFgts(editingItem?.incide_fgts ?? false);
+      setDescricao(editingItem?.descricao ?? '');
+      setAtivo(editingItem?.ativo ?? true);
+    }
+  }, [visible, editingItem]);
+
+  const handleSubmit = () => {
+    if (!codigo.trim() || !nome.trim()) {
+      Alert.alert('Campos obrigatórios', 'Preencha código e nome da rubrica.');
+      return;
+    }
+    onSave({
+      codigo: codigo.trim(),
+      ordem: Number(ordem) || 100,
+      nome: nome.trim(),
+      tipo,
+      incide_inss: incideInss,
+      incide_irrf: incideIrrf,
+      incide_fgts: incideFgts,
+      descricao: descricao.trim() || null,
+      ativo,
+    });
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <ScrollView style={[styles.requestModalCard, { maxHeight: '85%' }]}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>{editingItem ? 'Editar rubrica' : 'Nova rubrica'}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <View style={rhStyles.formRow}>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Código *</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={codigo}
+                onChangeText={setCodigo}
+                placeholder="Ex.: HE50"
+                placeholderTextColor="#A7AEC2"
+                autoCapitalize="characters"
+              />
+            </View>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>Ordem</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={ordem}
+                onChangeText={setOrdem}
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Nome *</Text>
+          <TextInput style={styles.processTextInput} value={nome} onChangeText={setNome} placeholderTextColor="#A7AEC2" />
+
+          <RHSelectField
+            label="Tipo"
+            required
+            value={rhConfigRubricaTipoLabels[tipo]}
+            onPress={() => setIsTipoPickerOpen(true)}
+          />
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Switch value={incideInss} onValueChange={setIncideInss} />
+              <Text style={rhStyles.folhaColaboradorMeta}>Incide INSS</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Switch value={incideIrrf} onValueChange={setIncideIrrf} />
+              <Text style={rhStyles.folhaColaboradorMeta}>Incide IRRF</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Switch value={incideFgts} onValueChange={setIncideFgts} />
+              <Text style={rhStyles.folhaColaboradorMeta}>Incide FGTS</Text>
+            </View>
+          </View>
+
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição</Text>
+          <TextInput style={styles.processTextInput} value={descricao} onChangeText={setDescricao} placeholderTextColor="#A7AEC2" />
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 }}>
+            <Switch value={ativo} onValueChange={setAtivo} />
+            <Text style={rhStyles.folhaColaboradorMeta}>Ativa</Text>
+          </View>
+
+          <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={handleSubmit}>
+            <Text style={styles.primaryButtonText}>Salvar rubrica</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+
+      <RHSimplePickerModal
+        inline
+        visible={isTipoPickerOpen}
+        title="Tipo"
+        options={['Provento', 'Desconto', 'Informativa']}
+        selectedValue={rhConfigRubricaTipoLabels[tipo]}
+        onSelect={(value) => {
+          const entry = Object.entries(rhConfigRubricaTipoLabels).find(([, label]) => label === value);
+          if (entry) setTipo(entry[0] as RhConfigRubricaTipo);
+        }}
+        onClose={() => setIsTipoPickerOpen(false)}
+      />
+    </Modal>
+  );
+}
+
+function RHConfigRubricasTab() {
+  const { identity } = useContext(AuthIdentityContext);
+  const [rubricas, setRubricas] = useState<RhConfigRubrica[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<RhConfigRubrica | null>(null);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    fetchRhConfigRubricas()
+      .then((payload) => setRubricas(payload.data))
+      .catch(() => setRubricas([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSave = (body: RhConfigRubricaCreateBody) => {
+    const promessa = editingItem
+      ? updateRhConfigRubrica(editingItem.id, body, identity?.profileId)
+      : createRhConfigRubrica(body, identity?.profileId);
+    promessa
+      .then(() => {
+        setIsFormOpen(false);
+        setEditingItem(null);
+        load();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar a rubrica.'));
+  };
+
+  return (
+    <>
+      <View style={[styles.directorNotifHeaderRow, styles.spacingTop]}>
+        <Text style={styles.directorNotifCountLabel}>{rubricas.length} rubricas</Text>
+        <Pressable
+          style={styles.directorNotifNewButton}
+          onPress={() => {
+            setEditingItem(null);
+            setIsFormOpen(true);
+          }}
+        >
+          <Feather name="plus" size={15} color="#FFFFFF" />
+          <Text style={styles.directorNotifNewButtonText}>Nova rubrica</Text>
+        </Pressable>
+      </View>
+
+      {isLoading ? (
+        <RHEmptyTabState message="Carregando rubricas..." />
+      ) : rubricas.length === 0 ? (
+        <RHEmptyTabState message="Nenhuma rubrica cadastrada." />
+      ) : (
+        rubricas.map((rubrica) => (
+          <View key={rubrica.id} style={rhStyles.folhaColaboradorRow}>
+            <View style={rhStyles.folhaColaboradorTopRow}>
+              <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                {rubrica.codigo} · {rubrica.nome}
+              </Text>
+              <Pressable
+                style={rhStyles.outlineButtonSmall}
+                onPress={() => {
+                  setEditingItem(rubrica);
+                  setIsFormOpen(true);
+                }}
+              >
+                <Feather name="edit-2" size={14} color="#29448D" />
+              </Pressable>
+            </View>
+            <Text style={rhStyles.folhaColaboradorMeta}>
+              {rhConfigRubricaTipoLabels[rubrica.tipo]}
+              {rubrica.incide_inss ? ' · INSS' : ''}
+              {rubrica.incide_irrf ? ' · IRRF' : ''}
+              {rubrica.incide_fgts ? ' · FGTS' : ''}
+              {' · '}
+              {rubrica.ativo ? 'Ativa' : 'Inativa'}
+            </Text>
+          </View>
+        ))
+      )}
+
+      <RHConfigRubricaFormModal
+        visible={isFormOpen}
+        editingItem={editingItem}
+        onClose={() => {
+          setIsFormOpen(false);
+          setEditingItem(null);
+        }}
+        onSave={handleSave}
+      />
+    </>
+  );
+}
+
+// --- Tabela INSS / Tabela IRRF (vigências + faixas) ---
+
+type RHConfigFaixaForm = { valor_ate: string; aliquota: string; parcela_deduzir: string };
+
+function novaFaixaForm(): RHConfigFaixaForm {
+  return { valor_ate: '', aliquota: '', parcela_deduzir: '' };
+}
+
+function RHConfigNovaVigenciaModal({
+  visible,
+  titulo,
+  comDeducaoDependente,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  titulo: string;
+  comDeducaoDependente: boolean;
+  onClose: () => void;
+  onSave: (body: { vigencia_inicio: string; deducao_dependente?: number; faixas: RhConfigFaixaInss[] }) => void;
+}) {
+  const [dataLabel, setDataLabel] = useState('');
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [deducaoDependente, setDeducaoDependente] = useState('');
+  const [faixas, setFaixas] = useState<RHConfigFaixaForm[]>([novaFaixaForm()]);
+
+  useEffect(() => {
+    if (visible) {
+      setDataLabel('');
+      setDeducaoDependente('');
+      setFaixas([novaFaixaForm()]);
+    }
+  }, [visible]);
+
+  const atualizarFaixa = (index: number, campo: keyof RHConfigFaixaForm, valor: string) => {
+    setFaixas((prev) => prev.map((f, i) => (i === index ? { ...f, [campo]: valor } : f)));
+  };
+
+  const handleSubmit = () => {
+    const vigenciaIso = brDateLabelToIso(dataLabel);
+    if (!vigenciaIso) {
+      Alert.alert('Data obrigatória', 'Selecione a data de início da vigência.');
+      return;
+    }
+    const faixasBody: RhConfigFaixaInss[] = faixas
+      .filter((f) => f.valor_ate.trim() && f.aliquota.trim())
+      .map((f, index) => ({
+        faixa_ordem: index + 1,
+        valor_ate: Number(f.valor_ate.replace(',', '.')) || 0,
+        aliquota: (Number(f.aliquota.replace(',', '.')) || 0) / 100,
+        parcela_deduzir: Number(f.parcela_deduzir.replace(',', '.')) || 0,
+      }));
+    if (faixasBody.length === 0) {
+      Alert.alert('Faixas obrigatórias', 'Preencha ao menos uma faixa.');
+      return;
+    }
+    onSave({
+      vigencia_inicio: vigenciaIso,
+      deducao_dependente: comDeducaoDependente ? Number(deducaoDependente.replace(',', '.')) || 0 : undefined,
+      faixas: faixasBody,
+    });
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <ScrollView style={[styles.requestModalCard, { maxHeight: '85%' }]}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>{titulo}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <RHSelectField
+            label="Data de início"
+            required
+            value={dataLabel}
+            placeholder="Selecione a data"
+            icon="calendar"
+            onPress={() => setIsDatePickerOpen(true)}
+          />
+
+          {comDeducaoDependente ? (
+            <>
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Dedução por dependente (R$)</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={deducaoDependente}
+                onChangeText={setDeducaoDependente}
+                keyboardType="numeric"
+                placeholder="Ex.: 189,59"
+                placeholderTextColor="#A7AEC2"
+              />
+            </>
+          ) : null}
+
+          <Text style={[rhStyles.sectionTitle, { marginTop: 16 }]}>Faixas</Text>
+          {faixas.map((faixa, index) => (
+            <View key={index} style={{ marginTop: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#EEF0F6' }}>
+              <Text style={rhStyles.folhaColaboradorMeta}>Faixa {index + 1}</Text>
+              <View style={rhStyles.formRow}>
+                <View style={rhStyles.formRowItem}>
+                  <Text style={styles.requestFieldLabel}>Até (R$)</Text>
+                  <TextInput
+                    style={styles.processTextInput}
+                    value={faixa.valor_ate}
+                    onChangeText={(v) => atualizarFaixa(index, 'valor_ate', v)}
+                    keyboardType="numeric"
+                    placeholder="Ex.: 1518,00"
+                    placeholderTextColor="#A7AEC2"
+                  />
+                </View>
+                <View style={rhStyles.formRowItem}>
+                  <Text style={styles.requestFieldLabel}>Alíquota (%)</Text>
+                  <TextInput
+                    style={styles.processTextInput}
+                    value={faixa.aliquota}
+                    onChangeText={(v) => atualizarFaixa(index, 'aliquota', v)}
+                    keyboardType="numeric"
+                    placeholder="Ex.: 7,5"
+                    placeholderTextColor="#A7AEC2"
+                  />
+                </View>
+              </View>
+              <Text style={styles.requestFieldLabel}>Parcela a deduzir (R$)</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={faixa.parcela_deduzir}
+                onChangeText={(v) => atualizarFaixa(index, 'parcela_deduzir', v)}
+                keyboardType="numeric"
+                placeholder="Ex.: 22,77"
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+          ))}
+
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+            <Pressable
+              style={[rhStyles.outlineButtonSmall, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+              onPress={() => setFaixas((prev) => [...prev, novaFaixaForm()])}
+            >
+              <Feather name="plus" size={13} color="#29448D" />
+              <Text style={rhStyles.outlineButtonSmallText}>Adicionar faixa</Text>
+            </Pressable>
+            {faixas.length > 1 ? (
+              <Pressable
+                style={[rhStyles.outlineButtonSmall, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                onPress={() => setFaixas((prev) => prev.slice(0, -1))}
+              >
+                <Feather name="minus" size={13} color="#E6213D" />
+                <Text style={[rhStyles.outlineButtonSmallText, { color: '#E6213D' }]}>Remover última</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={handleSubmit}>
+            <Text style={styles.primaryButtonText}>Criar vigência</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+
+      <RHDatePickerModal
+        inline
+        visible={isDatePickerOpen}
+        title="Data de início"
+        value={dataLabel}
+        onSelect={setDataLabel}
+        onClose={() => setIsDatePickerOpen(false)}
+      />
+    </Modal>
+  );
+}
+
+function RHConfigTabelaInssTab() {
+  const { identity } = useContext(AuthIdentityContext);
+  const [vigencias, setVigencias] = useState<RhConfigVigenciaInss[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
 
-  const handleSaveRole = (role: ConfigRole) => {
-    setRoles((current) => [role, ...current]);
-    setIsFormOpen(false);
+  const load = useCallback(() => {
+    setIsLoading(true);
+    fetchRhConfigTabelaInss()
+      .then((payload) => setVigencias(payload.data))
+      .catch(() => setVigencias([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSave = (body: { vigencia_inicio: string; faixas: RhConfigFaixaInss[] }) => {
+    createRhConfigTabelaInss(body, identity?.profileId)
+      .then(() => {
+        setIsFormOpen(false);
+        load();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível criar a vigência.'));
   };
+
+  return (
+    <>
+      <View style={[styles.directorNotifHeaderRow, styles.spacingTop]}>
+        <Text style={styles.directorNotifCountLabel}>
+          {vigencias.length} vigência{vigencias.length === 1 ? '' : 's'} — tabela INSS
+        </Text>
+        <Pressable style={styles.directorNotifNewButton} onPress={() => setIsFormOpen(true)}>
+          <Feather name="refresh-cw" size={14} color="#FFFFFF" />
+          <Text style={styles.directorNotifNewButtonText}>Nova vigência</Text>
+        </Pressable>
+      </View>
+
+      {isLoading ? (
+        <RHEmptyTabState message="Carregando..." />
+      ) : vigencias.length === 0 ? (
+        <RHEmptyTabState message="Nenhuma vigência cadastrada." />
+      ) : (
+        vigencias.map((vigencia) => (
+          <View key={vigencia.vigencia_inicio} style={rhStyles.sectionCard}>
+            <View style={rhStyles.announcementTopRow}>
+              <Text style={rhStyles.employeeName}>Vigência: {formatDateIsoBR(vigencia.vigencia_inicio)}</Text>
+              {vigencia.vigente ? (
+                <View style={[rhStyles.employeeStatusPill, { backgroundColor: '#E3F5EA' }]}>
+                  <Text style={[rhStyles.employeeStatusText, { color: '#18955A' }]}>Vigente</Text>
+                </View>
+              ) : null}
+            </View>
+            {vigencia.faixas.map((faixa) => (
+              <View key={faixa.faixa_ordem} style={rhStyles.folhaValuesRow}>
+                <View style={rhStyles.folhaValueItem}>
+                  <Text style={rhStyles.folhaValueLabel}>Faixa {faixa.faixa_ordem}</Text>
+                  <Text style={rhStyles.folhaValueAmount}>Até {formatBRL(faixa.valor_ate)}</Text>
+                </View>
+                <View style={rhStyles.folhaValueItem}>
+                  <Text style={rhStyles.folhaValueLabel}>Alíquota</Text>
+                  <Text style={rhStyles.folhaValueAmount}>{(faixa.aliquota * 100).toFixed(2)}%</Text>
+                </View>
+                <View style={rhStyles.folhaValueItem}>
+                  <Text style={rhStyles.folhaValueLabel}>Parcela a deduzir</Text>
+                  <Text style={rhStyles.folhaValueAmount}>{formatBRL(faixa.parcela_deduzir)}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        ))
+      )}
+
+      <RHConfigNovaVigenciaModal
+        visible={isFormOpen}
+        titulo="Nova vigência — Tabela INSS"
+        comDeducaoDependente={false}
+        onClose={() => setIsFormOpen(false)}
+        onSave={handleSave}
+      />
+    </>
+  );
+}
+
+function RHConfigTabelaIrrfTab() {
+  const { identity } = useContext(AuthIdentityContext);
+  const [vigencias, setVigencias] = useState<RhConfigVigenciaIrrf[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    fetchRhConfigTabelaIrrf()
+      .then((payload) => setVigencias(payload.data))
+      .catch(() => setVigencias([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSave = (body: { vigencia_inicio: string; deducao_dependente?: number; faixas: RhConfigFaixaInss[] }) => {
+    createRhConfigTabelaIrrf(
+      { ...body, faixas: body.faixas.map((f) => ({ ...f, deducao_dependente: body.deducao_dependente ?? 0 })) },
+      identity?.profileId
+    )
+      .then(() => {
+        setIsFormOpen(false);
+        load();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível criar a vigência.'));
+  };
+
+  return (
+    <>
+      <View style={[styles.directorNotifHeaderRow, styles.spacingTop]}>
+        <Text style={styles.directorNotifCountLabel}>
+          {vigencias.length} vigência{vigencias.length === 1 ? '' : 's'} — tabela IRRF
+        </Text>
+        <Pressable style={styles.directorNotifNewButton} onPress={() => setIsFormOpen(true)}>
+          <Feather name="refresh-cw" size={14} color="#FFFFFF" />
+          <Text style={styles.directorNotifNewButtonText}>Nova vigência</Text>
+        </Pressable>
+      </View>
+
+      {isLoading ? (
+        <RHEmptyTabState message="Carregando..." />
+      ) : vigencias.length === 0 ? (
+        <RHEmptyTabState message="Nenhuma vigência cadastrada." />
+      ) : (
+        vigencias.map((vigencia) => (
+          <View key={vigencia.vigencia_inicio} style={rhStyles.sectionCard}>
+            <View style={rhStyles.announcementTopRow}>
+              <Text style={rhStyles.employeeName}>Vigência: {formatDateIsoBR(vigencia.vigencia_inicio)}</Text>
+              {vigencia.vigente ? (
+                <View style={[rhStyles.employeeStatusPill, { backgroundColor: '#E3F5EA' }]}>
+                  <Text style={[rhStyles.employeeStatusText, { color: '#18955A' }]}>Vigente</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={rhStyles.folhaColaboradorMeta}>
+              Dedução por dependente: {formatBRL(vigencia.deducao_dependente)}
+            </Text>
+            {vigencia.faixas.map((faixa) => (
+              <View key={faixa.faixa_ordem} style={rhStyles.folhaValuesRow}>
+                <View style={rhStyles.folhaValueItem}>
+                  <Text style={rhStyles.folhaValueLabel}>Faixa {faixa.faixa_ordem}</Text>
+                  <Text style={rhStyles.folhaValueAmount}>Até {formatBRL(faixa.valor_ate)}</Text>
+                </View>
+                <View style={rhStyles.folhaValueItem}>
+                  <Text style={rhStyles.folhaValueLabel}>Alíquota</Text>
+                  <Text style={rhStyles.folhaValueAmount}>{(faixa.aliquota * 100).toFixed(2)}%</Text>
+                </View>
+                <View style={rhStyles.folhaValueItem}>
+                  <Text style={rhStyles.folhaValueLabel}>Parcela</Text>
+                  <Text style={rhStyles.folhaValueAmount}>{formatBRL(faixa.parcela_deduzir)}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        ))
+      )}
+
+      <RHConfigNovaVigenciaModal
+        visible={isFormOpen}
+        titulo="Nova vigência — Tabela IRRF"
+        comDeducaoDependente
+        onClose={() => setIsFormOpen(false)}
+        onSave={handleSave}
+      />
+    </>
+  );
+}
+
+// --- Salário Mínimo ---
+
+function RHConfigSalarioMinimoTab() {
+  const { identity } = useContext(AuthIdentityContext);
+  const [vigencias, setVigencias] = useState<RhConfigSalarioMinimoVigencia[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [dataLabel, setDataLabel] = useState('');
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [valor, setValor] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    fetchRhConfigSalarioMinimo()
+      .then(setVigencias)
+      .catch(() => setVigencias([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (isFormOpen) {
+      setDataLabel('');
+      setValor('');
+    }
+  }, [isFormOpen]);
+
+  const handleSubmit = () => {
+    const vigenciaIso = brDateLabelToIso(dataLabel);
+    if (!vigenciaIso || !valor.trim()) {
+      Alert.alert('Campos obrigatórios', 'Preencha a data de início e o valor.');
+      return;
+    }
+    setIsSaving(true);
+    createRhConfigSalarioMinimo(
+      { vigencia_inicio: vigenciaIso, valor: Number(valor.replace(',', '.')) || 0 },
+      identity?.profileId
+    )
+      .then(() => {
+        setIsFormOpen(false);
+        load();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível criar a vigência.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <>
+      <View style={[styles.directorNotifHeaderRow, styles.spacingTop]}>
+        <Text style={styles.directorNotifCountLabel}>
+          {vigencias.length} vigência{vigencias.length === 1 ? '' : 's'}
+        </Text>
+        <Pressable style={styles.directorNotifNewButton} onPress={() => setIsFormOpen(true)}>
+          <Feather name="refresh-cw" size={14} color="#FFFFFF" />
+          <Text style={styles.directorNotifNewButtonText}>Nova vigência</Text>
+        </Pressable>
+      </View>
+
+      {isLoading ? (
+        <RHEmptyTabState message="Carregando..." />
+      ) : vigencias.length === 0 ? (
+        <RHEmptyTabState message="Nenhuma vigência cadastrada." />
+      ) : (
+        vigencias.map((vigencia, index) => (
+          <View key={vigencia.id ?? index} style={rhStyles.folhaColaboradorRow}>
+            <View style={rhStyles.folhaColaboradorTopRow}>
+              <Text style={rhStyles.folhaColaboradorNome}>
+                {formatDateIsoBR(vigencia.vigencia_inicio)} – {formatDateIsoBR(vigencia.vigencia_fim) ?? '—'}
+              </Text>
+              {vigencia.vigente ? (
+                <View style={[rhStyles.employeeStatusPill, { backgroundColor: '#E3F5EA' }]}>
+                  <Text style={[rhStyles.employeeStatusText, { color: '#18955A' }]}>Vigente</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={rhStyles.folhaColaboradorMeta}>{formatBRL(vigencia.valor)}</Text>
+          </View>
+        ))
+      )}
+
+      <Modal visible={isFormOpen} animationType="fade" transparent onRequestClose={() => setIsFormOpen(false)}>
+        <View style={styles.requestModalBackdrop}>
+          <View style={styles.requestModalCard}>
+            <View style={styles.requestModalHeader}>
+              <Text style={styles.requestModalTitle}>Nova vigência — Salário Mínimo</Text>
+              <Pressable onPress={() => setIsFormOpen(false)} hitSlop={8}>
+                <Feather name="x" size={20} color="#677089" />
+              </Pressable>
+            </View>
+
+            <RHSelectField
+              label="Data de início"
+              required
+              value={dataLabel}
+              placeholder="Selecione a data"
+              icon="calendar"
+              onPress={() => setIsDatePickerOpen(true)}
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Valor (R$)</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={valor}
+              onChangeText={setValor}
+              keyboardType="numeric"
+              placeholder="Ex.: 1621,00"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? { opacity: 0.6 } : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Salvando...' : 'Criar vigência'}</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <RHDatePickerModal
+          inline
+          visible={isDatePickerOpen}
+          title="Data de início"
+          value={dataLabel}
+          onSelect={setDataLabel}
+          onClose={() => setIsDatePickerOpen(false)}
+        />
+      </Modal>
+    </>
+  );
+}
+
+// --- Parâmetros ---
+
+function RHConfigParametrosTab() {
+  const { identity } = useContext(AuthIdentityContext);
+  const [parametros, setParametros] = useState<RhConfigParametro[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [editingItem, setEditingItem] = useState<RhConfigParametro | null>(null);
+  const [valorForm, setValorForm] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    fetchRhConfigParametros()
+      .then(setParametros)
+      .catch(() => setParametros([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSubmit = () => {
+    if (!editingItem) return;
+    setIsSaving(true);
+    updateRhConfigParametro(editingItem.id, { valor: valorForm.trim() }, identity?.profileId)
+      .then(() => {
+        setEditingItem(null);
+        load();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar o parâmetro.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <>
+      {isLoading ? (
+        <View style={styles.spacingTop}>
+          <RHEmptyTabState message="Carregando parâmetros..." />
+        </View>
+      ) : parametros.length === 0 ? (
+        <View style={styles.spacingTop}>
+          <RHEmptyTabState message="Nenhum parâmetro cadastrado." />
+        </View>
+      ) : (
+        parametros.map((param) => (
+          <View key={param.id} style={[rhStyles.folhaColaboradorRow, styles.spacingTop]}>
+            <View style={rhStyles.folhaColaboradorTopRow}>
+              <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                {param.chave}
+              </Text>
+              <Pressable
+                style={rhStyles.outlineButtonSmall}
+                onPress={() => {
+                  setEditingItem(param);
+                  setValorForm(param.valor);
+                }}
+              >
+                <Feather name="edit-2" size={14} color="#29448D" />
+              </Pressable>
+            </View>
+            {param.descricao ? <Text style={rhStyles.employeeRoleUnit}>{param.descricao}</Text> : null}
+            <Text style={rhStyles.folhaColaboradorMeta}>Valor: {param.valor}</Text>
+          </View>
+        ))
+      )}
+
+      <Modal visible={editingItem !== null} animationType="fade" transparent onRequestClose={() => setEditingItem(null)}>
+        <View style={styles.requestModalBackdrop}>
+          <View style={styles.requestModalCard}>
+            <View style={styles.requestModalHeader}>
+              <Text style={styles.requestModalTitle}>{editingItem?.chave}</Text>
+              <Pressable onPress={() => setEditingItem(null)} hitSlop={8}>
+                <Feather name="x" size={20} color="#677089" />
+              </Pressable>
+            </View>
+            {editingItem?.descricao ? <Text style={rhStyles.employeeRoleUnit}>{editingItem.descricao}</Text> : null}
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Valor</Text>
+            <TextInput style={styles.processTextInput} value={valorForm} onChangeText={setValorForm} />
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? { opacity: 0.6 } : null]}
+              onPress={handleSubmit}
+              disabled={isSaving}
+            >
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Salvando...' : 'Salvar'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+// --- Reajustes ---
+
+const rhConfigReajusteTipoLabels: Record<RhConfigReajusteTipo, string> = {
+  dissidio: 'Dissídio (salário CLT)',
+  reajuste_salario: 'Reajuste de salário',
+  reajuste_vr: 'Reajuste de VR',
+  reajuste_va: 'Reajuste de VA',
+};
+
+const rhConfigReajusteModoLabels: Record<RhConfigReajusteModo, string> = {
+  percentual: 'Percentual (%)',
+  valor_fixo: 'Valor fixo (R$)',
+};
+
+function RHConfigNovoReajusteModal({
+  visible,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [tipo, setTipo] = useState<RhConfigReajusteTipo>('dissidio');
+  const [isTipoPickerOpen, setIsTipoPickerOpen] = useState(false);
+  const [modo, setModo] = useState<RhConfigReajusteModo>('percentual');
+  const [isModoPickerOpen, setIsModoPickerOpen] = useState(false);
+  const [dataLabel, setDataLabel] = useState('');
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [valorCampo, setValorCampo] = useState('');
+  const [descricao, setDescricao] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setTipo('dissidio');
+      setModo('percentual');
+      setDataLabel('');
+      setValorCampo('');
+      setDescricao('');
+    }
+  }, [visible]);
+
+  const handleSubmit = () => {
+    const vigenciaIso = brDateLabelToIso(dataLabel);
+    if (!vigenciaIso || !valorCampo.trim()) {
+      Alert.alert('Campos obrigatórios', 'Preencha a vigência e o valor do reajuste.');
+      return;
+    }
+    setIsSaving(true);
+    const numero = Number(valorCampo.replace(',', '.')) || 0;
+    createRhConfigReajuste(
+      {
+        tipo,
+        modo,
+        data_vigencia: vigenciaIso,
+        percentual: modo === 'percentual' ? numero : undefined,
+        valor_fixo: modo === 'valor_fixo' ? numero : undefined,
+        descricao: descricao.trim() || null,
+      },
+      identity?.profileId
+    )
+      .then(() => onSaved())
+      .catch((err) => showRhSaveError(err, 'Não foi possível cadastrar o reajuste.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>Novo reajuste coletivo</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+          <Text style={rhStyles.employeeRoleUnit}>
+            Cadastre o reajuste. Ele só será efetivado quando você clicar em "Aplicar" na lista.
+          </Text>
+
+          <View style={[rhStyles.formRow, styles.spacingTop]}>
+            <View style={rhStyles.formRowItem}>
+              <RHSelectField
+                label="Tipo"
+                value={rhConfigReajusteTipoLabels[tipo]}
+                onPress={() => setIsTipoPickerOpen(true)}
+              />
+            </View>
+            <View style={rhStyles.formRowItem}>
+              <RHSelectField
+                label="Vigência"
+                value={dataLabel}
+                placeholder="Selecione a data"
+                icon="calendar"
+                onPress={() => setIsDatePickerOpen(true)}
+              />
+            </View>
+          </View>
+
+          <View style={rhStyles.formRow}>
+            <View style={rhStyles.formRowItem}>
+              <RHSelectField
+                label="Modo"
+                value={rhConfigReajusteModoLabels[modo]}
+                onPress={() => setIsModoPickerOpen(true)}
+              />
+            </View>
+            <View style={rhStyles.formRowItem}>
+              <Text style={styles.requestFieldLabel}>{modo === 'percentual' ? 'Percentual' : 'Valor (R$)'}</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={valorCampo}
+                onChangeText={setValorCampo}
+                keyboardType="numeric"
+                placeholder={modo === 'percentual' ? 'Ex.: 5,5' : 'Ex.: 100,00'}
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+          </View>
+
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição (opcional)</Text>
+          <TextInput
+            style={styles.processTextInput}
+            value={descricao}
+            onChangeText={setDescricao}
+            placeholder="Ex.: Dissídio coletivo 2026 categoria comerciários"
+            placeholderTextColor="#A7AEC2"
+          />
+
+          <Pressable
+            style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? { opacity: 0.6 } : null]}
+            onPress={handleSubmit}
+            disabled={isSaving}
+          >
+            <Text style={styles.primaryButtonText}>{isSaving ? 'Cadastrando...' : 'Cadastrar'}</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <RHSimplePickerModal
+        inline
+        visible={isTipoPickerOpen}
+        title="Tipo"
+        options={Object.values(rhConfigReajusteTipoLabels)}
+        selectedValue={rhConfigReajusteTipoLabels[tipo]}
+        onSelect={(value) => {
+          const entry = Object.entries(rhConfigReajusteTipoLabels).find(([, label]) => label === value);
+          if (entry) setTipo(entry[0] as RhConfigReajusteTipo);
+        }}
+        onClose={() => setIsTipoPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        inline
+        visible={isModoPickerOpen}
+        title="Modo"
+        options={Object.values(rhConfigReajusteModoLabels)}
+        selectedValue={rhConfigReajusteModoLabels[modo]}
+        onSelect={(value) => {
+          const entry = Object.entries(rhConfigReajusteModoLabels).find(([, label]) => label === value);
+          if (entry) setModo(entry[0] as RhConfigReajusteModo);
+        }}
+        onClose={() => setIsModoPickerOpen(false)}
+      />
+      <RHDatePickerModal
+        inline
+        visible={isDatePickerOpen}
+        title="Vigência"
+        value={dataLabel}
+        onSelect={setDataLabel}
+        onClose={() => setIsDatePickerOpen(false)}
+      />
+    </Modal>
+  );
+}
+
+function RHConfigReajustesTab() {
+  const { identity } = useContext(AuthIdentityContext);
+  const [reajustes, setReajustes] = useState<RhConfigReajuste[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    fetchRhConfigReajustes()
+      .then(setReajustes)
+      .catch(() => setReajustes([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleAplicar = (item: RhConfigReajuste) => {
+    Alert.alert(
+      'Aplicar reajuste',
+      `Aplicar "${rhConfigReajusteTipoLabels[item.tipo]}" pra todos os colaboradores afetados? Essa ação atualiza salários/benefícios e não pode ser desfeita.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Aplicar',
+          style: 'destructive',
+          onPress: () => {
+            aplicarRhConfigReajuste(item.id, identity?.profileId)
+              .then(() => load())
+              .catch((err) => showRhSaveError(err, 'Não foi possível aplicar o reajuste.'));
+          },
+        },
+      ]
+    );
+  };
+
+  const handleExcluir = (item: RhConfigReajuste) => {
+    Alert.alert('Excluir reajuste', 'Tem certeza que deseja excluir esse rascunho?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteRhConfigReajuste(item.id, identity?.profileId)
+            .then(() => load())
+            .catch((err) => showRhSaveError(err, 'Não foi possível excluir o reajuste.'));
+        },
+      },
+    ]);
+  };
+
+  return (
+    <>
+      <Text style={[rhStyles.employeeRoleUnit, styles.spacingTop]}>
+        Aplique dissídios e reajustes (salário, VR, VA) em massa. A operação é registrada em histórico.
+      </Text>
+
+      <Pressable
+        style={[styles.directorNotifNewButton, { alignSelf: 'flex-end', marginTop: 10, marginBottom: 12 }]}
+        onPress={() => setIsFormOpen(true)}
+      >
+        <Feather name="plus" size={15} color="#FFFFFF" />
+        <Text style={styles.directorNotifNewButtonText}>Novo reajuste</Text>
+      </Pressable>
+
+      {isLoading ? (
+        <RHEmptyTabState message="Carregando reajustes..." />
+      ) : reajustes.length === 0 ? (
+        <RHEmptyTabState message="Nenhum reajuste cadastrado." />
+      ) : (
+        reajustes.map((item) => {
+          const valorLabel =
+            item.modo === 'percentual' ? `${item.percentual ?? 0}%` : formatBRL(item.valor_fixo);
+          return (
+            <View key={item.id} style={rhStyles.sectionCard}>
+              <View style={rhStyles.announcementTopRow}>
+                <Text style={rhStyles.employeeName}>{rhConfigReajusteTipoLabels[item.tipo]}</Text>
+                <View
+                  style={[
+                    rhStyles.employeeStatusPill,
+                    { backgroundColor: item.status === 'aplicado' ? '#E3F5EA' : '#FCEFDA' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      rhStyles.employeeStatusText,
+                      { color: item.status === 'aplicado' ? '#18955A' : '#B07A1E' },
+                    ]}
+                  >
+                    {item.status === 'aplicado' ? 'Aplicado' : 'Pendente'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={rhStyles.employeeRoleUnit}>
+                {valorLabel} · vigência {formatDateIsoBR(item.data_vigencia) ?? '—'}
+              </Text>
+              {item.descricao ? <Text style={rhStyles.folhaColaboradorMeta}>{item.descricao}</Text> : null}
+              {item.status === 'aplicado' ? (
+                <Text style={rhStyles.folhaColaboradorMeta}>
+                  Aplicado em {formatDateTimeIsoBR(item.aplicado_em) ?? '—'} · {item.total_colaboradores_afetados ?? 0}{' '}
+                  colaborador(es) afetado(s)
+                </Text>
+              ) : (
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                  <Pressable
+                    style={[rhStyles.primaryButtonGreen, { flex: 1 }]}
+                    onPress={() => handleAplicar(item)}
+                  >
+                    <Text style={styles.primaryButtonText}>Aplicar</Text>
+                  </Pressable>
+                  <Pressable style={rhStyles.outlineButtonSmall} onPress={() => handleExcluir(item)}>
+                    <Feather name="trash-2" size={14} color="#E6213D" />
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          );
+        })
+      )}
+
+      <RHConfigNovoReajusteModal
+        visible={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        onSaved={() => {
+          setIsFormOpen(false);
+          load();
+        }}
+      />
+    </>
+  );
+}
+
+export function RHConfiguracoesScreen({ navigation }: ScreenProps<'RHConfiguracoes'>) {
+  const [activeTab, setActiveTab] = useState<ConfigTab>('cargos');
+  const [folhaSubTab, setFolhaSubTab] = useState<ConfigFolhaSubTab>('rubricas');
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -17358,62 +18640,77 @@ export function RHConfiguracoesScreen({ navigation }: ScreenProps<'RHConfiguraco
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <RHPageHeader icon="settings" title="Configurações" subtitle="Cargos, setores, rubricas, tabelas" />
+        <RHPageHeader
+          icon="settings"
+          title="Configurações"
+          subtitle="Cargos, setores, rubricas, tabelas legais e parâmetros da folha."
+        />
 
-        <View style={rhStyles.categoryRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={rhStyles.resourceTabBarScroll}
+          contentContainerStyle={rhStyles.resourceTabBarRow}
+        >
           {rhConfigTabs.map((tab) => {
             const isActive = activeTab === tab.key;
             return (
               <Pressable
                 key={tab.key}
-                style={[rhStyles.categoryChip, isActive ? rhStyles.categoryChipActive : null]}
+                style={[rhStyles.resourceTabBarItem, isActive ? rhStyles.resourceTabBarItemActive : null]}
                 onPress={() => setActiveTab(tab.key)}
               >
-                <Text style={[rhStyles.categoryChipText, isActive ? rhStyles.categoryChipTextActive : null]}>
+                <Text
+                  style={[rhStyles.resourceTabBarItemText, isActive ? rhStyles.resourceTabBarItemTextActive : null]}
+                  numberOfLines={1}
+                >
                   {tab.label}
                 </Text>
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
 
-        {activeTab === 'cargos' ? (
+        {activeTab === 'cargos' ? <RHConfigCargoSetorTab tipo="cargos" /> : null}
+        {activeTab === 'setores' ? <RHConfigCargoSetorTab tipo="setores" /> : null}
+
+        {activeTab === 'folha' ? (
           <>
-            <View style={[styles.directorNotifHeaderRow, styles.spacingTop]}>
-              <Text style={styles.directorNotifCountLabel}>{roles.length} registros</Text>
-              <Pressable style={styles.directorNotifNewButton} onPress={() => setIsFormOpen(true)}>
-                <Feather name="plus" size={15} color="#FFFFFF" />
-                <Text style={styles.directorNotifNewButtonText}>Novo cargo</Text>
-              </Pressable>
-            </View>
-
-            {roles.map((role) => (
-              <View key={role.id} style={rhStyles.configRoleCard}>
-                <Text style={rhStyles.rankName}>{role.name}</Text>
-                <View style={rhStyles.configRoleRight}>
-                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: '#E3F5EA' }]}>
-                    <Text style={[rhStyles.employeeStatusText, { color: '#18955A' }]}>
-                      {role.active ? 'Ativo' : 'Inativo'}
-                    </Text>
-                  </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={[rhStyles.resourceTabBarScroll, { marginTop: 12 }]}
+              contentContainerStyle={rhStyles.resourceTabBarRow}
+            >
+              {rhConfigFolhaSubTabs.map((tab) => {
+                const isActive = folhaSubTab === tab.key;
+                return (
                   <Pressable
-                    hitSlop={8}
-                    onPress={() => Alert.alert(role.name, 'Edição de cargo em breve.')}
+                    key={tab.key}
+                    style={[rhStyles.resourceTabBarItem, isActive ? rhStyles.resourceTabBarItemActive : null]}
+                    onPress={() => setFolhaSubTab(tab.key)}
                   >
-                    <Feather name="edit-2" size={15} color="#9AA1B5" />
+                    <Text
+                      style={[rhStyles.resourceTabBarItemText, isActive ? rhStyles.resourceTabBarItemTextActive : null]}
+                      numberOfLines={1}
+                    >
+                      {tab.label}
+                    </Text>
                   </Pressable>
-                </View>
-              </View>
-            ))}
-          </>
-        ) : (
-          <View style={styles.spacingTop}>
-            <RHEmptyTabState message="Nenhum registro nesta aba ainda." />
-          </View>
-        )}
-      </ScrollView>
+                );
+              })}
+            </ScrollView>
 
-      <RoleFormModal visible={isFormOpen} onClose={() => setIsFormOpen(false)} onSave={handleSaveRole} />
+            {folhaSubTab === 'rubricas' ? <RHConfigRubricasTab /> : null}
+            {folhaSubTab === 'inss' ? <RHConfigTabelaInssTab /> : null}
+            {folhaSubTab === 'irrf' ? <RHConfigTabelaIrrfTab /> : null}
+            {folhaSubTab === 'salario' ? <RHConfigSalarioMinimoTab /> : null}
+            {folhaSubTab === 'parametros' ? <RHConfigParametrosTab /> : null}
+          </>
+        ) : null}
+
+        {activeTab === 'reajustes' ? <RHConfigReajustesTab /> : null}
+      </ScrollView>
     </SafeAreaView>
   );
 }

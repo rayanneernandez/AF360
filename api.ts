@@ -1589,6 +1589,307 @@ export async function fetchRhRelatorioReincidencia(params: {
   };
 }
 
+// --- Configurações: Cargos/Setores/Rubricas/Tabela INSS/Tabela IRRF/
+// Salário Mínimo/Parâmetros/Reajustes — endpoint confirmado pela Lovable em
+// 20/08/2026 (/api/public/internal/rh-config). Reajuste tem 2 passos:
+// criar rascunho (status=pendente) e depois aplicar (status=aplicado,
+// grava em rh_salario_historico/rh_historico_beneficios do lado deles).
+
+export type RhConfigCargo = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  ativo: boolean;
+};
+
+export async function fetchRhConfigCargos(params: { ativo?: boolean; busca?: string } = {}): Promise<RhConfigCargo[]> {
+  const query = new URLSearchParams();
+  if (params.ativo !== undefined) query.set('ativo', String(params.ativo));
+  if (params.busca) query.set('busca', params.busca);
+  const qs = query.toString();
+  const json = await api.get(`/api/rh/config/cargos${qs ? `?${qs}` : ''}`);
+  return (json.data as RhConfigCargo[]) ?? [];
+}
+
+export async function createRhConfigCargo(
+  body: { nome: string; descricao?: string | null; ativo?: boolean },
+  actorId?: string | null
+): Promise<RhConfigCargo> {
+  const json = await api.post(withActorId('/api/rh/config/cargos', actorId), body);
+  return json.data as RhConfigCargo;
+}
+
+export async function updateRhConfigCargo(
+  id: string,
+  body: { nome?: string; descricao?: string | null; ativo?: boolean },
+  actorId?: string | null
+): Promise<RhConfigCargo> {
+  const json = await api.patch(withActorId(`/api/rh/config/cargos/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhConfigCargo;
+}
+
+export type RhConfigSetor = RhConfigCargo;
+
+export async function fetchRhConfigSetores(params: { ativo?: boolean; busca?: string } = {}): Promise<RhConfigSetor[]> {
+  const query = new URLSearchParams();
+  if (params.ativo !== undefined) query.set('ativo', String(params.ativo));
+  if (params.busca) query.set('busca', params.busca);
+  const qs = query.toString();
+  const json = await api.get(`/api/rh/config/setores${qs ? `?${qs}` : ''}`);
+  return (json.data as RhConfigSetor[]) ?? [];
+}
+
+export async function createRhConfigSetor(
+  body: { nome: string; descricao?: string | null; ativo?: boolean },
+  actorId?: string | null
+): Promise<RhConfigSetor> {
+  const json = await api.post(withActorId('/api/rh/config/setores', actorId), body);
+  return json.data as RhConfigSetor;
+}
+
+export async function updateRhConfigSetor(
+  id: string,
+  body: { nome?: string; descricao?: string | null; ativo?: boolean },
+  actorId?: string | null
+): Promise<RhConfigSetor> {
+  const json = await api.patch(withActorId(`/api/rh/config/setores/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhConfigSetor;
+}
+
+export type RhConfigRubricaTipo = 'provento' | 'desconto' | 'informativa';
+
+export type RhConfigRubrica = {
+  id: string;
+  codigo: string;
+  nome: string;
+  tipo: RhConfigRubricaTipo;
+  incide_inss: boolean;
+  incide_irrf: boolean;
+  incide_fgts: boolean;
+  ordem: number;
+  descricao: string | null;
+  ativo: boolean;
+};
+
+export async function fetchRhConfigRubricas(
+  params: { ativo?: boolean; tipo?: RhConfigRubricaTipo } = {}
+): Promise<{ data: RhConfigRubrica[]; tipos: string[] }> {
+  const query = new URLSearchParams();
+  if (params.ativo !== undefined) query.set('ativo', String(params.ativo));
+  if (params.tipo) query.set('tipo', params.tipo);
+  const qs = query.toString();
+  const json = await api.get(`/api/rh/config/rubricas${qs ? `?${qs}` : ''}`);
+  return { data: (json.data as RhConfigRubrica[]) ?? [], tipos: (json.tipos as string[]) ?? [] };
+}
+
+export type RhConfigRubricaCreateBody = {
+  codigo: string;
+  nome: string;
+  tipo: RhConfigRubricaTipo;
+  incide_inss?: boolean;
+  incide_irrf?: boolean;
+  incide_fgts?: boolean;
+  ordem?: number;
+  descricao?: string | null;
+  ativo?: boolean;
+};
+
+export async function createRhConfigRubrica(
+  body: RhConfigRubricaCreateBody,
+  actorId?: string | null
+): Promise<RhConfigRubrica> {
+  const json = await api.post(withActorId('/api/rh/config/rubricas', actorId), body);
+  return json.data as RhConfigRubrica;
+}
+
+export async function updateRhConfigRubrica(
+  id: string,
+  body: Partial<RhConfigRubricaCreateBody>,
+  actorId?: string | null
+): Promise<RhConfigRubrica> {
+  const json = await api.patch(withActorId(`/api/rh/config/rubricas/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhConfigRubrica;
+}
+
+export async function deleteRhConfigRubrica(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/config/rubricas/${encodeURIComponent(id)}`, actorId));
+}
+
+export type RhConfigFaixaInss = {
+  id?: string;
+  faixa_ordem: number;
+  valor_ate: number;
+  aliquota: number;
+  parcela_deduzir: number;
+};
+
+export type RhConfigVigenciaInss = {
+  vigencia_inicio: string;
+  vigencia_fim: string | null;
+  vigente: boolean;
+  faixas: RhConfigFaixaInss[];
+};
+
+export async function fetchRhConfigTabelaInss(): Promise<{ data: RhConfigVigenciaInss[]; faixas: RhConfigFaixaInss[] }> {
+  const json = await api.get('/api/rh/config/inss');
+  return { data: (json.data as RhConfigVigenciaInss[]) ?? [], faixas: (json.faixas as RhConfigFaixaInss[]) ?? [] };
+}
+
+export async function createRhConfigTabelaInss(
+  body: { vigencia_inicio: string; vigencia_fim?: string | null; faixas: Omit<RhConfigFaixaInss, 'id'>[] },
+  actorId?: string | null
+): Promise<RhConfigVigenciaInss> {
+  const json = await api.post(withActorId('/api/rh/config/inss', actorId), body);
+  return json.data as RhConfigVigenciaInss;
+}
+
+export async function updateRhConfigFaixaInss(
+  id: string,
+  body: Partial<RhConfigFaixaInss>,
+  actorId?: string | null
+): Promise<RhConfigFaixaInss> {
+  const json = await api.patch(withActorId(`/api/rh/config/inss/faixa/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhConfigFaixaInss;
+}
+
+export type RhConfigFaixaIrrf = RhConfigFaixaInss & { deducao_dependente: number };
+
+export type RhConfigVigenciaIrrf = {
+  vigencia_inicio: string;
+  vigencia_fim: string | null;
+  vigente: boolean;
+  deducao_dependente: number;
+  faixas: RhConfigFaixaIrrf[];
+};
+
+export async function fetchRhConfigTabelaIrrf(): Promise<{ data: RhConfigVigenciaIrrf[]; faixas: RhConfigFaixaIrrf[] }> {
+  const json = await api.get('/api/rh/config/irrf');
+  return { data: (json.data as RhConfigVigenciaIrrf[]) ?? [], faixas: (json.faixas as RhConfigFaixaIrrf[]) ?? [] };
+}
+
+export async function createRhConfigTabelaIrrf(
+  body: {
+    vigencia_inicio: string;
+    vigencia_fim?: string | null;
+    deducao_dependente?: number;
+    faixas: Omit<RhConfigFaixaIrrf, 'id'>[];
+  },
+  actorId?: string | null
+): Promise<RhConfigVigenciaIrrf> {
+  const json = await api.post(withActorId('/api/rh/config/irrf', actorId), body);
+  return json.data as RhConfigVigenciaIrrf;
+}
+
+export async function updateRhConfigFaixaIrrf(
+  id: string,
+  body: Partial<RhConfigFaixaIrrf>,
+  actorId?: string | null
+): Promise<RhConfigFaixaIrrf> {
+  const json = await api.patch(withActorId(`/api/rh/config/irrf/faixa/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhConfigFaixaIrrf;
+}
+
+export type RhConfigSalarioMinimoVigencia = {
+  id?: string;
+  vigencia_inicio: string;
+  vigencia_fim: string | null;
+  valor: number;
+  vigente: boolean;
+};
+
+export async function fetchRhConfigSalarioMinimo(): Promise<RhConfigSalarioMinimoVigencia[]> {
+  const json = await api.get('/api/rh/config/salario-minimo');
+  return (json.data as RhConfigSalarioMinimoVigencia[]) ?? [];
+}
+
+export async function createRhConfigSalarioMinimo(
+  body: { vigencia_inicio: string; valor: number },
+  actorId?: string | null
+): Promise<RhConfigSalarioMinimoVigencia> {
+  const json = await api.post(withActorId('/api/rh/config/salario-minimo', actorId), body);
+  return json.data as RhConfigSalarioMinimoVigencia;
+}
+
+export type RhConfigParametro = {
+  id: string;
+  chave: string;
+  valor: string;
+  tipo: string;
+  descricao: string | null;
+};
+
+export async function fetchRhConfigParametros(): Promise<RhConfigParametro[]> {
+  const json = await api.get('/api/rh/config/parametros');
+  return (json.data as RhConfigParametro[]) ?? [];
+}
+
+export async function updateRhConfigParametro(
+  id: string,
+  body: { valor: string },
+  actorId?: string | null
+): Promise<RhConfigParametro> {
+  const json = await api.patch(withActorId(`/api/rh/config/parametros/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhConfigParametro;
+}
+
+export type RhConfigReajusteTipo = 'dissidio' | 'reajuste_salario' | 'reajuste_vr' | 'reajuste_va';
+export type RhConfigReajusteModo = 'percentual' | 'valor_fixo';
+export type RhConfigReajusteStatus = 'pendente' | 'aplicado';
+
+export type RhConfigReajuste = {
+  id: string;
+  tipo: RhConfigReajusteTipo;
+  modo: RhConfigReajusteModo;
+  data_vigencia: string;
+  percentual: number | null;
+  valor_fixo: number | null;
+  descricao: string | null;
+  status: RhConfigReajusteStatus;
+  total_colaboradores_afetados: number | null;
+  aplicado_em: string | null;
+  aplicado_por: string | null;
+};
+
+export async function fetchRhConfigReajustes(): Promise<RhConfigReajuste[]> {
+  const json = await api.get('/api/rh/config/reajustes');
+  return (json.data as RhConfigReajuste[]) ?? [];
+}
+
+export type RhConfigReajusteCreateBody = {
+  tipo: RhConfigReajusteTipo;
+  modo: RhConfigReajusteModo;
+  data_vigencia: string;
+  percentual?: number | null;
+  valor_fixo?: number | null;
+  descricao?: string | null;
+};
+
+export async function createRhConfigReajuste(
+  body: RhConfigReajusteCreateBody,
+  actorId?: string | null
+): Promise<RhConfigReajuste> {
+  const json = await api.post(withActorId('/api/rh/config/reajustes', actorId), body);
+  return json.data as RhConfigReajuste;
+}
+
+export async function updateRhConfigReajuste(
+  id: string,
+  body: Partial<RhConfigReajusteCreateBody>,
+  actorId?: string | null
+): Promise<RhConfigReajuste> {
+  const json = await api.patch(withActorId(`/api/rh/config/reajustes/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhConfigReajuste;
+}
+
+export async function deleteRhConfigReajuste(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/config/reajustes/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function aplicarRhConfigReajuste(id: string, actorId?: string | null): Promise<RhConfigReajuste> {
+  const json = await api.post(withActorId(`/api/rh/config/reajustes/${encodeURIComponent(id)}/aplicar`, actorId), {});
+  return json.data as RhConfigReajuste;
+}
+
 // --- Autenticação (login real via Supabase Auth, por trás da af360-api) ---
 
 export type AuthIdentity = {

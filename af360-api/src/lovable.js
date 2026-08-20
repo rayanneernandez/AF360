@@ -1590,6 +1590,95 @@ function getRhRelatorioReincidencia({ periodo, ano, mes, dataIni, dataFim, tipo 
   );
 }
 
+// --- Configurações: Cargos/Setores/Rubricas/Tabela INSS/Tabela IRRF/
+// Salário Mínimo/Parâmetros/Reajustes — endpoint unificado confirmado pela
+// Lovable em 20/08/2026 (/api/public/internal/rh-config). Reajuste tem 2
+// passos (POST cria rascunho status=pendente; POST ?acao=aplicar executa e
+// grava em rh_salario_historico/rh_historico_beneficios do lado deles).
+
+function getRhConfigCargos({ ativo, busca } = {}, actorId) {
+  return lovableGet('/api/public/internal/rh-config', { recurso: 'cargos', ativo, busca }, actorId);
+}
+function postRhConfigCargo(body, actorId) {
+  return lovablePost('/api/public/internal/rh-config', { recurso: 'cargos' }, body, actorId);
+}
+function patchRhConfigCargo(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-config', { recurso: 'cargos', id }, body, actorId);
+}
+
+function getRhConfigSetores({ ativo, busca } = {}, actorId) {
+  return lovableGet('/api/public/internal/rh-config', { recurso: 'setores', ativo, busca }, actorId);
+}
+function postRhConfigSetor(body, actorId) {
+  return lovablePost('/api/public/internal/rh-config', { recurso: 'setores' }, body, actorId);
+}
+function patchRhConfigSetor(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-config', { recurso: 'setores', id }, body, actorId);
+}
+
+function getRhConfigRubricas({ ativo, tipo } = {}, actorId) {
+  return lovableGet('/api/public/internal/rh-config', { recurso: 'rubricas', ativo, tipo }, actorId);
+}
+function postRhConfigRubrica(body, actorId) {
+  return lovablePost('/api/public/internal/rh-config', { recurso: 'rubricas' }, body, actorId);
+}
+function patchRhConfigRubrica(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-config', { recurso: 'rubricas', id }, body, actorId);
+}
+function deleteRhConfigRubrica(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-config', { recurso: 'rubricas', id }, actorId);
+}
+
+function getRhConfigTabelaInss(actorId) {
+  return lovableGet('/api/public/internal/rh-config', { recurso: 'inss' }, actorId);
+}
+function postRhConfigTabelaInss(body, actorId) {
+  return lovablePost('/api/public/internal/rh-config', { recurso: 'inss' }, body, actorId);
+}
+function patchRhConfigFaixaInss(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-config', { recurso: 'inss', id }, body, actorId);
+}
+
+function getRhConfigTabelaIrrf(actorId) {
+  return lovableGet('/api/public/internal/rh-config', { recurso: 'irrf' }, actorId);
+}
+function postRhConfigTabelaIrrf(body, actorId) {
+  return lovablePost('/api/public/internal/rh-config', { recurso: 'irrf' }, body, actorId);
+}
+function patchRhConfigFaixaIrrf(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-config', { recurso: 'irrf', id }, body, actorId);
+}
+
+function getRhConfigSalarioMinimo(actorId) {
+  return lovableGet('/api/public/internal/rh-config', { recurso: 'salario-minimo' }, actorId);
+}
+function postRhConfigSalarioMinimo(body, actorId) {
+  return lovablePost('/api/public/internal/rh-config', { recurso: 'salario-minimo' }, body, actorId);
+}
+
+function getRhConfigParametros(actorId) {
+  return lovableGet('/api/public/internal/rh-config', { recurso: 'parametros' }, actorId);
+}
+function patchRhConfigParametro(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-config', { recurso: 'parametros', id }, body, actorId);
+}
+
+function getRhConfigReajustes(actorId) {
+  return lovableGet('/api/public/internal/rh-config', { recurso: 'reajustes' }, actorId);
+}
+function postRhConfigReajuste(body, actorId) {
+  return lovablePost('/api/public/internal/rh-config', { recurso: 'reajustes' }, body, actorId);
+}
+function patchRhConfigReajuste(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-config', { recurso: 'reajustes', id }, body, actorId);
+}
+function deleteRhConfigReajuste(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-config', { recurso: 'reajustes', id }, actorId);
+}
+function postRhConfigReajusteAplicar(id, actorId) {
+  return lovablePost('/api/public/internal/rh-config', { recurso: 'reajustes', acao: 'aplicar', id }, {}, actorId);
+}
+
 module.exports = {
   getRhUniformesCobrancas,
   postRhUniformeCobranca,
@@ -1801,4 +1890,29 @@ module.exports = {
   patchRhWorkflowFluxo,
   deleteRhWorkflowFluxo,
   getRhRelatorioReincidencia,
+  getRhConfigCargos,
+  postRhConfigCargo,
+  patchRhConfigCargo,
+  getRhConfigSetores,
+  postRhConfigSetor,
+  patchRhConfigSetor,
+  getRhConfigRubricas,
+  postRhConfigRubrica,
+  patchRhConfigRubrica,
+  deleteRhConfigRubrica,
+  getRhConfigTabelaInss,
+  postRhConfigTabelaInss,
+  patchRhConfigFaixaInss,
+  getRhConfigTabelaIrrf,
+  postRhConfigTabelaIrrf,
+  patchRhConfigFaixaIrrf,
+  getRhConfigSalarioMinimo,
+  postRhConfigSalarioMinimo,
+  getRhConfigParametros,
+  patchRhConfigParametro,
+  getRhConfigReajustes,
+  postRhConfigReajuste,
+  patchRhConfigReajuste,
+  deleteRhConfigReajuste,
+  postRhConfigReajusteAplicar,
 };
