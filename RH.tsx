@@ -16227,22 +16227,32 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
 
         {activeTab === 'fluxos' ? (
           <>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={rhStyles.sectionTitle}>Fluxos de Aprovação</Text>
-                <Text style={rhStyles.employeeRoleUnit}>
-                  O construtor visual (canvas) fica disponível no painel web — aqui você acompanha status,
-                  ativa/desativa e vê os passos de cada fluxo.
-                </Text>
-              </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[rhStyles.sectionTitle, { flex: 1, marginRight: 8 }]} numberOfLines={1}>
+                Fluxos de Aprovação
+              </Text>
               <Pressable
-                style={[styles.primaryButton, { backgroundColor: '#5D6BFF', paddingHorizontal: 14, minHeight: 40 }]}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  backgroundColor: '#5D6BFF',
+                  borderRadius: 999,
+                  paddingHorizontal: 12,
+                  paddingVertical: 7,
+                }}
                 onPress={() => setIsNovoFluxoOpen(true)}
               >
-                <Feather name="plus" size={16} color="#FFFFFF" />
-                <Text style={styles.primaryButtonText}>Novo fluxo</Text>
+                <Feather name="plus" size={14} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }} numberOfLines={1}>
+                  Novo fluxo
+                </Text>
               </Pressable>
             </View>
+            <Text style={[rhStyles.employeeRoleUnit, { marginTop: 6 }]}>
+              O construtor visual (canvas) fica disponível no painel web — aqui você acompanha status,
+              ativa/desativa e vê os passos de cada fluxo.
+            </Text>
 
             <View style={{ marginTop: 14 }}>
               {isLoadingFluxos ? (
