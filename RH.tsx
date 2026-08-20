@@ -15224,21 +15224,29 @@ export function RHRecursosOperacionaisScreen({ navigation }: ScreenProps<'RHRecu
                 ) : estoque.length === 0 ? (
                   <RHEmptyTabState message="Nenhum item em estoque." />
                 ) : (
-                  estoque.map((linha, index) => {
-                    const item = itensMap[linha.item_id];
-                    return (
-                      <View key={`${linha.item_id}-${linha.tamanho ?? index}`} style={rhStyles.resourceCard}>
-                        <View style={rhStyles.resourceIconShell}>
-                          <Feather name="package" size={18} color="#5E667D" />
+                  estoque
+                    .filter((linha) => linha.ativo !== false)
+                    .map((linha, index) => {
+                      const item = itensMap[linha.item_id];
+                      const nome = linha.item_nome ?? item?.nome ?? linha.item_id;
+                      const detalhe = linha.sem_tamanhos
+                        ? 'Sem tamanhos cadastrados'
+                        : linha.unidade
+                        ? `${linha.tamanho ?? '—'} · ${linha.unidade}`
+                        : linha.tamanho ?? '—';
+                      return (
+                        <View key={`${linha.item_id}-${linha.tamanho ?? index}`} style={rhStyles.resourceCard}>
+                          <View style={rhStyles.resourceIconShell}>
+                            <Feather name="package" size={18} color="#5E667D" />
+                          </View>
+                          <View style={rhStyles.employeeInfo}>
+                            <Text style={rhStyles.employeeName}>{nome}</Text>
+                            <Text style={rhStyles.employeeRoleUnit}>{detalhe}</Text>
+                          </View>
+                          <Text style={rhStyles.folhaValueAmount}>{linha.sem_tamanhos ? '—' : linha.saldo}</Text>
                         </View>
-                        <View style={rhStyles.employeeInfo}>
-                          <Text style={rhStyles.employeeName}>{item?.nome ?? linha.item_id}</Text>
-                          <Text style={rhStyles.employeeRoleUnit}>{linha.tamanho ?? 'Sem tamanhos cadastrados'}</Text>
-                        </View>
-                        <Text style={rhStyles.folhaValueAmount}>{linha.saldo}</Text>
-                      </View>
-                    );
-                  })
+                      );
+                    })
                 )}
               </View>
             </>

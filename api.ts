@@ -1929,8 +1929,14 @@ export async function deleteRhUniformeCobranca(id: string, actorId?: string | nu
 
 export type RhUniformeEstoqueLinha = {
   item_id: string;
+  item_nome: string;
+  unidade?: string | null;
+  possui_grade?: boolean;
+  ativo?: boolean;
+  categoria?: string | null;
   tamanho: string | null;
   saldo: number;
+  sem_tamanhos?: boolean;
   item?: RhUniformeItemCatalogo;
   [key: string]: unknown;
 };
