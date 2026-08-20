@@ -16146,23 +16146,28 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
               </View>
             </View>
 
-            <View style={[rhStyles.searchRow, { marginBottom: 10 }]}>
-              <Feather name="search" size={16} color="#9AA1B5" />
-              <TextInput
-                style={rhStyles.searchInput}
-                value={busca}
-                onChangeText={setBusca}
-                placeholder="Buscar posto..."
-                placeholderTextColor="#A7AEC2"
-              />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <View style={[rhStyles.searchRow, { flex: 1, marginBottom: 0 }]}>
+                <Feather name="search" size={16} color="#9AA1B5" />
+                <TextInput
+                  style={rhStyles.searchInput}
+                  value={busca}
+                  onChangeText={setBusca}
+                  placeholder="Buscar posto..."
+                  placeholderTextColor="#A7AEC2"
+                  numberOfLines={1}
+                />
+              </View>
+              <Pressable
+                style={[rhStyles.outlineButtonSmall, { flexShrink: 0 }]}
+                onPress={() => setIsFiltroPickerOpen(true)}
+              >
+                <Text style={rhStyles.outlineButtonSmallText} numberOfLines={1}>
+                  {filtroLabel}
+                </Text>
+                <Feather name="chevron-down" size={14} color="#29448D" />
+              </Pressable>
             </View>
-            <Pressable
-              style={[rhStyles.outlineButtonSmall, { alignSelf: 'flex-start', marginBottom: 14 }]}
-              onPress={() => setIsFiltroPickerOpen(true)}
-            >
-              <Text style={rhStyles.outlineButtonSmallText}>{filtroLabel}</Text>
-              <Feather name="chevron-down" size={14} color="#29448D" />
-            </Pressable>
 
             {isLoadingPostos ? (
               <RHEmptyTabState message="Carregando postos..." />
