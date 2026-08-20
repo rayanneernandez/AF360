@@ -1707,6 +1707,10 @@ export type RhUniformePedidoItem = {
   quantidade: number;
   estado_devolucao: string | null;
   valor_cobrar: number | null;
+  // Embed do Supabase vem com o nome da tabela (rh_op_itens), não "item" —
+  // confirmado pela Lovable em 20/08/2026. Só existe no GET (leitura); no
+  // eco do POST de criação o item não vem embutido.
+  rh_op_itens?: { nome: string; unidade?: string | null } | null;
   [key: string]: unknown;
 };
 
@@ -1725,9 +1729,22 @@ export type RhUniformePedido = {
   entregue_em: string | null;
   entregue_por: string | null;
   created_at?: string;
+  // "itens" é o nome amigável usado pelo app; o GET da Lovable devolve o
+  // embed como "rh_op_pedido_itens" (nome da tabela) — normalizado em
+  // fetchRhUniformesPedidos/fetchRhUniformePedidoDetalhe pra sempre
+  // preencher `itens` também, então o resto do app pode continuar lendo
+  // só `pedido.itens`.
   itens?: RhUniformePedidoItem[];
+  rh_op_pedido_itens?: RhUniformePedidoItem[];
   [key: string]: unknown;
 };
+
+// Normaliza o embed de itens: GET devolve em rh_op_pedido_itens, o eco do
+// POST de criação devolve em itens — sempre expõe os dois preenchidos.
+function normalizeUniformePedido(row: RhUniformePedido): RhUniformePedido {
+  const itens = row.itens ?? row.rh_op_pedido_itens ?? [];
+  return { ...row, itens, rh_op_pedido_itens: itens };
+}
 
 export async function fetchRhUniformesKit(cargoId: string): Promise<RhUniformeKitItem[]> {
   const json = await api.get(`/api/rh/uniformes?recurso=kit&cargoId=${encodeURIComponent(cargoId)}`);
@@ -1755,16 +1772,17 @@ export async function fetchRhUniformesPedidos(
   if (params.offset !== undefined) search.set('offset', String(params.offset));
   const json = await api.get(`/api/rh/uniformes?${search.toString()}`);
   const data = json.data;
-  return (Array.isArray(data) ? data : data ? [data] : []) as RhUniformePedido[];
+  const rows = (Array.isArray(data) ? data : data ? [data] : []) as RhUniformePedido[];
+  return rows.map(normalizeUniformePedido);
 }
 
 // Detalhe de um pedido específico (usado no modal "Detalhes do pedido" —
-// espera-se que venha com `itens` embutido).
+// itens vêm em rh_op_pedido_itens, normalizado pra `itens` também).
 export async function fetchRhUniformePedidoDetalhe(id: string): Promise<RhUniformePedido | null> {
   const json = await api.get(`/api/rh/uniformes?recurso=pedidos&id=${encodeURIComponent(id)}`);
   const data = json.data;
-  if (Array.isArray(data)) return (data[0] as RhUniformePedido) ?? null;
-  return (data as RhUniformePedido) ?? null;
+  if (Array.isArray(data)) return data[0] ? normalizeUniformePedido(data[0] as RhUniformePedido) : null;
+  return data ? normalizeUniformePedido(data as RhUniformePedido) : null;
 }
 
 export async function fetchRhUniformesItens(): Promise<RhUniformeItemCatalogo[]> {

@@ -15453,7 +15453,9 @@ function RHPedidoUniformeDetalheModal({
               (pedido.itens ?? []).map((item, index) => (
                 <View key={`${item.item_id}-${index}`} style={rhStyles.rubricaRow}>
                   <View style={rhStyles.rubricaRowLeft}>
-                    <Text style={rhStyles.rubricaCodigoNome}>{itensMap[item.item_id]?.nome ?? item.item_id}</Text>
+                    <Text style={rhStyles.rubricaCodigoNome}>
+                      {item.rh_op_itens?.nome ?? itensMap[item.item_id]?.nome ?? item.item_id}
+                    </Text>
                     <Text style={rhStyles.rubricaReferencia}>Tamanho: {item.tamanho ?? '—'}</Text>
                   </View>
                   <Text style={rhStyles.rubricaValor}>{item.quantidade}</Text>
