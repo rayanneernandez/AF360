@@ -1467,6 +1467,20 @@ export async function fetchRhWorkflowFluxoDetalhe(id: string): Promise<RhWorkflo
   return json.data as RhWorkflowFluxoTemplate;
 }
 
+export type RhWorkflowFluxoCreateBody = {
+  nome: string;
+  categoria: string;
+  descricao?: string | null;
+};
+
+export async function createRhWorkflowFluxo(
+  body: RhWorkflowFluxoCreateBody,
+  actorId?: string | null
+): Promise<RhWorkflowFluxoTemplate> {
+  const json = await api.post(withActorId('/api/rh/workflow/fluxo', actorId), body);
+  return json.data as RhWorkflowFluxoTemplate;
+}
+
 export async function updateRhWorkflowFluxo(
   id: string,
   body: Partial<

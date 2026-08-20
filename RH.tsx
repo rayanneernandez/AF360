@@ -69,6 +69,7 @@ import {
   fetchRhWorkflowHistorico,
   fetchRhWorkflowFluxos,
   fetchRhWorkflowFluxoDetalhe,
+  createRhWorkflowFluxo,
   updateRhWorkflowFluxo,
   atribuirRhWorkflowLideranca,
   encerrarRhWorkflowLideranca,
@@ -16034,9 +16035,11 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
   const [postoSelecionado, setPostoSelecionado] = useState<RhWorkflowPosto | null>(null);
 
   const [fluxos, setFluxos] = useState<RhWorkflowFluxoTemplate[]>([]);
+  const [categoriasFluxo, setCategoriasFluxo] = useState<string[]>(['Geral', 'Férias', 'Reembolso', 'Solicitação', 'Compra']);
   const [isLoadingFluxos, setIsLoadingFluxos] = useState(false);
   const [hasLoadedFluxos, setHasLoadedFluxos] = useState(false);
   const [fluxoSelecionado, setFluxoSelecionado] = useState<RhWorkflowFluxoTemplate | null>(null);
+  const [isNovoFluxoOpen, setIsNovoFluxoOpen] = useState(false);
 
   const loadPostos = useCallback(() => {
     setIsLoadingPostos(true);
@@ -16063,6 +16066,7 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
     fetchRhWorkflowFluxos()
       .then((payload) => {
         setFluxos(payload.data);
+        if (payload.categorias.length > 0) setCategoriasFluxo(payload.categorias);
         setHasLoadedFluxos(true);
       })
       .catch(() => setFluxos([]))
@@ -16174,7 +16178,10 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
                 />
               </View>
               <Pressable
-                style={[rhStyles.outlineButtonSmall, { flexShrink: 0 }]}
+                style={[
+                  rhStyles.outlineButtonSmall,
+                  { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
+                ]}
                 onPress={() => setIsFiltroPickerOpen(true)}
               >
                 <Text style={rhStyles.outlineButtonSmallText} numberOfLines={1}>
@@ -16220,11 +16227,22 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
 
         {activeTab === 'fluxos' ? (
           <>
-            <Text style={rhStyles.sectionTitle}>Fluxos de Aprovação</Text>
-            <Text style={rhStyles.employeeRoleUnit}>
-              O construtor visual (canvas) fica disponível no painel web — aqui você acompanha status, ativa/desativa e
-              vê os passos de cada fluxo.
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={rhStyles.sectionTitle}>Fluxos de Aprovação</Text>
+                <Text style={rhStyles.employeeRoleUnit}>
+                  O construtor visual (canvas) fica disponível no painel web — aqui você acompanha status,
+                  ativa/desativa e vê os passos de cada fluxo.
+                </Text>
+              </View>
+              <Pressable
+                style={[styles.primaryButton, { backgroundColor: '#5D6BFF', paddingHorizontal: 14, minHeight: 40 }]}
+                onPress={() => setIsNovoFluxoOpen(true)}
+              >
+                <Feather name="plus" size={16} color="#FFFFFF" />
+                <Text style={styles.primaryButtonText}>Novo fluxo</Text>
+              </Pressable>
+            </View>
 
             <View style={{ marginTop: 14 }}>
               {isLoadingFluxos ? (
@@ -16269,7 +16287,127 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
           setFluxos((prev) => prev.map((f) => (f.id === atualizado.id ? atualizado : f)));
         }}
       />
+
+      <RHWorkflowNovoFluxoModal
+        visible={isNovoFluxoOpen}
+        categorias={categoriasFluxo}
+        onClose={() => setIsNovoFluxoOpen(false)}
+        onCreated={(novo) => {
+          setFluxos((prev) => [novo, ...prev]);
+          setIsNovoFluxoOpen(false);
+        }}
+      />
     </SafeAreaView>
+  );
+}
+
+function RHWorkflowNovoFluxoModal({
+  visible,
+  categorias,
+  onClose,
+  onCreated,
+}: {
+  visible: boolean;
+  categorias: string[];
+  onClose: () => void;
+  onCreated: (novo: RhWorkflowFluxoTemplate) => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const [nome, setNome] = useState('');
+  const [descricao, setDescricao] = useState('');
+  const [categoria, setCategoria] = useState(categorias[0] ?? 'Geral');
+  const [isCategoriaPickerOpen, setIsCategoriaPickerOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setNome('');
+      setDescricao('');
+      setCategoria(categorias[0] ?? 'Geral');
+    }
+  }, [visible, categorias]);
+
+  const handleCriar = () => {
+    if (!nome.trim()) {
+      Alert.alert('Nome obrigatório', 'Dê um nome pro fluxo antes de criar.');
+      return;
+    }
+    setIsSaving(true);
+    createRhWorkflowFluxo(
+      { nome: nome.trim(), categoria, descricao: descricao.trim() || null },
+      identity?.profileId
+    )
+      .then((novo) => onCreated(novo))
+      .catch((err) => showRhSaveError(err, 'Não foi possível criar o fluxo.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.simpleListCard} onPress={() => {}}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={[styles.simpleListTitle, { flex: 1, marginRight: 8 }]} numberOfLines={1}>
+              Novo fluxo
+            </Text>
+            <Pressable onPress={onClose}>
+              <Feather name="x" size={20} color="#5E667D" />
+            </Pressable>
+          </View>
+
+          <ScrollView style={{ marginTop: 12 }} showsVerticalScrollIndicator={false}>
+            <Text style={styles.requestFieldLabel}>Nome</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={nome}
+              onChangeText={setNome}
+              placeholder="Ex.: Aprovação de Reembolso"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <RHSelectField
+              label="Categoria"
+              value={categoria}
+              onPress={() => setIsCategoriaPickerOpen(true)}
+            />
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição</Text>
+            <TextInput
+              style={[styles.processTextInput, { minHeight: 70 }]}
+              value={descricao}
+              onChangeText={setDescricao}
+              multiline
+              placeholder="Opcional..."
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <Text style={[rhStyles.employeeRoleUnit, { marginTop: 10 }]}>
+              O fluxo é criado como rascunho, sem passos configurados. Desenhe o canvas (nós e conexões) pelo painel
+              web.
+            </Text>
+
+            <Pressable
+              style={[styles.primaryButton, { backgroundColor: '#5D6BFF', marginTop: 16 }, isSaving ? { opacity: 0.6 } : null]}
+              onPress={handleCriar}
+              disabled={isSaving}
+            >
+              <Feather name="plus" size={16} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Criando...' : 'Criar fluxo'}</Text>
+            </Pressable>
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+
+      <RHSimplePickerModal
+        inline
+        visible={isCategoriaPickerOpen}
+        title="Categoria"
+        options={categorias}
+        selectedValue={categoria}
+        onSelect={setCategoria}
+        onClose={() => setIsCategoriaPickerOpen(false)}
+      />
+    </Modal>
   );
 }
 
@@ -16334,7 +16472,10 @@ function RHWorkflowFluxoCard({
           <Switch value={item.ativo} onValueChange={onToggleAtivo} />
           <Text style={rhStyles.folhaColaboradorMeta}>Ativo</Text>
         </View>
-        <Pressable style={rhStyles.outlineButtonSmall} onPress={onEditar}>
+        <Pressable
+          style={[rhStyles.outlineButtonSmall, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+          onPress={onEditar}
+        >
           <Feather name="edit-2" size={14} color="#29448D" />
           <Text style={rhStyles.outlineButtonSmallText}>Editar</Text>
         </Pressable>
