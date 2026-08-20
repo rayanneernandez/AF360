@@ -1503,6 +1503,80 @@ function postRhUniformeTermo(body, actorId) {
   return lovablePost('/api/public/internal/rh-uniformes', { acao: 'termo' }, body, actorId);
 }
 
+// --- Workflow (Hierarquia por Posto + Fluxos de Aprovação) — proxy fino
+// pro endpoint unificado confirmado pela Lovable em 20/08/2026
+// (/api/public/internal/rh-workflow). "Postos" = empresas com tipo='Posto';
+// liderança fica em rh_posto_lideranca; troca de líder grava histórico em
+// rh_hierarquia_historico e recalcula gestor_direto_id/gestor_geral_id do
+// lado deles — nunca aqui.
+
+function getRhWorkflowPostos({ busca, filtro } = {}, actorId) {
+  return lovableGet('/api/public/internal/rh-workflow', { recurso: 'postos', busca, filtro }, actorId);
+}
+
+function getRhWorkflowLideranca(postoId, actorId) {
+  return lovableGet('/api/public/internal/rh-workflow', { recurso: 'lideranca', posto_id: postoId }, actorId);
+}
+
+function getRhWorkflowHistorico({ postoId, colaboradorId } = {}, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-workflow',
+    { recurso: 'historico', posto_id: postoId, colaborador_id: colaboradorId },
+    actorId
+  );
+}
+
+function getRhWorkflowColaboradores(actorId) {
+  return lovableGet('/api/public/internal/rh-workflow', { recurso: 'colaboradores' }, actorId);
+}
+
+function getRhWorkflowFluxos(actorId) {
+  return lovableGet('/api/public/internal/rh-workflow', { recurso: 'fluxos' }, actorId);
+}
+
+function getRhWorkflowInstancias(params = {}, actorId) {
+  return lovableGet('/api/public/internal/rh-workflow', { recurso: 'instancias', ...params }, actorId);
+}
+
+// Body: { posto_id, colaborador_id, tipo_lideranca, data_inicio, substituir? }
+function postRhWorkflowAtribuir(body, actorId) {
+  return lovablePost('/api/public/internal/rh-workflow', { acao: 'atribuir' }, body, actorId);
+}
+
+// Body: { id, data_fim, motivo }
+function postRhWorkflowEncerrar(body, actorId) {
+  return lovablePost('/api/public/internal/rh-workflow', { acao: 'encerrar' }, body, actorId);
+}
+
+// Body: { id, posto_destino_id }
+function postRhWorkflowTransferir(body, actorId) {
+  return lovablePost('/api/public/internal/rh-workflow', { acao: 'transferir' }, body, actorId);
+}
+
+function postRhWorkflowRecalcular(actorId) {
+  return lovablePost('/api/public/internal/rh-workflow', { acao: 'recalcular' }, {}, actorId);
+}
+
+function postRhWorkflowFluxo(body, actorId) {
+  return lovablePost('/api/public/internal/rh-workflow', { acao: 'fluxo' }, body, actorId);
+}
+
+function patchRhWorkflowLideranca(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-workflow', { recurso: 'lideranca', id }, body, actorId);
+}
+
+function deleteRhWorkflowLideranca(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-workflow', { recurso: 'lideranca', id }, actorId);
+}
+
+function patchRhWorkflowFluxo(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-workflow', { recurso: 'fluxo', id }, body, actorId);
+}
+
+function deleteRhWorkflowFluxo(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-workflow', { recurso: 'fluxo', id }, actorId);
+}
+
 module.exports = {
   getRhUniformesCobrancas,
   postRhUniformeCobranca,
@@ -1698,4 +1772,19 @@ module.exports = {
   patchRhFolhaCompetencia,
   patchRhFolhaSalario,
   deleteRhFolhaCompetencia,
+  getRhWorkflowPostos,
+  getRhWorkflowLideranca,
+  getRhWorkflowHistorico,
+  getRhWorkflowColaboradores,
+  getRhWorkflowFluxos,
+  getRhWorkflowInstancias,
+  postRhWorkflowAtribuir,
+  postRhWorkflowEncerrar,
+  postRhWorkflowTransferir,
+  postRhWorkflowRecalcular,
+  postRhWorkflowFluxo,
+  patchRhWorkflowLideranca,
+  deleteRhWorkflowLideranca,
+  patchRhWorkflowFluxo,
+  deleteRhWorkflowFluxo,
 };

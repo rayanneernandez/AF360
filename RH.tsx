@@ -63,6 +63,19 @@ import {
   fetchRhFolhaHistorico,
   createRhFolhaCompetencia,
   calcularRhFolha,
+  fetchRhWorkflowPostos,
+  fetchRhWorkflowLideranca,
+  fetchRhWorkflowHistorico,
+  fetchRhWorkflowFluxos,
+  atribuirRhWorkflowLideranca,
+  encerrarRhWorkflowLideranca,
+  type RhWorkflowPosto,
+  type RhWorkflowResumo,
+  type RhWorkflowLiderancaVigente,
+  type RhWorkflowHistoricoItem,
+  type RhWorkflowTipoLideranca,
+  type RhWorkflowFluxoTemplate,
+  type RhWorkflowFluxosPayload,
   fecharRhFolhaCompetencia,
   reabrirRhFolhaCompetencia,
   enviarContrachequesRhFolha,
@@ -15986,20 +15999,74 @@ function RHKitAddItemModal({
 }
 
 // ---------- Workflow ----------
+// Hierarquia por Posto + Fluxos de Aprovação — endpoint confirmado pela
+// Lovable em 20/08/2026 (/api/public/internal/rh-workflow, via
+// /api/rh/workflow). "Posto" = empresas com tipo='Posto'; liderança em
+// rh_posto_lideranca; toda troca grava histórico e recalcula
+// gestor_direto_id/gestor_geral_id do lado deles.
 
-type WorkflowUnit = { id: string; name: string; location: string };
+type WorkflowTab = 'hierarquia' | 'fluxos';
 
-const rhWorkflowStats = { postos: 56, comLideranca: 0, semLideranca: 56, lideresAtivos: 0 };
+function postoLocalizacaoLabel(posto: RhWorkflowPosto): string {
+  if (posto.localizacao) return String(posto.localizacao);
+  const partes = [posto.cidade, posto.estado].filter(Boolean);
+  return partes.length > 0 ? partes.join(' / ') : '—';
+}
 
-const rhWorkflowUnits: WorkflowUnit[] = [
-  { id: 'wf-1', name: 'Auto Mecânica Juquinha Ltd', location: 'Rio de Janeiro / RJ' },
-  { id: 'wf-2', name: 'Auto Posto BR 101 Norte Ltda', location: '—' },
-  { id: 'wf-3', name: 'Auto Posto Estrela do Oceano', location: 'Rio de Janeiro / RJ' },
-  { id: 'wf-4', name: 'Auto Posto Serviços Via Dutra 1', location: 'Nova Iguaçu / RJ' },
-  { id: 'wf-5', name: 'Auto Posto do Trabalho São Cristóvão', location: 'Rio de Janeiro / RJ' },
-];
+function workflowFiltroToQuery(filtro: 'Todos' | 'Com liderança' | 'Sem liderança'): 'todos' | 'com' | 'sem' {
+  if (filtro === 'Com liderança') return 'com';
+  if (filtro === 'Sem liderança') return 'sem';
+  return 'todos';
+}
 
 export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
+  const [activeTab, setActiveTab] = useState<WorkflowTab>('hierarquia');
+
+  const [postos, setPostos] = useState<RhWorkflowPosto[]>([]);
+  const [resumo, setResumo] = useState<RhWorkflowResumo | null>(null);
+  const [tiposLideranca, setTiposLideranca] = useState<string[]>([]);
+  const [isLoadingPostos, setIsLoadingPostos] = useState(false);
+  const [busca, setBusca] = useState('');
+  const [filtroLabel, setFiltroLabel] = useState<'Todos' | 'Com liderança' | 'Sem liderança'>('Todos');
+  const [isFiltroPickerOpen, setIsFiltroPickerOpen] = useState(false);
+  const [postoSelecionado, setPostoSelecionado] = useState<RhWorkflowPosto | null>(null);
+
+  const [fluxosPayload, setFluxosPayload] = useState<RhWorkflowFluxosPayload>({ templates: [], instancias_ativas: [] });
+  const [isLoadingFluxos, setIsLoadingFluxos] = useState(false);
+  const [hasLoadedFluxos, setHasLoadedFluxos] = useState(false);
+
+  const loadPostos = useCallback(() => {
+    setIsLoadingPostos(true);
+    fetchRhWorkflowPostos({ busca: busca || undefined, filtro: workflowFiltroToQuery(filtroLabel) })
+      .then((payload) => {
+        setPostos(payload.data);
+        setResumo(payload.resumo);
+        setTiposLideranca(payload.tipos_lideranca);
+      })
+      .catch(() => {
+        setPostos([]);
+        setResumo(null);
+      })
+      .finally(() => setIsLoadingPostos(false));
+  }, [busca, filtroLabel]);
+
+  useEffect(() => {
+    const timeout = setTimeout(loadPostos, 300);
+    return () => clearTimeout(timeout);
+  }, [loadPostos]);
+
+  useEffect(() => {
+    if (activeTab !== 'fluxos' || hasLoadedFluxos) return;
+    setIsLoadingFluxos(true);
+    fetchRhWorkflowFluxos()
+      .then((payload) => {
+        setFluxosPayload(payload);
+        setHasLoadedFluxos(true);
+      })
+      .catch(() => setFluxosPayload({ templates: [], instancias_ativas: [] }))
+      .finally(() => setIsLoadingFluxos(false));
+  }, [activeTab, hasLoadedFluxos]);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -16012,56 +16079,454 @@ export function RHWorkflowScreen({ navigation }: ScreenProps<'RHWorkflow'>) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <RHPageHeader icon="share-2" title="Workflow" subtitle="Hierarquia e aprovações" />
+        <RHPageHeader icon="share-2" title="Workflow" subtitle="Hierarquia organizacional e aprovações" />
 
-        <View style={styles.grid}>
-          <View style={styles.gridItem}>
-            <View style={rhStyles.kpiCard}>
-              <Text style={rhStyles.kpiLabel}>POSTOS</Text>
-              <Text style={rhStyles.sectionBigValue}>{rhWorkflowStats.postos}</Text>
-            </View>
-          </View>
-          <View style={styles.gridItem}>
-            <View style={rhStyles.kpiCard}>
-              <Text style={rhStyles.kpiLabel}>COM LIDERANÇA</Text>
-              <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGreen]}>
-                {rhWorkflowStats.comLideranca} / {rhWorkflowStats.postos}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.gridItem}>
-            <View style={rhStyles.kpiCard}>
-              <Text style={rhStyles.kpiLabel}>SEM LIDERANÇA</Text>
-              <Text style={[rhStyles.sectionBigValue, { color: '#E6213D' }]}>{rhWorkflowStats.semLideranca}</Text>
-            </View>
-          </View>
-          <View style={styles.gridItem}>
-            <View style={rhStyles.kpiCard}>
-              <Text style={rhStyles.kpiLabel}>LÍDERES ATIVOS</Text>
-              <Text style={[rhStyles.sectionBigValue, rhStyles.tripleStatValueBlue]}>
-                {rhWorkflowStats.lideresAtivos}
-              </Text>
-            </View>
-          </View>
-        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={rhStyles.resourceTabBarScroll}
+          contentContainerStyle={rhStyles.resourceTabBarRow}
+        >
+          {(
+            [
+              { key: 'hierarquia', label: 'Hierarquia por Posto' },
+              { key: 'fluxos', label: 'Fluxos de Aprovação' },
+            ] as { key: WorkflowTab; label: string }[]
+          ).map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                style={[rhStyles.resourceTabBarItem, isActive ? rhStyles.resourceTabBarItemActive : null]}
+                onPress={() => setActiveTab(tab.key)}
+              >
+                <Text
+                  style={[rhStyles.resourceTabBarItemText, isActive ? rhStyles.resourceTabBarItemTextActive : null]}
+                  numberOfLines={1}
+                >
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
 
-        {rhWorkflowUnits.map((unit) => (
-          <View key={unit.id} style={rhStyles.workflowUnitCard}>
-            <View style={rhStyles.employeeInfo}>
-              <Text style={rhStyles.employeeName}>{unit.name}</Text>
-              <Text style={rhStyles.employeeRoleUnit}>{unit.location}</Text>
-              <Text style={rhStyles.workflowWarningText}>Sem liderança atribuída</Text>
+        {activeTab === 'hierarquia' ? (
+          <>
+            <View style={styles.grid}>
+              <View style={styles.gridItem}>
+                <View style={rhStyles.kpiCard}>
+                  <Text style={rhStyles.kpiLabel}>POSTOS</Text>
+                  <Text style={rhStyles.sectionBigValue}>{resumo?.postos ?? '—'}</Text>
+                </View>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={rhStyles.kpiCard}>
+                  <Text style={rhStyles.kpiLabel}>COM LIDERANÇA</Text>
+                  <Text style={[rhStyles.sectionBigValue, rhStyles.statGridValueGreen]}>
+                    {resumo ? `${resumo.com_lideranca} / ${resumo.postos}` : '—'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={rhStyles.kpiCard}>
+                  <Text style={rhStyles.kpiLabel}>SEM LIDERANÇA</Text>
+                  <Text style={[rhStyles.sectionBigValue, { color: '#E6213D' }]}>
+                    {resumo?.sem_lideranca ?? '—'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.gridItem}>
+                <View style={rhStyles.kpiCard}>
+                  <Text style={rhStyles.kpiLabel}>LÍDERES ATIVOS</Text>
+                  <Text style={[rhStyles.sectionBigValue, rhStyles.tripleStatValueBlue]}>
+                    {resumo?.lideres_ativos ?? '—'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={[rhStyles.searchRow, { marginBottom: 10 }]}>
+              <Feather name="search" size={16} color="#9AA1B5" />
+              <TextInput
+                style={rhStyles.searchInput}
+                value={busca}
+                onChangeText={setBusca}
+                placeholder="Buscar posto..."
+                placeholderTextColor="#A7AEC2"
+              />
             </View>
             <Pressable
-              style={rhStyles.outlineButtonSmall}
-              onPress={() => Alert.alert(unit.name, 'Atribuição de liderança em breve.')}
+              style={[rhStyles.outlineButtonSmall, { alignSelf: 'flex-start', marginBottom: 14 }]}
+              onPress={() => setIsFiltroPickerOpen(true)}
             >
-              <Text style={rhStyles.outlineButtonSmallText}>Gerenciar</Text>
+              <Text style={rhStyles.outlineButtonSmallText}>{filtroLabel}</Text>
+              <Feather name="chevron-down" size={14} color="#29448D" />
+            </Pressable>
+
+            {isLoadingPostos ? (
+              <RHEmptyTabState message="Carregando postos..." />
+            ) : postos.length === 0 ? (
+              <RHEmptyTabState message="Nenhum posto encontrado." />
+            ) : (
+              postos.map((posto) => {
+                const liderVigente = posto.liderancas?.[0];
+                const liderNome = liderVigente?.rh_colaboradores?.nome_completo;
+                return (
+                  <View key={posto.id} style={rhStyles.workflowUnitCard}>
+                    <View style={rhStyles.employeeInfo}>
+                      <Text style={rhStyles.employeeName}>{posto.nome}</Text>
+                      <Text style={rhStyles.employeeRoleUnit}>{postoLocalizacaoLabel(posto)}</Text>
+                      {posto.tem_lideranca && liderNome ? (
+                        <Text style={rhStyles.folhaColaboradorMeta}>
+                          {liderNome} · {liderVigente?.tipo_lideranca}
+                        </Text>
+                      ) : (
+                        <Text style={rhStyles.workflowWarningText}>Sem liderança atribuída</Text>
+                      )}
+                    </View>
+                    <Pressable
+                      style={rhStyles.outlineButtonSmall}
+                      onPress={() => setPostoSelecionado(posto)}
+                    >
+                      <Text style={rhStyles.outlineButtonSmallText}>Gerenciar</Text>
+                    </Pressable>
+                  </View>
+                );
+              })
+            )}
+          </>
+        ) : null}
+
+        {activeTab === 'fluxos' ? (
+          <>
+            {isLoadingFluxos ? (
+              <RHEmptyTabState message="Carregando fluxos de aprovação..." />
+            ) : fluxosPayload.templates.length === 0 && fluxosPayload.instancias_ativas.length === 0 ? (
+              <RHEmptyTabState message="Nenhum fluxo de aprovação configurado." />
+            ) : (
+              <>
+                {fluxosPayload.templates.length > 0 ? (
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={rhStyles.sectionTitle}>Modelos de fluxo</Text>
+                    {fluxosPayload.templates.map((template: RhWorkflowFluxoTemplate, index: number) => (
+                      <RHWorkflowFluxoCard key={String(template.id ?? index)} item={template} />
+                    ))}
+                  </View>
+                ) : null}
+                {fluxosPayload.instancias_ativas.length > 0 ? (
+                  <View>
+                    <Text style={rhStyles.sectionTitle}>Instâncias ativas</Text>
+                    {fluxosPayload.instancias_ativas.map((instancia: RhWorkflowFluxoTemplate, index: number) => (
+                      <RHWorkflowFluxoCard key={String(instancia.id ?? index)} item={instancia} />
+                    ))}
+                  </View>
+                ) : null}
+              </>
+            )}
+          </>
+        ) : null}
+      </ScrollView>
+
+      <RHSimplePickerModal
+        visible={isFiltroPickerOpen}
+        title="Filtrar postos"
+        options={['Todos', 'Com liderança', 'Sem liderança']}
+        selectedValue={filtroLabel}
+        onSelect={(value) => setFiltroLabel(value as 'Todos' | 'Com liderança' | 'Sem liderança')}
+        onClose={() => setIsFiltroPickerOpen(false)}
+      />
+
+      <RHWorkflowLiderancaModal
+        posto={postoSelecionado}
+        tiposLideranca={tiposLideranca}
+        onClose={() => setPostoSelecionado(null)}
+        onSaved={loadPostos}
+      />
+    </SafeAreaView>
+  );
+}
+
+// Fluxos de Aprovação: formato exato dos templates/instâncias ainda não
+// confirmado pela Lovable — renderiza de forma defensiva os campos mais
+// prováveis (nome/titulo, descricao, status/ativo) sem inventar dado.
+function RHWorkflowFluxoCard({ item }: { item: RhWorkflowFluxoTemplate }) {
+  const nome = (item.nome ?? item.titulo ?? item.name ?? 'Fluxo sem nome') as string;
+  const descricao = (item.descricao ?? item.description ?? null) as string | null;
+  const status = (item.status ?? (item.ativo === false ? 'Inativo' : item.ativo === true ? 'Ativo' : null)) as
+    | string
+    | null;
+  return (
+    <View style={rhStyles.workflowUnitCard}>
+      <View style={rhStyles.employeeInfo}>
+        <Text style={rhStyles.employeeName}>{nome}</Text>
+        {descricao ? <Text style={rhStyles.employeeRoleUnit}>{descricao}</Text> : null}
+      </View>
+      {status ? <Text style={rhStyles.folhaColaboradorMeta}>{status}</Text> : null}
+    </View>
+  );
+}
+
+function RHWorkflowLiderancaModal({
+  posto,
+  tiposLideranca,
+  onClose,
+  onSaved,
+}: {
+  posto: RhWorkflowPosto | null;
+  tiposLideranca: string[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { identity } = useContext(AuthIdentityContext);
+  const visible = posto !== null;
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [vigentes, setVigentes] = useState<RhWorkflowLiderancaVigente[]>([]);
+  const [historico, setHistorico] = useState<RhWorkflowHistoricoItem[]>([]);
+  const [isHistoricoAberto, setIsHistoricoAberto] = useState(false);
+
+  const [colaboradorId, setColaboradorId] = useState<string | null>(null);
+  const [colaboradorNome, setColaboradorNome] = useState('');
+  const [isColaboradorPickerOpen, setIsColaboradorPickerOpen] = useState(false);
+  const tipoOpcoes = tiposLideranca.length > 0 ? tiposLideranca : ['Supervisor', 'Gerente', 'Coordenador', 'Diretor Regional'];
+  const [tipoLideranca, setTipoLideranca] = useState(tipoOpcoes[0] ?? 'Supervisor');
+  const [isTipoPickerOpen, setIsTipoPickerOpen] = useState(false);
+  const [dataInicioLabel, setDataInicioLabel] = useState('');
+  const [isDataPickerOpen, setIsDataPickerOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const load = useCallback(() => {
+    if (!posto) return;
+    setIsLoading(true);
+    fetchRhWorkflowLideranca(posto.id)
+      .then((detalhe) => {
+        setVigentes(detalhe.vigentes);
+        setHistorico(detalhe.historico);
+      })
+      .catch(() => {
+        setVigentes([]);
+        setHistorico([]);
+      })
+      .finally(() => setIsLoading(false));
+  }, [posto]);
+
+  useEffect(() => {
+    if (visible) {
+      setColaboradorId(null);
+      setColaboradorNome('');
+      setTipoLideranca(tipoOpcoes[0] ?? 'Supervisor');
+      setDataInicioLabel('');
+      setIsHistoricoAberto(false);
+      load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, posto?.id]);
+
+  if (!posto) return null;
+
+  const handleAtribuir = () => {
+    if (!colaboradorId) {
+      Alert.alert('Selecione o colaborador', 'Escolha quem vai assumir a liderança do posto.');
+      return;
+    }
+    const dataInicioIso = brDateLabelToIso(dataInicioLabel);
+    if (!dataInicioIso) {
+      Alert.alert('Data inválida', 'Selecione a data de início.');
+      return;
+    }
+    setIsSaving(true);
+    atribuirRhWorkflowLideranca(
+      {
+        posto_id: posto.id,
+        colaborador_id: colaboradorId,
+        tipo_lideranca: tipoLideranca,
+        data_inicio: dataInicioIso,
+        substituir: vigentes.length > 0,
+      },
+      identity?.profileId
+    )
+      .then(() => {
+        setColaboradorId(null);
+        setColaboradorNome('');
+        setDataInicioLabel('');
+        load();
+        onSaved();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível atribuir a liderança.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  const handleEncerrar = (item: RhWorkflowLiderancaVigente) => {
+    Alert.alert('Encerrar liderança', `Encerrar a liderança de ${item.rh_colaboradores?.nome_completo ?? 'colaborador'}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Encerrar',
+        style: 'destructive',
+        onPress: () => {
+          encerrarRhWorkflowLideranca(
+            { id: item.id, data_fim: new Date().toISOString().slice(0, 10) },
+            identity?.profileId
+          )
+            .then(() => {
+              load();
+              onSaved();
+            })
+            .catch((err) => showRhSaveError(err, 'Não foi possível encerrar a liderança.'));
+        },
+      },
+    ]);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.simpleListCard} onPress={() => {}}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={[styles.simpleListTitle, { flex: 1, marginRight: 8 }]} numberOfLines={1}>
+              Gerenciar liderança — {posto.nome}
+            </Text>
+            <Pressable onPress={onClose}>
+              <Feather name="x" size={20} color="#5E667D" />
             </Pressable>
           </View>
-        ))}
-      </ScrollView>
-    </SafeAreaView>
+          <Text style={rhStyles.employeeRoleUnit}>{postoLocalizacaoLabel(posto)}</Text>
+
+          <ScrollView style={{ marginTop: 12 }} showsVerticalScrollIndicator={false}>
+            <Text style={rhStyles.sectionTitle}>Liderança vigente</Text>
+            {isLoading ? (
+              <Text style={rhStyles.filterFieldLabel}>Carregando...</Text>
+            ) : vigentes.length === 0 ? (
+              <Text style={rhStyles.filterFieldLabel}>Nenhum líder vigente.</Text>
+            ) : (
+              vigentes.map((item) => (
+                <View key={item.id} style={rhStyles.folhaColaboradorRow}>
+                  <View style={rhStyles.folhaColaboradorTopRow}>
+                    <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                      {item.rh_colaboradores?.nome_completo ?? 'Sem nome'}
+                    </Text>
+                    <Pressable style={rhStyles.outlineButtonSmall} onPress={() => handleEncerrar(item)}>
+                      <Text style={rhStyles.outlineButtonSmallText}>Encerrar</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={rhStyles.folhaColaboradorMeta}>
+                    {item.tipo_lideranca} · desde {formatDateIsoBR(item.data_inicio) ?? '—'}
+                  </Text>
+                </View>
+              ))
+            )}
+
+            <Text style={[rhStyles.sectionTitle, { marginTop: 16 }]}>Adicionar novo líder</Text>
+            <View style={rhStyles.formRow}>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Colaborador"
+                  value={colaboradorNome}
+                  placeholder="Selecionar..."
+                  onPress={() => setIsColaboradorPickerOpen(true)}
+                />
+              </View>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Tipo"
+                  value={tipoLideranca}
+                  onPress={() => setIsTipoPickerOpen(true)}
+                />
+              </View>
+            </View>
+            <RHSelectField
+              label="Data de início"
+              value={dataInicioLabel}
+              placeholder="Selecione a data"
+              icon="calendar"
+              onPress={() => setIsDataPickerOpen(true)}
+            />
+
+            <Pressable
+              style={[styles.primaryButton, { backgroundColor: '#5D6BFF', marginTop: 14 }, isSaving ? { opacity: 0.6 } : null]}
+              onPress={handleAtribuir}
+              disabled={isSaving}
+            >
+              <Feather name="user-plus" size={16} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>{isSaving ? 'Atribuindo...' : 'Atribuir'}</Text>
+            </Pressable>
+
+            <Pressable
+              style={[rhStyles.folhaColaboradorTopRow, { marginTop: 18 }]}
+              onPress={() => setIsHistoricoAberto((prev) => !prev)}
+            >
+              <Text style={rhStyles.sectionTitle}>Ver histórico completo ({historico.length})</Text>
+              <Feather name={isHistoricoAberto ? 'chevron-up' : 'chevron-down'} size={16} color="#5E667D" />
+            </Pressable>
+            {isHistoricoAberto ? (
+              historico.length === 0 ? (
+                <Text style={rhStyles.filterFieldLabel}>Sem eventos registrados.</Text>
+              ) : (
+                historico.map((entry, index) => <RHWorkflowHistoricoEntry key={String(entry.id ?? index)} entry={entry} />)
+              )
+            ) : null}
+          </ScrollView>
+
+          <Pressable style={[rhStyles.outlineButtonSmall, { alignSelf: 'flex-end', marginTop: 12 }]} onPress={onClose}>
+            <Text style={rhStyles.outlineButtonSmallText}>Fechar</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+
+      <RHColaboradorPickerModal
+        inline
+        visible={isColaboradorPickerOpen}
+        selectedId={colaboradorId}
+        onSelect={(id, nome) => {
+          setColaboradorId(id);
+          setColaboradorNome(nome);
+        }}
+        onClose={() => setIsColaboradorPickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        inline
+        visible={isTipoPickerOpen}
+        title="Tipo de liderança"
+        options={tipoOpcoes}
+        selectedValue={tipoLideranca}
+        onSelect={setTipoLideranca}
+        onClose={() => setIsTipoPickerOpen(false)}
+      />
+      <RHDatePickerModal
+        inline
+        visible={isDataPickerOpen}
+        title="Data de início"
+        value={dataInicioLabel}
+        onSelect={setDataInicioLabel}
+        onClose={() => setIsDataPickerOpen(false)}
+      />
+    </Modal>
+  );
+}
+
+// Histórico de liderança: formato exato de rh_hierarquia_historico não foi
+// detalhado campo a campo pela Lovable — renderiza de forma defensiva
+// (aceita "acao" ou "evento" como título, sempre mostra tipo/datas quando
+// existirem, nunca inventa texto).
+function RHWorkflowHistoricoEntry({ entry }: { entry: RhWorkflowHistoricoItem }) {
+  const titulo = entry.acao ?? entry.evento ?? entry.tipo_lideranca ?? 'Evento';
+  const nome = entry.rh_colaboradores?.nome_completo;
+  return (
+    <View style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EEF0F6' }}>
+      <Text style={rhStyles.employeeName}>
+        {titulo}
+        {nome ? ` — ${nome}` : ''}
+      </Text>
+      <Text style={rhStyles.folhaColaboradorMeta}>
+        {entry.tipo_lideranca ? `${entry.tipo_lideranca} · ` : ''}
+        {formatDateIsoBR(entry.data_inicio) ?? '—'}
+        {entry.data_fim ? ` até ${formatDateIsoBR(entry.data_fim)}` : ''}
+      </Text>
+      <Text style={rhStyles.folhaColaboradorMeta}>
+        {entry.usuario_email ?? 'Sistema'}
+        {entry.created_at ? ` · ${formatDateTimeIsoBR(entry.created_at) ?? entry.created_at}` : ''}
+      </Text>
+    </View>
   );
 }
 

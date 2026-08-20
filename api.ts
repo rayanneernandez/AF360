@@ -1286,6 +1286,158 @@ export async function updateRhFolhaSalario(
   );
 }
 
+// --- Workflow: Hierarquia por Posto + Fluxos de Aprovação (endpoint
+// confirmado pela Lovable em 20/08/2026). "Posto" = empresas com
+// tipo='Posto'; liderança fica em rh_posto_lideranca; troca de líder grava
+// histórico em rh_hierarquia_historico e recalcula gestor_direto_id/
+// gestor_geral_id do lado deles.
+
+export type RhWorkflowTipoLideranca = 'Supervisor' | 'Gerente' | 'Coordenador' | 'Diretor Regional' | string;
+
+export type RhWorkflowLiderancaVigente = {
+  id: string;
+  posto_id?: string;
+  colaborador_id?: string;
+  tipo_lideranca: RhWorkflowTipoLideranca;
+  data_inicio: string | null;
+  data_fim?: string | null;
+  motivo_saida?: string | null;
+  rh_colaboradores?: RhColaboradorRaw | null;
+  [key: string]: unknown;
+};
+
+export type RhWorkflowPosto = {
+  id: string;
+  nome: string;
+  cidade?: string | null;
+  estado?: string | null;
+  localizacao?: string | null;
+  tem_lideranca: boolean;
+  liderancas?: RhWorkflowLiderancaVigente[];
+  [key: string]: unknown;
+};
+
+export type RhWorkflowResumo = {
+  postos: number;
+  com_lideranca: number;
+  sem_lideranca: number;
+  lideres_ativos: number;
+};
+
+export type RhWorkflowPostosPayload = {
+  data: RhWorkflowPosto[];
+  resumo: RhWorkflowResumo | null;
+  tipos_lideranca: string[];
+};
+
+export async function fetchRhWorkflowPostos(
+  params: { busca?: string; filtro?: 'todos' | 'com' | 'sem' } = {}
+): Promise<RhWorkflowPostosPayload> {
+  const query = new URLSearchParams();
+  if (params.busca) query.set('busca', params.busca);
+  if (params.filtro) query.set('filtro', params.filtro);
+  const qs = query.toString();
+  const json = await api.get(`/api/rh/workflow/postos${qs ? `?${qs}` : ''}`);
+  return {
+    data: (json.data as RhWorkflowPosto[]) ?? [],
+    resumo: (json.resumo as RhWorkflowResumo) ?? null,
+    tipos_lideranca: (json.tipos_lideranca as string[]) ?? [],
+  };
+}
+
+export type RhWorkflowLiderancaDetalhe = {
+  posto: RhWorkflowPosto | null;
+  vigentes: RhWorkflowLiderancaVigente[];
+  encerradas: RhWorkflowLiderancaVigente[];
+  historico: RhWorkflowHistoricoItem[];
+};
+
+export async function fetchRhWorkflowLideranca(postoId: string): Promise<RhWorkflowLiderancaDetalhe> {
+  const json = await api.get(`/api/rh/workflow/lideranca?postoId=${encodeURIComponent(postoId)}`);
+  const data = (json.data ?? {}) as Partial<RhWorkflowLiderancaDetalhe>;
+  return {
+    posto: data.posto ?? null,
+    vigentes: data.vigentes ?? [],
+    encerradas: data.encerradas ?? [],
+    historico: data.historico ?? [],
+  };
+}
+
+export type RhWorkflowHistoricoItem = {
+  id?: string;
+  posto_id?: string;
+  colaborador_id?: string;
+  tipo_lideranca?: RhWorkflowTipoLideranca;
+  acao?: string;
+  evento?: string;
+  data_inicio?: string | null;
+  data_fim?: string | null;
+  motivo_saida?: string | null;
+  usuario_email?: string | null;
+  created_at?: string;
+  rh_colaboradores?: RhColaboradorRaw | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRhWorkflowHistorico(params: {
+  postoId?: string;
+  colaboradorId?: string;
+}): Promise<RhWorkflowHistoricoItem[]> {
+  const query = new URLSearchParams();
+  if (params.postoId) query.set('postoId', params.postoId);
+  if (params.colaboradorId) query.set('colaboradorId', params.colaboradorId);
+  const json = await api.get(`/api/rh/workflow/historico?${query.toString()}`);
+  return (json.data as RhWorkflowHistoricoItem[]) ?? [];
+}
+
+export type RhWorkflowAtribuirBody = {
+  posto_id: string;
+  colaborador_id: string;
+  tipo_lideranca: RhWorkflowTipoLideranca;
+  data_inicio: string;
+  substituir?: boolean;
+};
+
+export async function atribuirRhWorkflowLideranca(
+  body: RhWorkflowAtribuirBody,
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId('/api/rh/workflow/atribuir', actorId), body);
+}
+
+export async function encerrarRhWorkflowLideranca(
+  body: { id: string; data_fim: string; motivo?: string | null },
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId('/api/rh/workflow/encerrar', actorId), body);
+}
+
+export async function transferirRhWorkflowLideranca(
+  body: { id: string; posto_destino_id: string },
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId('/api/rh/workflow/transferir', actorId), body);
+}
+
+// Fluxos de Aprovação — formato exato dos templates/instâncias ainda não
+// confirmado pela Lovable (só sabemos que existe "templates" +
+// "instancias_ativas"); tipado como registro flexível pra não inventar
+// nomes de campo, renderizado de forma defensiva na tela.
+export type RhWorkflowFluxoTemplate = { [key: string]: unknown };
+export type RhWorkflowFluxosPayload = {
+  templates: RhWorkflowFluxoTemplate[];
+  instancias_ativas: RhWorkflowFluxoTemplate[];
+};
+
+export async function fetchRhWorkflowFluxos(): Promise<RhWorkflowFluxosPayload> {
+  const json = await api.get('/api/rh/workflow/fluxos');
+  const data = (json.data ?? {}) as Partial<RhWorkflowFluxosPayload>;
+  return {
+    templates: data.templates ?? [],
+    instancias_ativas: data.instancias_ativas ?? [],
+  };
+}
+
 // --- Autenticação (login real via Supabase Auth, por trás da af360-api) ---
 
 export type AuthIdentity = {
