@@ -13628,6 +13628,17 @@ function formatDateIsoBR(iso: string | null | undefined): string | null {
   return `${day}/${month}/${year}`;
 }
 
+// Igual formatDateIsoBR, mas inclui o horário — usado em timestamps
+// completos (created_at) onde só a data perde informação (ex.: histórico).
+function formatDateTimeIsoBR(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return formatDateIsoBR(iso);
+  const datePart = date.toLocaleDateString('pt-BR');
+  const timePart = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return `${datePart}, ${timePart}`;
+}
+
 // rh_folha_auditoria — confirmado pela Lovable em 20/08/2026.
 const folhaAcaoLabel: Record<string, string> = {
   criar: 'Criou',
@@ -13674,7 +13685,7 @@ function RHFolhaAuditoriaEntry({ entry }: { entry: RhFolhaAuditoriaItem }) {
       ) : null}
       <Text style={rhStyles.folhaColaboradorMeta}>
         {entry.usuario_email ?? 'Sistema'}
-        {entry.created_at ? ` · ${formatDateIsoBR(entry.created_at) ?? entry.created_at}` : ''}
+        {entry.created_at ? ` · ${formatDateTimeIsoBR(entry.created_at) ?? entry.created_at}` : ''}
       </Text>
     </View>
   );
@@ -14107,9 +14118,16 @@ function RHFolhaCompetenciaDetalheModal({
         <Pressable style={[styles.requestModalCard, { maxHeight: '92%' }]} onPress={() => {}}>
           <View style={styles.requestModalHeader}>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={[styles.requestModalTitle, { flex: undefined }]} numberOfLines={1}>
-                Folha — {competencia ? folhaCompetenciaLabel(competencia) : '...'}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[styles.requestModalTitle, { flex: undefined, flexShrink: 1 }]} numberOfLines={1}>
+                  Folha — {competencia ? folhaCompetenciaLabel(competencia) : '...'}
+                </Text>
+                {competencia ? (
+                  <View style={[rhStyles.employeeStatusPill, { backgroundColor: statusMeta.tint, flexShrink: 0 }]}>
+                    <Text style={[rhStyles.employeeStatusText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
+                  </View>
+                ) : null}
+              </View>
               {competencia ? (
                 <Text style={rhStyles.modalSubtitle}>
                   {detalhe?.resumo.colaboradores_ativos ?? 0} colaborador(es) ativo(s) · {detalhe?.resumo.folhas_calculadas ?? 0} folha(s) calculada(s)
@@ -14131,10 +14149,6 @@ function RHFolhaCompetenciaDetalheModal({
             </View>
           ) : detalhe ? (
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <View style={[rhStyles.employeeStatusPill, { backgroundColor: statusMeta.tint, alignSelf: 'flex-start', marginBottom: 10 }]}>
-                <Text style={[rhStyles.employeeStatusText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
-              </View>
-
               <View style={rhStyles.payrollStatsRow}>
                 <View style={rhStyles.payrollStatItem}>
                   <Text style={rhStyles.payrollStatLabel}>Proventos</Text>
@@ -14223,20 +14237,28 @@ function RHFolhaCompetenciaDetalheModal({
                       {matricula ? <Text style={rhStyles.folhaColaboradorMeta}>Matrícula {matricula}</Text> : null}
                       <View style={rhStyles.folhaValuesRow}>
                         <View style={rhStyles.folhaValueItem}>
-                          <Text style={rhStyles.folhaValueLabel}>Salário base</Text>
-                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(colaborador.salario_base)}</Text>
+                          <Text style={rhStyles.folhaValueLabel} numberOfLines={1}>Salário base</Text>
+                          <Text style={rhStyles.folhaValueAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                            {formatBRL(colaborador.salario_base)}
+                          </Text>
                         </View>
                         <View style={rhStyles.folhaValueItem}>
-                          <Text style={rhStyles.folhaValueLabel}>Proventos</Text>
-                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(folha?.total_proventos)}</Text>
+                          <Text style={rhStyles.folhaValueLabel} numberOfLines={1}>Proventos</Text>
+                          <Text style={rhStyles.folhaValueAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                            {formatBRL(folha?.total_proventos)}
+                          </Text>
                         </View>
                         <View style={rhStyles.folhaValueItem}>
-                          <Text style={rhStyles.folhaValueLabel}>Descontos</Text>
-                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(folha?.total_descontos)}</Text>
+                          <Text style={rhStyles.folhaValueLabel} numberOfLines={1}>Descontos</Text>
+                          <Text style={rhStyles.folhaValueAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                            {formatBRL(folha?.total_descontos)}
+                          </Text>
                         </View>
                         <View style={rhStyles.folhaValueItem}>
-                          <Text style={rhStyles.folhaValueLabel}>Líquido</Text>
-                          <Text style={rhStyles.folhaValueAmount}>{formatBRL(folha?.liquido)}</Text>
+                          <Text style={rhStyles.folhaValueLabel} numberOfLines={1}>Líquido</Text>
+                          <Text style={rhStyles.folhaValueAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                            {formatBRL(folha?.liquido)}
+                          </Text>
                         </View>
                       </View>
                     </View>
@@ -14816,6 +14838,7 @@ export function RHRecursosOperacionaisScreen({ navigation }: ScreenProps<'RHRecu
   // reais de rh_colaboradores) e catálogo de itens, pra resolver nomes sem
   // depender de o endpoint de uniformes embutir isso.
   const [colaboradoresMap, setColaboradoresMap] = useState<Record<string, { nome: string; matricula: string | null }>>({});
+  const [isColaboradoresMapReady, setIsColaboradoresMapReady] = useState(false);
   const [itensCatalogo, setItensCatalogo] = useState<RhUniformeItemCatalogo[]>([]);
   const itensMap = useMemo(() => {
     const map: Record<string, RhUniformeItemCatalogo> = {};
@@ -14834,7 +14857,8 @@ export function RHRecursosOperacionaisScreen({ navigation }: ScreenProps<'RHRecu
         });
         setColaboradoresMap(map);
       })
-      .catch(() => setColaboradoresMap({}));
+      .catch(() => setColaboradoresMap({}))
+      .finally(() => setIsColaboradoresMapReady(true));
     fetchRhUniformesItens()
       .then(setItensCatalogo)
       .catch(() => setItensCatalogo([]));
@@ -15072,22 +15096,30 @@ export function RHRecursosOperacionaisScreen({ navigation }: ScreenProps<'RHRecu
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <RHPageHeader icon="tool" title="Recursos Operacionais" subtitle="Uniformes e EPIs" />
 
-        <View style={rhStyles.categoryRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={rhStyles.resourceTabBarScroll}
+          contentContainerStyle={rhStyles.resourceTabBarRow}
+        >
           {rhResourceTabs.map((tab) => {
             const isActive = activeTab === tab.key;
             return (
               <Pressable
                 key={tab.key}
-                style={[rhStyles.categoryChip, isActive ? rhStyles.categoryChipActive : null]}
+                style={[rhStyles.resourceTabBarItem, isActive ? rhStyles.resourceTabBarItemActive : null]}
                 onPress={() => setActiveTab(tab.key)}
               >
-                <Text style={[rhStyles.categoryChipText, isActive ? rhStyles.categoryChipTextActive : null]}>
+                <Text
+                  style={[rhStyles.resourceTabBarItemText, isActive ? rhStyles.resourceTabBarItemTextActive : null]}
+                  numberOfLines={1}
+                >
                   {tab.label}
                 </Text>
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
 
         <View style={styles.spacingTop}>
           {activeTab === 'pedidos' ? (
@@ -15097,7 +15129,7 @@ export function RHRecursosOperacionaisScreen({ navigation }: ScreenProps<'RHRecu
                 <Text style={rhStyles.sectionHeaderMeta}>{pedidos.length} pedido(s)</Text>
               </View>
 
-              {isLoadingPedidos ? (
+              {isLoadingPedidos || !isColaboradoresMapReady ? (
                 <RHEmptyTabState message="Carregando pedidos..." />
               ) : pedidosErro ? (
                 <RHEmptyTabState message={pedidosErro} />
@@ -15107,7 +15139,7 @@ export function RHRecursosOperacionaisScreen({ navigation }: ScreenProps<'RHRecu
                 pedidos.map((pedido) => {
                   const meta = uniformePedidoStatusMeta[pedido.status] ?? { label: pedido.status, color: '#5E667D', tint: '#EEF0F6' };
                   const colaborador = colaboradoresMap[pedido.colaborador_id];
-                  const criadoLabel = formatDateIsoBR((pedido.created_at as string | undefined) ?? null);
+                  const criadoLabel = formatDateTimeIsoBR((pedido.created_at as string | undefined) ?? null);
                   return (
                     <View key={pedido.id} style={rhStyles.folhaColaboradorRow}>
                       <View style={rhStyles.folhaColaboradorTopRow}>
@@ -15498,7 +15530,7 @@ function RHPedidoUniformeDetalheModal({
 }) {
   if (!visible || !pedido) return null;
   const meta = uniformePedidoStatusMeta[pedido.status] ?? { label: pedido.status, color: '#5E667D', tint: '#EEF0F6' };
-  const criadoLabel = formatDateIsoBR((pedido.created_at as string | undefined) ?? null);
+  const criadoLabel = formatDateTimeIsoBR((pedido.created_at as string | undefined) ?? null);
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -19197,14 +19229,46 @@ const rhStyles = StyleSheet.create({
     fontSize: 11,
     marginBottom: 8,
   },
+  // Tab bar horizontal (rolável) da tela Recursos Operacionais — "lado a
+  // lado" com sublinhado no ativo, em vez de chips/pílulas que quebram em
+  // 2 linhas quando são muitas abas (6).
+  resourceTabBarScroll: {
+    marginBottom: 14,
+  },
+  resourceTabBarRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E6F0',
+  },
+  resourceTabBarItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  resourceTabBarItemActive: {
+    borderBottomColor: '#1B6E3A',
+  },
+  resourceTabBarItemText: {
+    color: '#8B93A8',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  resourceTabBarItemTextActive: {
+    color: '#1B6E3A',
+  },
   folhaValuesRow: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     marginBottom: 8,
   },
   folhaValueItem: {
     flex: 1,
+    minWidth: 0,
+    paddingRight: 4,
   },
   folhaValueLabel: {
+    height: 14,
     color: '#9AA1B5',
     fontSize: 10,
     fontWeight: '600',
