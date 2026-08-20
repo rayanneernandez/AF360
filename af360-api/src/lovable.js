@@ -1153,6 +1153,50 @@ function getRhTreinamentoProgressoAulas({ inscricaoId, aulaId } = {}, actorId) {
   return getRhTreinamentos({ recurso: 'progresso-aulas', inscricaoId, aulaId }, actorId);
 }
 
+// --- Treinamentos (RH/admin): CRUD de treinamento/aulas/questões,
+// atribuição em massa e respostas agregadas — confirmado pela Lovable em
+// 20/08/2026, mesmo endpoint /api/public/internal/rh-treinamentos.
+
+function postRhTreinamento(body, actorId) {
+  return lovablePost('/api/public/internal/rh-treinamentos', { recurso: 'treinamentos' }, body, actorId);
+}
+function patchRhTreinamento(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-treinamentos', { recurso: 'treinamentos', id }, body, actorId);
+}
+function deleteRhTreinamento(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-treinamentos', { recurso: 'treinamentos', id }, actorId);
+}
+
+function postRhTreinamentoAula(body, actorId) {
+  return lovablePost('/api/public/internal/rh-treinamentos', { recurso: 'aulas' }, body, actorId);
+}
+function patchRhTreinamentoAula(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-treinamentos', { recurso: 'aulas', id }, body, actorId);
+}
+function deleteRhTreinamentoAula(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-treinamentos', { recurso: 'aulas', id }, actorId);
+}
+
+// Body: { filename, treinamento_id? } → { bucket, path, signed_url, token, video_url, video_storage_path }
+function postRhTreinamentoVideoUploadUrl(body, actorId) {
+  return lovablePost('/api/public/internal/rh-treinamentos', { recurso: 'video-upload-url' }, body, actorId);
+}
+
+function postRhTreinamentoQuestao(body, actorId) {
+  return lovablePost('/api/public/internal/rh-treinamentos', { recurso: 'questoes' }, body, actorId);
+}
+function patchRhTreinamentoQuestao(id, body, actorId) {
+  return lovablePatch('/api/public/internal/rh-treinamentos', { recurso: 'questoes', id }, body, actorId);
+}
+function deleteRhTreinamentoQuestao(id, actorId) {
+  return lovableDelete('/api/public/internal/rh-treinamentos', { recurso: 'questoes', id }, actorId);
+}
+
+// Body: { treinamento_id, tipo, cargos?, grupos?, colaboradores?, inscrever? } → { data, inscritos }
+function postRhTreinamentoAtribuir(body, actorId) {
+  return lovablePost('/api/public/internal/rh-treinamentos', { recurso: 'atribuir' }, body, actorId);
+}
+
 // --- Metas de RH (rh_metas) — endpoint confirmado pela Lovable em
 // 19/08/2026: /api/public/internal/rh-metas (mesma auth: x-internal-secret +
 // x-actor-id).
@@ -1846,6 +1890,17 @@ module.exports = {
   patchRhTreinamentoInscricao,
   postRhTreinamentoProgressoAula,
   getRhTreinamentoProgressoAulas,
+  postRhTreinamento,
+  patchRhTreinamento,
+  deleteRhTreinamento,
+  postRhTreinamentoAula,
+  patchRhTreinamentoAula,
+  deleteRhTreinamentoAula,
+  postRhTreinamentoVideoUploadUrl,
+  postRhTreinamentoQuestao,
+  patchRhTreinamentoQuestao,
+  deleteRhTreinamentoQuestao,
+  postRhTreinamentoAtribuir,
   getRhMetas,
   postRhMeta,
   patchRhMeta,

@@ -2858,7 +2858,7 @@ export type RhTreinamentoQuestao = {
 };
 
 async function fetchRhTreinamentosRecurso<T>(
-  recurso: 'treinamentos' | 'aulas' | 'questoes' | 'inscricoes' | 'respostas' | 'progresso-aulas',
+  recurso: 'treinamentos' | 'aulas' | 'questoes' | 'inscricoes' | 'respostas' | 'progresso-aulas' | 'atribuicoes',
   params: {
     treinamentoId?: string;
     colaboradorId?: string;
@@ -2915,6 +2915,13 @@ export async function fetchRhTreinamentoQuestoes(
 export async function fetchRhTreinamentoDetalhe(treinamentoId: string): Promise<RhTreinamentoCatalogo | null> {
   const items = await fetchRhTreinamentosRecurso<RhTreinamentoCatalogo>('treinamentos', { treinamentoId });
   return items[0] ?? null;
+}
+
+// Wrapper aditivo — apenas expõe a listagem completa (sem treinamentoId) do
+// recurso interno 'treinamentos' já existente, pra tela de gestão do RH
+// listar todos os treinamentos do catálogo (com filtro opcional de ativo).
+export async function fetchRhTreinamentos(params: { ativo?: boolean } = {}): Promise<RhTreinamentoCatalogo[]> {
+  return fetchRhTreinamentosRecurso<RhTreinamentoCatalogo>('treinamentos', params);
 }
 
 export async function fetchRhTreinamentoInscricoes(params: {
@@ -2990,6 +2997,262 @@ export async function upsertRhTreinamentoProgressoAula(
 ): Promise<{ data: RhTreinamentoProgressoAula; percentual?: number }> {
   const json = await api.post(withActorId('/api/rh/treinamentos-conteudo/progresso-aula', actorId), body);
   return { data: json.data, percentual: json.percentual };
+}
+
+// --- Treinamentos (RH/admin): CRUD de treinamento/aulas/questões, upload de
+// vídeo via signed URL, atribuição em massa e respostas agregadas —
+// endpoint confirmado pela Lovable em 20/08/2026 (mesmo
+// /api/public/internal/rh-treinamentos usado pelo colaborador).
+
+export type RhTreinamentoCreateBody = {
+  titulo: string;
+  subtitulo?: string | null;
+  descricao?: string | null;
+  categoria: string;
+  carga_horaria_min: number;
+  obrigatorio?: boolean;
+  ativo?: boolean;
+  rascunho?: boolean;
+  prova_min_acerto: number;
+  prova_tempo_limite_min: number;
+  capa_url?: string | null;
+  video_url?: string | null;
+  conteudo_url?: string | null;
+  tipo?: 'video' | 'leitura' | 'presencial' | 'outro';
+};
+
+export async function createRhTreinamento(
+  body: RhTreinamentoCreateBody,
+  actorId?: string | null
+): Promise<RhTreinamentoCatalogo> {
+  const json = await api.post(withActorId('/api/rh/treinamentos-conteudo', actorId), body);
+  return json.data as RhTreinamentoCatalogo;
+}
+
+export async function updateRhTreinamento(
+  id: string,
+  body: Partial<RhTreinamentoCreateBody>,
+  actorId?: string | null
+): Promise<RhTreinamentoCatalogo> {
+  const json = await api.patch(withActorId(`/api/rh/treinamentos-conteudo/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhTreinamentoCatalogo;
+}
+
+export async function deleteRhTreinamento(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/treinamentos-conteudo/${encodeURIComponent(id)}`, actorId));
+}
+
+export type RhTreinamentoAulaCreateBody = {
+  treinamento_id: string;
+  ordem?: number;
+  titulo: string;
+  descricao?: string | null;
+  duracao_min?: number | null;
+  video_url?: string | null;
+  video_storage_path?: string | null;
+};
+
+export async function createRhTreinamentoAula(
+  body: RhTreinamentoAulaCreateBody,
+  actorId?: string | null
+): Promise<RhTreinamentoAula> {
+  const json = await api.post(withActorId('/api/rh/treinamentos-conteudo/aulas', actorId), body);
+  return json.data as RhTreinamentoAula;
+}
+
+export async function updateRhTreinamentoAula(
+  id: string,
+  body: Partial<RhTreinamentoAulaCreateBody>,
+  actorId?: string | null
+): Promise<RhTreinamentoAula> {
+  const json = await api.patch(withActorId(`/api/rh/treinamentos-conteudo/aulas/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as RhTreinamentoAula;
+}
+
+export async function deleteRhTreinamentoAula(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/treinamentos-conteudo/aulas/${encodeURIComponent(id)}`, actorId));
+}
+
+export type RhTreinamentoVideoUploadUrl = {
+  bucket: string;
+  path: string;
+  signed_url: string;
+  token: string;
+  video_url: string;
+  video_storage_path: string;
+};
+
+export async function requestRhTreinamentoVideoUploadUrl(
+  body: { filename: string; treinamento_id?: string },
+  actorId?: string | null
+): Promise<RhTreinamentoVideoUploadUrl> {
+  const json = await api.post(withActorId('/api/rh/treinamentos-conteudo/video-upload-url', actorId), body);
+  return json.data as RhTreinamentoVideoUploadUrl;
+}
+
+export type RhTreinamentoQuestaoCreateBody = {
+  treinamento_id: string;
+  ordem?: number;
+  enunciado: string;
+  alternativas: Array<{ chave: string; texto: string }>;
+  correta: string;
+  explicacao?: string | null;
+};
+
+export async function createRhTreinamentoQuestao(
+  body: RhTreinamentoQuestaoCreateBody,
+  actorId?: string | null
+): Promise<RhTreinamentoQuestao> {
+  const json = await api.post(withActorId('/api/rh/treinamentos-conteudo/questoes', actorId), body);
+  return json.data as RhTreinamentoQuestao;
+}
+
+export async function updateRhTreinamentoQuestao(
+  id: string,
+  body: Partial<RhTreinamentoQuestaoCreateBody>,
+  actorId?: string | null
+): Promise<RhTreinamentoQuestao> {
+  const json = await api.patch(
+    withActorId(`/api/rh/treinamentos-conteudo/questoes/${encodeURIComponent(id)}`, actorId),
+    body
+  );
+  return json.data as RhTreinamentoQuestao;
+}
+
+export async function deleteRhTreinamentoQuestao(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/rh/treinamentos-conteudo/questoes/${encodeURIComponent(id)}`, actorId));
+}
+
+export type RhTreinamentoAtribuicaoTipo = 'todos' | 'cargo' | 'grupo' | 'colaborador';
+
+export type RhTreinamentoAtribuicao = {
+  id: string;
+  treinamento_id: string;
+  tipo: RhTreinamentoAtribuicaoTipo;
+  cargo?: string | null;
+  grupo_slug?: string | null;
+  colaborador_id?: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRhTreinamentoAtribuicoes(treinamentoId: string): Promise<RhTreinamentoAtribuicao[]> {
+  return fetchRhTreinamentosRecurso<RhTreinamentoAtribuicao>('atribuicoes', { treinamentoId });
+}
+
+export async function atribuirRhTreinamento(
+  body: {
+    treinamento_id: string;
+    tipo: RhTreinamentoAtribuicaoTipo;
+    cargos?: string[];
+    grupos?: string[];
+    colaboradores?: string[];
+    inscrever?: boolean;
+  },
+  actorId?: string | null
+): Promise<{ data: RhTreinamentoAtribuicao[]; inscritos: number }> {
+  const json = await api.post(withActorId('/api/rh/treinamentos-conteudo/atribuir', actorId), body);
+  return { data: (json.data as RhTreinamentoAtribuicao[]) ?? [], inscritos: (json.inscritos as number) ?? 0 };
+}
+
+export type RhTreinamentoRespostaAgregadaLinha = {
+  inscricao_id: string;
+  colaborador_id: string;
+  nome_completo: string;
+  matricula: string | null;
+  cargo: string | null;
+  status: string;
+  nota: number | null;
+  tentativas: number;
+  iniciado_em: string | null;
+  concluido_em: string | null;
+  [key: string]: unknown;
+};
+
+export type RhTreinamentoRespostasResumo = {
+  inscritos: number;
+  concluiram: number;
+  em_andamento: number;
+  nao_iniciaram: number;
+  nota_media: number | null;
+};
+
+export async function fetchRhTreinamentoRespostasAgregadas(
+  treinamentoId: string
+): Promise<{ data: RhTreinamentoRespostaAgregadaLinha[]; resumo: RhTreinamentoRespostasResumo | null }> {
+  const json = await api.get(`/api/rh/treinamentos-conteudo?recurso=respostas-agregadas&treinamentoId=${encodeURIComponent(treinamentoId)}`);
+  const payload = (json.data ?? {}) as { data?: RhTreinamentoRespostaAgregadaLinha[]; resumo?: RhTreinamentoRespostasResumo };
+  return { data: payload.data ?? [], resumo: payload.resumo ?? null };
+}
+
+export type RhTreinamentoDetalhePercurso = {
+  iniciado_em: string | null;
+  ultimo_acesso_em: string | null;
+  aulas_concluidas: number;
+  aulas_total: number;
+  tempo_assistido_seg: number;
+};
+
+export type RhTreinamentoDetalheAula = {
+  aula_id: string;
+  titulo: string;
+  ordem: number;
+  posicao_max_seg: number;
+  duracao_seg: number;
+  pct: number;
+  concluida: boolean;
+  atualizado_em: string | null;
+};
+
+export type RhTreinamentoTentativaResposta = {
+  questao_id: string;
+  enunciado: string;
+  alternativas: Array<{ chave: string; texto: string }>;
+  resposta: string;
+  resposta_texto: string | null;
+  correta: string;
+  acertou: boolean;
+  explicacao: string | null;
+};
+
+export type RhTreinamentoTentativa = {
+  tentativa_numero: number;
+  respondido_em: string | null;
+  acertos: number;
+  total: number;
+  nota: number;
+  aprovado: boolean;
+  respostas: RhTreinamentoTentativaResposta[];
+};
+
+export type RhTreinamentoDetalheColaborador = {
+  percurso: RhTreinamentoDetalhePercurso;
+  aulas: RhTreinamentoDetalheAula[];
+  tentativas: RhTreinamentoTentativa[];
+  prova_min_acerto: number;
+};
+
+export async function fetchRhTreinamentoRespostasColaborador(
+  treinamentoId: string,
+  colaboradorId: string
+): Promise<RhTreinamentoDetalheColaborador> {
+  const json = await api.get(
+    `/api/rh/treinamentos-conteudo?recurso=respostas-agregadas&treinamentoId=${encodeURIComponent(
+      treinamentoId
+    )}&colaboradorId=${encodeURIComponent(colaboradorId)}`
+  );
+  const data = (json.data ?? {}) as Partial<RhTreinamentoDetalheColaborador>;
+  return {
+    percurso: data.percurso ?? {
+      iniciado_em: null,
+      ultimo_acesso_em: null,
+      aulas_concluidas: 0,
+      aulas_total: 0,
+      tempo_assistido_seg: 0,
+    },
+    aulas: data.aulas ?? [],
+    tentativas: data.tentativas ?? [],
+    prova_min_acerto: data.prova_min_acerto ?? 0,
+  };
 }
 
 // --- Comunicados: escrita real (rh_comunicados) — endpoint dedicado

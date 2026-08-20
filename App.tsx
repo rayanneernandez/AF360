@@ -64,6 +64,7 @@ import {
   RHWorkflowScreen,
   RHRelatoriosScreen,
   RHConfiguracoesScreen,
+  RHTreinamentosScreen,
 } from './RH';
 import {
   AdminDashboardScreen,
@@ -219,6 +220,7 @@ export type RootStackParamList = {
   RHWorkflow: undefined;
   RHRelatorios: undefined;
   RHConfiguracoes: undefined;
+  RHTreinamentos: undefined;
   AdminDashboard: undefined;
   AdminProfile: undefined;
   AdminUsuarios: undefined;
@@ -403,6 +405,7 @@ export type RHSideMenuRoute =
   | 'RHWorkflow'
   | 'RHRelatorios'
   | 'RHConfiguracoes'
+  | 'RHTreinamentos'
   | 'RHProfile';
 
 // "Administrador" é o painel de gestão da plataforma (Usuários, Perfil de
@@ -1325,6 +1328,7 @@ export const rhSideMenuSections: Array<{
       { id: 'rh-workflow', label: 'Workflow', icon: 'git-pull-request', route: 'RHWorkflow' },
       { id: 'rh-relatorios', label: 'Relatórios', icon: 'bar-chart-2', route: 'RHRelatorios' },
       { id: 'rh-configuracoes', label: 'Configurações', icon: 'settings', route: 'RHConfiguracoes' },
+      { id: 'rh-treinamentos', label: 'Treinamentos', icon: 'book-open', route: 'RHTreinamentos' },
     ],
   },
 ];
@@ -2625,6 +2629,7 @@ export default function App() {
                     <Stack.Screen name="RHWorkflow" component={RHWorkflowScreen} />
                     <Stack.Screen name="RHRelatorios" component={RHRelatoriosScreen} />
                     <Stack.Screen name="RHConfiguracoes" component={RHConfiguracoesScreen} />
+                    <Stack.Screen name="RHTreinamentos" component={RHTreinamentosScreen} />
                     <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
                     <Stack.Screen name="AdminProfile" component={AdminProfileScreen} />
                     <Stack.Screen name="AdminUsuarios" component={AdminUsuariosScreen} />

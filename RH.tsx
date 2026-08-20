@@ -270,6 +270,33 @@ import {
   type RhJornadaItem,
   type RhRegimeJornada,
   type RhJornadaCreateBody,
+  fetchRhTreinamentos,
+  createRhTreinamento,
+  updateRhTreinamento,
+  deleteRhTreinamento,
+  type RhTreinamentoCatalogo,
+  type RhTreinamentoCreateBody,
+  fetchRhTreinamentoAulas,
+  createRhTreinamentoAula,
+  updateRhTreinamentoAula,
+  deleteRhTreinamentoAula,
+  type RhTreinamentoAula,
+  type RhTreinamentoAulaCreateBody,
+  requestRhTreinamentoVideoUploadUrl,
+  fetchRhTreinamentoQuestoes,
+  createRhTreinamentoQuestao,
+  updateRhTreinamentoQuestao,
+  deleteRhTreinamentoQuestao,
+  type RhTreinamentoQuestao,
+  type RhTreinamentoQuestaoCreateBody,
+  fetchRhTreinamentoAtribuicoes,
+  atribuirRhTreinamento,
+  type RhTreinamentoAtribuicaoTipo,
+  fetchRhTreinamentoRespostasAgregadas,
+  type RhTreinamentoRespostaAgregadaLinha,
+  type RhTreinamentoRespostasResumo,
+  fetchRhTreinamentoRespostasColaborador,
+  type RhTreinamentoDetalheColaborador,
 } from './api';
 
 // ---------- Types ----------
@@ -18711,6 +18738,1316 @@ export function RHConfiguracoesScreen({ navigation }: ScreenProps<'RHConfiguraco
 
         {activeTab === 'reajustes' ? <RHConfigReajustesTab /> : null}
       </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// ---------- Treinamentos (RH/admin) ----------
+// CRUD de treinamento/aulas/prova/atribuição + respostas agregadas —
+// endpoint confirmado pela Lovable em 20/08/2026 (mesmo
+// /api/public/internal/rh-treinamentos usado pelo colaborador; recursos
+// novos: video-upload-url, atribuir, respostas-agregadas).
+// "Visualizar como colaborador" reaproveita a TrainingDetailScreen já
+// existente em App.tsx (sem trava de RLS pro RH, confirmado pela Lovable).
+
+type TreinamentoTab = 'info' | 'aulas' | 'prova' | 'atribuicao';
+
+const rhTreinamentoTabs: Array<{ key: TreinamentoTab; label: string }> = [
+  { key: 'info', label: 'Informações' },
+  { key: 'aulas', label: 'Aulas' },
+  { key: 'prova', label: 'Prova final' },
+  { key: 'atribuicao', label: 'Atribuição' },
+];
+
+function formatProvaResumo(min: number | null | undefined, tempo: number | null | undefined): string {
+  if (min === null || min === undefined) return '—';
+  return `≥ ${min}% · ${tempo ?? 0}min`;
+}
+
+function rhTreinamentoUpdatedAtLabel(item: RhTreinamentoCatalogo): string {
+  const raw = (item.updated_at as string | undefined) ?? (item.atualizado_em as string | undefined);
+  return formatDateTimeIsoBR(raw ?? null) ?? '—';
+}
+
+// --- Aula: form (link OU upload direto via signed URL) ---
+
+function RHTreinamentoAulaFormModal({
+  visible,
+  treinamentoId,
+  editingItem,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  treinamentoId: string | null;
+  editingItem: RhTreinamentoAula | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [titulo, setTitulo] = useState('');
+  const [ordem, setOrdem] = useState('1');
+  const [descricao, setDescricao] = useState('');
+  const [duracaoMin, setDuracaoMin] = useState('');
+  const [modoVideo, setModoVideo] = useState<'link' | 'upload'>('link');
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoStoragePath, setVideoStoragePath] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    setTitulo(editingItem?.titulo ?? '');
+    setOrdem(String(editingItem?.ordem ?? 1));
+    setDescricao(editingItem?.descricao ?? '');
+    setDuracaoMin(editingItem?.duracao_min != null ? String(editingItem.duracao_min) : '');
+    setVideoUrl(editingItem?.video_url ?? '');
+    setVideoStoragePath(editingItem?.video_storage_path ?? null);
+    setUploadedFileName(editingItem?.video_storage_path ? editingItem.video_storage_path.split('/').pop() ?? null : null);
+    setModoVideo(editingItem?.video_storage_path ? 'upload' : 'link');
+  }, [visible, editingItem]);
+
+  const handlePickVideo = async () => {
+    if (!treinamentoId) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'video/*', copyToCacheDirectory: true, multiple: false });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      setIsUploading(true);
+      const uploadInfo = await requestRhTreinamentoVideoUploadUrl({ filename: asset.name ?? 'video.mp4', treinamento_id: treinamentoId });
+      const fileResponse = await fetch(asset.uri);
+      const blob = await fileResponse.blob();
+      const putResponse = await fetch(uploadInfo.signed_url, {
+        method: 'PUT',
+        body: blob,
+        headers: { 'Content-Type': asset.mimeType ?? 'video/mp4' },
+      });
+      if (!putResponse.ok) {
+        throw new Error(`Upload falhou (status ${putResponse.status})`);
+      }
+      setVideoUrl(uploadInfo.video_url);
+      setVideoStoragePath(uploadInfo.video_storage_path);
+      setUploadedFileName(asset.name ?? 'video');
+    } catch (err) {
+      showRhSaveError(err, 'Não foi possível enviar o vídeo.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleSubmit = () => {
+    if (!treinamentoId) return;
+    if (!titulo.trim()) {
+      Alert.alert('Campo obrigatório', 'Preencha o título da aula.');
+      return;
+    }
+    const body: RhTreinamentoAulaCreateBody = {
+      treinamento_id: treinamentoId,
+      ordem: Number(ordem) || 1,
+      titulo: titulo.trim(),
+      descricao: descricao.trim() || null,
+      duracao_min: duracaoMin.trim() ? Number(duracaoMin) : null,
+      video_url: modoVideo === 'link' ? videoUrl.trim() || null : videoUrl || null,
+      video_storage_path: modoVideo === 'upload' ? videoStoragePath : null,
+    };
+    setIsSaving(true);
+    const promessa = editingItem
+      ? updateRhTreinamentoAula(editingItem.id, body)
+      : createRhTreinamentoAula(body);
+    promessa
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar a aula.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <ScrollView style={[styles.requestModalCard, { maxHeight: '88%' }]}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>{editingItem ? 'Editar aula' : 'Nova aula'}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <Text style={styles.requestFieldLabel}>Título *</Text>
+          <TextInput style={styles.processTextInput} value={titulo} onChangeText={setTitulo} placeholderTextColor="#A7AEC2" />
+
+          <View style={rhStyles.formRow}>
+            <View style={rhStyles.formRowItem}>
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Ordem</Text>
+              <TextInput style={styles.processTextInput} value={ordem} onChangeText={setOrdem} keyboardType="numeric" />
+            </View>
+            <View style={rhStyles.formRowItem}>
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Duração (min)</Text>
+              <TextInput style={styles.processTextInput} value={duracaoMin} onChangeText={setDuracaoMin} keyboardType="numeric" />
+            </View>
+          </View>
+
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição</Text>
+          <TextInput style={styles.processTextInput} value={descricao} onChangeText={setDescricao} placeholderTextColor="#A7AEC2" />
+
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Vídeo da aula</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+            <Pressable
+              style={[rhStyles.resourceTabBarItem, modoVideo === 'link' ? rhStyles.resourceTabBarItemActive : null]}
+              onPress={() => setModoVideo('link')}
+            >
+              <Text style={[rhStyles.resourceTabBarItemText, modoVideo === 'link' ? rhStyles.resourceTabBarItemTextActive : null]}>
+                Link (YouTube/Vimeo/URL)
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[rhStyles.resourceTabBarItem, modoVideo === 'upload' ? rhStyles.resourceTabBarItemActive : null]}
+              onPress={() => setModoVideo('upload')}
+            >
+              <Text style={[rhStyles.resourceTabBarItemText, modoVideo === 'upload' ? rhStyles.resourceTabBarItemTextActive : null]}>
+                Enviar arquivo
+              </Text>
+            </Pressable>
+          </View>
+
+          {modoVideo === 'link' ? (
+            <TextInput
+              style={[styles.processTextInput, { marginTop: 8 }]}
+              value={videoUrl}
+              onChangeText={setVideoUrl}
+              placeholder="https://..."
+              placeholderTextColor="#A7AEC2"
+              autoCapitalize="none"
+            />
+          ) : (
+            <View style={{ marginTop: 8 }}>
+              <Pressable
+                style={[rhStyles.outlineButtonSmall, { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }]}
+                onPress={handlePickVideo}
+                disabled={isUploading || !treinamentoId}
+              >
+                {isUploading ? <ActivityIndicator size="small" color="#29448D" /> : <Feather name="upload" size={14} color="#29448D" />}
+                <Text style={{ color: '#29448D', fontWeight: '700', fontSize: 12 }}>
+                  {isUploading ? 'Enviando...' : 'Enviar arquivo de vídeo'}
+                </Text>
+              </Pressable>
+              {uploadedFileName ? <Text style={rhStyles.folhaColaboradorMeta}>{uploadedFileName}</Text> : null}
+              {!treinamentoId ? <Text style={rhStyles.folhaColaboradorMeta}>Salve as informações do treinamento antes de enviar vídeo.</Text> : null}
+            </View>
+          )}
+
+          <Pressable
+            style={[rhStyles.primaryButtonGreen, styles.spacingTop]}
+            onPress={handleSubmit}
+            disabled={isSaving || !treinamentoId}
+          >
+            <Text style={styles.primaryButtonText}>{isSaving ? 'Salvando...' : 'Salvar aula'}</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+// --- Questão: alternativas jsonb [{chave,texto}], correta = chave (A-D) ---
+
+const rhTreinamentoAlternativaChaves = ['A', 'B', 'C', 'D'] as const;
+
+function RHTreinamentoQuestaoFormModal({
+  visible,
+  treinamentoId,
+  editingItem,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  treinamentoId: string | null;
+  editingItem: RhTreinamentoQuestao | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [enunciado, setEnunciado] = useState('');
+  const [ordem, setOrdem] = useState('1');
+  const [alternativas, setAlternativas] = useState<Record<string, string>>({ A: '', B: '', C: '', D: '' });
+  const [correta, setCorreta] = useState('A');
+  const [isCorretaPickerOpen, setIsCorretaPickerOpen] = useState(false);
+  const [explicacao, setExplicacao] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    setEnunciado(editingItem?.enunciado ?? '');
+    setOrdem(String(editingItem?.ordem ?? 1));
+    const map: Record<string, string> = { A: '', B: '', C: '', D: '' };
+    (editingItem?.alternativas ?? []).forEach((alt) => {
+      map[alt.chave] = alt.texto;
+    });
+    setAlternativas(map);
+    setCorreta(editingItem?.correta ?? 'A');
+    setExplicacao(editingItem?.explicacao ?? '');
+  }, [visible, editingItem]);
+
+  const handleSubmit = () => {
+    if (!treinamentoId) return;
+    if (!enunciado.trim()) {
+      Alert.alert('Campo obrigatório', 'Preencha o enunciado da questão.');
+      return;
+    }
+    const alternativasArray = rhTreinamentoAlternativaChaves
+      .map((chave) => ({ chave, texto: (alternativas[chave] ?? '').trim() }))
+      .filter((alt) => alt.texto.length > 0);
+    if (alternativasArray.length < 2) {
+      Alert.alert('Alternativas insuficientes', 'Preencha pelo menos duas alternativas.');
+      return;
+    }
+    if (!alternativasArray.some((alt) => alt.chave === correta)) {
+      Alert.alert('Resposta correta inválida', 'A resposta correta precisa ser uma alternativa preenchida.');
+      return;
+    }
+    const body: RhTreinamentoQuestaoCreateBody = {
+      treinamento_id: treinamentoId,
+      ordem: Number(ordem) || 1,
+      enunciado: enunciado.trim(),
+      alternativas: alternativasArray,
+      correta,
+      explicacao: explicacao.trim() || null,
+    };
+    setIsSaving(true);
+    const promessa = editingItem
+      ? updateRhTreinamentoQuestao(editingItem.id, body)
+      : createRhTreinamentoQuestao(body);
+    promessa
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar a questão.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <ScrollView style={[styles.requestModalCard, { maxHeight: '88%' }]}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>{editingItem ? 'Editar questão' : 'Nova questão'}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <Text style={styles.requestFieldLabel}>Enunciado *</Text>
+          <TextInput
+            style={[styles.processTextInput, { minHeight: 60 }]}
+            value={enunciado}
+            onChangeText={setEnunciado}
+            multiline
+            placeholderTextColor="#A7AEC2"
+          />
+
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Ordem</Text>
+          <TextInput style={[styles.processTextInput, { maxWidth: 100 }]} value={ordem} onChangeText={setOrdem} keyboardType="numeric" />
+
+          {rhTreinamentoAlternativaChaves.map((chave) => (
+            <View key={chave}>
+              <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Alternativa {chave}</Text>
+              <TextInput
+                style={styles.processTextInput}
+                value={alternativas[chave] ?? ''}
+                onChangeText={(text) => setAlternativas((current) => ({ ...current, [chave]: text }))}
+                placeholderTextColor="#A7AEC2"
+              />
+            </View>
+          ))}
+
+          <RHSelectField label="Resposta correta" required value={correta} onPress={() => setIsCorretaPickerOpen(true)} />
+
+          <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Explicação (opcional)</Text>
+          <TextInput style={styles.processTextInput} value={explicacao} onChangeText={setExplicacao} placeholderTextColor="#A7AEC2" />
+
+          <Pressable
+            style={[rhStyles.primaryButtonGreen, styles.spacingTop]}
+            onPress={handleSubmit}
+            disabled={isSaving || !treinamentoId}
+          >
+            <Text style={styles.primaryButtonText}>{isSaving ? 'Salvando...' : 'Salvar questão'}</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+
+      <RHSimplePickerModal
+        inline
+        visible={isCorretaPickerOpen}
+        title="Resposta correta"
+        options={[...rhTreinamentoAlternativaChaves]}
+        selectedValue={correta}
+        onSelect={setCorreta}
+        onClose={() => setIsCorretaPickerOpen(false)}
+      />
+    </Modal>
+  );
+}
+
+// --- Aba Atribuição: 4 alvos possíveis (todos/cargo/grupo/colaborador) ---
+
+function RHTreinamentoAtribuicaoTab({ treinamentoId }: { treinamentoId: string | null }) {
+  const [tipo, setTipo] = useState<RhTreinamentoAtribuicaoTipo>('todos');
+  const [cargosDisponiveis, setCargosDisponiveis] = useState<RhConfigCargo[]>([]);
+  const [gruposDisponiveis, setGruposDisponiveis] = useState<AdminGrupoItem[]>([]);
+  const [cargosSelecionados, setCargosSelecionados] = useState<string[]>([]);
+  const [gruposSelecionados, setGruposSelecionados] = useState<string[]>([]);
+  const [colaboradoresSelecionados, setColaboradoresSelecionados] = useState<Array<{ id: string; nome: string }>>([]);
+  const [isColaboradorPickerOpen, setIsColaboradorPickerOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState<'salvar' | 'inscrever' | null>(null);
+
+  useEffect(() => {
+    fetchRhConfigCargos().then(setCargosDisponiveis).catch(() => setCargosDisponiveis([]));
+    fetchAdminGrupos().then((result) => setGruposDisponiveis(result.grupos)).catch(() => setGruposDisponiveis([]));
+  }, []);
+
+  useEffect(() => {
+    if (!treinamentoId) return;
+    fetchRhTreinamentoAtribuicoes(treinamentoId)
+      .then((rows) => {
+        if (rows.length === 0) return;
+        const primeiroTipo = rows[0].tipo;
+        setTipo(primeiroTipo);
+        if (primeiroTipo === 'cargo') {
+          setCargosSelecionados(rows.map((row) => row.cargo).filter((v): v is string => Boolean(v)));
+        } else if (primeiroTipo === 'grupo') {
+          setGruposSelecionados(rows.map((row) => row.grupo_slug).filter((v): v is string => Boolean(v)));
+        } else if (primeiroTipo === 'colaborador') {
+          setColaboradoresSelecionados(
+            rows
+              .filter((row) => row.colaborador_id)
+              .map((row) => ({ id: row.colaborador_id as string, nome: (row.colaborador_nome as string) ?? 'Colaborador' }))
+          );
+        }
+      })
+      .catch(() => {});
+  }, [treinamentoId]);
+
+  const handleSalvar = (inscrever: boolean) => {
+    if (!treinamentoId) return;
+    if (tipo === 'cargo' && cargosSelecionados.length === 0) {
+      Alert.alert('Selecione ao menos um cargo', 'Escolha os cargos alvo dessa atribuição.');
+      return;
+    }
+    if (tipo === 'grupo' && gruposSelecionados.length === 0) {
+      Alert.alert('Selecione ao menos um grupo', 'Escolha os grupos alvo dessa atribuição.');
+      return;
+    }
+    if (tipo === 'colaborador' && colaboradoresSelecionados.length === 0) {
+      Alert.alert('Selecione ao menos um colaborador', 'Escolha os colaboradores alvo dessa atribuição.');
+      return;
+    }
+    setIsSaving(inscrever ? 'inscrever' : 'salvar');
+    atribuirRhTreinamento({
+      treinamento_id: treinamentoId,
+      tipo,
+      cargos: tipo === 'cargo' ? cargosSelecionados : undefined,
+      grupos: tipo === 'grupo' ? gruposSelecionados : undefined,
+      colaboradores: tipo === 'colaborador' ? colaboradoresSelecionados.map((c) => c.id) : undefined,
+      inscrever,
+    })
+      .then((result) => {
+        Alert.alert(
+          inscrever ? 'Atribuição salva' : 'Critério salvo',
+          inscrever ? `${result.inscritos} inscrição(ões) criada(s)/já existente(s).` : 'O critério de atribuição foi salvo.'
+        );
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar a atribuição.'))
+      .finally(() => setIsSaving(null));
+  };
+
+  const alvoCards: Array<{ key: RhTreinamentoAtribuicaoTipo; label: string; icon: keyof typeof Feather.glyphMap }> = [
+    { key: 'todos', label: 'Todos os colaboradores', icon: 'users' },
+    { key: 'cargo', label: 'Por cargo', icon: 'briefcase' },
+    { key: 'grupo', label: 'Por grupo', icon: 'layers' },
+    { key: 'colaborador', label: 'Colaboradores específicos', icon: 'user' },
+  ];
+
+  return (
+    <View style={{ marginTop: 12 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {alvoCards.map((card) => {
+          const isActive = tipo === card.key;
+          return (
+            <Pressable
+              key={card.key}
+              style={[
+                rhStyles.kpiCard,
+                { flexGrow: 1, minWidth: '46%', flexDirection: 'row', alignItems: 'center', gap: 8 },
+                isActive ? { borderColor: '#29448D', borderWidth: 1.5 } : null,
+              ]}
+              onPress={() => setTipo(card.key)}
+            >
+              <Feather name={card.icon} size={16} color={isActive ? '#29448D' : '#7C8397'} />
+              <Text style={{ color: isActive ? '#29448D' : '#0C1736', fontWeight: '700', fontSize: 12, flexShrink: 1 }}>
+                {card.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {tipo === 'cargo' ? (
+        <View style={{ marginTop: 12 }}>
+          <Text style={rhStyles.filterFieldLabel}>Cargos</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+            {cargosDisponiveis.map((cargo) => {
+              const isSelected = cargosSelecionados.includes(cargo.nome);
+              return (
+                <Pressable
+                  key={cargo.id}
+                  style={[
+                    rhStyles.employeeStatusPill,
+                    { backgroundColor: isSelected ? '#29448D' : '#F1F2F6' },
+                  ]}
+                  onPress={() =>
+                    setCargosSelecionados((current) =>
+                      isSelected ? current.filter((n) => n !== cargo.nome) : [...current, cargo.nome]
+                    )
+                  }
+                >
+                  <Text style={[rhStyles.employeeStatusText, { color: isSelected ? '#FFFFFF' : '#5E667D' }]}>{cargo.nome}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {tipo === 'grupo' ? (
+        <View style={{ marginTop: 12 }}>
+          <Text style={rhStyles.filterFieldLabel}>Grupos</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+            {gruposDisponiveis.map((grupo) => {
+              const isSelected = gruposSelecionados.includes(grupo.slug);
+              return (
+                <Pressable
+                  key={grupo.id}
+                  style={[
+                    rhStyles.employeeStatusPill,
+                    { backgroundColor: isSelected ? '#29448D' : '#F1F2F6' },
+                  ]}
+                  onPress={() =>
+                    setGruposSelecionados((current) =>
+                      isSelected ? current.filter((s) => s !== grupo.slug) : [...current, grupo.slug]
+                    )
+                  }
+                >
+                  <Text style={[rhStyles.employeeStatusText, { color: isSelected ? '#FFFFFF' : '#5E667D' }]}>{grupo.name}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {tipo === 'colaborador' ? (
+        <View style={{ marginTop: 12 }}>
+          <Text style={rhStyles.filterFieldLabel}>Colaboradores</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+            {colaboradoresSelecionados.map((colaborador) => (
+              <View key={colaborador.id} style={[rhStyles.employeeStatusPill, { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#29448D' }]}>
+                <Text style={[rhStyles.employeeStatusText, { color: '#FFFFFF' }]}>{colaborador.nome}</Text>
+                <Pressable
+                  hitSlop={6}
+                  onPress={() =>
+                    setColaboradoresSelecionados((current) => current.filter((c) => c.id !== colaborador.id))
+                  }
+                >
+                  <Feather name="x" size={12} color="#FFFFFF" />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+          <Pressable
+            style={[rhStyles.outlineButtonSmall, { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 8 }]}
+            onPress={() => setIsColaboradorPickerOpen(true)}
+          >
+            <Feather name="plus" size={14} color="#29448D" />
+            <Text style={{ color: '#29448D', fontWeight: '700', fontSize: 12 }}>Adicionar colaborador</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      <Text style={[rhStyles.folhaColaboradorMeta, { marginTop: 14 }]}>
+        Ao salvar e inscrever, as inscrições são criadas automaticamente para os colaboradores atendidos (quem já
+        estava inscrito não é duplicado). As inscrições novas entram como "Não iniciou".
+      </Text>
+
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+        <Pressable
+          style={[rhStyles.outlineButtonSmall, { flex: 1, alignItems: 'center', paddingVertical: 10 }]}
+          onPress={() => handleSalvar(false)}
+          disabled={isSaving !== null || !treinamentoId}
+        >
+          <Text style={{ color: '#29448D', fontWeight: '700', fontSize: 13 }}>
+            {isSaving === 'salvar' ? 'Salvando...' : 'Salvar'}
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[rhStyles.primaryButtonGreen, { flex: 1 }]}
+          onPress={() => handleSalvar(true)}
+          disabled={isSaving !== null || !treinamentoId}
+        >
+          <Text style={styles.primaryButtonText}>{isSaving === 'inscrever' ? 'Inscrevendo...' : 'Salvar e Inscrever'}</Text>
+        </Pressable>
+      </View>
+
+      <RHColaboradorPickerModal
+        visible={isColaboradorPickerOpen}
+        selectedId={null}
+        onSelect={(id, nome) =>
+          setColaboradoresSelecionados((current) => (current.some((c) => c.id === id) ? current : [...current, { id, nome }]))
+        }
+        onClose={() => setIsColaboradorPickerOpen(false)}
+      />
+    </View>
+  );
+}
+
+// --- Modal principal: Novo/Editar treinamento (4 abas) ---
+
+function RHTreinamentoFormModal({
+  visible,
+  editingItem,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  editingItem: RhTreinamentoCatalogo | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<TreinamentoTab>('info');
+  const [treinamentoId, setTreinamentoId] = useState<string | null>(null);
+
+  const [titulo, setTitulo] = useState('');
+  const [subtitulo, setSubtitulo] = useState('');
+  const [categoria, setCategoria] = useState('');
+  const [cargaHorariaMin, setCargaHorariaMin] = useState('');
+  const [descricao, setDescricao] = useState('');
+  const [provaMinAcerto, setProvaMinAcerto] = useState('70');
+  const [provaTempoLimiteMin, setProvaTempoLimiteMin] = useState('5');
+  const [obrigatorio, setObrigatorio] = useState(false);
+  const [ativo, setAtivo] = useState(true);
+  const [isSavingInfo, setIsSavingInfo] = useState(false);
+
+  const [aulas, setAulas] = useState<RhTreinamentoAula[]>([]);
+  const [isAulasLoading, setIsAulasLoading] = useState(false);
+  const [isAulaFormOpen, setIsAulaFormOpen] = useState(false);
+  const [editingAula, setEditingAula] = useState<RhTreinamentoAula | null>(null);
+
+  const [questoes, setQuestoes] = useState<RhTreinamentoQuestao[]>([]);
+  const [isQuestoesLoading, setIsQuestoesLoading] = useState(false);
+  const [isQuestaoFormOpen, setIsQuestaoFormOpen] = useState(false);
+  const [editingQuestao, setEditingQuestao] = useState<RhTreinamentoQuestao | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    setActiveTab('info');
+    setTreinamentoId(editingItem?.id ?? null);
+    setTitulo(editingItem?.titulo ?? '');
+    setSubtitulo(editingItem?.subtitulo ?? '');
+    setCategoria(editingItem?.categoria ?? '');
+    setCargaHorariaMin(editingItem?.carga_horaria_min != null ? String(editingItem.carga_horaria_min) : '');
+    setDescricao(editingItem?.descricao ?? '');
+    setProvaMinAcerto(editingItem?.prova_min_acerto != null ? String(editingItem.prova_min_acerto) : '70');
+    setProvaTempoLimiteMin(editingItem?.prova_tempo_limite_min != null ? String(editingItem.prova_tempo_limite_min) : '5');
+    setObrigatorio(editingItem?.obrigatorio ?? false);
+    setAtivo(editingItem?.ativo ?? true);
+  }, [visible, editingItem]);
+
+  const loadAulas = useCallback(() => {
+    if (!treinamentoId) return;
+    setIsAulasLoading(true);
+    fetchRhTreinamentoAulas(treinamentoId)
+      .then(setAulas)
+      .catch(() => setAulas([]))
+      .finally(() => setIsAulasLoading(false));
+  }, [treinamentoId]);
+
+  const loadQuestoes = useCallback(() => {
+    if (!treinamentoId) return;
+    setIsQuestoesLoading(true);
+    fetchRhTreinamentoQuestoes(treinamentoId, true)
+      .then(setQuestoes)
+      .catch(() => setQuestoes([]))
+      .finally(() => setIsQuestoesLoading(false));
+  }, [treinamentoId]);
+
+  useEffect(() => {
+    if (activeTab === 'aulas') loadAulas();
+    if (activeTab === 'prova') loadQuestoes();
+  }, [activeTab, loadAulas, loadQuestoes]);
+
+  const handleSalvarInfo = () => {
+    if (!titulo.trim() || !categoria.trim()) {
+      Alert.alert('Campos obrigatórios', 'Preencha ao menos título e categoria.');
+      return;
+    }
+    const body: RhTreinamentoCreateBody = {
+      titulo: titulo.trim(),
+      subtitulo: subtitulo.trim() || null,
+      categoria: categoria.trim(),
+      carga_horaria_min: Number(cargaHorariaMin) || 0,
+      descricao: descricao.trim() || null,
+      obrigatorio,
+      ativo,
+      prova_min_acerto: Number(provaMinAcerto) || 0,
+      prova_tempo_limite_min: Number(provaTempoLimiteMin) || 0,
+    };
+    setIsSavingInfo(true);
+    const promessa = treinamentoId ? updateRhTreinamento(treinamentoId, body) : createRhTreinamento(body);
+    promessa
+      .then((saved) => {
+        if (!treinamentoId) setTreinamentoId(saved.id);
+        onSaved();
+      })
+      .catch((err) => showRhSaveError(err, 'Não foi possível salvar o treinamento.'))
+      .finally(() => setIsSavingInfo(false));
+  };
+
+  const handleDeleteAula = (aula: RhTreinamentoAula) => {
+    Alert.alert('Excluir aula', `Excluir "${aula.titulo}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => deleteRhTreinamentoAula(aula.id).then(loadAulas).catch((err) => showRhSaveError(err, 'Não foi possível excluir a aula.')),
+      },
+    ]);
+  };
+
+  const handleDeleteQuestao = (questao: RhTreinamentoQuestao) => {
+    Alert.alert('Excluir questão', 'Excluir esta questão?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () =>
+          deleteRhTreinamentoQuestao(questao.id).then(loadQuestoes).catch((err) => showRhSaveError(err, 'Não foi possível excluir a questão.')),
+      },
+    ]);
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={[styles.requestModalCard, { maxHeight: '92%', paddingBottom: 8 }]}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>{editingItem ? 'Editar treinamento' : 'Novo treinamento'}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={rhStyles.resourceTabBarScroll}
+            contentContainerStyle={rhStyles.resourceTabBarRow}
+          >
+            {rhTreinamentoTabs.map((tab) => {
+              const isActive = activeTab === tab.key;
+              return (
+                <Pressable
+                  key={tab.key}
+                  style={[rhStyles.resourceTabBarItem, isActive ? rhStyles.resourceTabBarItemActive : null]}
+                  onPress={() => setActiveTab(tab.key)}
+                >
+                  <Text style={[rhStyles.resourceTabBarItemText, isActive ? rhStyles.resourceTabBarItemTextActive : null]}>
+                    {tab.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <ScrollView style={{ marginTop: 4 }} showsVerticalScrollIndicator={false}>
+            {activeTab === 'info' ? (
+              <View style={{ paddingTop: 8 }}>
+                <Text style={styles.requestFieldLabel}>Título *</Text>
+                <TextInput style={styles.processTextInput} value={titulo} onChangeText={setTitulo} placeholderTextColor="#A7AEC2" />
+
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Subtítulo</Text>
+                <TextInput style={styles.processTextInput} value={subtitulo} onChangeText={setSubtitulo} placeholderTextColor="#A7AEC2" />
+
+                <View style={rhStyles.formRow}>
+                  <View style={rhStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Categoria *</Text>
+                    <TextInput style={styles.processTextInput} value={categoria} onChangeText={setCategoria} placeholderTextColor="#A7AEC2" />
+                  </View>
+                  <View style={rhStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Carga horária (min) *</Text>
+                    <TextInput style={styles.processTextInput} value={cargaHorariaMin} onChangeText={setCargaHorariaMin} keyboardType="numeric" />
+                  </View>
+                </View>
+
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição *</Text>
+                <TextInput
+                  style={[styles.processTextInput, { minHeight: 70 }]}
+                  value={descricao}
+                  onChangeText={setDescricao}
+                  multiline
+                  placeholderTextColor="#A7AEC2"
+                />
+
+                <View style={rhStyles.formRow}>
+                  <View style={rhStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Prova · % mínimo *</Text>
+                    <TextInput style={styles.processTextInput} value={provaMinAcerto} onChangeText={setProvaMinAcerto} keyboardType="numeric" />
+                  </View>
+                  <View style={rhStyles.formRowItem}>
+                    <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Prova · tempo limite (min) *</Text>
+                    <TextInput
+                      style={styles.processTextInput}
+                      value={provaTempoLimiteMin}
+                      onChangeText={setProvaTempoLimiteMin}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Switch value={obrigatorio} onValueChange={setObrigatorio} />
+                    <Text style={rhStyles.folhaColaboradorMeta}>Obrigatório</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Switch value={ativo} onValueChange={setAtivo} />
+                    <Text style={rhStyles.folhaColaboradorMeta}>Ativo (visível no app)</Text>
+                  </View>
+                </View>
+
+                <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={handleSalvarInfo} disabled={isSavingInfo}>
+                  <Text style={styles.primaryButtonText}>{isSavingInfo ? 'Salvando...' : 'Salvar'}</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            {activeTab === 'aulas' ? (
+              <View style={{ paddingTop: 8 }}>
+                {!treinamentoId ? (
+                  <RHEmptyTabState message="Salve as informações do treinamento antes de cadastrar aulas." />
+                ) : (
+                  <>
+                    <View style={styles.directorNotifHeaderRow}>
+                      <Text style={styles.directorNotifCountLabel}>{aulas.length} aulas</Text>
+                      <Pressable
+                        style={styles.directorNotifNewButton}
+                        onPress={() => {
+                          setEditingAula(null);
+                          setIsAulaFormOpen(true);
+                        }}
+                      >
+                        <Feather name="plus" size={15} color="#FFFFFF" />
+                        <Text style={styles.directorNotifNewButtonText}>Nova aula</Text>
+                      </Pressable>
+                    </View>
+                    {isAulasLoading ? (
+                      <RHEmptyTabState message="Carregando aulas..." />
+                    ) : aulas.length === 0 ? (
+                      <RHEmptyTabState message="Nenhuma aula cadastrada." />
+                    ) : (
+                      aulas
+                        .slice()
+                        .sort((a, b) => a.ordem - b.ordem)
+                        .map((aula) => (
+                          <View key={aula.id} style={rhStyles.folhaColaboradorRow}>
+                            <View style={rhStyles.folhaColaboradorTopRow}>
+                              <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                                {aula.ordem}. {aula.titulo}
+                              </Text>
+                              <View style={{ flexDirection: 'row', gap: 8 }}>
+                                <Pressable
+                                  style={rhStyles.outlineButtonSmall}
+                                  onPress={() => {
+                                    setEditingAula(aula);
+                                    setIsAulaFormOpen(true);
+                                  }}
+                                >
+                                  <Feather name="edit-2" size={14} color="#29448D" />
+                                </Pressable>
+                                <Pressable style={rhStyles.outlineButtonSmall} onPress={() => handleDeleteAula(aula)}>
+                                  <Feather name="trash-2" size={14} color="#E6213D" />
+                                </Pressable>
+                              </View>
+                            </View>
+                            <Text style={rhStyles.folhaColaboradorMeta}>
+                              {aula.duracao_min ? `${aula.duracao_min}min` : 'Duração não informada'}
+                              {aula.video_url ? ' · vídeo vinculado' : ' · sem vídeo'}
+                            </Text>
+                          </View>
+                        ))
+                    )}
+                  </>
+                )}
+              </View>
+            ) : null}
+
+            {activeTab === 'prova' ? (
+              <View style={{ paddingTop: 8 }}>
+                <Text style={rhStyles.folhaColaboradorMeta}>{formatProvaResumo(Number(provaMinAcerto), Number(provaTempoLimiteMin))}</Text>
+                {!treinamentoId ? (
+                  <RHEmptyTabState message="Salve as informações do treinamento antes de montar a prova." />
+                ) : (
+                  <>
+                    <View style={[styles.directorNotifHeaderRow, styles.spacingTop]}>
+                      <Text style={styles.directorNotifCountLabel}>{questoes.length} questões</Text>
+                      <Pressable
+                        style={styles.directorNotifNewButton}
+                        onPress={() => {
+                          setEditingQuestao(null);
+                          setIsQuestaoFormOpen(true);
+                        }}
+                      >
+                        <Feather name="plus" size={15} color="#FFFFFF" />
+                        <Text style={styles.directorNotifNewButtonText}>Nova questão</Text>
+                      </Pressable>
+                    </View>
+                    {isQuestoesLoading ? (
+                      <RHEmptyTabState message="Carregando questões..." />
+                    ) : questoes.length === 0 ? (
+                      <RHEmptyTabState message="Nenhuma questão cadastrada." />
+                    ) : (
+                      questoes
+                        .slice()
+                        .sort((a, b) => a.ordem - b.ordem)
+                        .map((questao) => (
+                          <View key={questao.id} style={rhStyles.folhaColaboradorRow}>
+                            <View style={rhStyles.folhaColaboradorTopRow}>
+                              <Text style={rhStyles.folhaColaboradorNome} numberOfLines={2}>
+                                {questao.ordem}. {questao.enunciado}
+                              </Text>
+                              <View style={{ flexDirection: 'row', gap: 8 }}>
+                                <Pressable
+                                  style={rhStyles.outlineButtonSmall}
+                                  onPress={() => {
+                                    setEditingQuestao(questao);
+                                    setIsQuestaoFormOpen(true);
+                                  }}
+                                >
+                                  <Feather name="edit-2" size={14} color="#29448D" />
+                                </Pressable>
+                                <Pressable style={rhStyles.outlineButtonSmall} onPress={() => handleDeleteQuestao(questao)}>
+                                  <Feather name="trash-2" size={14} color="#E6213D" />
+                                </Pressable>
+                              </View>
+                            </View>
+                            <Text style={rhStyles.folhaColaboradorMeta}>Correta: {questao.correta ?? '—'}</Text>
+                          </View>
+                        ))
+                    )}
+                  </>
+                )}
+              </View>
+            ) : null}
+
+            {activeTab === 'atribuicao' ? <RHTreinamentoAtribuicaoTab treinamentoId={treinamentoId} /> : null}
+          </ScrollView>
+        </View>
+      </View>
+
+      <RHTreinamentoAulaFormModal
+        visible={isAulaFormOpen}
+        treinamentoId={treinamentoId}
+        editingItem={editingAula}
+        onClose={() => {
+          setIsAulaFormOpen(false);
+          setEditingAula(null);
+        }}
+        onSaved={loadAulas}
+      />
+      <RHTreinamentoQuestaoFormModal
+        visible={isQuestaoFormOpen}
+        treinamentoId={treinamentoId}
+        editingItem={editingQuestao}
+        onClose={() => {
+          setIsQuestaoFormOpen(false);
+          setEditingQuestao(null);
+        }}
+        onSaved={loadQuestoes}
+      />
+    </Modal>
+  );
+}
+
+// --- Ver respostas: KPIs + tabela agregada + drill-down por colaborador ---
+
+function RHTreinamentoRespostasModal({
+  visible,
+  treinamentoId,
+  titulo,
+  onClose,
+}: {
+  visible: boolean;
+  treinamentoId: string | null;
+  titulo: string;
+  onClose: () => void;
+}) {
+  const [linhas, setLinhas] = useState<RhTreinamentoRespostaAgregadaLinha[]>([]);
+  const [resumo, setResumo] = useState<RhTreinamentoRespostasResumo | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selecionado, setSelecionado] = useState<{ id: string; nome: string } | null>(null);
+  const [detalhe, setDetalhe] = useState<RhTreinamentoDetalheColaborador | null>(null);
+  const [isDetalheLoading, setIsDetalheLoading] = useState(false);
+  const [tentativaSelecionada, setTentativaSelecionada] = useState(0);
+
+  useEffect(() => {
+    if (!visible || !treinamentoId) return;
+    setSelecionado(null);
+    setDetalhe(null);
+    setIsLoading(true);
+    fetchRhTreinamentoRespostasAgregadas(treinamentoId)
+      .then((payload) => {
+        setLinhas(payload.data);
+        setResumo(payload.resumo);
+      })
+      .catch(() => {
+        setLinhas([]);
+        setResumo(null);
+      })
+      .finally(() => setIsLoading(false));
+  }, [visible, treinamentoId]);
+
+  useEffect(() => {
+    if (!selecionado || !treinamentoId) return;
+    setIsDetalheLoading(true);
+    setTentativaSelecionada(0);
+    fetchRhTreinamentoRespostasColaborador(treinamentoId, selecionado.id)
+      .then(setDetalhe)
+      .catch(() => setDetalhe(null))
+      .finally(() => setIsDetalheLoading(false));
+  }, [selecionado, treinamentoId]);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={[styles.requestModalCard, { maxHeight: '92%' }]}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle} numberOfLines={1}>
+              {selecionado ? `Respostas — ${selecionado.nome}` : `Ver respostas — ${titulo}`}
+            </Text>
+            <Pressable onPress={selecionado ? () => setSelecionado(null) : onClose} hitSlop={8}>
+              <Feather name={selecionado ? 'arrow-left' : 'x'} size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {!selecionado ? (
+              isLoading ? (
+                <RHEmptyTabState message="Carregando respostas..." />
+              ) : (
+                <>
+                  {resumo ? (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                      {[
+                        { label: 'Inscritos', value: resumo.inscritos },
+                        { label: 'Concluíram', value: resumo.concluiram },
+                        { label: 'Em andamento', value: resumo.em_andamento },
+                        { label: 'Não iniciaram', value: resumo.nao_iniciaram },
+                        { label: 'Nota média', value: resumo.nota_media != null ? `${resumo.nota_media.toFixed(0)}%` : '—' },
+                      ].map((kpi) => (
+                        <View key={kpi.label} style={[rhStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
+                          <Text style={rhStyles.kpiLabel}>{kpi.label}</Text>
+                          <Text style={rhStyles.kpiValue}>{kpi.value}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+
+                  {linhas.length === 0 ? (
+                    <RHEmptyTabState message="Nenhum inscrito ainda." />
+                  ) : (
+                    linhas.map((linha) => (
+                      <Pressable
+                        key={linha.inscricao_id}
+                        style={rhStyles.folhaColaboradorRow}
+                        onPress={() => setSelecionado({ id: linha.colaborador_id, nome: linha.nome_completo })}
+                      >
+                        <View style={rhStyles.folhaColaboradorTopRow}>
+                          <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                            {linha.nome_completo}
+                          </Text>
+                          <Feather name="chevron-right" size={16} color="#9AA1B5" />
+                        </View>
+                        <Text style={rhStyles.folhaColaboradorMeta}>
+                          {linha.cargo ?? '—'} · {linha.status} · nota {linha.nota != null ? `${linha.nota}%` : '—'} · {linha.tentativas} tentativa(s)
+                        </Text>
+                        <Text style={rhStyles.folhaColaboradorMeta}>
+                          Iniciou {formatDateTimeIsoBR(linha.iniciado_em) ?? '—'} · Concluiu {formatDateTimeIsoBR(linha.concluido_em) ?? '—'}
+                        </Text>
+                      </Pressable>
+                    ))
+                  )}
+                </>
+              )
+            ) : isDetalheLoading || !detalhe ? (
+              <RHEmptyTabState message="Carregando detalhe..." />
+            ) : (
+              <>
+                <Text style={[rhStyles.folhaColaboradorNome, styles.spacingTop]}>Percurso no treinamento</Text>
+                <Text style={rhStyles.folhaColaboradorMeta}>Iniciou em {formatDateTimeIsoBR(detalhe.percurso.iniciado_em) ?? '—'}</Text>
+                <Text style={rhStyles.folhaColaboradorMeta}>Último acesso {formatDateTimeIsoBR(detalhe.percurso.ultimo_acesso_em) ?? '—'}</Text>
+                <Text style={rhStyles.folhaColaboradorMeta}>
+                  Aulas concluídas {detalhe.percurso.aulas_concluidas}/{detalhe.percurso.aulas_total}
+                </Text>
+                <Text style={rhStyles.folhaColaboradorMeta}>
+                  Tempo assistido {Math.round(detalhe.percurso.tempo_assistido_seg / 60)}min
+                </Text>
+
+                <Text style={[rhStyles.folhaColaboradorNome, styles.spacingTop]}>Aulas</Text>
+                {detalhe.aulas.map((aula) => (
+                  <View key={aula.aula_id} style={rhStyles.folhaColaboradorRow}>
+                    <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                      {aula.ordem}. {aula.titulo}
+                    </Text>
+                    <Text style={rhStyles.folhaColaboradorMeta}>
+                      Parou em {Math.floor(aula.posicao_max_seg / 60)}:{String(aula.posicao_max_seg % 60).padStart(2, '0')} de{' '}
+                      {Math.floor(aula.duracao_seg / 60)}:{String(aula.duracao_seg % 60).padStart(2, '0')} · {aula.pct}% ·{' '}
+                      {formatDateTimeIsoBR(aula.atualizado_em) ?? '—'}
+                    </Text>
+                    <View style={[rhStyles.employeeStatusPill, { backgroundColor: aula.concluida ? '#E3F5EA' : '#F1F2F6', alignSelf: 'flex-start', marginTop: 4 }]}>
+                      <Text style={[rhStyles.employeeStatusText, { color: aula.concluida ? '#18955A' : '#5E667D' }]}>
+                        {aula.concluida ? 'Concluída' : 'Em andamento'}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+
+                <Text style={[rhStyles.folhaColaboradorNome, styles.spacingTop]}>
+                  Histórico de tentativas da prova ({detalhe.tentativas.length})
+                </Text>
+                {detalhe.tentativas.length === 0 ? (
+                  <RHEmptyTabState message="Nenhuma tentativa registrada." />
+                ) : (
+                  detalhe.tentativas.map((tentativa, index) => (
+                    <Pressable
+                      key={tentativa.tentativa_numero}
+                      style={[
+                        rhStyles.folhaColaboradorRow,
+                        tentativaSelecionada === index ? { borderColor: '#29448D', borderWidth: 1.5 } : null,
+                      ]}
+                      onPress={() => setTentativaSelecionada(index)}
+                    >
+                      <View style={rhStyles.folhaColaboradorTopRow}>
+                        <Text style={rhStyles.folhaColaboradorNome}>Tentativa {tentativa.tentativa_numero}</Text>
+                        <View style={[rhStyles.employeeStatusPill, { backgroundColor: tentativa.aprovado ? '#E3F5EA' : '#FBE7E9' }]}>
+                          <Text style={[rhStyles.employeeStatusText, { color: tentativa.aprovado ? '#18955A' : '#E6213D' }]}>
+                            {tentativa.aprovado ? 'Aprovado' : 'Reprovado'} · {tentativa.nota}%
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={rhStyles.folhaColaboradorMeta}>
+                        {formatDateTimeIsoBR(tentativa.respondido_em) ?? '—'} · {tentativa.acertos}/{tentativa.total} acertos
+                      </Text>
+                    </Pressable>
+                  ))
+                )}
+
+                {detalhe.tentativas[tentativaSelecionada] ? (
+                  <>
+                    <Text style={[rhStyles.folhaColaboradorNome, styles.spacingTop]}>
+                      Acertos: {detalhe.tentativas[tentativaSelecionada].acertos} de {detalhe.tentativas[tentativaSelecionada].total} · Nota
+                      registrada: {detalhe.tentativas[tentativaSelecionada].nota}%
+                    </Text>
+                    {detalhe.tentativas[tentativaSelecionada].respostas.map((resposta, index) => (
+                      <View key={index} style={rhStyles.folhaColaboradorRow}>
+                        <Text style={rhStyles.folhaColaboradorNome} numberOfLines={3}>
+                          {resposta.enunciado}
+                        </Text>
+                        <Text style={rhStyles.folhaColaboradorMeta}>
+                          Respondeu: {resposta.resposta} — {resposta.resposta_texto ?? '—'}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                          <Feather name={resposta.acertou ? 'check-circle' : 'x-circle'} size={14} color={resposta.acertou ? '#18955A' : '#E6213D'} />
+                          <Text style={rhStyles.folhaColaboradorMeta}>{resposta.acertou ? 'Correta' : 'Incorreta'}</Text>
+                        </View>
+                        {resposta.explicacao ? <Text style={rhStyles.folhaColaboradorMeta}>{resposta.explicacao}</Text> : null}
+                      </View>
+                    ))}
+                  </>
+                ) : null}
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// --- Lista principal ---
+
+export function RHTreinamentosScreen({ navigation }: ScreenProps<'RHTreinamentos'>) {
+  const [itens, setItens] = useState<RhTreinamentoCatalogo[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<RhTreinamentoCatalogo | null>(null);
+  const [respostasItem, setRespostasItem] = useState<RhTreinamentoCatalogo | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ id: string; y: number } | null>(null);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    fetchRhTreinamentos()
+      .then(setItens)
+      .catch(() => setItens([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleDelete = (item: RhTreinamentoCatalogo) => {
+    Alert.alert('Excluir treinamento', `Excluir "${item.titulo}"? Essa ação não pode ser desfeita.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => deleteRhTreinamento(item.id).then(load).catch((err) => showRhSaveError(err, 'Não foi possível excluir o treinamento.')),
+      },
+    ]);
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={rhUserInitials} variant="rh" onAvatarPress={() => navigation.navigate('RHProfile')} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <RHPageHeader icon="book-open" title="Treinamentos" subtitle="Catálogo, aulas, provas e atribuição de treinamentos." />
+
+        <View style={[styles.directorNotifHeaderRow, styles.spacingTop]}>
+          <Text style={styles.directorNotifCountLabel}>{itens.length} treinamentos</Text>
+          <Pressable
+            style={styles.directorNotifNewButton}
+            onPress={() => {
+              setEditingItem(null);
+              setIsFormOpen(true);
+            }}
+          >
+            <Feather name="plus" size={15} color="#FFFFFF" />
+            <Text style={styles.directorNotifNewButtonText}>Novo treinamento</Text>
+          </Pressable>
+        </View>
+
+        {isLoading ? (
+          <RHEmptyTabState message="Carregando treinamentos..." />
+        ) : itens.length === 0 ? (
+          <RHEmptyTabState message="Nenhum treinamento cadastrado." />
+        ) : (
+          itens.map((item) => (
+            <View key={item.id} style={rhStyles.goalCard}>
+              <View style={rhStyles.importRecordTopRow}>
+                <Text style={[rhStyles.goalTitle, { marginRight: 4, flex: 1 }]} numberOfLines={1}>
+                  {item.titulo}
+                </Text>
+                <RHConfigStatusPill ativo={item.ativo ?? false} />
+                <Pressable
+                  onPress={(e) => {
+                    const { pageY } = e.nativeEvent;
+                    setMenuAnchor({ id: item.id, y: pageY });
+                  }}
+                  hitSlop={8}
+                  style={{ marginLeft: 8 }}
+                >
+                  <Feather name="more-vertical" size={18} color="#677089" />
+                </Pressable>
+              </View>
+              {item.subtitulo ? <Text style={rhStyles.goalSubtitle}>{item.subtitulo}</Text> : null}
+              <View style={rhStyles.importRecordBottomRow}>
+                <View style={[rhStyles.importTypePillSmall, { backgroundColor: '#EEF0F6' }]}>
+                  <Text style={[rhStyles.importTypePillText, { color: '#5C6580' }]}>{item.categoria ?? '—'}</Text>
+                </View>
+                <Text style={rhStyles.goalSubtitle}>{item.obrigatorio ? 'Obrigatório' : 'Opcional'}</Text>
+                <Text style={rhStyles.goalSubtitle}>{formatProvaResumo(item.prova_min_acerto, item.prova_tempo_limite_min)}</Text>
+              </View>
+              <Text style={rhStyles.goalSubtitle}>Atualizado {rhTreinamentoUpdatedAtLabel(item)}</Text>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      <Modal visible={menuAnchor !== null} transparent animationType="fade" onRequestClose={() => setMenuAnchor(null)}>
+        <Pressable style={{ flex: 1 }} onPress={() => setMenuAnchor(null)}>
+          {menuAnchor
+            ? (() => {
+                const menuItem = itens.find((entry) => entry.id === menuAnchor.id);
+                if (!menuItem) return null;
+                return (
+                  <Pressable style={[rhStyles.rowActionsMenu, { top: menuAnchor.y + 8, right: 16 }]} onPress={() => {}}>
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        navigation.navigate('TrainingDetail', { courseId: menuItem.id });
+                      }}
+                    >
+                      <Feather name="eye" size={15} color="#5E667D" />
+                      <Text style={rhStyles.rowActionsMenuItemText}>Visualizar como colaborador</Text>
+                    </Pressable>
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        setRespostasItem(menuItem);
+                      }}
+                    >
+                      <Feather name="bar-chart-2" size={15} color="#5E667D" />
+                      <Text style={rhStyles.rowActionsMenuItemText}>Ver respostas</Text>
+                    </Pressable>
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        setEditingItem(menuItem);
+                        setIsFormOpen(true);
+                      }}
+                    >
+                      <Feather name="edit-2" size={15} color="#5E667D" />
+                      <Text style={rhStyles.rowActionsMenuItemText}>Editar</Text>
+                    </Pressable>
+                    <Pressable
+                      style={rhStyles.rowActionsMenuItem}
+                      onPress={() => {
+                        setMenuAnchor(null);
+                        handleDelete(menuItem);
+                      }}
+                    >
+                      <Feather name="trash-2" size={15} color="#E6213D" />
+                      <Text style={[rhStyles.rowActionsMenuItemText, { color: '#E6213D' }]}>Excluir</Text>
+                    </Pressable>
+                  </Pressable>
+                );
+              })()
+            : null}
+        </Pressable>
+      </Modal>
+
+      <RHTreinamentoFormModal
+        visible={isFormOpen}
+        editingItem={editingItem}
+        onClose={() => {
+          setIsFormOpen(false);
+          setEditingItem(null);
+        }}
+        onSaved={load}
+      />
+
+      <RHTreinamentoRespostasModal
+        visible={respostasItem !== null}
+        treinamentoId={respostasItem?.id ?? null}
+        titulo={respostasItem?.titulo ?? ''}
+        onClose={() => setRespostasItem(null)}
+      />
     </SafeAreaView>
   );
 }

@@ -5,6 +5,17 @@ const {
   postRhTreinamentoProva,
   patchRhTreinamentoInscricao,
   postRhTreinamentoProgressoAula,
+  postRhTreinamento,
+  patchRhTreinamento,
+  deleteRhTreinamento,
+  postRhTreinamentoAula,
+  patchRhTreinamentoAula,
+  deleteRhTreinamentoAula,
+  postRhTreinamentoVideoUploadUrl,
+  postRhTreinamentoQuestao,
+  patchRhTreinamentoQuestao,
+  deleteRhTreinamentoQuestao,
+  postRhTreinamentoAtribuir,
 } = require('../lovable');
 
 const router = express.Router();
@@ -92,6 +103,132 @@ router.patch('/inscricoes/:id', async (req, res) => {
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[rh/treinamentos-conteudo inscricoes PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// --- RH/admin: CRUD de treinamento/aulas/questões, upload de vídeo,
+// atribuição em massa e respostas agregadas ---
+
+// POST /api/rh/treinamentos-conteudo?actorId= — cria treinamento
+router.post('/', async (req, res) => {
+  try {
+    const json = await postRhTreinamento(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/rh/treinamentos-conteudo/:id?actorId=
+router.patch('/:id', async (req, res) => {
+  try {
+    const json = await patchRhTreinamento(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/rh/treinamentos-conteudo/:id?actorId=
+router.delete('/:id', async (req, res) => {
+  try {
+    await deleteRhTreinamento(req.params.id, req.query.actorId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/rh/treinamentos-conteudo/aulas?actorId=
+router.post('/aulas', async (req, res) => {
+  try {
+    const json = await postRhTreinamentoAula(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo aulas POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/rh/treinamentos-conteudo/aulas/:id?actorId=
+router.patch('/aulas/:id', async (req, res) => {
+  try {
+    const json = await patchRhTreinamentoAula(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo aulas PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/rh/treinamentos-conteudo/aulas/:id?actorId=
+router.delete('/aulas/:id', async (req, res) => {
+  try {
+    await deleteRhTreinamentoAula(req.params.id, req.query.actorId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo aulas DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/rh/treinamentos-conteudo/video-upload-url?actorId= — body: { filename, treinamento_id? }
+// Gera signed URL pra upload direto no Storage (bucket rh-treinamentos),
+// sem passar o arquivo de vídeo pelo nosso backend (payload grande demais).
+router.post('/video-upload-url', async (req, res) => {
+  try {
+    const json = await postRhTreinamentoVideoUploadUrl(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo video-upload-url] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/rh/treinamentos-conteudo/questoes?actorId=
+router.post('/questoes', async (req, res) => {
+  try {
+    const json = await postRhTreinamentoQuestao(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo questoes POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/rh/treinamentos-conteudo/questoes/:id?actorId=
+router.patch('/questoes/:id', async (req, res) => {
+  try {
+    const json = await patchRhTreinamentoQuestao(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo questoes PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/rh/treinamentos-conteudo/questoes/:id?actorId=
+router.delete('/questoes/:id', async (req, res) => {
+  try {
+    await deleteRhTreinamentoQuestao(req.params.id, req.query.actorId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo questoes DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/rh/treinamentos-conteudo/atribuir?actorId= — body: { treinamento_id, tipo, cargos?, grupos?, colaboradores?, inscrever? }
+router.post('/atribuir', async (req, res) => {
+  try {
+    const json = await postRhTreinamentoAtribuir(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? [], inscritos: json?.inscritos ?? 0 });
+  } catch (err) {
+    console.error('[rh/treinamentos-conteudo atribuir] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
