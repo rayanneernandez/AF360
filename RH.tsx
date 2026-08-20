@@ -19091,7 +19091,13 @@ function RHTreinamentoQuestaoFormModal({
 
 // --- Aba Atribuição: 4 alvos possíveis (todos/cargo/grupo/colaborador) ---
 
-function RHTreinamentoAtribuicaoTab({ treinamentoId }: { treinamentoId: string | null }) {
+function RHTreinamentoAtribuicaoTab({
+  treinamentoId,
+  ensureTreinamentoId,
+}: {
+  treinamentoId: string | null;
+  ensureTreinamentoId: () => Promise<string | null>;
+}) {
   const [tipo, setTipo] = useState<RhTreinamentoAtribuicaoTipo>('todos');
   const [cargosDisponiveis, setCargosDisponiveis] = useState<RhConfigCargo[]>([]);
   const [gruposDisponiveis, setGruposDisponiveis] = useState<AdminGrupoItem[]>([]);
@@ -19128,8 +19134,7 @@ function RHTreinamentoAtribuicaoTab({ treinamentoId }: { treinamentoId: string |
       .catch(() => {});
   }, [treinamentoId]);
 
-  const handleSalvar = (inscrever: boolean) => {
-    if (!treinamentoId) return;
+  const handleSalvar = async (inscrever: boolean) => {
     if (tipo === 'cargo' && cargosSelecionados.length === 0) {
       Alert.alert('Selecione ao menos um cargo', 'Escolha os cargos alvo dessa atribuição.');
       return;
@@ -19143,8 +19148,13 @@ function RHTreinamentoAtribuicaoTab({ treinamentoId }: { treinamentoId: string |
       return;
     }
     setIsSaving(inscrever ? 'inscrever' : 'salvar');
+    const id = await ensureTreinamentoId();
+    if (!id) {
+      setIsSaving(null);
+      return;
+    }
     atribuirRhTreinamento({
-      treinamento_id: treinamentoId,
+      treinamento_id: id,
       tipo,
       cargos: tipo === 'cargo' ? cargosSelecionados : undefined,
       grupos: tipo === 'grupo' ? gruposSelecionados : undefined,
@@ -19279,22 +19289,27 @@ function RHTreinamentoAtribuicaoTab({ treinamentoId }: { treinamentoId: string |
         estava inscrito não é duplicado). As inscrições novas entram como "Não iniciou".
       </Text>
 
-      <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+      <View style={{ gap: 8, marginTop: 12 }}>
         <Pressable
-          style={[rhStyles.outlineButtonSmall, { flex: 1, alignItems: 'center', paddingVertical: 10 }]}
+          style={[
+            rhStyles.outlineButtonSmall,
+            { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, width: '100%' },
+          ]}
           onPress={() => handleSalvar(false)}
-          disabled={isSaving !== null || !treinamentoId}
+          disabled={isSaving !== null}
         >
-          <Text style={{ color: '#29448D', fontWeight: '700', fontSize: 13 }}>
+          <Text style={{ color: '#29448D', fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
             {isSaving === 'salvar' ? 'Salvando...' : 'Salvar'}
           </Text>
         </Pressable>
         <Pressable
-          style={[rhStyles.primaryButtonGreen, { flex: 1 }]}
+          style={[rhStyles.primaryButtonGreen, { width: '100%' }]}
           onPress={() => handleSalvar(true)}
-          disabled={isSaving !== null || !treinamentoId}
+          disabled={isSaving !== null}
         >
-          <Text style={styles.primaryButtonText}>{isSaving === 'inscrever' ? 'Inscrevendo...' : 'Salvar e Inscrever'}</Text>
+          <Text style={styles.primaryButtonText} numberOfLines={1}>
+            {isSaving === 'inscrever' ? 'Inscrevendo...' : 'Salvar e Inscrever'}
+          </Text>
         </Pressable>
       </View>
 
@@ -19410,6 +19425,39 @@ function RHTreinamentoFormModal({
       })
       .catch((err) => showRhSaveError(err, 'Não foi possível salvar o treinamento.'))
       .finally(() => setIsSavingInfo(false));
+  };
+
+  // Igual ao painel web: dá pra cadastrar aulas/questões antes mesmo de ter
+  // preenchido a aba Informações. Se ainda não existe treinamento_id, cria
+  // um registro (rascunho, ativo=false) com os dados já digitados até agora
+  // — quem visita a aba Informações depois só precisa completar e salvar de
+  // novo (PATCH) por cima do mesmo registro.
+  const [isCreatingDraft, setIsCreatingDraft] = useState(false);
+  const ensureTreinamentoId = async (): Promise<string | null> => {
+    if (treinamentoId) return treinamentoId;
+    setIsCreatingDraft(true);
+    try {
+      const body: RhTreinamentoCreateBody = {
+        titulo: titulo.trim() || 'Novo treinamento',
+        subtitulo: subtitulo.trim() || null,
+        categoria: categoria.trim() || 'Geral',
+        carga_horaria_min: Number(cargaHorariaMin) || 0,
+        descricao: descricao.trim() || null,
+        obrigatorio,
+        ativo: false,
+        prova_min_acerto: Number(provaMinAcerto) || 70,
+        prova_tempo_limite_min: Number(provaTempoLimiteMin) || 5,
+      };
+      const saved = await createRhTreinamento(body);
+      setTreinamentoId(saved.id);
+      onSaved();
+      return saved.id;
+    } catch (err) {
+      showRhSaveError(err, 'Não foi possível iniciar o treinamento.');
+      return null;
+    } finally {
+      setIsCreatingDraft(false);
+    }
   };
 
   const handleDeleteAula = (aula: RhTreinamentoAula) => {
@@ -19532,60 +19580,63 @@ function RHTreinamentoFormModal({
 
             {activeTab === 'aulas' ? (
               <View style={{ paddingTop: 8 }}>
-                {!treinamentoId ? (
-                  <RHEmptyTabState message="Salve as informações do treinamento antes de cadastrar aulas." />
-                ) : (
-                  <>
-                    <View style={styles.directorNotifHeaderRow}>
-                      <Text style={styles.directorNotifCountLabel}>{aulas.length} aulas</Text>
-                      <Pressable
-                        style={styles.directorNotifNewButton}
-                        onPress={() => {
-                          setEditingAula(null);
-                          setIsAulaFormOpen(true);
-                        }}
-                      >
-                        <Feather name="plus" size={15} color="#FFFFFF" />
-                        <Text style={styles.directorNotifNewButtonText}>Nova aula</Text>
-                      </Pressable>
-                    </View>
-                    {isAulasLoading ? (
-                      <RHEmptyTabState message="Carregando aulas..." />
-                    ) : aulas.length === 0 ? (
-                      <RHEmptyTabState message="Nenhuma aula cadastrada." />
+                <View style={styles.directorNotifHeaderRow}>
+                  <Text style={styles.directorNotifCountLabel}>{aulas.length} aulas</Text>
+                  <Pressable
+                    style={[styles.directorNotifNewButton, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                    onPress={async () => {
+                      const id = await ensureTreinamentoId();
+                      if (!id) return;
+                      setEditingAula(null);
+                      setIsAulaFormOpen(true);
+                    }}
+                    disabled={isCreatingDraft}
+                  >
+                    {isCreatingDraft ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
-                      aulas
-                        .slice()
-                        .sort((a, b) => a.ordem - b.ordem)
-                        .map((aula) => (
-                          <View key={aula.id} style={rhStyles.folhaColaboradorRow}>
-                            <View style={rhStyles.folhaColaboradorTopRow}>
-                              <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
-                                {aula.ordem}. {aula.titulo}
-                              </Text>
-                              <View style={{ flexDirection: 'row', gap: 8 }}>
-                                <Pressable
-                                  style={rhStyles.outlineButtonSmall}
-                                  onPress={() => {
-                                    setEditingAula(aula);
-                                    setIsAulaFormOpen(true);
-                                  }}
-                                >
-                                  <Feather name="edit-2" size={14} color="#29448D" />
-                                </Pressable>
-                                <Pressable style={rhStyles.outlineButtonSmall} onPress={() => handleDeleteAula(aula)}>
-                                  <Feather name="trash-2" size={14} color="#E6213D" />
-                                </Pressable>
-                              </View>
-                            </View>
-                            <Text style={rhStyles.folhaColaboradorMeta}>
-                              {aula.duracao_min ? `${aula.duracao_min}min` : 'Duração não informada'}
-                              {aula.video_url ? ' · vídeo vinculado' : ' · sem vídeo'}
-                            </Text>
-                          </View>
-                        ))
+                      <Feather name="plus" size={15} color="#FFFFFF" />
                     )}
-                  </>
+                    <Text style={styles.directorNotifNewButtonText} numberOfLines={1}>
+                      Nova aula
+                    </Text>
+                  </Pressable>
+                </View>
+                {isAulasLoading ? (
+                  <RHEmptyTabState message="Carregando aulas..." />
+                ) : aulas.length === 0 ? (
+                  <RHEmptyTabState message="Nenhuma aula cadastrada." />
+                ) : (
+                  aulas
+                    .slice()
+                    .sort((a, b) => a.ordem - b.ordem)
+                    .map((aula) => (
+                      <View key={aula.id} style={rhStyles.folhaColaboradorRow}>
+                        <View style={rhStyles.folhaColaboradorTopRow}>
+                          <Text style={rhStyles.folhaColaboradorNome} numberOfLines={1}>
+                            {aula.ordem}. {aula.titulo}
+                          </Text>
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <Pressable
+                              style={rhStyles.outlineButtonSmall}
+                              onPress={() => {
+                                setEditingAula(aula);
+                                setIsAulaFormOpen(true);
+                              }}
+                            >
+                              <Feather name="edit-2" size={14} color="#29448D" />
+                            </Pressable>
+                            <Pressable style={rhStyles.outlineButtonSmall} onPress={() => handleDeleteAula(aula)}>
+                              <Feather name="trash-2" size={14} color="#E6213D" />
+                            </Pressable>
+                          </View>
+                        </View>
+                        <Text style={rhStyles.folhaColaboradorMeta}>
+                          {aula.duracao_min ? `${aula.duracao_min}min` : 'Duração não informada'}
+                          {aula.video_url ? ' · vídeo vinculado' : ' · sem vídeo'}
+                        </Text>
+                      </View>
+                    ))
                 )}
               </View>
             ) : null}
@@ -19593,62 +19644,67 @@ function RHTreinamentoFormModal({
             {activeTab === 'prova' ? (
               <View style={{ paddingTop: 8 }}>
                 <Text style={rhStyles.folhaColaboradorMeta}>{formatProvaResumo(Number(provaMinAcerto), Number(provaTempoLimiteMin))}</Text>
-                {!treinamentoId ? (
-                  <RHEmptyTabState message="Salve as informações do treinamento antes de montar a prova." />
-                ) : (
-                  <>
-                    <View style={[styles.directorNotifHeaderRow, styles.spacingTop]}>
-                      <Text style={styles.directorNotifCountLabel}>{questoes.length} questões</Text>
-                      <Pressable
-                        style={styles.directorNotifNewButton}
-                        onPress={() => {
-                          setEditingQuestao(null);
-                          setIsQuestaoFormOpen(true);
-                        }}
-                      >
-                        <Feather name="plus" size={15} color="#FFFFFF" />
-                        <Text style={styles.directorNotifNewButtonText}>Nova questão</Text>
-                      </Pressable>
-                    </View>
-                    {isQuestoesLoading ? (
-                      <RHEmptyTabState message="Carregando questões..." />
-                    ) : questoes.length === 0 ? (
-                      <RHEmptyTabState message="Nenhuma questão cadastrada." />
+                <View style={[styles.directorNotifHeaderRow, styles.spacingTop]}>
+                  <Text style={styles.directorNotifCountLabel}>{questoes.length} questões</Text>
+                  <Pressable
+                    style={[styles.directorNotifNewButton, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                    onPress={async () => {
+                      const id = await ensureTreinamentoId();
+                      if (!id) return;
+                      setEditingQuestao(null);
+                      setIsQuestaoFormOpen(true);
+                    }}
+                    disabled={isCreatingDraft}
+                  >
+                    {isCreatingDraft ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
-                      questoes
-                        .slice()
-                        .sort((a, b) => a.ordem - b.ordem)
-                        .map((questao) => (
-                          <View key={questao.id} style={rhStyles.folhaColaboradorRow}>
-                            <View style={rhStyles.folhaColaboradorTopRow}>
-                              <Text style={rhStyles.folhaColaboradorNome} numberOfLines={2}>
-                                {questao.ordem}. {questao.enunciado}
-                              </Text>
-                              <View style={{ flexDirection: 'row', gap: 8 }}>
-                                <Pressable
-                                  style={rhStyles.outlineButtonSmall}
-                                  onPress={() => {
-                                    setEditingQuestao(questao);
-                                    setIsQuestaoFormOpen(true);
-                                  }}
-                                >
-                                  <Feather name="edit-2" size={14} color="#29448D" />
-                                </Pressable>
-                                <Pressable style={rhStyles.outlineButtonSmall} onPress={() => handleDeleteQuestao(questao)}>
-                                  <Feather name="trash-2" size={14} color="#E6213D" />
-                                </Pressable>
-                              </View>
-                            </View>
-                            <Text style={rhStyles.folhaColaboradorMeta}>Correta: {questao.correta ?? '—'}</Text>
-                          </View>
-                        ))
+                      <Feather name="plus" size={15} color="#FFFFFF" />
                     )}
-                  </>
+                    <Text style={styles.directorNotifNewButtonText} numberOfLines={1}>
+                      Nova questão
+                    </Text>
+                  </Pressable>
+                </View>
+                {isQuestoesLoading ? (
+                  <RHEmptyTabState message="Carregando questões..." />
+                ) : questoes.length === 0 ? (
+                  <RHEmptyTabState message="Nenhuma questão cadastrada." />
+                ) : (
+                  questoes
+                    .slice()
+                    .sort((a, b) => a.ordem - b.ordem)
+                    .map((questao) => (
+                      <View key={questao.id} style={rhStyles.folhaColaboradorRow}>
+                        <View style={rhStyles.folhaColaboradorTopRow}>
+                          <Text style={rhStyles.folhaColaboradorNome} numberOfLines={2}>
+                            {questao.ordem}. {questao.enunciado}
+                          </Text>
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <Pressable
+                              style={rhStyles.outlineButtonSmall}
+                              onPress={() => {
+                                setEditingQuestao(questao);
+                                setIsQuestaoFormOpen(true);
+                              }}
+                            >
+                              <Feather name="edit-2" size={14} color="#29448D" />
+                            </Pressable>
+                            <Pressable style={rhStyles.outlineButtonSmall} onPress={() => handleDeleteQuestao(questao)}>
+                              <Feather name="trash-2" size={14} color="#E6213D" />
+                            </Pressable>
+                          </View>
+                        </View>
+                        <Text style={rhStyles.folhaColaboradorMeta}>Correta: {questao.correta ?? '—'}</Text>
+                      </View>
+                    ))
                 )}
               </View>
             ) : null}
 
-            {activeTab === 'atribuicao' ? <RHTreinamentoAtribuicaoTab treinamentoId={treinamentoId} /> : null}
+            {activeTab === 'atribuicao' ? (
+              <RHTreinamentoAtribuicaoTab treinamentoId={treinamentoId} ensureTreinamentoId={ensureTreinamentoId} />
+            ) : null}
           </ScrollView>
         </View>
       </View>
