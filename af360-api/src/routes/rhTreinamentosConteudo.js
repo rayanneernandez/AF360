@@ -49,6 +49,16 @@ router.get('/', async (req, res) => {
       },
       actorId
     );
+    // recurso=respostas-agregadas sem colaboradorId/inscricaoId: a Lovable
+    // devolve { data: [...linhas], resumo: {...} } no nível raiz (resumo NÃO
+    // fica dentro de data). Repassar só json.data descartava o resumo e a
+    // tela "Ver respostas" aparecia sempre vazia — aqui preservamos os dois
+    // juntos num objeto { data, resumo } pro app conseguir os KPIs.
+    if (recurso === 'respostas-agregadas' && !colaboradorId && !inscricaoId) {
+      const linhas = Array.isArray(json?.data) ? json.data : [];
+      res.json({ ok: true, count: linhas.length, data: { data: linhas, resumo: json?.resumo ?? null } });
+      return;
+    }
     const row = json?.data ?? json;
     res.json({ ok: true, count: json?.count ?? (Array.isArray(row) ? row.length : undefined), data: row });
   } catch (err) {

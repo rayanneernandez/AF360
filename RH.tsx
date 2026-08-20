@@ -19945,7 +19945,14 @@ export function RHTreinamentosScreen({ navigation }: ScreenProps<'RHTreinamentos
           <RHEmptyTabState message="Nenhum treinamento cadastrado." />
         ) : (
           itens.map((item) => (
-            <View key={item.id} style={rhStyles.goalCard}>
+            <Pressable
+              key={item.id}
+              style={rhStyles.goalCard}
+              onPress={() => {
+                setEditingItem(item);
+                setIsFormOpen(true);
+              }}
+            >
               <View style={rhStyles.importRecordTopRow}>
                 <Text style={[rhStyles.goalTitle, { marginRight: 4, flex: 1 }]} numberOfLines={1}>
                   {item.titulo}
@@ -19971,7 +19978,7 @@ export function RHTreinamentosScreen({ navigation }: ScreenProps<'RHTreinamentos
                 <Text style={rhStyles.goalSubtitle}>{formatProvaResumo(item.prova_min_acerto, item.prova_tempo_limite_min)}</Text>
               </View>
               <Text style={rhStyles.goalSubtitle}>Atualizado {rhTreinamentoUpdatedAtLabel(item)}</Text>
-            </View>
+            </Pressable>
           ))
         )}
       </ScrollView>

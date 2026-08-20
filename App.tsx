@@ -1325,10 +1325,10 @@ export const rhSideMenuSections: Array<{
       { id: 'rh-experiencia', label: 'Período de Experiência', icon: 'shield', route: 'RHExperiencia' },
       { id: 'rh-folha', label: 'Folha de Pagamento', icon: 'credit-card', route: 'RHFolhaPagamento' },
       { id: 'rh-recursos', label: 'Recursos Operacionais', icon: 'tool', route: 'RHRecursosOperacionais' },
+      { id: 'rh-treinamentos', label: 'Treinamentos', icon: 'book-open', route: 'RHTreinamentos' },
       { id: 'rh-workflow', label: 'Workflow', icon: 'git-pull-request', route: 'RHWorkflow' },
       { id: 'rh-relatorios', label: 'Relatórios', icon: 'bar-chart-2', route: 'RHRelatorios' },
       { id: 'rh-configuracoes', label: 'Configurações', icon: 'settings', route: 'RHConfiguracoes' },
-      { id: 'rh-treinamentos', label: 'Treinamentos', icon: 'book-open', route: 'RHTreinamentos' },
     ],
   },
 ];
