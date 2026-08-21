@@ -11,10 +11,30 @@ import {
   fetchFinanceiroFornecedores,
   fetchFinanceiroFornecedorDetalhe,
   fetchFinanceiroConfig,
+  fetchFinanceiroContas,
+  fetchFinanceiroDashboard,
+  fetchFinanceiroFluxoCaixa,
+  fetchFinanceiroConciliacao,
+  conciliarFinanceiroMovimento,
+  desvincularFinanceiroMovimento,
+  fetchFinanceiroBalancete,
+  fetchFinanceiroIaPredicoes,
+  responderFinanceiroIaPredicao,
+  reanalisarFinanceiroIa,
+  fetchFinanceiroProjecoes,
+  fetchFinanceiroRelatorio,
   type FinanceiroCentroCustoItem,
   type FinanceiroContaBancaria,
   type FinanceiroFornecedorItem,
   type FinanceiroPostoConfig,
+  type FinanceiroContaItem,
+  type FinanceiroDashboardData,
+  type FinanceiroFluxoCaixaData,
+  type FinanceiroMovimentoItem,
+  type FinanceiroConciliacaoResumo,
+  type FinanceiroDreMes,
+  type FinanceiroIaPredicaoItem,
+  type FinanceiroProjecoesData,
 } from './api';
 
 // ---------- Financeiro (Gestão de Caixa) ----------
@@ -517,110 +537,1239 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
 }
 
 export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'FinanceiroDashboard'>) {
+  const [data, setData] = useState<FinanceiroDashboardData | null>(null);
+  const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
+  const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchFinanceiroConfig()
+      .then((result) => setPostos(result.postos))
+      .catch(() => setPostos([]));
+  }, []);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchFinanceiroDashboard({ posto: postoSelecionado ?? undefined })
+      .then(setData)
+      .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar o dashboard.')))
+      .finally(() => setIsLoading(false));
+  }, [postoSelecionado]);
+
+  const saldoHoje = (data?.receberHoje ?? 0) - (data?.pagarHoje ?? 0);
+  const maxCurva = Math.max(1, ...(data?.curva.map((p) => Math.max(p.recebimentos, p.pagamentos)) ?? [1]));
+
   return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="grid"
-      title="Dashboard"
-      subtitle="Contas a receber, contas a pagar, saldo e projeções da rede."
-      pendingMessage="Aguardando a Lovable confirmar a origem dos KPIs (contas a receber/pagar do dia, saldo) e dos gráficos de curva financeira e projeção, pra ligar este dashboard ao banco real."
-    />
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={financeiroUserInitials} variant="financeiro" onAvatarPress={() => navigation.navigate('FinanceiroProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <FinanceiroPageHeader
+          icon="grid"
+          title="Dashboard"
+          subtitle="Contas a receber, contas a pagar, saldo e projeções da rede."
+        />
+
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+
+        {isLoading ? (
+          <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <FinanceiroEmptyState message={errorMessage} />
+        ) : !data ? (
+          <FinanceiroEmptyState message="Sem dados para o período." />
+        ) : (
+          <>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                <Text style={fnStyles.kpiLabel}>A receber hoje</Text>
+                <Text style={[fnStyles.kpiValue, { color: '#18955A' }]}>{formatBRL(data.receberHoje)}</Text>
+              </View>
+              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                <Text style={fnStyles.kpiLabel}>A pagar hoje</Text>
+                <Text style={[fnStyles.kpiValue, { color: '#E6213D' }]}>{formatBRL(data.pagarHoje)}</Text>
+              </View>
+              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '100%' }]}>
+                <Text style={fnStyles.kpiLabel}>Saldo projetado do dia</Text>
+                <Text style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D' }]}>{formatBRL(saldoHoje)}</Text>
+              </View>
+            </View>
+
+            {data.curva.length > 0 ? (
+              <View style={{ marginBottom: 20 }}>
+                <Text style={fnStyles.sectionTitle}>Curva financeira</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 120, paddingTop: 8 }}>
+                  {data.curva.map((ponto, idx) => (
+                    <View key={`${ponto.periodo}-${idx}`} style={{ flex: 1, alignItems: 'center' }}>
+                      <View style={{ width: '100%', flexDirection: 'row', gap: 2, alignItems: 'flex-end', height: 90 }}>
+                        <View
+                          style={{
+                            flex: 1,
+                            height: Math.max(4, (ponto.recebimentos / maxCurva) * 90),
+                            backgroundColor: '#18955A',
+                            borderRadius: 3,
+                          }}
+                        />
+                        <View
+                          style={{
+                            flex: 1,
+                            height: Math.max(4, (ponto.pagamentos / maxCurva) * 90),
+                            backgroundColor: '#E6213D',
+                            borderRadius: 3,
+                          }}
+                        />
+                      </View>
+                      <Text style={{ fontSize: 9, color: '#8891A6', marginTop: 4 }} numberOfLines={1}>
+                        {ponto.periodo}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', gap: 16, marginTop: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#18955A' }} />
+                    <Text style={{ fontSize: 11, color: '#5E667D' }}>Recebimentos</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#E6213D' }} />
+                    <Text style={{ fontSize: 11, color: '#5E667D' }}>Pagamentos</Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
+            <Text style={fnStyles.sectionTitle}>Pagamentos e recebimentos de hoje</Text>
+            {data.pagamentosHoje.length === 0 ? (
+              <FinanceiroEmptyState message="Nada previsto para hoje." />
+            ) : (
+              data.pagamentosHoje.map((item, idx) => (
+                <View key={idx} style={fnStyles.listRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                      {item.descricao}
+                    </Text>
+                    <Text style={fnStyles.listRowMeta} numberOfLines={1}>
+                      {item.contraparte}
+                      {item.posto ? ` · ${item.posto}` : ''}
+                    </Text>
+                  </View>
+                  <Text style={fnStyles.listRowValue}>{formatBRL(item.valor)}</Text>
+                </View>
+              ))
+            )}
+
+            <Text style={[fnStyles.sectionTitle, { marginTop: 16 }]}>Próximos 7 dias</Text>
+            {data.pagamentos7d.length === 0 ? (
+              <FinanceiroEmptyState message="Nada previsto para os próximos 7 dias." />
+            ) : (
+              data.pagamentos7d.map((item, idx) => (
+                <View key={idx} style={fnStyles.listRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                      {item.descricao}
+                    </Text>
+                    <Text style={fnStyles.listRowMeta} numberOfLines={1}>
+                      {item.contraparte}
+                      {item.posto ? ` · ${item.posto}` : ''}
+                      {item.vencimento ? ` · Vence ${formatDateIsoBR(item.vencimento) ?? ''}` : ''}
+                    </Text>
+                  </View>
+                  <Text style={fnStyles.listRowValue}>{formatBRL(item.valor)}</Text>
+                </View>
+              ))
+            )}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const financeiroContasStatusMeta: Record<string, { label: string; bg: string; color: string }> = {
+  aberto: { label: 'Em aberto', bg: '#FCF4DE', color: '#B7791F' },
+  pago: { label: 'Pago', bg: '#E3F5EA', color: '#18955A' },
+  vencido: { label: 'Vencido', bg: '#FBE7E9', color: '#E6213D' },
+};
+
+const financeiroContasPeriodoOptions: Array<{ label: string; value: 'hoje' | '7dias' | 'mes' }> = [
+  { label: 'Hoje', value: 'hoje' },
+  { label: 'Próximos 7 dias', value: '7dias' },
+  { label: 'Mês', value: 'mes' },
+];
+
+function FinanceiroContasScreenBase({
+  navigation,
+  tipo,
+}: {
+  navigation: { navigate: (route: 'FinanceiroProfile') => void };
+  tipo: 'pagar' | 'receber';
+}) {
+  const [itens, setItens] = useState<FinanceiroContaItem[]>([]);
+  const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [ultimoCodigo, setUltimoCodigo] = useState<string | null>(null);
+  const [busca, setBusca] = useState('');
+  const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [periodo, setPeriodo] = useState<'hoje' | '7dias' | 'mes'>('7dias');
+
+  useEffect(() => {
+    fetchFinanceiroConfig()
+      .then((result) => setPostos(result.postos))
+      .catch(() => setPostos([]));
+  }, []);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchFinanceiroContas({ tipo, periodo, posto: postoSelecionado ?? undefined, busca: busca.trim() || undefined })
+      .then((result) => {
+        setItens(result.data);
+        setUltimoCodigo(result.ultimoCodigo);
+      })
+      .catch((err) =>
+        setErrorMessage(showFinanceiroError(err, `Não foi possível carregar as contas a ${tipo === 'pagar' ? 'pagar' : 'receber'}.`))
+      )
+      .finally(() => setIsLoading(false));
+  }, [tipo, periodo, postoSelecionado, busca]);
+
+  useEffect(() => {
+    const timeout = setTimeout(load, 300);
+    return () => clearTimeout(timeout);
+  }, [load]);
+
+  const handleLoadMore = () => {
+    if (!ultimoCodigo || isLoadingMore) return;
+    setIsLoadingMore(true);
+    fetchFinanceiroContas({ tipo, periodo, posto: postoSelecionado ?? undefined, busca: busca.trim() || undefined, ultimoCodigo })
+      .then((result) => {
+        setItens((current) => [...current, ...result.data]);
+        setUltimoCodigo(result.ultimoCodigo);
+      })
+      .catch((err) => showFinanceiroError(err, 'Não foi possível carregar mais itens.'))
+      .finally(() => setIsLoadingMore(false));
+  };
+
+  const totalValor = itens.reduce((acc, item) => acc + item.valor, 0);
+  const emAbertoValor = itens.filter((i) => i.status === 'aberto').reduce((acc, item) => acc + item.valor, 0);
+  const vencidosValor = itens.filter((i) => i.status === 'vencido').reduce((acc, item) => acc + item.valor, 0);
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={financeiroUserInitials} variant="financeiro" onAvatarPress={() => navigation.navigate('FinanceiroProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <FinanceiroPageHeader
+          icon={tipo === 'pagar' ? 'arrow-down-circle' : 'arrow-up-circle'}
+          title={tipo === 'pagar' ? 'Contas a Pagar' : 'Contas a Receber'}
+          subtitle={
+            tipo === 'pagar'
+              ? 'Títulos a pagar por vencimento, fornecedor e centro de custo.'
+              : 'Recebíveis por vencimento, cliente e posto.'
+          }
+        />
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {financeiroContasPeriodoOptions.map((opt) => {
+              const isActive = periodo === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
+                  onPress={() => setPeriodo(opt.value)}
+                >
+                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{opt.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroSearchInput
+          value={busca}
+          onChangeText={setBusca}
+          placeholder={tipo === 'pagar' ? 'Buscar fornecedor ou título...' : 'Buscar cliente ou título...'}
+        />
+
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+            <Text style={fnStyles.kpiLabel}>{tipo === 'pagar' ? 'Total a pagar' : 'Total a receber'}</Text>
+            <Text style={fnStyles.kpiValue}>{formatBRL(totalValor)}</Text>
+          </View>
+          <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+            <Text style={fnStyles.kpiLabel}>Em aberto</Text>
+            <Text style={fnStyles.kpiValue}>{formatBRL(emAbertoValor)}</Text>
+          </View>
+          <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+            <Text style={[fnStyles.kpiLabel, { color: '#E6213D' }]}>Vencidos</Text>
+            <Text style={[fnStyles.kpiValue, { color: vencidosValor > 0 ? '#E6213D' : '#0C1736' }]}>{formatBRL(vencidosValor)}</Text>
+          </View>
+        </View>
+
+        <Text style={fnStyles.countLabel}>{itens.length} título(s)</Text>
+
+        {isLoading ? (
+          <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <FinanceiroEmptyState message={errorMessage} />
+        ) : itens.length === 0 ? (
+          <FinanceiroEmptyState message="Nenhum título encontrado com os filtros atuais." />
+        ) : (
+          <>
+            {itens.map((item) => {
+              const statusMeta = financeiroContasStatusMeta[item.status] ?? financeiroContasStatusMeta.aberto;
+              return (
+                <View key={item.id} style={fnStyles.listRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                      {item.descricao}
+                    </Text>
+                    <Text style={fnStyles.listRowMeta} numberOfLines={1}>
+                      {item.contraparte} · {item.posto}
+                    </Text>
+                    <Text style={fnStyles.listRowMeta}>
+                      Vence {formatDateIsoBR(item.vencimento) ?? '—'}
+                      {item.categoria ? ` · ${item.categoria}` : ''}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={fnStyles.listRowValue}>{formatBRL(item.valor)}</Text>
+                    <View style={[fnStyles.badge, { backgroundColor: statusMeta.bg, marginTop: 4 }]}>
+                      <Text style={[fnStyles.badgeText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+            {ultimoCodigo ? (
+              <Pressable style={fnStyles.loadMoreButton} onPress={handleLoadMore} disabled={isLoadingMore}>
+                {isLoadingMore ? (
+                  <ActivityIndicator color="#C05621" />
+                ) : (
+                  <Text style={fnStyles.loadMoreText}>Carregar mais</Text>
+                )}
+              </Pressable>
+            ) : null}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 export function FinanceiroContasAPagarScreen({ navigation }: ScreenProps<'FinanceiroContasAPagar'>) {
-  return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="arrow-down-circle"
-      title="Contas a Pagar"
-      subtitle="Títulos a pagar por vencimento, fornecedor e centro de custo."
-      pendingMessage="Aguardando a Lovable confirmar a tabela real de contas a pagar (nome e campos exatos: fornecedor, posto, centro de custo, status, valor, vencimento)."
-    />
-  );
+  return <FinanceiroContasScreenBase navigation={navigation} tipo="pagar" />;
 }
 
 export function FinanceiroContasAReceberScreen({ navigation }: ScreenProps<'FinanceiroContasAReceber'>) {
-  return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="arrow-up-circle"
-      title="Contas a Receber"
-      subtitle="Recebíveis por vencimento, cliente e posto."
-      pendingMessage="Aguardando a Lovable confirmar a tabela real de contas a receber (cliente, categoria, status, valor, vencimento)."
-    />
-  );
+  return <FinanceiroContasScreenBase navigation={navigation} tipo="receber" />;
 }
 
 export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'FinanceiroFluxoCaixa'>) {
+  const [data, setData] = useState<FinanceiroFluxoCaixaData | null>(null);
+  const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
+  const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [periodo, setPeriodo] = useState<'dia' | 'mes' | 'ano'>('mes');
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchFinanceiroConfig()
+      .then((result) => setPostos(result.postos))
+      .catch(() => setPostos([]));
+  }, []);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchFinanceiroFluxoCaixa({ periodo, posto: postoSelecionado ?? undefined })
+      .then(setData)
+      .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar o fluxo de caixa.')))
+      .finally(() => setIsLoading(false));
+  }, [periodo, postoSelecionado]);
+
+  const saldoPeriodo = (data?.entradasPeriodo ?? 0) - (data?.saidasPeriodo ?? 0);
+  const saldoFinal = data?.extrato.length ? data.extrato[data.extrato.length - 1].saldoAcumulado : 0;
+
   return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="file"
-      title="Fluxo de Caixa"
-      subtitle="Entradas, saídas e saldo diário consolidado da rede."
-      pendingMessage="Aguardando a Lovable confirmar a tabela de movimentações bancárias e como o saldo atual por conta é calculado."
-    />
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={financeiroUserInitials} variant="financeiro" onAvatarPress={() => navigation.navigate('FinanceiroProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <FinanceiroPageHeader
+          icon="file"
+          title="Fluxo de Caixa"
+          subtitle="Entradas, saídas e saldo diário consolidado da rede."
+        />
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {(['dia', 'mes', 'ano'] as const).map((opt) => {
+              const isActive = periodo === opt;
+              const label = opt === 'dia' ? 'Hoje' : opt === 'mes' ? 'Este mês' : 'Este ano';
+              return (
+                <Pressable
+                  key={opt}
+                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
+                  onPress={() => setPeriodo(opt)}
+                >
+                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+
+        {isLoading ? (
+          <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <FinanceiroEmptyState message={errorMessage} />
+        ) : !data ? (
+          <FinanceiroEmptyState message="Sem dados para o período." />
+        ) : (
+          <>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                <Text style={fnStyles.kpiLabel}>Entradas</Text>
+                <Text style={[fnStyles.kpiValue, { color: '#18955A' }]}>{formatBRL(data.entradasPeriodo)}</Text>
+              </View>
+              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                <Text style={fnStyles.kpiLabel}>Saídas</Text>
+                <Text style={[fnStyles.kpiValue, { color: '#E6213D' }]}>{formatBRL(data.saidasPeriodo)}</Text>
+              </View>
+              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                <Text style={fnStyles.kpiLabel}>Saldo do período</Text>
+                <Text style={[fnStyles.kpiValue, { color: saldoPeriodo >= 0 ? '#18955A' : '#E6213D' }]}>{formatBRL(saldoPeriodo)}</Text>
+              </View>
+              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                <Text style={fnStyles.kpiLabel}>Saldo acumulado</Text>
+                <Text style={fnStyles.kpiValue}>{formatBRL(saldoFinal)}</Text>
+              </View>
+            </View>
+
+            <Text style={fnStyles.sectionTitle}>Contas bancárias</Text>
+            {data.contas.length === 0 ? (
+              <FinanceiroEmptyState message="Nenhuma conta bancária cadastrada." />
+            ) : (
+              data.contas.map((conta) => (
+                <View key={conta.contaCodigo} style={fnStyles.listRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                      {conta.descricao}
+                    </Text>
+                    <Text style={fnStyles.listRowMeta}>{conta.posto}</Text>
+                  </View>
+                  <Text style={fnStyles.listRowValue}>{formatBRL(conta.saldoAtual)}</Text>
+                </View>
+              ))
+            )}
+
+            <Text style={[fnStyles.sectionTitle, { marginTop: 16 }]}>Extrato diário</Text>
+            {data.extrato.length === 0 ? (
+              <FinanceiroEmptyState message="Nenhuma movimentação no período." />
+            ) : (
+              data.extrato.map((dia, idx) => (
+                <View key={idx} style={fnStyles.listRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={fnStyles.listRowTitle}>{formatDateIsoBR(dia.data) ?? dia.data}</Text>
+                    <Text style={fnStyles.listRowMeta}>
+                      Entradas {formatBRL(dia.entradas)} · Saídas {formatBRL(dia.saidas)}
+                    </Text>
+                  </View>
+                  <Text style={[fnStyles.listRowValue, { color: dia.saldoAcumulado >= 0 ? '#18955A' : '#E6213D' }]}>
+                    {formatBRL(dia.saldoAcumulado)}
+                  </Text>
+                </View>
+              ))
+            )}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
+
+const financeiroConciliacaoAbas: Array<{ label: string; value: 'pendentes' | 'com-sugestao' | 'conciliados' }> = [
+  { label: 'Pendentes', value: 'pendentes' },
+  { label: 'Com sugestão', value: 'com-sugestao' },
+  { label: 'Conciliados', value: 'conciliados' },
+];
 
 export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'FinanceiroConciliacao'>) {
+  const [movimentos, setMovimentos] = useState<FinanceiroMovimentoItem[]>([]);
+  const [resumo, setResumo] = useState<FinanceiroConciliacaoResumo | null>(null);
+  const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
+  const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [busca, setBusca] = useState('');
+  const [aba, setAba] = useState<'pendentes' | 'com-sugestao' | 'conciliados'>('com-sugestao');
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actingCodigo, setActingCodigo] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchFinanceiroConfig()
+      .then((result) => setPostos(result.postos))
+      .catch(() => setPostos([]));
+  }, []);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchFinanceiroConciliacao({ aba, posto: postoSelecionado ?? undefined, busca: busca.trim() || undefined })
+      .then((result) => {
+        setMovimentos(result.movimentos);
+        setResumo(result.resumo);
+      })
+      .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar a conciliação.')))
+      .finally(() => setIsLoading(false));
+  }, [aba, postoSelecionado, busca]);
+
+  useEffect(() => {
+    const timeout = setTimeout(load, 300);
+    return () => clearTimeout(timeout);
+  }, [load]);
+
+  const handleConfirmarSugestao = (movimento: FinanceiroMovimentoItem) => {
+    if (!movimento.sugestao) return;
+    setActingCodigo(movimento.codigo);
+    conciliarFinanceiroMovimento({
+      empresa_codigo: movimento.empresaCodigo,
+      conta_codigo: movimento.contaCodigo,
+      movimento_codigo: movimento.codigo,
+      movimento_data: movimento.data,
+      movimento_valor: movimento.valor,
+      movimento_descricao: movimento.descricao,
+      titulo_tipo: movimento.sugestao.tituloTipo,
+      titulo_codigo: movimento.sugestao.tituloCodigo,
+      titulo_vencimento: movimento.sugestao.tituloVencimento,
+      titulo_valor: movimento.sugestao.tituloValor,
+      titulo_descricao: movimento.sugestao.tituloDescricao,
+      titulo_contraparte: movimento.sugestao.tituloContraparte,
+      origem: 'automatica',
+    })
+      .then(load)
+      .catch((err) => showFinanceiroError(err, 'Não foi possível confirmar o vínculo.'))
+      .finally(() => setActingCodigo(null));
+  };
+
+  const handleDesvincular = (movimento: FinanceiroMovimentoItem) => {
+    setActingCodigo(movimento.codigo);
+    desvincularFinanceiroMovimento(movimento.codigo)
+      .then(load)
+      .catch((err) => showFinanceiroError(err, 'Não foi possível desvincular.'))
+      .finally(() => setActingCodigo(null));
+  };
+
   return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="archive"
-      title="Conciliação"
-      subtitle="Conciliação bancária entre extratos e lançamentos do sistema."
-      pendingMessage="Aguardando a Lovable confirmar a tabela de movimentos do extrato, como a 'sugestão' de vínculo é calculada e o endpoint de vincular manualmente."
-    />
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={financeiroUserInitials} variant="financeiro" onAvatarPress={() => navigation.navigate('FinanceiroProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <FinanceiroPageHeader
+          icon="archive"
+          title="Conciliação"
+          subtitle="Conciliação bancária entre extratos e lançamentos do sistema."
+        />
+
+        {resumo ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
+              <Text style={fnStyles.kpiLabel}>Pendentes</Text>
+              <Text style={fnStyles.kpiValue}>{resumo.pendentes}</Text>
+            </View>
+            <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
+              <Text style={fnStyles.kpiLabel}>Com sugestão</Text>
+              <Text style={fnStyles.kpiValue}>{resumo.comSugestao}</Text>
+            </View>
+            <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
+              <Text style={[fnStyles.kpiLabel, { color: '#18955A' }]}>Conciliados</Text>
+              <Text style={[fnStyles.kpiValue, { color: '#18955A' }]}>{resumo.conciliados}</Text>
+            </View>
+          </View>
+        ) : null}
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {financeiroConciliacaoAbas.map((opt) => {
+              const isActive = aba === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
+                  onPress={() => setAba(opt.value)}
+                >
+                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{opt.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por descrição..." />
+
+        <Text style={fnStyles.countLabel}>{movimentos.length} movimento(s)</Text>
+
+        {isLoading ? (
+          <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <FinanceiroEmptyState message={errorMessage} />
+        ) : movimentos.length === 0 ? (
+          <FinanceiroEmptyState message="Nenhum movimento encontrado nesta aba." />
+        ) : (
+          movimentos.map((mov) => (
+            <View key={mov.codigo} style={[fnStyles.listRow, { flexDirection: 'column', alignItems: 'stretch' }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                    {mov.descricao}
+                  </Text>
+                  <Text style={fnStyles.listRowMeta}>
+                    {formatDateIsoBR(mov.data) ?? mov.data} · {mov.posto}
+                  </Text>
+                </View>
+                <Text style={[fnStyles.listRowValue, { color: mov.tipo === 'credito' ? '#18955A' : '#E6213D' }]}>
+                  {mov.tipo === 'debito' ? '-' : ''}
+                  {formatBRL(Math.abs(mov.valor))}
+                </Text>
+              </View>
+
+              {mov.sugestao ? (
+                <View style={fnStyles.suggestionBox}>
+                  <Text style={fnStyles.suggestionText}>
+                    Sugestão: {mov.sugestao.tituloContraparte} · {mov.sugestao.tituloDescricao} ·{' '}
+                    {formatBRL(mov.sugestao.tituloValor)} · vence {formatDateIsoBR(mov.sugestao.tituloVencimento) ?? ''}
+                  </Text>
+                  <Pressable
+                    style={fnStyles.suggestionButton}
+                    onPress={() => handleConfirmarSugestao(mov)}
+                    disabled={actingCodigo === mov.codigo}
+                  >
+                    {actingCodigo === mov.codigo ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={fnStyles.suggestionButtonText}>Confirmar vínculo</Text>
+                    )}
+                  </Pressable>
+                </View>
+              ) : mov.conciliacao ? (
+                <View style={fnStyles.suggestionBox}>
+                  <Text style={fnStyles.suggestionText}>
+                    Vinculado a {mov.conciliacao.tituloContraparte} · {mov.conciliacao.tituloDescricao} ·{' '}
+                    {formatBRL(mov.conciliacao.tituloValor)}
+                  </Text>
+                  <Pressable
+                    style={[fnStyles.suggestionButton, { backgroundColor: '#E6213D' }]}
+                    onPress={() => handleDesvincular(mov)}
+                    disabled={actingCodigo === mov.codigo}
+                  >
+                    {actingCodigo === mov.codigo ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={fnStyles.suggestionButtonText}>Desvincular</Text>
+                    )}
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
+const financeiroJanelaOptions: Array<{ label: string; value: 'mes' | '3meses' | '6meses' | '12meses' }> = [
+  { label: 'Mês', value: 'mes' },
+  { label: '3 meses', value: '3meses' },
+  { label: '6 meses', value: '6meses' },
+  { label: '12 meses', value: '12meses' },
+];
+
 export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'FinanceiroBalanceteDre'>) {
+  const now = new Date();
+  const [mes, setMes] = useState(now.getMonth() + 1);
+  const [ano, setAno] = useState(now.getFullYear());
+  const [janela, setJanela] = useState<'mes' | '3meses' | '6meses' | '12meses'>('6meses');
+  const [apuracaoCaixa, setApuracaoCaixa] = useState(false);
+  const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
+  const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [meses, setMeses] = useState<FinanceiroDreMes[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchFinanceiroConfig()
+      .then((result) => setPostos(result.postos))
+      .catch(() => setPostos([]));
+  }, []);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchFinanceiroBalancete({ mes, ano, janela, posto: postoSelecionado ?? undefined, apuracaoCaixa })
+      .then(setMeses)
+      .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar o balancete/DRE.')))
+      .finally(() => setIsLoading(false));
+  }, [mes, ano, janela, postoSelecionado, apuracaoCaixa]);
+
+  const handleMesAnterior = () => {
+    if (mes === 1) {
+      setMes(12);
+      setAno((a) => a - 1);
+    } else {
+      setMes((m) => m - 1);
+    }
+  };
+  const handleMesProximo = () => {
+    if (mes === 12) {
+      setMes(1);
+      setAno((a) => a + 1);
+    } else {
+      setMes((m) => m + 1);
+    }
+  };
+
   return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="bar-chart-2"
-      title="Balancete / DRE"
-      subtitle="Entradas, saídas e resultado — mês a mês, por posto ou rede toda."
-      pendingMessage="Aguardando a Lovable descrever o formato real do balancete/DRE (linhas, colunas, regime de caixa vs. competência)."
-    />
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={financeiroUserInitials} variant="financeiro" onAvatarPress={() => navigation.navigate('FinanceiroProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <FinanceiroPageHeader
+          icon="bar-chart-2"
+          title="Balancete / DRE"
+          subtitle="Entradas, saídas e resultado — mês a mês, por posto ou rede toda."
+        />
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 10 }}>
+          <Pressable onPress={handleMesAnterior} style={fnStyles.monthNavButton}>
+            <Feather name="chevron-left" size={18} color="#5E667D" />
+          </Pressable>
+          <Text style={fnStyles.monthLabel}>
+            {String(mes).padStart(2, '0')}/{ano}
+          </Text>
+          <Pressable onPress={handleMesProximo} style={fnStyles.monthNavButton}>
+            <Feather name="chevron-right" size={18} color="#5E667D" />
+          </Pressable>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {financeiroJanelaOptions.map((opt) => {
+              const isActive = janela === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
+                  onPress={() => setJanela(opt.value)}
+                >
+                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{opt.label}</Text>
+                </Pressable>
+              );
+            })}
+            <Pressable
+              style={[fnStyles.filterPill, apuracaoCaixa ? fnStyles.filterPillActive : null]}
+              onPress={() => setApuracaoCaixa((v) => !v)}
+            >
+              <Text style={[fnStyles.filterPillText, apuracaoCaixa ? fnStyles.filterPillTextActive : null]}>
+                Regime de caixa
+              </Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+
+        {isLoading ? (
+          <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <FinanceiroEmptyState message={errorMessage} />
+        ) : meses.length === 0 ? (
+          <FinanceiroEmptyState message="Sem dados para o período selecionado." />
+        ) : (
+          meses.map((item) => (
+            <View key={item.periodo} style={fnStyles.dreCard}>
+              <Text style={fnStyles.sectionTitle}>{item.label}</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                  <Text style={fnStyles.kpiLabel}>Receita líquida</Text>
+                  <Text style={fnStyles.kpiValue}>{formatBRL(item.receitaLiquida)}</Text>
+                </View>
+                <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                  <Text style={fnStyles.kpiLabel}>Despesas</Text>
+                  <Text style={fnStyles.kpiValue}>{formatBRL(item.despesas)}</Text>
+                </View>
+                <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                  <Text style={fnStyles.kpiLabel}>Resultado</Text>
+                  <Text style={[fnStyles.kpiValue, { color: item.resultado >= 0 ? '#18955A' : '#E6213D' }]}>
+                    {formatBRL(item.resultado)}
+                  </Text>
+                </View>
+                <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                  <Text style={fnStyles.kpiLabel}>Margem</Text>
+                  <Text style={[fnStyles.kpiValue, { color: item.margem >= 0 ? '#18955A' : '#E6213D' }]}>
+                    {item.margem.toFixed(1)}%
+                  </Text>
+                </View>
+              </View>
+
+              {item.gruposVenda.length > 0 ? (
+                <>
+                  <Text style={fnStyles.dreSubTitle}>Vendas por grupo</Text>
+                  {item.gruposVenda.map((grupo, idx) => (
+                    <View key={idx} style={fnStyles.dreLine}>
+                      <Text style={fnStyles.dreLineLabel} numberOfLines={1}>
+                        {grupo.grupo}
+                      </Text>
+                      <Text style={fnStyles.dreLineValue}>{formatBRL(grupo.venda)}</Text>
+                    </View>
+                  ))}
+                </>
+              ) : null}
+
+              {item.despesasPorConta.length > 0 ? (
+                <>
+                  <Text style={[fnStyles.dreSubTitle, { marginTop: 8 }]}>Despesas por conta</Text>
+                  {item.despesasPorConta.map((conta, idx) => (
+                    <View key={idx} style={fnStyles.dreLine}>
+                      <Text style={fnStyles.dreLineLabel} numberOfLines={1}>
+                        {conta.conta}
+                      </Text>
+                      <Text style={[fnStyles.dreLineValue, { color: '#E6213D' }]}>{formatBRL(conta.valor)}</Text>
+                    </View>
+                  ))}
+                </>
+              ) : null}
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'FinanceiroInteligenciaIA'>) {
+  const [itens, setItens] = useState<FinanceiroIaPredicaoItem[]>([]);
+  const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
+  const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [mostrarRespondidos, setMostrarRespondidos] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isReanalisando, setIsReanalisando] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actingId, setActingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchFinanceiroConfig()
+      .then((result) => setPostos(result.postos))
+      .catch(() => setPostos([]));
+  }, []);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchFinanceiroIaPredicoes({ posto: postoSelecionado ?? undefined, mostrarRespondidos })
+      .then(setItens)
+      .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar as previsões da IA.')))
+      .finally(() => setIsLoading(false));
+  }, [postoSelecionado, mostrarRespondidos]);
+
+  useEffect(load, [load]);
+
+  const handleResponder = (item: FinanceiroIaPredicaoItem, resposta: 'sim' | 'nao') => {
+    setActingId(item.id);
+    responderFinanceiroIaPredicao({ predicao_id: item.id, resposta })
+      .then(load)
+      .catch((err) => showFinanceiroError(err, 'Não foi possível registrar a resposta.'))
+      .finally(() => setActingId(null));
+  };
+
+  const handleReanalisar = () => {
+    setIsReanalisando(true);
+    reanalisarFinanceiroIa()
+      .then(load)
+      .catch((err) => showFinanceiroError(err, 'Não foi possível reanalisar agora.'))
+      .finally(() => setIsReanalisando(false));
+  };
+
   return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="zap"
-      title="Inteligência IA"
-      subtitle="Lançamentos previstos pela IA a partir do histórico de cada posto."
-      pendingMessage="Aguardando a Lovable confirmar como as sugestões são geradas (job periódico ou RPC sob demanda) e os endpoints de confirmar/descartar uma sugestão."
-    />
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={financeiroUserInitials} variant="financeiro" onAvatarPress={() => navigation.navigate('FinanceiroProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <FinanceiroPageHeader
+          icon="zap"
+          title="Inteligência IA"
+          subtitle="Lançamentos previstos pela IA a partir do histórico de cada posto."
+        />
+
+        <Pressable style={fnStyles.reanalisarButton} onPress={handleReanalisar} disabled={isReanalisando}>
+          {isReanalisando ? (
+            <ActivityIndicator color="#C05621" size="small" />
+          ) : (
+            <>
+              <Feather name="refresh-cw" size={14} color="#C05621" />
+              <Text style={fnStyles.reanalisarButtonText}>Reanalisar agora</Text>
+            </>
+          )}
+        </Pressable>
+
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+
+        <Pressable
+          style={[fnStyles.filterPill, mostrarRespondidos ? fnStyles.filterPillActive : null, { alignSelf: 'flex-start', marginBottom: 12 }]}
+          onPress={() => setMostrarRespondidos((v) => !v)}
+        >
+          <Text style={[fnStyles.filterPillText, mostrarRespondidos ? fnStyles.filterPillTextActive : null]}>
+            {mostrarRespondidos ? 'Mostrando respondidos' : 'Mostrar respondidos'}
+          </Text>
+        </Pressable>
+
+        <Text style={fnStyles.countLabel}>{itens.length} previsão(ões)</Text>
+
+        {isLoading ? (
+          <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <FinanceiroEmptyState message={errorMessage} />
+        ) : itens.length === 0 ? (
+          <FinanceiroEmptyState message="Nenhuma previsão da IA no momento." />
+        ) : (
+          itens.map((item) => (
+            <View key={item.id} style={fnStyles.dreCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                  {item.fornecedor_nome}
+                </Text>
+                <View style={[fnStyles.badge, { backgroundColor: '#EDE7FB' }]}>
+                  <Text style={[fnStyles.badgeText, { color: '#5B3EBF' }]}>{Math.round(item.confianca * 100)}% confiança</Text>
+                </View>
+              </View>
+              <Text style={fnStyles.listRowMeta}>{item.mensagem}</Text>
+              <Text style={fnStyles.listRowMeta}>
+                {item.posto} · {item.tipo} · Competência {item.competencia} · {item.periodicidade}
+              </Text>
+              {item.detalhe ? <Text style={fnStyles.listRowMeta}>{item.detalhe}</Text> : null}
+              <Text style={[fnStyles.listRowValue, { marginTop: 6 }]}>{formatBRL(item.valor_esperado)}</Text>
+
+              {item.status === 'pendente' ? (
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                  <Pressable
+                    style={[fnStyles.suggestionButton, { flex: 1, alignItems: 'center' }]}
+                    onPress={() => handleResponder(item, 'sim')}
+                    disabled={actingId === item.id}
+                  >
+                    {actingId === item.id ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={fnStyles.suggestionButtonText}>Verificado/Lançado</Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    style={[fnStyles.suggestionButton, { flex: 1, alignItems: 'center', backgroundColor: '#E6213D' }]}
+                    onPress={() => handleResponder(item, 'nao')}
+                    disabled={actingId === item.id}
+                  >
+                    <Text style={fnStyles.suggestionButtonText}>Não/Incorreto</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <View
+                  style={[
+                    fnStyles.badge,
+                    { alignSelf: 'flex-start', marginTop: 8, backgroundColor: item.status === 'confirmado' ? '#E3F5EA' : '#FBE7E9' },
+                  ]}
+                >
+                  <Text style={[fnStyles.badgeText, { color: item.status === 'confirmado' ? '#18955A' : '#E6213D' }]}>
+                    {item.status === 'confirmado' ? 'Confirmado' : item.status === 'rejeitado' ? 'Rejeitado' : 'Suprimido'}
+                  </Text>
+                </View>
+              )}
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'FinanceiroProjecoes'>) {
+  const [data, setData] = useState<FinanceiroProjecoesData | null>(null);
+  const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
+  const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [horizonteMeses, setHorizonteMeses] = useState(6);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchFinanceiroConfig()
+      .then((result) => setPostos(result.postos))
+      .catch(() => setPostos([]));
+  }, []);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchFinanceiroProjecoes({ posto: postoSelecionado ?? undefined, horizonteMeses })
+      .then(setData)
+      .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar as projeções.')))
+      .finally(() => setIsLoading(false));
+  }, [postoSelecionado, horizonteMeses]);
+
   return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="trending-up"
-      title="Projeções"
-      subtitle="Faturamento e pagamentos projetados para os próximos meses."
-      pendingMessage="Aguardando a Lovable confirmar a view/RPC de projeção de caixa (parâmetros de posto e horizonte em meses)."
-    />
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={financeiroUserInitials} variant="financeiro" onAvatarPress={() => navigation.navigate('FinanceiroProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <FinanceiroPageHeader
+          icon="trending-up"
+          title="Projeções"
+          subtitle="Faturamento e pagamentos projetados para os próximos meses."
+        />
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {[3, 6, 12].map((n) => {
+              const isActive = horizonteMeses === n;
+              return (
+                <Pressable
+                  key={n}
+                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
+                  onPress={() => setHorizonteMeses(n)}
+                >
+                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{n} meses</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+
+        {isLoading ? (
+          <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <FinanceiroEmptyState message={errorMessage} />
+        ) : !data ? (
+          <FinanceiroEmptyState message="Sem dados de projeção." />
+        ) : (
+          <>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                <Text style={fnStyles.kpiLabel}>Saldo atual</Text>
+                <Text style={fnStyles.kpiValue}>{formatBRL(data.saldoInicial)}</Text>
+              </View>
+              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+                <Text style={fnStyles.kpiLabel}>Média mensal recebido</Text>
+                <Text style={[fnStyles.kpiValue, { color: '#18955A' }]}>{formatBRL(data.mediaReceber)}</Text>
+              </View>
+              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '100%' }]}>
+                <Text style={fnStyles.kpiLabel}>Média mensal pago</Text>
+                <Text style={[fnStyles.kpiValue, { color: '#E6213D' }]}>{formatBRL(data.mediaPagar)}</Text>
+              </View>
+            </View>
+
+            {data.meses.map((mesItem) => (
+              <View key={mesItem.mes} style={fnStyles.dreCard}>
+                <Text style={fnStyles.sectionTitle}>{mesItem.label}</Text>
+                {mesItem.alerta ? (
+                  <View style={[fnStyles.badge, { alignSelf: 'flex-start', backgroundColor: '#FBE7E9', marginBottom: 8 }]}>
+                    <Text style={[fnStyles.badgeText, { color: '#E6213D' }]}>{mesItem.alerta}</Text>
+                  </View>
+                ) : null}
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>A receber previsto</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: '#18955A' }]}>{formatBRL(mesItem.receberPrevisto)}</Text>
+                </View>
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>A pagar previsto</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: '#E6213D' }]}>{formatBRL(mesItem.pagarPrevisto)}</Text>
+                </View>
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>Resultado do mês</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: mesItem.resultado >= 0 ? '#18955A' : '#E6213D' }]}>
+                    {formatBRL(mesItem.resultado)}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                  <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
+                    <Text style={fnStyles.kpiLabel}>Pessimista</Text>
+                    <Text style={[fnStyles.kpiValue, { fontSize: 14, color: mesItem.saldoPessimista >= 0 ? '#0C1736' : '#E6213D' }]}>
+                      {formatBRL(mesItem.saldoPessimista)}
+                    </Text>
+                  </View>
+                  <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
+                    <Text style={fnStyles.kpiLabel}>Base</Text>
+                    <Text style={[fnStyles.kpiValue, { fontSize: 14 }]}>{formatBRL(mesItem.saldoBase)}</Text>
+                  </View>
+                  <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
+                    <Text style={fnStyles.kpiLabel}>Otimista</Text>
+                    <Text style={[fnStyles.kpiValue, { fontSize: 14, color: '#18955A' }]}>{formatBRL(mesItem.saldoOtimista)}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
+const financeiroRelatorioTipos: Array<{ label: string; value: 'contas' | 'conciliacoes' | 'fornecedores' | 'centros_custo' }> = [
+  { label: 'Contas', value: 'contas' },
+  { label: 'Conciliações', value: 'conciliacoes' },
+  { label: 'Fornecedores', value: 'fornecedores' },
+  { label: 'Centros de custo', value: 'centros_custo' },
+];
+
 export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'FinanceiroRelatorios'>) {
+  const [tipo, setTipo] = useState<'contas' | 'conciliacoes' | 'fornecedores' | 'centros_custo'>('contas');
+  const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
+  const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [itens, setItens] = useState<Record<string, unknown>[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchFinanceiroConfig()
+      .then((result) => setPostos(result.postos))
+      .catch(() => setPostos([]));
+  }, []);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchFinanceiroRelatorio<Record<string, unknown>>({ tipo, posto: postoSelecionado ?? undefined })
+      .then(setItens)
+      .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível gerar o relatório.')))
+      .finally(() => setIsLoading(false));
+  }, [tipo, postoSelecionado]);
+
+  const renderLinha = (item: Record<string, unknown>, idx: number) => {
+    if (tipo === 'fornecedores') {
+      return (
+        <View key={idx} style={fnStyles.listRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+              {String(item.razao ?? item.fantasia ?? '—')}
+            </Text>
+            <Text style={fnStyles.listRowMeta}>{String(item.cnpjCpf ?? '')}</Text>
+          </View>
+        </View>
+      );
+    }
+    if (tipo === 'centros_custo') {
+      return (
+        <View key={idx} style={fnStyles.listRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+              {String(item.descricao ?? '—')}
+            </Text>
+            <Text style={fnStyles.listRowMeta}>{String(item.tipo ?? '')}</Text>
+          </View>
+        </View>
+      );
+    }
+    if (tipo === 'contas') {
+      return (
+        <View key={idx} style={fnStyles.listRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+              {String(item.descricao ?? '—')}
+            </Text>
+            <Text style={fnStyles.listRowMeta}>
+              {String(item.contraparte ?? '')} · {String(item.status ?? '')}
+            </Text>
+          </View>
+          <Text style={fnStyles.listRowValue}>{formatBRL(Number(item.valor ?? 0))}</Text>
+        </View>
+      );
+    }
+    return (
+      <View key={idx} style={fnStyles.listRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+            {String(item.movimentoDescricao ?? item.tituloDescricao ?? '—')}
+          </Text>
+          <Text style={fnStyles.listRowMeta}>{String(item.tituloContraparte ?? '')}</Text>
+        </View>
+        <Text style={fnStyles.listRowValue}>{formatBRL(Number(item.movimentoValor ?? item.tituloValor ?? 0))}</Text>
+      </View>
+    );
+  };
+
   return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="file-text"
-      title="Relatórios"
-      subtitle="Relatórios financeiros e exportações por período."
-      pendingMessage="Aguardando a integração das telas de Contas a Pagar/Receber, Conciliação, Fornecedores e Centros de Custo pra gerar os 4 relatórios (Excel/PDF) a partir dos dados reais."
-    />
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={financeiroUserInitials} variant="financeiro" onAvatarPress={() => navigation.navigate('FinanceiroProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <FinanceiroPageHeader
+          icon="file-text"
+          title="Relatórios"
+          subtitle="Relatórios financeiros e exportações por período."
+        />
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {financeiroRelatorioTipos.map((opt) => {
+              const isActive = tipo === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
+                  onPress={() => setTipo(opt.value)}
+                >
+                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{opt.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+
+        <View style={fnStyles.suggestionBox}>
+          <Text style={fnStyles.suggestionText}>
+            Esta tela mostra os dados reais do relatório selecionado. A exportação em Excel/PDF ainda depende de um endpoint de
+            geração de arquivo que a Lovable ainda não confirmou — assim que confirmado, o botão de exportar é ativado aqui.
+          </Text>
+        </View>
+
+        <Text style={fnStyles.countLabel}>{itens.length} registro(s)</Text>
+
+        {isLoading ? (
+          <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <FinanceiroEmptyState message={errorMessage} />
+        ) : itens.length === 0 ? (
+          <FinanceiroEmptyState message="Nenhum registro encontrado." />
+        ) : (
+          itens.map((item, idx) => renderLinha(item, idx))
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -637,14 +1786,73 @@ export function FinanceiroNotificationsScreen({ navigation }: ScreenProps<'Finan
 }
 
 export function FinanceiroConfiguracoesScreen({ navigation }: ScreenProps<'FinanceiroConfiguracoes'>) {
+  const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchFinanceiroConfig()
+      .then((result) => setPostos(result.postos))
+      .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar as configurações.')))
+      .finally(() => setIsLoading(false));
+  }, []);
+
   return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="settings"
-      title="Configurações"
-      subtitle="Parâmetros do módulo Financeiro e integrações."
-      pendingMessage="Aguardando a Lovable confirmar se a chave de integração Quality e os postos vinculados são os mesmos já usados em RH/Diretoria ou uma configuração própria do Financeiro."
-    />
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={financeiroUserInitials} variant="financeiro" onAvatarPress={() => navigation.navigate('FinanceiroProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <FinanceiroPageHeader
+          icon="settings"
+          title="Configurações"
+          subtitle="Postos e integração com a API Quality."
+        />
+
+        <View style={fnStyles.suggestionBox}>
+          <Text style={fnStyles.suggestionText}>
+            A lista de postos e a chave de integração abaixo já vem do banco real (fin_dre_chaves). Editar ou cadastrar um
+            posto aqui ainda depende de a Lovable confirmar o formato exato de escrita — assim que confirmado, os botões de
+            editar/adicionar são ativados.
+          </Text>
+        </View>
+
+        <Text style={fnStyles.countLabel}>{postos.length} posto(s) configurado(s)</Text>
+
+        {isLoading ? (
+          <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <FinanceiroEmptyState message={errorMessage} />
+        ) : postos.length === 0 ? (
+          <FinanceiroEmptyState message="Nenhum posto configurado ainda." />
+        ) : (
+          postos.map((posto) => (
+            <View key={posto.id} style={fnStyles.listRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                  {posto.nome}
+                </Text>
+                <Text style={fnStyles.listRowMeta}>
+                  Empresa {posto.empresa_codigo}
+                  {posto.idq ? ` · IDQ ${posto.idq}` : ''}
+                </Text>
+                <Text style={fnStyles.listRowMeta}>
+                  {posto.chave ? 'Chave de integração configurada' : 'Sem chave de integração'}
+                </Text>
+              </View>
+              <View style={[fnStyles.badge, { backgroundColor: posto.ativo ? '#E3F5EA' : '#FBE7E9' }]}>
+                <Text style={[fnStyles.badgeText, { color: posto.ativo ? '#18955A' : '#E6213D' }]}>
+                  {posto.ativo ? 'Ativo' : 'Inativo'}
+                </Text>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -741,6 +1949,118 @@ const fnStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 8,
+  },
+  loadMoreButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  loadMoreText: {
+    color: '#C05621',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0C1736',
+    marginBottom: 8,
+  },
+  suggestionBox: {
+    marginTop: 10,
+    backgroundColor: '#FCF4DE',
+    borderRadius: 10,
+    padding: 10,
+    gap: 8,
+  },
+  suggestionText: {
+    fontSize: 12,
+    color: '#5E4A0E',
+  },
+  suggestionButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#C05621',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  suggestionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  monthNavButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  monthLabel: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0C1736',
+    minWidth: 90,
+    textAlign: 'center',
+  },
+  dreCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 14,
+    marginBottom: 14,
+  },
+  dreSubTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#677089',
+    marginBottom: 6,
+  },
+  dreLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F3F8',
+  },
+  dreLineLabel: {
+    fontSize: 12,
+    color: '#0C1736',
+    flex: 1,
+    marginRight: 8,
+  },
+  dreLineValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0C1736',
+  },
+  reanalisarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#C05621',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  reanalisarButtonText: {
+    color: '#C05621',
+    fontSize: 12,
+    fontWeight: '700',
   },
   listRow: {
     flexDirection: 'row',
