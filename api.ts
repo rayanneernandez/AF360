@@ -5388,6 +5388,22 @@ async function fetchFinanceiroRecurso<T>(
   return { data: json.data as T, count: json.count as number | undefined };
 }
 
+// A Lovable retorna listas ora como array puro, ora como { linhas: [...] }
+// (confirmado ao vivo em 21/08/2026 pra contas/conciliacao/fornecedores/
+// centros-custo/contas-bancarias/ia-predicoes/titulos-conciliar/relatorio —
+// só "config" e "projecoes" usam objeto com chaves nomeadas). Esse helper
+// extrai a lista com segurança, sem quebrar se o formato mudar de novo.
+function extrairFinanceiroLista<T>(raw: unknown): T[] {
+  if (Array.isArray(raw)) return raw as T[];
+  if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    if (Array.isArray(obj.linhas)) return obj.linhas as T[];
+    if (Array.isArray(obj.data)) return obj.data as T[];
+    if (Array.isArray(obj.itens)) return obj.itens as T[];
+  }
+  return [];
+}
+
 // --- Filtros comuns confirmados pela Lovable em 21/08/2026 (2ª rodada,
 // dispatch completo do /api/public/internal/financeiro): dataInicial/
 // dataFinal (YYYY-MM-DD, default = mês corrente até hoje) e unidadeIds
@@ -5465,13 +5481,18 @@ export async function fetchFinanceiroContas(
   params: { tipo: 'pagar' | 'receber'; busca?: string; ultimoCodigo?: string } & FinanceiroFiltroComum
 ): Promise<{ data: FinanceiroContaItem[]; ultimoCodigo: string | null }> {
   const { tipo, busca, ultimoCodigo, ...filtro } = params;
-  const { data } = await fetchFinanceiroRecurso<{ data?: FinanceiroContaItem[]; ultimoCodigo?: string | null }>('contas', {
+  const { data } = await fetchFinanceiroRecurso<unknown>('contas', {
     tipo,
     busca,
     ultimoCodigo,
     ...financeiroFiltroParams(filtro),
   });
-  return { data: data.data ?? [], ultimoCodigo: data.ultimoCodigo ?? null };
+  const linhas = extrairFinanceiroLista<FinanceiroContaItem>(data);
+  const ultimo =
+    data && typeof data === 'object' && !Array.isArray(data)
+      ? ((data as Record<string, unknown>).ultimoCodigo as string | null | undefined) ?? null
+      : null;
+  return { data: linhas, ultimoCodigo: ultimo };
 }
 
 // --- Fluxo de Caixa (MOVIMENTO_CONTA + CONTA.saldoAtual) ---
@@ -5496,11 +5517,27 @@ export type FinanceiroFluxoCaixaData = {
 };
 
 export async function fetchFinanceiroFluxoCaixa(filtro: FinanceiroFiltroComum = {}): Promise<FinanceiroFluxoCaixaData> {
-  const { data } = await fetchFinanceiroRecurso<Partial<FinanceiroFluxoCaixaData>>('fluxo-caixa', financeiroFiltroParams(filtro));
+  const { data } = await fetchFinanceiroRecurso<
+    Partial<FinanceiroFluxoCaixaData> & {
+      creditos?: number;
+      debitos?: number;
+      dias?: Array<{ dia: string; creditos: number; debitos: number; saldo: number }>;
+    }
+  >('fluxo-caixa', financeiroFiltroParams(filtro));
+  // Formato real confirmado ao vivo em 21/08/2026: creditos/debitos/dias
+  // (dia/creditos/debitos/saldo) em vez de entradasPeriodo/saidasPeriodo/extrato.
+  const extrato =
+    data.extrato ??
+    (data.dias ?? []).map((d) => ({
+      data: d.dia,
+      entradas: d.creditos,
+      saidas: d.debitos,
+      saldoAcumulado: d.saldo,
+    }));
   return {
-    entradasPeriodo: data.entradasPeriodo ?? 0,
-    saidasPeriodo: data.saidasPeriodo ?? 0,
-    extrato: data.extrato ?? [],
+    entradasPeriodo: data.entradasPeriodo ?? data.creditos ?? 0,
+    saidasPeriodo: data.saidasPeriodo ?? data.debitos ?? 0,
+    extrato,
     contas: data.contas ?? [],
   };
 }
@@ -5554,15 +5591,73 @@ export type FinanceiroConciliacaoItem = {
 
 export type FinanceiroConciliacaoResumo = { conciliados: number; pendentes: number; comSugestao: number };
 
+// Formato real confirmado ao vivo em 21/08/2026: a lista vem em "linhas"
+// (não "movimentos"), e cada linha traz "sugestoes" (array de títulos
+// compatíveis, não "sugestao" singular) e "vinculo" (não "conciliacao").
+// Mapeamos aqui pro formato que o app já usa internamente.
+type FinanceiroConciliacaoLinhaRaw = {
+  codigo: string | number;
+  empresaCodigo: number;
+  posto: string;
+  contaCodigo: string | number;
+  data: string;
+  descricao: string;
+  valor: number;
+  tipo: FinanceiroMovimentoTipo;
+  origemTipo?: string | null;
+  origemCodigo?: string | number | null;
+  conciliadoQuality?: boolean;
+  vinculo?: Record<string, unknown> | null;
+  sugestoes?: Array<{
+    codigo: string | number;
+    descricao: string;
+    contraparte: string;
+    vencimento: string;
+    valor: number;
+  }>;
+};
+
+function mapFinanceiroConciliacaoLinha(l: FinanceiroConciliacaoLinhaRaw): FinanceiroMovimentoItem {
+  const primeiraSugestao = l.sugestoes && l.sugestoes.length > 0 ? l.sugestoes[0] : null;
+  return {
+    codigo: String(l.codigo),
+    empresaCodigo: l.empresaCodigo,
+    posto: l.posto,
+    contaCodigo: String(l.contaCodigo),
+    data: l.data,
+    descricao: l.descricao,
+    valor: l.valor,
+    tipo: l.tipo,
+    origemTipo: l.origemTipo ?? null,
+    origemCodigo: l.origemCodigo != null ? String(l.origemCodigo) : null,
+    conciliadoQuality: l.conciliadoQuality,
+    sugestao: primeiraSugestao
+      ? {
+          // origemTipo (TITULO_PAGAR/TITULO_RECEBER) ou o próprio tipo do
+          // movimento (debito=pagamento, credito=recebimento) indicam o lado.
+          tituloTipo: l.origemTipo === 'TITULO_RECEBER' || l.tipo === 'credito' ? 'receber' : 'pagar',
+          tituloCodigo: String(primeiraSugestao.codigo),
+          tituloDescricao: primeiraSugestao.descricao,
+          tituloContraparte: primeiraSugestao.contraparte,
+          tituloVencimento: primeiraSugestao.vencimento,
+          tituloValor: primeiraSugestao.valor,
+        }
+      : null,
+    conciliacao: (l.vinculo as FinanceiroConciliacaoItem | null) ?? null,
+  };
+}
+
 export async function fetchFinanceiroConciliacao(
   params: { busca?: string } & FinanceiroFiltroComum = {}
 ): Promise<{ movimentos: FinanceiroMovimentoItem[]; resumo: FinanceiroConciliacaoResumo | null }> {
   const { busca, ...filtro } = params;
-  const { data } = await fetchFinanceiroRecurso<{
-    movimentos?: FinanceiroMovimentoItem[];
-    resumo?: FinanceiroConciliacaoResumo;
-  }>('conciliacao', { busca, ...financeiroFiltroParams(filtro) });
-  return { movimentos: data.movimentos ?? [], resumo: data.resumo ?? null };
+  const { data } = await fetchFinanceiroRecurso<unknown>('conciliacao', { busca, ...financeiroFiltroParams(filtro) });
+  const linhas = extrairFinanceiroLista<FinanceiroConciliacaoLinhaRaw>(data);
+  const resumo =
+    data && typeof data === 'object' && !Array.isArray(data)
+      ? ((data as Record<string, unknown>).resumo as FinanceiroConciliacaoResumo | undefined) ?? null
+      : null;
+  return { movimentos: linhas.map(mapFinanceiroConciliacaoLinha), resumo };
 }
 
 // Lista de títulos (pagar/receber) em aberto disponíveis pra vincular
@@ -5571,12 +5666,12 @@ export async function fetchFinanceiroTitulosConciliar(
   params: { tipo?: 'pagar' | 'receber'; busca?: string } & FinanceiroFiltroComum = {}
 ): Promise<FinanceiroContaItem[]> {
   const { tipo, busca, ...filtro } = params;
-  const { data } = await fetchFinanceiroRecurso<FinanceiroContaItem[]>('titulos-conciliar', {
+  const { data } = await fetchFinanceiroRecurso<unknown>('titulos-conciliar', {
     tipo,
     busca,
     ...financeiroFiltroParams(filtro),
   });
-  return data ?? [];
+  return extrairFinanceiroLista<FinanceiroContaItem>(data);
 }
 
 export async function conciliarFinanceiroMovimento(
@@ -5634,14 +5729,14 @@ export async function fetchFinanceiroBalancete(
   params: { ano: number; mesIni: number; mesFim: number; apuracaoCaixa?: boolean } & Pick<FinanceiroFiltroComum, 'unidadeIds'>
 ): Promise<FinanceiroDreMes[]> {
   const { ano, mesIni, mesFim, apuracaoCaixa, unidadeIds } = params;
-  const { data } = await fetchFinanceiroRecurso<FinanceiroDreMes[]>('balancete', {
+  const { data } = await fetchFinanceiroRecurso<unknown>('balancete', {
     ano,
     mesIni,
     mesFim,
     apuracaoCaixa,
     ...financeiroFiltroParams({ unidadeIds }),
   });
-  return data ?? [];
+  return extrairFinanceiroLista<FinanceiroDreMes>(data);
 }
 
 // --- Fornecedores (agregação dos títulos a pagar + cadastro FORNECEDOR) ---
@@ -5672,22 +5767,22 @@ export async function fetchFinanceiroFornecedores(
   params: { busca?: string } & FinanceiroFiltroComum = {}
 ): Promise<FinanceiroFornecedorItem[]> {
   const { busca, ...filtro } = params;
-  const { data } = await fetchFinanceiroRecurso<FinanceiroFornecedorItem[]>('fornecedores', {
+  const { data } = await fetchFinanceiroRecurso<unknown>('fornecedores', {
     busca,
     ...financeiroFiltroParams(filtro),
   });
-  return data ?? [];
+  return extrairFinanceiroLista<FinanceiroFornecedorItem>(data);
 }
 
 export async function fetchFinanceiroFornecedorDetalhe(
   fornecedorCodigo: string,
   filtro: FinanceiroFiltroComum = {}
 ): Promise<FinanceiroFornecedorItem | null> {
-  const { data } = await fetchFinanceiroRecurso<FinanceiroFornecedorItem[]>('fornecedores', {
+  const { data } = await fetchFinanceiroRecurso<unknown>('fornecedores', {
     ...financeiroFiltroParams(filtro),
     fornecedorCodigo,
   });
-  return (data ?? [])[0] ?? null;
+  return extrairFinanceiroLista<FinanceiroFornecedorItem>(data)[0] ?? null;
 }
 
 // --- Centros de Custo (CENTRO_CUSTO, lista global) ---
@@ -5695,8 +5790,8 @@ export async function fetchFinanceiroFornecedorDetalhe(
 export type FinanceiroCentroCustoItem = { centroCustoCodigo: string; descricao: string; tipo: string };
 
 export async function fetchFinanceiroCentrosCusto(): Promise<FinanceiroCentroCustoItem[]> {
-  const { data } = await fetchFinanceiroRecurso<FinanceiroCentroCustoItem[]>('centros-custo');
-  return data ?? [];
+  const { data } = await fetchFinanceiroRecurso<unknown>('centros-custo');
+  return extrairFinanceiroLista<FinanceiroCentroCustoItem>(data);
 }
 
 // --- Contas Bancárias (CONTA) ---
@@ -5705,11 +5800,11 @@ export async function fetchFinanceiroContasBancarias(
   params: { busca?: string } & Pick<FinanceiroFiltroComum, 'unidadeIds'> = {}
 ): Promise<FinanceiroContaBancaria[]> {
   const { busca, unidadeIds } = params;
-  const { data } = await fetchFinanceiroRecurso<FinanceiroContaBancaria[]>('contas-bancarias', {
+  const { data } = await fetchFinanceiroRecurso<unknown>('contas-bancarias', {
     busca,
     ...financeiroFiltroParams({ unidadeIds }),
   });
-  return data ?? [];
+  return extrairFinanceiroLista<FinanceiroContaBancaria>(data);
 }
 
 // --- Inteligência IA (fin_ia_predicoes / fin_ia_feedback / fin_ia_regras) ---
@@ -5740,12 +5835,12 @@ export async function fetchFinanceiroIaPredicoes(
   params: { status?: FinanceiroIaStatus; incluirRespondidos?: boolean } & Pick<FinanceiroFiltroComum, 'unidadeIds'> = {}
 ): Promise<FinanceiroIaPredicaoItem[]> {
   const { status, incluirRespondidos, unidadeIds } = params;
-  const { data } = await fetchFinanceiroRecurso<FinanceiroIaPredicaoItem[]>('ia-predicoes', {
+  const { data } = await fetchFinanceiroRecurso<unknown>('ia-predicoes', {
     status,
     incluirRespondidos,
     ...financeiroFiltroParams({ unidadeIds }),
   });
-  return data ?? [];
+  return extrairFinanceiroLista<FinanceiroIaPredicaoItem>(data);
 }
 
 export async function responderFinanceiroIaPredicao(
@@ -5808,8 +5903,8 @@ export async function fetchFinanceiroRelatorio<T = Record<string, unknown>>(
   params: { tipo: 'contas' | 'conciliacoes' | 'fornecedores' | 'centros_custo' } & FinanceiroFiltroComum
 ): Promise<T[]> {
   const { tipo, ...filtro } = params;
-  const { data } = await fetchFinanceiroRecurso<T[]>('relatorio', { tipo, ...financeiroFiltroParams(filtro) });
-  return data ?? [];
+  const { data } = await fetchFinanceiroRecurso<unknown>('relatorio', { tipo, ...financeiroFiltroParams(filtro) });
+  return extrairFinanceiroLista<T>(data);
 }
 
 // --- Configurações (fin_dre_chaves — postos/chave da integração DRE).
