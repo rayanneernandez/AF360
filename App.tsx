@@ -892,14 +892,14 @@ export const ColaboradorPerfilContext = createContext<{
   errorMessage: null,
 });
 
-// Verificação em duas etapas (2FA) — controle de "pedir só a cada 30 dias"
+// Verificação em duas etapas (2FA) — controle de "pedir só a cada 15 dias"
 // guardado no aparelho (AsyncStorage), por profileId. Feito assim porque o
 // endpoint da Lovable só cuida de gerar/enviar/conferir o código; quem
 // decide se PRECISA pedir de novo é o app, olhando a última vez que essa
 // conta verificou com sucesso NESTE aparelho.
 const TWO_FACTOR_ENABLED_STORAGE_KEY = '@af360/2fa-enabled';
 const TWO_FACTOR_VERIFIED_AT_PREFIX = '@af360/2fa-verified-at:';
-const TWO_FACTOR_VALIDITY_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
+const TWO_FACTOR_VALIDITY_MS = 15 * 24 * 60 * 60 * 1000; // 15 dias
 
 async function getLastTwoFactorVerifiedAt(profileId: string): Promise<number | null> {
   try {
@@ -2727,7 +2727,7 @@ function getDashboardRouteForRole(role: UserRole): keyof RootStackParamList {
 }
 
 // Decide se pede o código de 2FA (só se a preferência estiver ligada E a
-// última verificação com sucesso NESTE aparelho já passou de 30 dias, ou
+// última verificação com sucesso NESTE aparelho já passou de 15 dias, ou
 // nunca aconteceu) e navega de acordo — senão vai direto pro destino.
 // Compartilhado entre LoginScreen/SelectPanelScreen (via proceedAfterRoleChosen)
 // e DeviceAuthScreen (depois da biometria).
