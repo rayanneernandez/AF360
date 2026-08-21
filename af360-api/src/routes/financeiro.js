@@ -16,7 +16,28 @@ const {
   getFinanceiroProjecoes,
   getFinanceiroRelatorio,
   getFinanceiroConfig,
+  postFinanceiroConfigChave,
+  postFinanceiroConfigTestar,
+  postFinanceiroConfigPosto,
+  patchFinanceiroConfigPosto,
+  deleteFinanceiroConfigPosto,
+  postFinanceiroConfigLimparCache,
+  getAdminNotifRotinas,
+  postAdminNotifRotina,
+  patchAdminNotifRotina,
+  deleteAdminNotifRotina,
+  postAdminNotifRotinaExecutar,
+  getAdminNotifTemplates,
+  postAdminNotifTemplate,
+  patchAdminNotifTemplate,
+  deleteAdminNotifTemplate,
 } = require('../lovable');
+
+// Módulo fixo pro sistema genérico de Notificações (Rotinas/Templates) —
+// confirmado pela Lovable em 21/08/2026: o Financeiro usa modulo=fin (tabela
+// fin_notificacoes), NUNCA "financeiro". Fixado aqui no servidor pra não
+// depender do que o app manda.
+const FINANCEIRO_NOTIF_MODULO = 'fin';
 
 const router = express.Router();
 
@@ -122,6 +143,224 @@ router.post('/ia-reanalisar', async (req, res) => {
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[financeiro ia-reanalisar] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// --- Configurações: escrita (chave global, testar conexão, CRUD de posto) —
+// confirmado pela Lovable em 21/08/2026. ---
+
+// POST /api/financeiro/config/chave?actorId= — body: { chave } (mín. 8 chars)
+router.post('/config/chave', async (req, res) => {
+  try {
+    const json = await postFinanceiroConfigChave(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[financeiro config/chave POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/financeiro/config/testar?actorId= — testa a chave já salva na Quality
+router.post('/config/testar', async (req, res) => {
+  try {
+    const json = await postFinanceiroConfigTestar(req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[financeiro config/testar POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/financeiro/config/posto?actorId= — body: { nome, empresaCodigo, idq?, ativo? }
+router.post('/config/posto', async (req, res) => {
+  try {
+    const json = await postFinanceiroConfigPosto(req.body ?? {}, req.query.actorId);
+    res.status(201).json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[financeiro config/posto POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/financeiro/config/posto/:id?actorId= — campos parciais
+router.patch('/config/posto/:id', async (req, res) => {
+  try {
+    const json = await patchFinanceiroConfigPosto(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[financeiro config/posto PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/financeiro/config/posto/:id?actorId=
+router.delete('/config/posto/:id', async (req, res) => {
+  try {
+    await deleteFinanceiroConfigPosto(req.params.id, req.query.actorId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[financeiro config/posto DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/financeiro/config/limpar-cache?actorId=
+router.post('/config/limpar-cache', async (req, res) => {
+  try {
+    const json = await postFinanceiroConfigLimparCache(req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[financeiro config/limpar-cache POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// --- Notificações (Rotinas + Templates) — sistema genérico já usado pelo
+// Administrador, aqui fixado em modulo=fin (tabela fin_notificacoes),
+// confirmado pela Lovable em 21/08/2026. ---
+
+function mapNotifRotinaRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    nome: row.nome ?? null,
+    titulo: row.titulo ?? null,
+    mensagem: row.mensagem ?? null,
+    templateId: row.template_id ?? null,
+    isActive: Boolean(row.ativa),
+    tipoGatilho: row.tipo_gatilho ?? 'manual',
+    cronExpressao: row.cron_expressao ?? null,
+    eventoCodigo: row.evento_codigo ?? null,
+    canais: Array.isArray(row.canais) ? row.canais : [],
+    publicoTipo: row.publico_tipo ?? 'todos',
+    publicoIds: Array.isArray(row.publico_ids) ? row.publico_ids : [],
+    ultimaExecucao: row.ultima_execucao ?? null,
+    proximaExecucao: row.proxima_execucao ?? null,
+    totalDestinos: row.total_destinos ?? 0,
+    totalEnviados: row.total_enviados ?? 0,
+    status: row.status ?? null,
+    agendadaPara: row.agendada_para ?? null,
+  };
+}
+
+function mapNotifTemplateRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    modulo: row.modulo ?? null,
+    codigo: row.codigo ?? null,
+    nome: row.nome ?? null,
+    titulo: row.titulo ?? null,
+    mensagem: row.mensagem ?? null,
+    variaveis: Array.isArray(row.variaveis) ? row.variaveis : [],
+    isPadrao: Boolean(row.padrao),
+    isActive: Boolean(row.ativo),
+  };
+}
+
+// GET /api/financeiro/notif-rotinas?q=&ativa=&limit=&offset=
+router.get('/notif-rotinas', async (req, res) => {
+  try {
+    const json = await getAdminNotifRotinas(FINANCEIRO_NOTIF_MODULO, {
+      q: req.query.q,
+      ativa: req.query.ativa,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    const rotinas = (json?.data ?? []).map(mapNotifRotinaRow);
+    res.json({ ok: true, data: { rotinas, count: json?.count ?? rotinas.length } });
+  } catch (err) {
+    console.error('[financeiro/notif-rotinas] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/financeiro/notif-rotinas?actorId=
+router.post('/notif-rotinas', async (req, res) => {
+  try {
+    const json = await postAdminNotifRotina(FINANCEIRO_NOTIF_MODULO, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapNotifRotinaRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[financeiro/notif-rotinas POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/financeiro/notif-rotinas/:id?actorId=
+router.patch('/notif-rotinas/:id', async (req, res) => {
+  try {
+    const json = await patchAdminNotifRotina(FINANCEIRO_NOTIF_MODULO, req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapNotifRotinaRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[financeiro/notif-rotinas/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/financeiro/notif-rotinas/:id?actorId=
+router.delete('/notif-rotinas/:id', async (req, res) => {
+  try {
+    await deleteAdminNotifRotina(FINANCEIRO_NOTIF_MODULO, req.params.id, req.query.actorId);
+    res.json({ ok: true, data: null });
+  } catch (err) {
+    console.error('[financeiro/notif-rotinas/:id DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/financeiro/notif-rotinas/:id/executar?actorId=
+router.post('/notif-rotinas/:id/executar', async (req, res) => {
+  try {
+    const json = await postAdminNotifRotinaExecutar(FINANCEIRO_NOTIF_MODULO, req.params.id, req.query.actorId);
+    res.json({ ok: true, data: mapNotifRotinaRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[financeiro/notif-rotinas/:id/executar POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// GET /api/financeiro/notif-templates?q=&ativo=
+router.get('/notif-templates', async (req, res) => {
+  try {
+    const json = await getAdminNotifTemplates({ modulo: FINANCEIRO_NOTIF_MODULO, q: req.query.q, ativo: req.query.ativo });
+    const templates = (json?.data ?? []).map(mapNotifTemplateRow);
+    res.json({ ok: true, data: { templates, count: json?.count ?? templates.length } });
+  } catch (err) {
+    console.error('[financeiro/notif-templates] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/financeiro/notif-templates?actorId= — modulo é sempre forçado pra 'fin'
+router.post('/notif-templates', async (req, res) => {
+  try {
+    const json = await postAdminNotifTemplate({ ...(req.body ?? {}), modulo: FINANCEIRO_NOTIF_MODULO }, req.query.actorId);
+    res.json({ ok: true, data: mapNotifTemplateRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[financeiro/notif-templates POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/financeiro/notif-templates/:id?actorId=
+router.patch('/notif-templates/:id', async (req, res) => {
+  try {
+    const json = await patchAdminNotifTemplate(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapNotifTemplateRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[financeiro/notif-templates/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/financeiro/notif-templates/:id?actorId= — 409 se for padrão do sistema
+router.delete('/notif-templates/:id', async (req, res) => {
+  try {
+    await deleteAdminNotifTemplate(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: null });
+  } catch (err) {
+    console.error('[financeiro/notif-templates/:id DELETE] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });

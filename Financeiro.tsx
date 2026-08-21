@@ -1,10 +1,29 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { styles, TopBar, financeiroUser, financeiroUserInitials } from './App';
-import type { ScreenProps } from './App';
+import {
+  styles,
+  TopBar,
+  financeiroUser,
+  financeiroUserInitials,
+  AuthIdentityContext,
+  ToggleSwitch,
+  NotificationRoutineFormModal,
+  TemplateFormModal,
+  notificationTriggerOptions,
+  notificationChannelMeta,
+  notificationAudienceOptions,
+} from './App';
+import type {
+  ScreenProps,
+  NotificationRoutineItem,
+  NotificationTemplateItem,
+  NotificationChannels,
+  NotificationAudienceType,
+} from './App';
 import {
   fetchFinanceiroCentrosCusto,
   fetchFinanceiroContasBancarias,
@@ -23,6 +42,20 @@ import {
   reanalisarFinanceiroIa,
   fetchFinanceiroProjecoes,
   fetchFinanceiroRelatorio,
+  salvarFinanceiroConfigChave,
+  testarFinanceiroConexaoQuality,
+  criarFinanceiroConfigPosto,
+  atualizarFinanceiroConfigPosto,
+  excluirFinanceiroConfigPosto,
+  fetchFinanceiroNotifRotinas,
+  createFinanceiroNotifRotina,
+  updateFinanceiroNotifRotina,
+  deleteFinanceiroNotifRotina,
+  executarFinanceiroNotifRotina,
+  fetchFinanceiroNotifTemplates,
+  createFinanceiroNotifTemplate,
+  updateFinanceiroNotifTemplate,
+  deleteFinanceiroNotifTemplate,
   type FinanceiroCentroCustoItem,
   type FinanceiroContaBancaria,
   type FinanceiroFornecedorItem,
@@ -35,6 +68,12 @@ import {
   type FinanceiroDreMes,
   type FinanceiroIaPredicaoItem,
   type FinanceiroProjecoesData,
+  type FinanceiroConfigData,
+  type FinanceiroNotifRotinaItem,
+  type FinanceiroNotifTemplateItem,
+  type FinanceiroNotifGatilho,
+  type FinanceiroNotifCanal,
+  type FinanceiroNotifPublicoTipo,
 } from './api';
 
 // ---------- Financeiro (Gestão de Caixa) ----------
@@ -164,7 +203,7 @@ function FinanceiroPostoFilterRow({
           </Text>
         </Pressable>
         {postos.map((posto) => {
-          const value = String(posto.empresa_codigo);
+          const value = String(posto.empresaCodigo);
           const isActive = selected === value;
           return (
             <Pressable
@@ -1773,31 +1812,577 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
   );
 }
 
+// publico_tipo no banco é plural (todos|colaboradores|postos|cargos); a UI
+// compartilhada (NotificationRoutineFormModal) usa singular (posto|cargo) —
+// mesma conversão usada pelo Administrador/Diretoria.
+const FINANCEIRO_NOTIF_AUDIENCE_TO_DB: Record<NotificationAudienceType, FinanceiroNotifPublicoTipo> = {
+  todos: 'todos',
+  colaboradores: 'colaboradores',
+  posto: 'postos',
+  cargo: 'cargos',
+};
+const FINANCEIRO_NOTIF_AUDIENCE_FROM_DB: Record<FinanceiroNotifPublicoTipo, NotificationAudienceType> = {
+  todos: 'todos',
+  colaboradores: 'colaboradores',
+  postos: 'posto',
+  cargos: 'cargo',
+};
+
+function financeiroNotifTemplateToLocal(item: FinanceiroNotifTemplateItem): NotificationTemplateItem {
+  return {
+    id: item.id,
+    code: item.codigo ?? '',
+    title: item.nome ?? '',
+    messageTitle: item.titulo ?? '',
+    message: item.mensagem ?? '',
+    variables: item.variaveis,
+    isSystemDefault: item.isPadrao,
+  };
+}
+
+function financeiroNotifRoutineToLocal(
+  item: FinanceiroNotifRotinaItem,
+  realTemplates: FinanceiroNotifTemplateItem[]
+): NotificationRoutineItem {
+  const linkedTemplate = item.templateId ? realTemplates.find((t) => t.id === item.templateId) : null;
+  return {
+    id: item.id,
+    title: item.nome ?? '',
+    messageTitle: item.titulo ?? '',
+    template: linkedTemplate ? linkedTemplate.nome || linkedTemplate.codigo || '' : 'Mensagem customizada',
+    message: item.mensagem ?? '',
+    triggerKind: item.tipoGatilho,
+    cronSchedule: item.cronExpressao ?? '',
+    eventCode: item.eventoCodigo ?? '',
+    channels: {
+      app: item.canais.includes('app'),
+      email: item.canais.includes('email'),
+      whatsapp: item.canais.includes('whatsapp'),
+    },
+    audienceType: FINANCEIRO_NOTIF_AUDIENCE_FROM_DB[item.publicoTipo] ?? 'todos',
+    audienceCargos: item.publicoTipo === 'cargos' ? item.publicoIds : [],
+    lastRunLabel: item.ultimaExecucao ? formatDateIsoBR(item.ultimaExecucao) ?? '—' : '—',
+    enabled: item.isActive,
+  };
+}
+
+function financeiroNotifRoutineToWriteBody(
+  local: NotificationRoutineItem,
+  realTemplates: FinanceiroNotifTemplateItem[]
+) {
+  const matchedTemplate =
+    local.template && local.template !== 'Mensagem customizada'
+      ? realTemplates.find((t) => (t.nome || t.codigo) === local.template)
+      : null;
+  return {
+    nome: local.title,
+    titulo: local.messageTitle,
+    mensagem: local.message,
+    template_id: matchedTemplate ? matchedTemplate.id : null,
+    ativa: local.enabled,
+    tipo_gatilho: local.triggerKind,
+    cron_expressao: local.triggerKind === 'recorrente' ? local.cronSchedule : null,
+    evento_codigo: local.triggerKind === 'evento' ? local.eventCode : null,
+    canais: (Object.keys(local.channels) as Array<keyof NotificationChannels>).filter((key) => local.channels[key]),
+    publico_tipo: FINANCEIRO_NOTIF_AUDIENCE_TO_DB[local.audienceType],
+    publico_ids: local.audienceType === 'cargo' ? local.audienceCargos : [],
+  };
+}
+
+function financeiroNotifTemplateToWriteBody(local: NotificationTemplateItem) {
+  return {
+    codigo: local.code,
+    nome: local.title,
+    titulo: local.messageTitle,
+    mensagem: local.message,
+    variaveis: local.variables,
+  };
+}
+
 export function FinanceiroNotificationsScreen({ navigation }: ScreenProps<'FinanceiroNotifications'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+  const isFocused = useIsFocused();
+
+  const [activeTab, setActiveTab] = useState<'routines' | 'templates'>('routines');
+
+  const [realRoutines, setRealRoutines] = useState<FinanceiroNotifRotinaItem[]>([]);
+  const [isLoadingRoutines, setIsLoadingRoutines] = useState(true);
+  const [routinesError, setRoutinesError] = useState<string | null>(null);
+  const [isRoutineFormOpen, setIsRoutineFormOpen] = useState(false);
+  const [editingRoutine, setEditingRoutine] = useState<NotificationRoutineItem | null>(null);
+
+  const [realTemplates, setRealTemplates] = useState<FinanceiroNotifTemplateItem[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [isTemplateFormOpen, setIsTemplateFormOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<NotificationTemplateItem | null>(null);
+
+  const loadTemplates = useCallback(() => {
+    setIsLoadingTemplates(true);
+    setTemplatesError(null);
+    fetchFinanceiroNotifTemplates()
+      .then((data) => setRealTemplates(data.templates))
+      .catch((err) => setTemplatesError(showFinanceiroError(err, 'Não foi possível carregar os templates.')))
+      .finally(() => setIsLoadingTemplates(false));
+  }, []);
+
+  const loadRoutines = useCallback(() => {
+    setIsLoadingRoutines(true);
+    setRoutinesError(null);
+    fetchFinanceiroNotifRotinas()
+      .then((data) => setRealRoutines(data.rotinas))
+      .catch((err) => setRoutinesError(showFinanceiroError(err, 'Não foi possível carregar as rotinas.')))
+      .finally(() => setIsLoadingRoutines(false));
+  }, []);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadTemplates();
+  }, [loadTemplates, isFocused]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadRoutines();
+  }, [loadRoutines, isFocused]);
+
+  const templates = useMemo(() => realTemplates.map(financeiroNotifTemplateToLocal), [realTemplates]);
+  const routines = useMemo(
+    () => realRoutines.map((item) => financeiroNotifRoutineToLocal(item, realTemplates)),
+    [realRoutines, realTemplates]
+  );
+
+  const toggleRoutine = (id: string) => {
+    const target = realRoutines.find((item) => item.id === id);
+    if (!target) return;
+    setRealRoutines((current) => current.map((item) => (item.id === id ? { ...item, isActive: !item.isActive } : item)));
+    updateFinanceiroNotifRotina(id, { ativa: !target.isActive }, actorId).catch((err) => {
+      Alert.alert('Erro', showFinanceiroError(err, 'Não foi possível atualizar a rotina.'));
+      loadRoutines();
+    });
+  };
+
+  const handleSaveRoutine = (routine: NotificationRoutineItem) => {
+    const body = financeiroNotifRoutineToWriteBody(routine, realTemplates);
+    const isExisting = realRoutines.some((item) => item.id === routine.id);
+    const request = isExisting
+      ? updateFinanceiroNotifRotina(routine.id, body, actorId)
+      : createFinanceiroNotifRotina(body, actorId);
+    request
+      .then(() => {
+        setIsRoutineFormOpen(false);
+        loadRoutines();
+      })
+      .catch((err) => Alert.alert('Erro', showFinanceiroError(err, 'Não foi possível salvar a rotina.')));
+  };
+
+  const handleRunRoutine = (routine: NotificationRoutineItem) => {
+    executarFinanceiroNotifRotina(routine.id, actorId)
+      .then(() => {
+        Alert.alert('Rotina executada', `"${routine.title}" foi executada agora.`);
+        loadRoutines();
+      })
+      .catch((err) => Alert.alert('Erro', showFinanceiroError(err, 'Não foi possível executar a rotina.')));
+  };
+
+  const handleDeleteRoutine = (routine: NotificationRoutineItem) => {
+    Alert.alert('Excluir rotina', `Tem certeza que deseja excluir "${routine.title}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteFinanceiroNotifRotina(routine.id, actorId)
+            .then(() => loadRoutines())
+            .catch((err) => Alert.alert('Erro', showFinanceiroError(err, 'Não foi possível excluir a rotina.')));
+        },
+      },
+    ]);
+  };
+
+  const handleSaveTemplate = (template: NotificationTemplateItem) => {
+    const body = financeiroNotifTemplateToWriteBody(template);
+    const isExisting = realTemplates.some((item) => item.id === template.id);
+    const request = isExisting
+      ? updateFinanceiroNotifTemplate(template.id, body, actorId)
+      : createFinanceiroNotifTemplate(body, actorId);
+    request
+      .then(() => {
+        setIsTemplateFormOpen(false);
+        loadTemplates();
+      })
+      .catch((err) => Alert.alert('Erro', showFinanceiroError(err, 'Não foi possível salvar o template.')));
+  };
+
+  const handleDeleteTemplate = (template: NotificationTemplateItem) => {
+    Alert.alert('Excluir template', `Tem certeza que deseja excluir "${template.title}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteFinanceiroNotifTemplate(template.id, actorId)
+            .then(() => loadTemplates())
+            .catch((err) => Alert.alert('Erro', showFinanceiroError(err, 'Não foi possível excluir o template (templates padrão do sistema não podem ser excluídos).')));
+        },
+      },
+    ]);
+  };
+
   return (
-    <FinanceiroPlaceholderScreen
-      navigation={navigation}
-      icon="bell"
-      title="Notificações"
-      subtitle="Envio de notificações via App, E-mail e WhatsApp."
-      pendingMessage="Aguardando a Lovable confirmar se as rotinas/templates de notificação do módulo Financeiro usam o mesmo endpoint já usado por RH/Diretoria (só filtrando por módulo) ou uma tabela própria."
-    />
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={financeiroUserInitials} variant="financeiro" onAvatarPress={() => navigation.navigate('FinanceiroProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <FinanceiroPageHeader icon="bell" title="Notificações" subtitle="Envio de notificações via App, E-mail e WhatsApp." />
+
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <Pressable
+            style={[fnStyles.filterPill, activeTab === 'routines' ? fnStyles.filterPillActive : null]}
+            onPress={() => setActiveTab('routines')}
+          >
+            <Text style={[fnStyles.filterPillText, activeTab === 'routines' ? fnStyles.filterPillTextActive : null]}>
+              Rotinas
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[fnStyles.filterPill, activeTab === 'templates' ? fnStyles.filterPillActive : null]}
+            onPress={() => setActiveTab('templates')}
+          >
+            <Text style={[fnStyles.filterPillText, activeTab === 'templates' ? fnStyles.filterPillTextActive : null]}>
+              Templates
+            </Text>
+          </Pressable>
+        </View>
+
+        {activeTab === 'routines' ? (
+          <>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={fnStyles.countLabel}>
+                {isLoadingRoutines ? 'Carregando...' : `${routines.length} rotina(s) cadastrada(s)`}
+              </Text>
+              <Pressable
+                style={[fnStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                onPress={() => {
+                  setEditingRoutine(null);
+                  setIsRoutineFormOpen(true);
+                }}
+              >
+                <Feather name="plus" size={14} color="#FFFFFF" />
+                <Text style={fnStyles.suggestionButtonText}>Nova rotina</Text>
+              </Pressable>
+            </View>
+
+            {isLoadingRoutines ? (
+              <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+            ) : routinesError ? (
+              <FinanceiroEmptyState message={routinesError} />
+            ) : routines.length === 0 ? (
+              <FinanceiroEmptyState message="Nenhuma rotina cadastrada. Clique em Nova rotina." />
+            ) : (
+              routines.map((routine) => {
+                const triggerMeta =
+                  notificationTriggerOptions.find((option) => option.value === routine.triggerKind) ??
+                  notificationTriggerOptions[2];
+                const triggerDetail =
+                  routine.triggerKind === 'recorrente' ? routine.cronSchedule : routine.triggerKind === 'evento' ? routine.eventCode : '';
+                const channelLabels = (Object.keys(notificationChannelMeta) as Array<keyof NotificationChannels>)
+                  .filter((key) => routine.channels[key])
+                  .map((key) => notificationChannelMeta[key].label);
+                const audienceLabel =
+                  routine.audienceType === 'cargo'
+                    ? `Por cargo (${routine.audienceCargos.length})`
+                    : notificationAudienceOptions.find((option) => option.value === routine.audienceType)?.label ??
+                      'Todos os colaboradores';
+
+                return (
+                  <View key={routine.id} style={fnStyles.dreCard}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                        {routine.title}
+                      </Text>
+                      <ToggleSwitch value={routine.enabled} onValueChange={() => toggleRoutine(routine.id)} />
+                    </View>
+                    <Text style={fnStyles.listRowMeta}>{routine.messageTitle}</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                      <View style={[fnStyles.badge, { backgroundColor: '#EDE7FB' }]}>
+                        <Text style={[fnStyles.badgeText, { color: '#5B3EBF' }]}>{triggerMeta.label}</Text>
+                      </View>
+                      <Text style={fnStyles.listRowMeta} numberOfLines={1}>
+                        {channelLabels.length > 0 ? channelLabels.join(', ') : 'Nenhum canal'}
+                      </Text>
+                      <Text style={fnStyles.listRowMeta}>{audienceLabel}</Text>
+                    </View>
+                    {triggerDetail ? <Text style={[fnStyles.listRowMeta, { marginTop: 4 }]}>{triggerDetail}</Text> : null}
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                      <Text style={fnStyles.listRowMeta}>
+                        {routine.lastRunLabel === '—' ? 'Nunca executada' : `Última exec.: ${routine.lastRunLabel}`}
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 14 }}>
+                        <Pressable onPress={() => handleRunRoutine(routine)} hitSlop={6}>
+                          <Feather name="play" size={15} color="#18955A" />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            setEditingRoutine(routine);
+                            setIsRoutineFormOpen(true);
+                          }}
+                          hitSlop={6}
+                        >
+                          <Feather name="edit-2" size={15} color="#3457D5" />
+                        </Pressable>
+                        <Pressable onPress={() => handleDeleteRoutine(routine)} hitSlop={6}>
+                          <Feather name="trash-2" size={15} color="#E6213D" />
+                        </Pressable>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </>
+        ) : (
+          <>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={fnStyles.countLabel}>
+                {isLoadingTemplates
+                  ? 'Carregando...'
+                  : `${templates.length} template(s)${templates.length > 0 ? ' — ⭐ padrão do sistema, demais customizados' : ''}`}
+              </Text>
+              <Pressable
+                style={[fnStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                onPress={() => {
+                  setEditingTemplate(null);
+                  setIsTemplateFormOpen(true);
+                }}
+              >
+                <Feather name="plus" size={14} color="#FFFFFF" />
+                <Text style={fnStyles.suggestionButtonText}>Novo template</Text>
+              </Pressable>
+            </View>
+
+            {isLoadingTemplates ? (
+              <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
+            ) : templatesError ? (
+              <FinanceiroEmptyState message={templatesError} />
+            ) : templates.length === 0 ? (
+              <FinanceiroEmptyState message="Nenhum template cadastrado ainda." />
+            ) : (
+              templates.map((template) => (
+                <View key={template.id} style={fnStyles.dreCard}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {template.isSystemDefault ? <Feather name="star" size={14} color="#D79A22" /> : null}
+                    <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                      {template.title}
+                    </Text>
+                  </View>
+                  <Text style={fnStyles.listRowMeta}>{template.code}</Text>
+                  <Text style={[fnStyles.listRowMeta, { marginTop: 4 }]}>{template.messageTitle}</Text>
+                  <Text style={fnStyles.listRowMeta} numberOfLines={2}>
+                    {template.message}
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {template.variables.map((variable) => (
+                      <View key={variable} style={[fnStyles.badge, { backgroundColor: '#F1F3F8' }]}>
+                        <Text style={[fnStyles.badgeText, { color: '#5E667D' }]}>{variable}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 14, marginTop: 10 }}>
+                    <Pressable
+                      onPress={() => {
+                        setEditingTemplate(template);
+                        setIsTemplateFormOpen(true);
+                      }}
+                      hitSlop={6}
+                    >
+                      <Feather name="edit-2" size={15} color="#3457D5" />
+                    </Pressable>
+                    {!template.isSystemDefault ? (
+                      <Pressable onPress={() => handleDeleteTemplate(template)} hitSlop={6}>
+                        <Feather name="trash-2" size={15} color="#E6213D" />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
+              ))
+            )}
+          </>
+        )}
+      </ScrollView>
+
+      <NotificationRoutineFormModal
+        visible={isRoutineFormOpen}
+        initialRoutine={editingRoutine}
+        templates={templates}
+        onClose={() => setIsRoutineFormOpen(false)}
+        onSave={handleSaveRoutine}
+      />
+
+      <TemplateFormModal
+        visible={isTemplateFormOpen}
+        initialTemplate={editingTemplate}
+        onClose={() => setIsTemplateFormOpen(false)}
+        onSave={handleSaveTemplate}
+      />
+    </SafeAreaView>
+  );
+}
+
+function FinanceiroPostoFormModal({
+  visible,
+  posto,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  posto: FinanceiroPostoConfig | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [nome, setNome] = useState('');
+  const [empresaCodigo, setEmpresaCodigo] = useState('');
+  const [idq, setIdq] = useState('');
+  const [ativo, setAtivo] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setNome(posto?.nome ?? '');
+      setEmpresaCodigo(posto ? String(posto.empresaCodigo ?? '') : '');
+      setIdq(posto?.idq ?? '');
+      setAtivo(posto?.ativo ?? true);
+    }
+  }, [visible, posto]);
+
+  const handleSalvar = () => {
+    if (!nome.trim()) {
+      showFinanceiroError(new Error('Nome obrigatório'), 'Informe o nome do posto.');
+      return;
+    }
+    setIsSaving(true);
+    const codigoNum = empresaCodigo.trim() ? Number(empresaCodigo.trim()) : null;
+    const body = { nome: nome.trim(), empresaCodigo: codigoNum, idq: idq.trim() || undefined, ativo };
+    const promise = posto
+      ? atualizarFinanceiroConfigPosto(posto.id, body)
+      : criarFinanceiroConfigPosto(body as { nome: string; empresaCodigo: number | null; idq?: string; ativo?: boolean });
+    promise
+      .then(() => {
+        onSaved();
+        onClose();
+      })
+      .catch((err) => showFinanceiroError(err, 'Não foi possível salvar o posto.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={fnStyles.modalOverlay}>
+        <View style={fnStyles.modalCard}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <Text style={fnStyles.sectionTitle}>{posto ? 'Editar posto' : 'Novo posto'}</Text>
+            <Pressable onPress={onClose}>
+              <Feather name="x" size={20} color="#5E667D" />
+            </Pressable>
+          </View>
+
+          <Text style={fnStyles.formLabel}>Nome do posto</Text>
+          <TextInput style={fnStyles.formInput} value={nome} onChangeText={setNome} placeholder="Nome do posto" />
+
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={fnStyles.formLabel}>Código da empresa</Text>
+              <TextInput
+                style={fnStyles.formInput}
+                value={empresaCodigo}
+                onChangeText={setEmpresaCodigo}
+                placeholder="Ex: 1234"
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={fnStyles.formLabel}>IDQ (opcional)</Text>
+              <TextInput style={fnStyles.formInput} value={idq} onChangeText={setIdq} placeholder="IDQ" />
+            </View>
+          </View>
+
+          <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 }} onPress={() => setAtivo((v) => !v)}>
+            <Feather name={ativo ? 'check-square' : 'square'} size={18} color={ativo ? '#18955A' : '#8891A6'} />
+            <Text style={{ fontSize: 13, color: '#0C1736' }}>Posto ativo nas consultas</Text>
+          </Pressable>
+
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+            <Pressable style={[fnStyles.modalButtonSecondary, { flex: 1 }]} onPress={onClose} disabled={isSaving}>
+              <Text style={fnStyles.modalButtonSecondaryText}>Cancelar</Text>
+            </Pressable>
+            <Pressable style={[fnStyles.suggestionButton, { flex: 1, alignItems: 'center' }]} onPress={handleSalvar} disabled={isSaving}>
+              {isSaving ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={fnStyles.suggestionButtonText}>Salvar</Text>}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
 export function FinanceiroConfiguracoesScreen({ navigation }: ScreenProps<'FinanceiroConfiguracoes'>) {
-  const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
+  const [config, setConfig] = useState<FinanceiroConfigData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [novaChave, setNovaChave] = useState('');
+  const [isSalvandoChave, setIsSalvandoChave] = useState(false);
+  const [isTestando, setIsTestando] = useState(false);
+  const [testeResultado, setTesteResultado] = useState<{ ok: boolean; mensagem: string } | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [postoEmEdicao, setPostoEmEdicao] = useState<FinanceiroPostoConfig | null>(null);
+  const [excluindoId, setExcluindoId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
     fetchFinanceiroConfig()
-      .then((result) => setPostos(result.postos))
+      .then(setConfig)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar as configurações.')))
       .finally(() => setIsLoading(false));
   }, []);
+
+  useEffect(load, [load]);
+
+  const handleSalvarChave = () => {
+    if (novaChave.trim().length < 8) {
+      showFinanceiroError(new Error('Chave curta'), 'A chave precisa ter pelo menos 8 caracteres.');
+      return;
+    }
+    setIsSalvandoChave(true);
+    salvarFinanceiroConfigChave(novaChave.trim())
+      .then(() => {
+        setNovaChave('');
+        load();
+      })
+      .catch((err) => showFinanceiroError(err, 'Não foi possível salvar a chave.'))
+      .finally(() => setIsSalvandoChave(false));
+  };
+
+  const handleTestarConexao = () => {
+    setIsTestando(true);
+    setTesteResultado(null);
+    testarFinanceiroConexaoQuality()
+      .then((result) => setTesteResultado(result))
+      .catch((err) => setTesteResultado({ ok: false, mensagem: showFinanceiroError(err, 'Falha ao testar a conexão.') }))
+      .finally(() => setIsTestando(false));
+  };
+
+  const handleExcluirPosto = (posto: FinanceiroPostoConfig) => {
+    setExcluindoId(posto.id);
+    excluirFinanceiroConfigPosto(posto.id)
+      .then(load)
+      .catch((err) => showFinanceiroError(err, 'Não foi possível excluir o posto.'))
+      .finally(() => setExcluindoId(null));
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -1812,46 +2397,139 @@ export function FinanceiroConfiguracoesScreen({ navigation }: ScreenProps<'Finan
           subtitle="Postos e integração com a API Quality."
         />
 
-        <View style={fnStyles.suggestionBox}>
-          <Text style={fnStyles.suggestionText}>
-            A lista de postos e a chave de integração abaixo já vem do banco real (fin_dre_chaves). Editar ou cadastrar um
-            posto aqui ainda depende de a Lovable confirmar o formato exato de escrita — assim que confirmado, os botões de
-            editar/adicionar são ativados.
-          </Text>
-        </View>
-
-        <Text style={fnStyles.countLabel}>{postos.length} posto(s) configurado(s)</Text>
-
-        {isLoading ? (
+        {isLoading && !config ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
-        ) : errorMessage ? (
+        ) : errorMessage && !config ? (
           <FinanceiroEmptyState message={errorMessage} />
-        ) : postos.length === 0 ? (
-          <FinanceiroEmptyState message="Nenhum posto configurado ainda." />
         ) : (
-          postos.map((posto) => (
-            <View key={posto.id} style={fnStyles.listRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={fnStyles.listRowTitle} numberOfLines={1}>
-                  {posto.nome}
-                </Text>
-                <Text style={fnStyles.listRowMeta}>
-                  Empresa {posto.empresa_codigo}
-                  {posto.idq ? ` · IDQ ${posto.idq}` : ''}
-                </Text>
-                <Text style={fnStyles.listRowMeta}>
-                  {posto.chave ? 'Chave de integração configurada' : 'Sem chave de integração'}
-                </Text>
+          <>
+            <View style={fnStyles.dreCard}>
+              <Text style={fnStyles.sectionTitle}>Integração Quality</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <View style={[fnStyles.badge, { backgroundColor: config?.chaveDefinida ? '#E3F5EA' : '#FBE7E9' }]}>
+                  <Text style={[fnStyles.badgeText, { color: config?.chaveDefinida ? '#18955A' : '#E6213D' }]}>
+                    {config?.chaveDefinida ? 'Chave configurada' : 'Sem chave'}
+                  </Text>
+                </View>
+                {config?.chaveMascarada ? <Text style={fnStyles.listRowMeta}>{config.chaveMascarada}</Text> : null}
+                <Pressable style={fnStyles.testarButton} onPress={handleTestarConexao} disabled={isTestando}>
+                  {isTestando ? (
+                    <ActivityIndicator color="#C05621" size="small" />
+                  ) : (
+                    <>
+                      <Feather name="refresh-cw" size={12} color="#C05621" />
+                      <Text style={fnStyles.reanalisarButtonText}>Testar conexão</Text>
+                    </>
+                  )}
+                </Pressable>
               </View>
-              <View style={[fnStyles.badge, { backgroundColor: posto.ativo ? '#E3F5EA' : '#FBE7E9' }]}>
-                <Text style={[fnStyles.badgeText, { color: posto.ativo ? '#18955A' : '#E6213D' }]}>
-                  {posto.ativo ? 'Ativo' : 'Inativo'}
-                </Text>
+
+              {testeResultado ? (
+                <View
+                  style={[
+                    fnStyles.suggestionBox,
+                    { backgroundColor: testeResultado.ok ? '#E3F5EA' : '#FBE7E9', marginBottom: 10 },
+                  ]}
+                >
+                  <Text style={[fnStyles.suggestionText, { color: testeResultado.ok ? '#18955A' : '#E6213D' }]}>
+                    {testeResultado.mensagem}
+                  </Text>
+                </View>
+              ) : null}
+
+              <Text style={fnStyles.formLabel}>Nova chave de integração</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  style={[fnStyles.formInput, { flex: 1 }]}
+                  value={novaChave}
+                  onChangeText={setNovaChave}
+                  placeholder="Cole aqui a chave fornecida pela Quality"
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+                <Pressable
+                  style={[fnStyles.suggestionButton, { alignItems: 'center', justifyContent: 'center' }]}
+                  onPress={handleSalvarChave}
+                  disabled={isSalvandoChave}
+                >
+                  {isSalvandoChave ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={fnStyles.suggestionButtonText}>Salvar chave</Text>
+                  )}
+                </Pressable>
               </View>
+              <Text style={[fnStyles.listRowMeta, { marginTop: 6 }]}>
+                A chave é global e atende toda a rede — o que separa cada unidade é o código de empresa cadastrado abaixo.
+              </Text>
             </View>
-          ))
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={fnStyles.sectionTitle}>Postos vinculados</Text>
+              <Pressable
+                style={[fnStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                onPress={() => {
+                  setPostoEmEdicao(null);
+                  setModalVisible(true);
+                }}
+              >
+                <Feather name="plus" size={14} color="#FFFFFF" />
+                <Text style={fnStyles.suggestionButtonText}>Novo posto</Text>
+              </Pressable>
+            </View>
+
+            {!config || config.postos.length === 0 ? (
+              <FinanceiroEmptyState message="Nenhum posto configurado ainda." />
+            ) : (
+              config.postos.map((posto) => (
+                <View key={posto.id} style={fnStyles.listRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                      {posto.nome}
+                    </Text>
+                    <Text style={fnStyles.listRowMeta}>
+                      Empresa {posto.empresaCodigo}
+                      {posto.idq ? ` · IDQ ${posto.idq}` : ''}
+                    </Text>
+                    <Text style={fnStyles.listRowMeta}>{posto.temChave ? 'Herda a chave global' : 'Sem chave de integração'}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                    <View style={[fnStyles.badge, { backgroundColor: posto.ativo ? '#E3F5EA' : '#FBE7E9' }]}>
+                      <Text style={[fnStyles.badgeText, { color: posto.ativo ? '#18955A' : '#E6213D' }]}>
+                        {posto.ativo ? 'Ativo' : 'Inativo'}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <Pressable
+                        onPress={() => {
+                          setPostoEmEdicao(posto);
+                          setModalVisible(true);
+                        }}
+                      >
+                        <Feather name="edit-2" size={16} color="#5E667D" />
+                      </Pressable>
+                      <Pressable onPress={() => handleExcluirPosto(posto)} disabled={excluindoId === posto.id}>
+                        {excluindoId === posto.id ? (
+                          <ActivityIndicator size="small" color="#E6213D" />
+                        ) : (
+                          <Feather name="trash-2" size={16} color="#E6213D" />
+                        )}
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              ))
+            )}
+          </>
         )}
       </ScrollView>
+
+      <FinanceiroPostoFormModal
+        visible={modalVisible}
+        posto={postoEmEdicao}
+        onClose={() => setModalVisible(false)}
+        onSaved={load}
+      />
     </SafeAreaView>
   );
 }
@@ -2060,6 +2738,53 @@ const fnStyles = StyleSheet.create({
   reanalisarButtonText: {
     color: '#C05621',
     fontSize: 12,
+    fontWeight: '700',
+  },
+  testarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#C05621',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginLeft: 'auto',
+  },
+  formLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#677089',
+    marginBottom: 6,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: '#0C1736',
+    backgroundColor: '#FFFFFF',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(12,23,54,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalButtonSecondary: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    paddingVertical: 12,
+  },
+  modalButtonSecondaryText: {
+    color: '#5E667D',
+    fontSize: 13,
     fontWeight: '700',
   },
   listRow: {

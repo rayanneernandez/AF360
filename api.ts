@@ -5781,22 +5781,218 @@ export async function fetchFinanceiroRelatorio<T = Record<string, unknown>>(para
   return data ?? [];
 }
 
-// --- Configurações (fin_dre_chaves — postos/chave da integração DRE) ---
+// --- Configurações (fin_dre_chaves — postos/chave da integração DRE).
+// Contrato completo (leitura + escrita) confirmado pela Lovable em
+// 21/08/2026: chave é global da rede (grava em todas as linhas de
+// fin_dre_chaves); postos herdam a chave global automaticamente ao serem
+// criados. ---
 
 export type FinanceiroPostoConfig = {
   id: string;
   nome: string;
-  empresa_codigo: number;
+  empresaCodigo: number;
   idq: string | null;
-  chave: string | null;
   ativo: boolean;
-  updated_at: string;
+  atualizadoEm: string | null;
+  temChave: boolean;
 };
 
-export async function fetchFinanceiroConfig(): Promise<{ postos: FinanceiroPostoConfig[] }> {
-  const { data } = await fetchFinanceiroRecurso<{ postos?: FinanceiroPostoConfig[] } | FinanceiroPostoConfig[]>(
-    'config'
-  );
-  if (Array.isArray(data)) return { postos: data };
-  return { postos: data.postos ?? [] };
+export type FinanceiroConfigData = {
+  chaveMascarada: string | null;
+  chaveDefinida: boolean;
+  postos: FinanceiroPostoConfig[];
+  cache?: unknown;
+};
+
+export async function fetchFinanceiroConfig(): Promise<FinanceiroConfigData> {
+  const { data } = await fetchFinanceiroRecurso<Partial<FinanceiroConfigData>>('config');
+  return {
+    chaveMascarada: data.chaveMascarada ?? null,
+    chaveDefinida: data.chaveDefinida ?? false,
+    postos: data.postos ?? [],
+    cache: data.cache,
+  };
+}
+
+export async function salvarFinanceiroConfigChave(
+  chave: string,
+  actorId?: string | null
+): Promise<{ chaveMascarada: string | null }> {
+  const json = await api.post(withActorId('/api/financeiro/config/chave', actorId), { chave });
+  return json.data as { chaveMascarada: string | null };
+}
+
+export async function testarFinanceiroConexaoQuality(
+  actorId?: string | null
+): Promise<{ ok: boolean; mensagem: string; ms?: number }> {
+  const json = await api.post(withActorId('/api/financeiro/config/testar', actorId));
+  return json.data as { ok: boolean; mensagem: string; ms?: number };
+}
+
+export async function criarFinanceiroConfigPosto(
+  body: { nome: string; empresaCodigo: number | null; idq?: string; ativo?: boolean },
+  actorId?: string | null
+): Promise<FinanceiroPostoConfig> {
+  const json = await api.post(withActorId('/api/financeiro/config/posto', actorId), body);
+  return json.data as FinanceiroPostoConfig;
+}
+
+export async function atualizarFinanceiroConfigPosto(
+  id: string,
+  body: Partial<{ nome: string; empresaCodigo: number | null; idq: string | null; ativo: boolean }>,
+  actorId?: string | null
+): Promise<FinanceiroPostoConfig> {
+  const json = await api.patch(withActorId(`/api/financeiro/config/posto/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as FinanceiroPostoConfig;
+}
+
+export async function excluirFinanceiroConfigPosto(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/financeiro/config/posto/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function limparFinanceiroConfigCache(actorId?: string | null): Promise<{ removidos: number }> {
+  const json = await api.post(withActorId('/api/financeiro/config/limpar-cache', actorId));
+  return json.data as { removidos: number };
+}
+
+// --- Notificações (Rotinas + Templates) — sistema genérico já usado pelo
+// Administrador, fixado no servidor em modulo=fin (tabela fin_notificacoes),
+// confirmado pela Lovable em 21/08/2026. ---
+
+export type FinanceiroNotifGatilho = 'recorrente' | 'evento' | 'manual';
+export type FinanceiroNotifCanal = 'app' | 'email' | 'whatsapp';
+export type FinanceiroNotifPublicoTipo = 'todos' | 'colaboradores' | 'postos' | 'cargos';
+
+export type FinanceiroNotifRotinaItem = {
+  id: string;
+  nome: string | null;
+  titulo: string | null;
+  mensagem: string | null;
+  templateId: string | null;
+  isActive: boolean;
+  tipoGatilho: FinanceiroNotifGatilho;
+  cronExpressao: string | null;
+  eventoCodigo: string | null;
+  canais: FinanceiroNotifCanal[];
+  publicoTipo: FinanceiroNotifPublicoTipo;
+  publicoIds: string[];
+  ultimaExecucao: string | null;
+  proximaExecucao: string | null;
+  totalDestinos: number;
+  totalEnviados: number;
+  status: string | null;
+  agendadaPara: string | null;
+};
+
+export type FinanceiroNotifRotinasResponse = { rotinas: FinanceiroNotifRotinaItem[]; count: number };
+
+export async function fetchFinanceiroNotifRotinas(params?: {
+  q?: string;
+  ativa?: boolean;
+}): Promise<FinanceiroNotifRotinasResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativa !== undefined) search.set('ativa', String(params.ativa));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/financeiro/notif-rotinas${query}`);
+  return json.data as FinanceiroNotifRotinasResponse;
+}
+
+export type FinanceiroNotifRotinaWriteBody = {
+  nome?: string;
+  titulo?: string;
+  mensagem?: string;
+  template_id?: string | null;
+  ativa?: boolean;
+  tipo_gatilho?: FinanceiroNotifGatilho;
+  cron_expressao?: string | null;
+  evento_codigo?: string | null;
+  canais?: FinanceiroNotifCanal[];
+  publico_tipo?: FinanceiroNotifPublicoTipo;
+  publico_ids?: string[];
+};
+
+export async function createFinanceiroNotifRotina(
+  body: FinanceiroNotifRotinaWriteBody,
+  actorId?: string | null
+): Promise<FinanceiroNotifRotinaItem> {
+  const json = await api.post(withActorId('/api/financeiro/notif-rotinas', actorId), body);
+  return json.data as FinanceiroNotifRotinaItem;
+}
+
+export async function updateFinanceiroNotifRotina(
+  id: string,
+  body: FinanceiroNotifRotinaWriteBody,
+  actorId?: string | null
+): Promise<FinanceiroNotifRotinaItem> {
+  const json = await api.patch(withActorId(`/api/financeiro/notif-rotinas/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as FinanceiroNotifRotinaItem;
+}
+
+export async function deleteFinanceiroNotifRotina(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/financeiro/notif-rotinas/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function executarFinanceiroNotifRotina(
+  id: string,
+  actorId?: string | null
+): Promise<FinanceiroNotifRotinaItem> {
+  const json = await api.post(withActorId(`/api/financeiro/notif-rotinas/${encodeURIComponent(id)}/executar`, actorId));
+  return json.data as FinanceiroNotifRotinaItem;
+}
+
+export type FinanceiroNotifTemplateItem = {
+  id: string;
+  modulo: string | null;
+  codigo: string | null;
+  nome: string | null;
+  titulo: string | null;
+  mensagem: string | null;
+  variaveis: string[];
+  isPadrao: boolean;
+  isActive: boolean;
+};
+
+export type FinanceiroNotifTemplatesResponse = { templates: FinanceiroNotifTemplateItem[]; count: number };
+
+export async function fetchFinanceiroNotifTemplates(params?: {
+  q?: string;
+  ativo?: boolean;
+}): Promise<FinanceiroNotifTemplatesResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativo !== undefined) search.set('ativo', String(params.ativo));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/financeiro/notif-templates${query}`);
+  return json.data as FinanceiroNotifTemplatesResponse;
+}
+
+export type FinanceiroNotifTemplateWriteBody = {
+  codigo?: string;
+  nome?: string;
+  titulo?: string;
+  mensagem?: string;
+  variaveis?: string[];
+  ativo?: boolean;
+};
+
+export async function createFinanceiroNotifTemplate(
+  body: FinanceiroNotifTemplateWriteBody,
+  actorId?: string | null
+): Promise<FinanceiroNotifTemplateItem> {
+  const json = await api.post(withActorId('/api/financeiro/notif-templates', actorId), body);
+  return json.data as FinanceiroNotifTemplateItem;
+}
+
+export async function updateFinanceiroNotifTemplate(
+  id: string,
+  body: FinanceiroNotifTemplateWriteBody,
+  actorId?: string | null
+): Promise<FinanceiroNotifTemplateItem> {
+  const json = await api.patch(withActorId(`/api/financeiro/notif-templates/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as FinanceiroNotifTemplateItem;
+}
+
+export async function deleteFinanceiroNotifTemplate(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/financeiro/notif-templates/${encodeURIComponent(id)}`, actorId));
 }

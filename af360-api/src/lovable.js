@@ -1808,11 +1808,36 @@ function getFinanceiroRelatorio(params, actorId) {
   return lovableGet('/api/public/internal/financeiro', { recurso: 'relatorio', ...params }, actorId);
 }
 
-// fin_dre_chaves (chave mascarada + postos vinculados). Escrita (salvar
-// chave / criar-editar-excluir posto) ainda não confirmada em detalhe pela
-// Lovable — só leitura por enquanto.
+// fin_dre_chaves (chave mascarada + postos vinculados). Escrita confirmada
+// pela Lovable em 21/08/2026: config-chave (salvar chave global da rede),
+// config-testar (chamada real na Quality com a chave salva), config-posto
+// (criar/editar/excluir posto — herda a chave global automaticamente).
 function getFinanceiroConfig(actorId) {
   return lovableGet('/api/public/internal/financeiro', { recurso: 'config' }, actorId);
+}
+
+function postFinanceiroConfigChave(body, actorId) {
+  return lovablePost('/api/public/internal/financeiro', { recurso: 'config-chave' }, body, actorId);
+}
+
+function postFinanceiroConfigTestar(actorId) {
+  return lovablePost('/api/public/internal/financeiro', { recurso: 'config-testar' }, {}, actorId);
+}
+
+function postFinanceiroConfigPosto(body, actorId) {
+  return lovablePost('/api/public/internal/financeiro', { recurso: 'config-posto' }, body, actorId);
+}
+
+function patchFinanceiroConfigPosto(id, body, actorId) {
+  return lovablePatch('/api/public/internal/financeiro', { recurso: 'config-posto', id }, body, actorId);
+}
+
+function deleteFinanceiroConfigPosto(id, actorId) {
+  return lovableDelete('/api/public/internal/financeiro', { recurso: 'config-posto', id }, actorId);
+}
+
+function postFinanceiroConfigLimparCache(actorId) {
+  return lovablePost('/api/public/internal/financeiro', { recurso: 'config-limpar-cache' }, {}, actorId);
 }
 
 module.exports = {
@@ -2078,4 +2103,10 @@ module.exports = {
   getFinanceiroProjecoes,
   getFinanceiroRelatorio,
   getFinanceiroConfig,
+  postFinanceiroConfigChave,
+  postFinanceiroConfigTestar,
+  postFinanceiroConfigPosto,
+  patchFinanceiroConfigPosto,
+  deleteFinanceiroConfigPosto,
+  postFinanceiroConfigLimparCache,
 };
