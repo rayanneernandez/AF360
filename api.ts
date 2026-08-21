@@ -5364,3 +5364,439 @@ export async function putAdminUsuarioPermissoes(
     permissions,
   });
 }
+
+// --- Financeiro (Gestão de Caixa) — endpoint confirmado pela Lovable em
+// 21/08/2026: /api/public/internal/financeiro (via proxy /api/financeiro,
+// mesma auth x-internal-secret + x-actor-id). IMPORTANTE: não existe
+// nenhuma tabela rf_* — o módulo é 99% read-through da API Quality em tempo
+// real (cache em memória do lado deles). Só 4 coisas ficam no banco de
+// verdade: fin_dre_chaves (postos/chave da integração — NÃO é rh_unidades),
+// fin_conciliacoes, fin_ia_predicoes/fin_ia_feedback/fin_ia_regras/
+// fin_ia_historico e fin_notificacoes.
+
+async function fetchFinanceiroRecurso<T>(
+  recurso: string,
+  params: Record<string, string | number | boolean | undefined> = {}
+): Promise<{ data: T; count?: number }> {
+  const search = new URLSearchParams();
+  search.set('recurso', recurso);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === '') return;
+    search.set(key, String(value));
+  });
+  const json = await api.get(`/api/financeiro?${search.toString()}`);
+  return { data: json.data as T, count: json.count as number | undefined };
+}
+
+// --- Dashboard ---
+
+export type FinanceiroCurvaPonto = { periodo: string; recebimentos: number; pagamentos: number; saldo: number };
+export type FinanceiroProjecaoPonto = { periodo: string; faturamento: number; pagamentos: number };
+export type FinanceiroPagamentoResumo = {
+  descricao: string;
+  contraparte: string;
+  valor: number;
+  vencimento?: string;
+  posto?: string;
+  [key: string]: unknown;
+};
+
+export type FinanceiroDashboardData = {
+  curva: FinanceiroCurvaPonto[];
+  projecao: FinanceiroProjecaoPonto[];
+  pagamentosHoje: FinanceiroPagamentoResumo[];
+  pagamentos7d: FinanceiroPagamentoResumo[];
+  receberHoje: number;
+  pagarHoje: number;
+};
+
+export async function fetchFinanceiroDashboard(params: {
+  periodo?: 'dia' | 'mes' | 'ano';
+  mes?: number;
+  ano?: number;
+  posto?: string;
+} = {}): Promise<FinanceiroDashboardData> {
+  const { data } = await fetchFinanceiroRecurso<Partial<FinanceiroDashboardData>>('dashboard', params);
+  return {
+    curva: data.curva ?? [],
+    projecao: data.projecao ?? [],
+    pagamentosHoje: data.pagamentosHoje ?? [],
+    pagamentos7d: data.pagamentos7d ?? [],
+    receberHoje: data.receberHoje ?? 0,
+    pagarHoje: data.pagarHoje ?? 0,
+  };
+}
+
+// --- Contas a Pagar / Contas a Receber (TITULO_PAGAR / TITULO_RECEBER, Quality) ---
+
+export type FinanceiroContaStatus = 'aberto' | 'pago' | 'vencido';
+
+export type FinanceiroContaItem = {
+  id: string;
+  codigo: string;
+  empresaCodigo: number;
+  posto: string;
+  vencimento: string;
+  dataPagamento: string | null;
+  descricao: string;
+  contraparte: string;
+  categoria: string | null;
+  valor: number;
+  status: FinanceiroContaStatus;
+  [key: string]: unknown;
+};
+
+export async function fetchFinanceiroContas(params: {
+  tipo: 'pagar' | 'receber';
+  periodo?: 'hoje' | '7dias' | 'mes';
+  posto?: string;
+  busca?: string;
+  ultimoCodigo?: string;
+}): Promise<{ data: FinanceiroContaItem[]; ultimoCodigo: string | null }> {
+  const { data } = await fetchFinanceiroRecurso<{ data?: FinanceiroContaItem[]; ultimoCodigo?: string | null }>(
+    'contas',
+    params
+  );
+  return { data: data.data ?? [], ultimoCodigo: data.ultimoCodigo ?? null };
+}
+
+// --- Fluxo de Caixa (MOVIMENTO_CONTA + CONTA.saldoAtual) ---
+
+export type FinanceiroContaBancaria = {
+  contaCodigo: string;
+  empresaCodigo: number;
+  posto: string;
+  descricao: string;
+  saldoAtual: number;
+  ativo: boolean;
+  usaOfx?: boolean;
+  [key: string]: unknown;
+};
+
+export type FinanceiroFluxoCaixaData = {
+  entradasPeriodo: number;
+  saidasPeriodo: number;
+  extrato: Array<{ data: string; entradas: number; saidas: number; saldoAcumulado: number }>;
+  contas: FinanceiroContaBancaria[];
+  [key: string]: unknown;
+};
+
+export async function fetchFinanceiroFluxoCaixa(params: {
+  periodo?: 'dia' | 'mes' | 'ano';
+  mes?: number;
+  ano?: number;
+  posto?: string;
+} = {}): Promise<FinanceiroFluxoCaixaData> {
+  const { data } = await fetchFinanceiroRecurso<Partial<FinanceiroFluxoCaixaData>>('fluxo-caixa', params);
+  return {
+    entradasPeriodo: data.entradasPeriodo ?? 0,
+    saidasPeriodo: data.saidasPeriodo ?? 0,
+    extrato: data.extrato ?? [],
+    contas: data.contas ?? [],
+  };
+}
+
+// --- Conciliação (MOVIMENTO_CONTA + sugestão em runtime + fin_conciliacoes) ---
+
+export type FinanceiroMovimentoTipo = 'credito' | 'debito';
+
+export type FinanceiroMovimentoItem = {
+  codigo: string;
+  empresaCodigo: number;
+  posto: string;
+  contaCodigo: string;
+  data: string;
+  descricao: string;
+  valor: number;
+  tipo: FinanceiroMovimentoTipo;
+  origemTipo?: string | null;
+  origemCodigo?: string | null;
+  conciliadoQuality?: boolean;
+  sugestao?: {
+    tituloTipo: 'pagar' | 'receber';
+    tituloCodigo: string;
+    tituloDescricao: string;
+    tituloContraparte: string;
+    tituloVencimento: string;
+    tituloValor: number;
+  } | null;
+  conciliacao?: FinanceiroConciliacaoItem | null;
+  [key: string]: unknown;
+};
+
+export type FinanceiroConciliacaoItem = {
+  empresaCodigo: number;
+  contaCodigo: string;
+  movimentoCodigo: string;
+  movimentoData: string;
+  movimentoValor: number;
+  movimentoDescricao: string;
+  tituloTipo: 'pagar' | 'receber';
+  tituloCodigo: string;
+  tituloVencimento: string;
+  tituloValor: number;
+  tituloDescricao: string;
+  tituloContraparte: string;
+  origem: 'manual' | 'automatica';
+  observacao?: string | null;
+  createdBy?: string | null;
+  [key: string]: unknown;
+};
+
+export type FinanceiroConciliacaoResumo = { conciliados: number; pendentes: number; comSugestao: number };
+
+export async function fetchFinanceiroConciliacao(params: {
+  periodo?: 'dia' | 'mes' | 'ano';
+  mes?: number;
+  ano?: number;
+  posto?: string;
+  busca?: string;
+  aba?: 'pendentes' | 'com-sugestao' | 'conciliados';
+} = {}): Promise<{ movimentos: FinanceiroMovimentoItem[]; resumo: FinanceiroConciliacaoResumo | null }> {
+  const { data } = await fetchFinanceiroRecurso<{
+    movimentos?: FinanceiroMovimentoItem[];
+    resumo?: FinanceiroConciliacaoResumo;
+  }>('conciliacao', params);
+  return { movimentos: data.movimentos ?? [], resumo: data.resumo ?? null };
+}
+
+export async function conciliarFinanceiroMovimento(
+  body: {
+    empresa_codigo: number;
+    conta_codigo: string;
+    movimento_codigo: string;
+    movimento_data: string;
+    movimento_valor: number;
+    movimento_descricao: string;
+    titulo_tipo: 'pagar' | 'receber';
+    titulo_codigo: string;
+    titulo_vencimento: string;
+    titulo_valor: number;
+    titulo_descricao: string;
+    titulo_contraparte: string;
+    origem: 'manual' | 'automatica';
+    observacao?: string | null;
+  },
+  actorId?: string | null
+): Promise<FinanceiroConciliacaoItem> {
+  const json = await api.post(withActorId('/api/financeiro/conciliar', actorId), body);
+  return json.data as FinanceiroConciliacaoItem;
+}
+
+export async function desvincularFinanceiroMovimento(movimentoCodigo: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/financeiro/conciliar/${encodeURIComponent(movimentoCodigo)}`, actorId));
+}
+
+// --- Balancete / DRE (INTEGRACAO/DRE) ---
+
+export type FinanceiroDreGrupo = { grupo: string; venda: number; cmv: number; margem: number };
+export type FinanceiroDreContaValor = { conta: string; valor: number };
+
+export type FinanceiroDreMes = {
+  periodo: string;
+  label: string;
+  receitaBruta: number;
+  deducaoFiscal: number;
+  receitaLiquida: number;
+  outrasReceitas: number;
+  entradas: number;
+  cmv: number;
+  despesas: number;
+  saidas: number;
+  resultado: number;
+  margem: number;
+  gruposVenda: FinanceiroDreGrupo[];
+  despesasPorConta: FinanceiroDreContaValor[];
+  receitasPorConta: FinanceiroDreContaValor[];
+  [key: string]: unknown;
+};
+
+export async function fetchFinanceiroBalancete(params: {
+  mes: number;
+  ano: number;
+  janela?: 'mes' | '3meses' | '6meses' | '12meses';
+  posto?: string;
+  apuracaoCaixa?: boolean;
+}): Promise<FinanceiroDreMes[]> {
+  const { data } = await fetchFinanceiroRecurso<FinanceiroDreMes[]>('balancete', params);
+  return data ?? [];
+}
+
+// --- Fornecedores (agregação dos títulos a pagar + cadastro FORNECEDOR) ---
+
+export type FinanceiroFornecedorPorPosto = { posto: string; titulos: number; valor: number };
+
+export type FinanceiroFornecedorItem = {
+  fornecedorCodigo: string;
+  razao: string;
+  fantasia: string | null;
+  cnpjCpf: string;
+  cidade: string | null;
+  uf: string | null;
+  endereco?: string | null;
+  telefone?: string | null;
+  email?: string | null;
+  postos: string[];
+  titulos: number;
+  valorTotal: number;
+  valorAberto?: number;
+  ultimoVencimento?: string | null;
+  porPosto?: FinanceiroFornecedorPorPosto[];
+  ultimosTitulos?: FinanceiroContaItem[];
+  [key: string]: unknown;
+};
+
+export async function fetchFinanceiroFornecedores(params: {
+  periodo?: string;
+  posto?: string;
+  busca?: string;
+} = {}): Promise<FinanceiroFornecedorItem[]> {
+  const { data } = await fetchFinanceiroRecurso<FinanceiroFornecedorItem[]>('fornecedores', params);
+  return data ?? [];
+}
+
+export async function fetchFinanceiroFornecedorDetalhe(
+  fornecedorCodigo: string,
+  params: { periodo?: string } = {}
+): Promise<FinanceiroFornecedorItem | null> {
+  const { data } = await fetchFinanceiroRecurso<FinanceiroFornecedorItem[]>('fornecedores', {
+    ...params,
+    fornecedorCodigo,
+  });
+  return (data ?? [])[0] ?? null;
+}
+
+// --- Centros de Custo (CENTRO_CUSTO, lista global) ---
+
+export type FinanceiroCentroCustoItem = { centroCustoCodigo: string; descricao: string; tipo: string };
+
+export async function fetchFinanceiroCentrosCusto(): Promise<FinanceiroCentroCustoItem[]> {
+  const { data } = await fetchFinanceiroRecurso<FinanceiroCentroCustoItem[]>('centros-custo');
+  return data ?? [];
+}
+
+// --- Contas Bancárias (CONTA) ---
+
+export async function fetchFinanceiroContasBancarias(params: {
+  posto?: string;
+  busca?: string;
+} = {}): Promise<FinanceiroContaBancaria[]> {
+  const { data } = await fetchFinanceiroRecurso<FinanceiroContaBancaria[]>('contas-bancarias', params);
+  return data ?? [];
+}
+
+// --- Inteligência IA (fin_ia_predicoes / fin_ia_feedback / fin_ia_regras) ---
+
+export type FinanceiroIaStatus = 'pendente' | 'confirmado' | 'rejeitado' | 'suprimido';
+
+export type FinanceiroIaPredicaoItem = {
+  id: string;
+  empresa_codigo: number;
+  posto: string;
+  tipo: string;
+  fornecedor_nome: string;
+  fornecedor_doc: string | null;
+  competencia: string;
+  valor_esperado: number;
+  periodicidade: string;
+  confianca: number;
+  mensagem: string;
+  detalhe?: string | null;
+  ocorrencias: number;
+  status: FinanceiroIaStatus;
+  modelo?: string | null;
+  gerado_em: string;
+  [key: string]: unknown;
+};
+
+export async function fetchFinanceiroIaPredicoes(params: {
+  posto?: string;
+  status?: FinanceiroIaStatus;
+  mostrarRespondidos?: boolean;
+} = {}): Promise<FinanceiroIaPredicaoItem[]> {
+  const { data } = await fetchFinanceiroRecurso<FinanceiroIaPredicaoItem[]>('ia-predicoes', params);
+  return data ?? [];
+}
+
+export async function responderFinanceiroIaPredicao(
+  body: { predicao_id: string; resposta: 'sim' | 'nao'; justificativa?: string },
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId('/api/financeiro/ia-responder', actorId), body);
+}
+
+export async function reanalisarFinanceiroIa(actorId?: string | null): Promise<void> {
+  await api.post(withActorId('/api/financeiro/ia-reanalisar', actorId), {});
+}
+
+// --- Projeções (saldo atual + títulos em aberto + média histórica) ---
+
+export type FinanceiroProjecaoMes = {
+  mes: string;
+  label: string;
+  receberPrevisto: number;
+  pagarPrevisto: number;
+  receberMedia: number;
+  pagarMedia: number;
+  receberTotal: number;
+  pagarTotal: number;
+  resultado: number;
+  saldoBase: number;
+  saldoOtimista: number;
+  saldoPessimista: number;
+  alerta?: string | null;
+  [key: string]: unknown;
+};
+
+export type FinanceiroProjecoesData = {
+  saldoInicial: number;
+  mediaReceber: number;
+  mediaPagar: number;
+  meses: FinanceiroProjecaoMes[];
+};
+
+export async function fetchFinanceiroProjecoes(params: {
+  posto?: string;
+  horizonteMeses?: number;
+  mesesHistorico?: number;
+} = {}): Promise<FinanceiroProjecoesData> {
+  const { data } = await fetchFinanceiroRecurso<Partial<FinanceiroProjecoesData>>('projecoes', params);
+  return {
+    saldoInicial: data.saldoInicial ?? 0,
+    mediaReceber: data.mediaReceber ?? 0,
+    mediaPagar: data.mediaPagar ?? 0,
+    meses: data.meses ?? [],
+  };
+}
+
+// --- Relatórios (mesmos dados de Contas/Conciliação/Fornecedores/Centros de Custo) ---
+
+export async function fetchFinanceiroRelatorio<T = Record<string, unknown>>(params: {
+  tipo: 'contas' | 'conciliacoes' | 'fornecedores' | 'centros_custo';
+  posto?: string;
+  dataIni?: string;
+  dataFim?: string;
+}): Promise<T[]> {
+  const { data } = await fetchFinanceiroRecurso<T[]>('relatorio', params);
+  return data ?? [];
+}
+
+// --- Configurações (fin_dre_chaves — postos/chave da integração DRE) ---
+
+export type FinanceiroPostoConfig = {
+  id: string;
+  nome: string;
+  empresa_codigo: number;
+  idq: string | null;
+  chave: string | null;
+  ativo: boolean;
+  updated_at: string;
+};
+
+export async function fetchFinanceiroConfig(): Promise<{ postos: FinanceiroPostoConfig[] }> {
+  const { data } = await fetchFinanceiroRecurso<{ postos?: FinanceiroPostoConfig[] } | FinanceiroPostoConfig[]>(
+    'config'
+  );
+  if (Array.isArray(data)) return { postos: data };
+  return { postos: data.postos ?? [] };
+}

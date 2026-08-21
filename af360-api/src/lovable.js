@@ -1723,6 +1723,98 @@ function postRhConfigReajusteAplicar(id, actorId) {
   return lovablePost('/api/public/internal/rh-config', { recurso: 'reajustes', acao: 'aplicar', id }, {}, actorId);
 }
 
+// --- Financeiro (Gestão de Caixa) — endpoint confirmado pela Lovable em
+// 21/08/2026: /api/public/internal/financeiro (mesma auth: x-internal-secret
+// + x-actor-id). Importante: NÃO existe nenhuma tabela rf_* — o módulo é 99%
+// read-through da API Quality em tempo real (cache em memória do lado
+// deles). Só 4 coisas ficam de fato no banco: fin_dre_chaves (postos/chave
+// da integração — não é rh_unidades), fin_conciliacoes (vínculo
+// movimento↔título gravado manualmente ou automático), fin_ia_predicoes/
+// fin_ia_feedback/fin_ia_regras/fin_ia_historico (Inteligência IA) e
+// fin_notificacoes (mesmo padrão de notificações de RH/Diretoria, só que
+// tabela própria do módulo).
+
+function getFinanceiroDashboard(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'dashboard', ...params }, actorId);
+}
+
+// params: { tipo: 'pagar'|'receber', periodo, dataIni, dataFim, posto (empresaCodigo), busca, ultimoCodigo }
+// Paginado pela Quality via ultimoCodigo (não é offset/limit tradicional).
+function getFinanceiroContas(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'contas', ...params }, actorId);
+}
+
+function getFinanceiroFluxoCaixa(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'fluxo-caixa', ...params }, actorId);
+}
+
+// GET conciliacao: movimentos brutos (MOVIMENTO_CONTA) + sugestão calculada
+// em runtime (não gravada) + o que já está em fin_conciliacoes.
+function getFinanceiroConciliacao(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'conciliacao', ...params }, actorId);
+}
+
+// Upsert em fin_conciliacoes por movimento_codigo (vincular manualmente).
+function postFinanceiroConciliar(body, actorId) {
+  return lovablePost('/api/public/internal/financeiro', { recurso: 'conciliar' }, body, actorId);
+}
+
+// Desvincular = DELETE por movimento_codigo.
+function deleteFinanceiroConciliar(movimentoCodigo, actorId) {
+  return lovableDelete('/api/public/internal/financeiro', { recurso: 'conciliar', movimentoCodigo }, actorId);
+}
+
+// params: { empresaCodigo(s)/filiais, dataInicial, dataFinal, apuracaoCaixa }
+function getFinanceiroBalancete(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'balancete', ...params }, actorId);
+}
+
+function getFinanceiroFornecedores(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'fornecedores', ...params }, actorId);
+}
+
+// Lista global (sem posto) — só leitura, cadastro fica no Quality.
+function getFinanceiroCentrosCusto(actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'centros-custo' }, actorId);
+}
+
+function getFinanceiroContasBancarias(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'contas-bancarias', ...params }, actorId);
+}
+
+// fin_ia_predicoes — status pendente|confirmado|rejeitado|suprimido.
+function getFinanceiroIaPredicoes(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'ia-predicoes', ...params }, actorId);
+}
+
+// body: { predicao_id, resposta: 'sim'|'nao', justificativa? } — grava em
+// fin_ia_feedback e muda o status da predição (NUNCA cria título nenhum).
+function postFinanceiroIaResponder(body, actorId) {
+  return lovablePost('/api/public/internal/financeiro', { recurso: 'ia-responder' }, body, actorId);
+}
+
+// Dispara a mesma geração do cron (fin-ia-sync) sob demanda.
+function postFinanceiroIaReanalisar(body, actorId) {
+  return lovablePost('/api/public/internal/financeiro', { recurso: 'ia-reanalisar' }, body, actorId);
+}
+
+// params: { unidadeIds, horizonteMeses (3-12), mesesHistorico (3-12) }
+function getFinanceiroProjecoes(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'projecoes', ...params }, actorId);
+}
+
+// params: { tipo: 'contas'|'conciliacoes'|'fornecedores'|'centros-custo', posto, dataIni, dataFim }
+function getFinanceiroRelatorio(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'relatorio', ...params }, actorId);
+}
+
+// fin_dre_chaves (chave mascarada + postos vinculados). Escrita (salvar
+// chave / criar-editar-excluir posto) ainda não confirmada em detalhe pela
+// Lovable — só leitura por enquanto.
+function getFinanceiroConfig(actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'config' }, actorId);
+}
+
 module.exports = {
   getRhUniformesCobrancas,
   postRhUniformeCobranca,
@@ -1970,4 +2062,20 @@ module.exports = {
   patchRhConfigReajuste,
   deleteRhConfigReajuste,
   postRhConfigReajusteAplicar,
+  getFinanceiroDashboard,
+  getFinanceiroContas,
+  getFinanceiroFluxoCaixa,
+  getFinanceiroConciliacao,
+  postFinanceiroConciliar,
+  deleteFinanceiroConciliar,
+  getFinanceiroBalancete,
+  getFinanceiroFornecedores,
+  getFinanceiroCentrosCusto,
+  getFinanceiroContasBancarias,
+  getFinanceiroIaPredicoes,
+  postFinanceiroIaResponder,
+  postFinanceiroIaReanalisar,
+  getFinanceiroProjecoes,
+  getFinanceiroRelatorio,
+  getFinanceiroConfig,
 };
