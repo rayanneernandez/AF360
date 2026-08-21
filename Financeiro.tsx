@@ -229,33 +229,83 @@ function FinanceiroPostoFilterRow({
   onSelect: (unidadeId: string | null) => void;
 }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Pressable
-          style={[fnStyles.filterPill, selected === null ? fnStyles.filterPillActive : null]}
-          onPress={() => onSelect(null)}
-        >
-          <Text style={[fnStyles.filterPillText, selected === null ? fnStyles.filterPillTextActive : null]}>
-            Todos os postos
-          </Text>
-        </Pressable>
-        {postos.map((posto) => {
-          const value = posto.id;
-          const isActive = selected === value;
-          return (
-            <Pressable
-              key={posto.id}
-              style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
-              onPress={() => onSelect(value)}
-            >
-              <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]} numberOfLines={1}>
-                {posto.nome}
-              </Text>
+    <View>
+      <FinanceiroFilterOptionRow label="Todos os postos" active={selected === null} onPress={() => onSelect(null)} />
+      {postos.map((posto) => (
+        <FinanceiroFilterOptionRow
+          key={posto.id}
+          label={posto.nome}
+          active={selected === posto.id}
+          onPress={() => onSelect(posto.id)}
+        />
+      ))}
+    </View>
+  );
+}
+
+// ---------- Filtros em modal ----------
+// Antes os filtros (posto, período, aba, etc.) ficavam em pílulas lado a
+// lado no topo de cada tela — poluído e feio em telas com vários filtros.
+// Agora cada tela mostra um único botão "Filtros" que abre um modal com
+// as opções empilhadas verticalmente.
+
+function FinanceiroFilterOptionRow({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <Pressable style={fnStyles.filterOptionRow} onPress={onPress}>
+      <Text style={[fnStyles.filterOptionRowText, active ? fnStyles.filterOptionRowTextActive : null]} numberOfLines={1}>
+        {label}
+      </Text>
+      {active ? <Feather name="check" size={16} color="#C05621" /> : null}
+    </Pressable>
+  );
+}
+
+function FinanceiroFilterSectionTitle({ label }: { label: string }) {
+  return <Text style={fnStyles.filterModalSectionTitle}>{label}</Text>;
+}
+
+function FinanceiroFilterTriggerButton({ onPress, activeCount }: { onPress: () => void; activeCount?: number }) {
+  return (
+    <Pressable style={fnStyles.filterTriggerButton} onPress={onPress}>
+      <Feather name="sliders" size={14} color="#5E667D" />
+      <Text style={fnStyles.filterTriggerText}>Filtros</Text>
+      {activeCount ? (
+        <View style={fnStyles.filterTriggerBadge}>
+          <Text style={fnStyles.filterTriggerBadgeText}>{activeCount}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function FinanceiroFilterModal({
+  visible,
+  title,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  title?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={fnStyles.modalBackdrop}>
+        <View style={[fnStyles.modalCard, { maxHeight: '82%' }]}>
+          <View style={fnStyles.modalHeader}>
+            <Text style={fnStyles.modalTitle}>{title ?? 'Filtros'}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
             </Pressable>
-          );
-        })}
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>{children}</ScrollView>
+          <Pressable style={fnStyles.filterModalApplyButton} onPress={onClose}>
+            <Text style={fnStyles.filterModalApplyButtonText}>Aplicar</Text>
+          </Pressable>
+        </View>
       </View>
-    </ScrollView>
+    </Modal>
   );
 }
 
@@ -348,6 +398,7 @@ export function FinanceiroContasBancariasScreen({ navigation }: ScreenProps<'Fin
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -382,7 +433,7 @@ export function FinanceiroContasBancariasScreen({ navigation }: ScreenProps<'Fin
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <FinanceiroPageHeader icon="credit-card" title="Contas Bancárias" subtitle="Contas bancárias das unidades e saldos de referência." />
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroFilterTriggerButton onPress={() => setFiltersOpen(true)} activeCount={postoSelecionado ? 1 : 0} />
         <FinanceiroSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar conta..." />
         <View style={fnStyles.countRow}>
           <Text style={fnStyles.countLabel}>{itens.length} conta(s)</Text>
@@ -421,6 +472,11 @@ export function FinanceiroContasBancariasScreen({ navigation }: ScreenProps<'Fin
           ))
         )}
       </ScrollView>
+
+      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
+        <FinanceiroFilterSectionTitle label="Posto" />
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
     </SafeAreaView>
   );
 }
@@ -522,6 +578,7 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
   const [meses, setMeses] = useState(3);
   const [selecionadoCodigo, setSelecionadoCodigo] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -556,24 +613,10 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <FinanceiroPageHeader icon="briefcase" title="Fornecedores" subtitle="Cadastro de fornecedores, condições e dados de pagamento." />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {financeiroFornecedorPeriodoOptions.map((opt) => {
-              const isActive = meses === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
-                  onPress={() => setMeses(opt.value)}
-                >
-                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{opt.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroFilterTriggerButton
+          onPress={() => setFiltersOpen(true)}
+          activeCount={(postoSelecionado ? 1 : 0) + (meses !== 3 ? 1 : 0)}
+        />
         <FinanceiroSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar fornecedor, CNPJ..." />
         <Text style={fnStyles.countLabel}>{itens.length} fornecedor(es)</Text>
 
@@ -610,6 +653,20 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
         )}
       </ScrollView>
 
+      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
+        <FinanceiroFilterSectionTitle label="Período" />
+        {financeiroFornecedorPeriodoOptions.map((opt) => (
+          <FinanceiroFilterOptionRow
+            key={opt.value}
+            label={opt.label}
+            active={meses === opt.value}
+            onPress={() => setMeses(opt.value)}
+          />
+        ))}
+        <FinanceiroFilterSectionTitle label="Posto" />
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
+
       <FinanceiroFornecedorDetalheModal
         fornecedorCodigo={selecionadoCodigo}
         meses={meses}
@@ -625,6 +682,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -657,7 +715,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
           subtitle="Contas a receber, contas a pagar, saldo e projeções da rede."
         />
 
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroFilterTriggerButton onPress={() => setFiltersOpen(true)} activeCount={postoSelecionado ? 1 : 0} />
 
         {isLoading ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
@@ -768,6 +826,11 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
           </>
         )}
       </ScrollView>
+
+      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
+        <FinanceiroFilterSectionTitle label="Posto" />
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
     </SafeAreaView>
   );
 }
@@ -800,6 +863,7 @@ function FinanceiroContasScreenBase({
   const [busca, setBusca] = useState('');
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<'hoje' | '7dias' | 'mes'>('7dias');
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -870,24 +934,10 @@ function FinanceiroContasScreenBase({
           }
         />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {financeiroContasPeriodoOptions.map((opt) => {
-              const isActive = periodo === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
-                  onPress={() => setPeriodo(opt.value)}
-                >
-                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{opt.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroFilterTriggerButton
+          onPress={() => setFiltersOpen(true)}
+          activeCount={(postoSelecionado ? 1 : 0) + (periodo !== '7dias' ? 1 : 0)}
+        />
         <FinanceiroSearchInput
           value={busca}
           onChangeText={setBusca}
@@ -956,6 +1006,20 @@ function FinanceiroContasScreenBase({
           </>
         )}
       </ScrollView>
+
+      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
+        <FinanceiroFilterSectionTitle label="Período" />
+        {financeiroContasPeriodoOptions.map((opt) => (
+          <FinanceiroFilterOptionRow
+            key={opt.value}
+            label={opt.label}
+            active={periodo === opt.value}
+            onPress={() => setPeriodo(opt.value)}
+          />
+        ))}
+        <FinanceiroFilterSectionTitle label="Posto" />
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
     </SafeAreaView>
   );
 }
@@ -975,6 +1039,7 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
   const [periodo, setPeriodo] = useState<'hoje' | 'mes' | 'ano'>('mes');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -1010,25 +1075,10 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
           subtitle="Entradas, saídas e saldo diário consolidado da rede."
         />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {(['hoje', 'mes', 'ano'] as const).map((opt) => {
-              const isActive = periodo === opt;
-              const label = opt === 'hoje' ? 'Hoje' : opt === 'mes' ? 'Este mês' : 'Este ano';
-              return (
-                <Pressable
-                  key={opt}
-                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
-                  onPress={() => setPeriodo(opt)}
-                >
-                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroFilterTriggerButton
+          onPress={() => setFiltersOpen(true)}
+          activeCount={(postoSelecionado ? 1 : 0) + (periodo !== 'mes' ? 1 : 0)}
+        />
 
         {isLoading ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
@@ -1095,15 +1145,23 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
           </>
         )}
       </ScrollView>
+
+      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
+        <FinanceiroFilterSectionTitle label="Período" />
+        {(['hoje', 'mes', 'ano'] as const).map((opt) => (
+          <FinanceiroFilterOptionRow
+            key={opt}
+            label={opt === 'hoje' ? 'Hoje' : opt === 'mes' ? 'Este mês' : 'Este ano'}
+            active={periodo === opt}
+            onPress={() => setPeriodo(opt)}
+          />
+        ))}
+        <FinanceiroFilterSectionTitle label="Posto" />
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
     </SafeAreaView>
   );
 }
-
-const financeiroConciliacaoAbas: Array<{ label: string; value: 'pendentes' | 'com-sugestao' | 'conciliados' }> = [
-  { label: 'Pendentes', value: 'pendentes' },
-  { label: 'Com sugestão', value: 'com-sugestao' },
-  { label: 'Conciliados', value: 'conciliados' },
-];
 
 export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'FinanceiroConciliacao'>) {
   const [movimentos, setMovimentos] = useState<FinanceiroMovimentoItem[]>([]);
@@ -1115,6 +1173,7 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actingCodigo, setActingCodigo] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -1197,39 +1256,31 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
 
         {resumo ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-            <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
+            <Pressable
+              style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }, aba === 'pendentes' ? fnStyles.kpiCardActive : null]}
+              onPress={() => setAba('pendentes')}
+            >
               <Text style={fnStyles.kpiLabel}>Pendentes</Text>
               <Text style={fnStyles.kpiValue}>{resumo.pendentes}</Text>
-            </View>
-            <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
+            </Pressable>
+            <Pressable
+              style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }, aba === 'com-sugestao' ? fnStyles.kpiCardActive : null]}
+              onPress={() => setAba('com-sugestao')}
+            >
               <Text style={fnStyles.kpiLabel}>Com sugestão</Text>
               <Text style={fnStyles.kpiValue}>{resumo.comSugestao}</Text>
-            </View>
-            <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
+            </Pressable>
+            <Pressable
+              style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }, aba === 'conciliados' ? fnStyles.kpiCardActive : null]}
+              onPress={() => setAba('conciliados')}
+            >
               <Text style={[fnStyles.kpiLabel, { color: '#18955A' }]}>Conciliados</Text>
               <Text style={[fnStyles.kpiValue, { color: '#18955A' }]}>{resumo.conciliados}</Text>
-            </View>
+            </Pressable>
           </View>
         ) : null}
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {financeiroConciliacaoAbas.map((opt) => {
-              const isActive = aba === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
-                  onPress={() => setAba(opt.value)}
-                >
-                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{opt.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroFilterTriggerButton onPress={() => setFiltersOpen(true)} activeCount={postoSelecionado ? 1 : 0} />
         <FinanceiroSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por descrição..." />
 
         <Text style={fnStyles.countLabel}>{movimentosFiltrados.length} movimento(s)</Text>
@@ -1299,6 +1350,11 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
           ))
         )}
       </ScrollView>
+
+      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
+        <FinanceiroFilterSectionTitle label="Posto" />
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
     </SafeAreaView>
   );
 }
@@ -1321,6 +1377,7 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
   const [meses, setMeses] = useState<FinanceiroDreMes[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -1387,32 +1444,10 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
           </Pressable>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {financeiroJanelaOptions.map((opt) => {
-              const isActive = janela === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
-                  onPress={() => setJanela(opt.value)}
-                >
-                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{opt.label}</Text>
-                </Pressable>
-              );
-            })}
-            <Pressable
-              style={[fnStyles.filterPill, apuracaoCaixa ? fnStyles.filterPillActive : null]}
-              onPress={() => setApuracaoCaixa((v) => !v)}
-            >
-              <Text style={[fnStyles.filterPillText, apuracaoCaixa ? fnStyles.filterPillTextActive : null]}>
-                Regime de caixa
-              </Text>
-            </Pressable>
-          </View>
-        </ScrollView>
-
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroFilterTriggerButton
+          onPress={() => setFiltersOpen(true)}
+          activeCount={(postoSelecionado ? 1 : 0) + (janela !== '6meses' ? 1 : 0) + (apuracaoCaixa ? 1 : 0)}
+        />
 
         {isLoading ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
@@ -1478,6 +1513,24 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
           ))
         )}
       </ScrollView>
+
+      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
+        <FinanceiroFilterSectionTitle label="Janela" />
+        {financeiroJanelaOptions.map((opt) => (
+          <FinanceiroFilterOptionRow
+            key={opt.value}
+            label={opt.label}
+            active={janela === opt.value}
+            onPress={() => setJanela(opt.value)}
+          />
+        ))}
+        <View style={[fnStyles.filterOptionRow, { marginTop: 8 }]}>
+          <Text style={fnStyles.filterOptionRowText}>Regime de caixa</Text>
+          <ToggleSwitch value={apuracaoCaixa} onValueChange={() => setApuracaoCaixa((v) => !v)} />
+        </View>
+        <FinanceiroFilterSectionTitle label="Posto" />
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
     </SafeAreaView>
   );
 }
@@ -1491,6 +1544,7 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
   const [isReanalisando, setIsReanalisando] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -1552,16 +1606,10 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
           )}
         </Pressable>
 
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
-
-        <Pressable
-          style={[fnStyles.filterPill, mostrarRespondidos ? fnStyles.filterPillActive : null, { alignSelf: 'flex-start', marginBottom: 12 }]}
-          onPress={() => setMostrarRespondidos((v) => !v)}
-        >
-          <Text style={[fnStyles.filterPillText, mostrarRespondidos ? fnStyles.filterPillTextActive : null]}>
-            {mostrarRespondidos ? 'Mostrando respondidos' : 'Mostrar respondidos'}
-          </Text>
-        </Pressable>
+        <FinanceiroFilterTriggerButton
+          onPress={() => setFiltersOpen(true)}
+          activeCount={(postoSelecionado ? 1 : 0) + (mostrarRespondidos ? 1 : 0)}
+        />
 
         <Text style={fnStyles.countLabel}>{itens.length} previsão(ões)</Text>
 
@@ -1626,6 +1674,15 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
           ))
         )}
       </ScrollView>
+
+      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
+        <FinanceiroFilterSectionTitle label="Posto" />
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <View style={[fnStyles.filterOptionRow, { marginTop: 8 }]}>
+          <Text style={fnStyles.filterOptionRowText}>Mostrar respondidos</Text>
+          <ToggleSwitch value={mostrarRespondidos} onValueChange={() => setMostrarRespondidos((v) => !v)} />
+        </View>
+      </FinanceiroFilterModal>
     </SafeAreaView>
   );
 }
@@ -1637,6 +1694,7 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
   const [horizonteMeses, setHorizonteMeses] = useState(6);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -1666,24 +1724,10 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
           subtitle="Faturamento e pagamentos projetados para os próximos meses."
         />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {[3, 6, 12].map((n) => {
-              const isActive = horizonteMeses === n;
-              return (
-                <Pressable
-                  key={n}
-                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
-                  onPress={() => setHorizonteMeses(n)}
-                >
-                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{n} meses</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroFilterTriggerButton
+          onPress={() => setFiltersOpen(true)}
+          activeCount={(postoSelecionado ? 1 : 0) + (horizonteMeses !== 6 ? 1 : 0)}
+        />
 
         {isLoading ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
@@ -1751,6 +1795,20 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
           </>
         )}
       </ScrollView>
+
+      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
+        <FinanceiroFilterSectionTitle label="Horizonte" />
+        {[3, 6, 12].map((n) => (
+          <FinanceiroFilterOptionRow
+            key={n}
+            label={`${n} meses`}
+            active={horizonteMeses === n}
+            onPress={() => setHorizonteMeses(n)}
+          />
+        ))}
+        <FinanceiroFilterSectionTitle label="Posto" />
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
     </SafeAreaView>
   );
 }
@@ -1769,6 +1827,7 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
   const [itens, setItens] = useState<Record<string, unknown>[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -1854,24 +1913,8 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
           subtitle="Relatórios financeiros e exportações por período."
         />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {financeiroRelatorioTipos.map((opt) => {
-              const isActive = tipo === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
-                  onPress={() => setTipo(opt.value)}
-                >
-                  <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{opt.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+        <FinanceiroFilterTriggerButton onPress={() => setFiltersOpen(true)} activeCount={postoSelecionado ? 1 : 0} />
+        <Text style={fnStyles.countLabel}>Tipo: {financeiroRelatorioTipos.find((o) => o.value === tipo)?.label}</Text>
 
         <View style={fnStyles.suggestionBox}>
           <Text style={fnStyles.suggestionText}>
@@ -1892,6 +1935,20 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
           itens.map((item, idx) => renderLinha(item, idx))
         )}
       </ScrollView>
+
+      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
+        <FinanceiroFilterSectionTitle label="Tipo de relatório" />
+        {financeiroRelatorioTipos.map((opt) => (
+          <FinanceiroFilterOptionRow
+            key={opt.value}
+            label={opt.label}
+            active={tipo === opt.value}
+            onPress={() => setTipo(opt.value)}
+          />
+        ))}
+        <FinanceiroFilterSectionTitle label="Posto" />
+        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
     </SafeAreaView>
   );
 }
@@ -2700,6 +2757,78 @@ const fnStyles = StyleSheet.create({
   filterPillTextActive: {
     color: '#FFFFFF',
   },
+  filterTriggerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  filterTriggerText: {
+    color: '#0C1736',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  filterTriggerBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#C05621',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  filterTriggerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  filterModalSectionTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#8891A6',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  filterOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F6',
+  },
+  filterOptionRowText: {
+    fontSize: 13,
+    color: '#0C1736',
+    flex: 1,
+    marginRight: 8,
+  },
+  filterOptionRowTextActive: {
+    color: '#C05621',
+    fontWeight: '800',
+  },
+  filterModalApplyButton: {
+    marginTop: 18,
+    backgroundColor: '#C05621',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  filterModalApplyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
   countRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2952,6 +3081,10 @@ const fnStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F3DEC6',
     padding: 12,
+  },
+  kpiCardActive: {
+    borderColor: '#C05621',
+    borderWidth: 2,
   },
   kpiLabel: {
     color: '#8A5A2B',
