@@ -1764,6 +1764,18 @@ function deleteFinanceiroConciliar(movimentoCodigo, actorId) {
   return lovableDelete('/api/public/internal/financeiro', { recurso: 'conciliar', movimentoCodigo }, actorId);
 }
 
+// Confirmado pela Lovable em 21/08/2026 (2ª rodada): "desconciliar" é uma
+// AÇÃO via POST (não DELETE), igual conciliar/ia-responder/ia-reanalisar.
+function postFinanceiroDesconciliar(body, actorId) {
+  return lovablePost('/api/public/internal/financeiro', { recurso: 'desconciliar' }, body, actorId);
+}
+
+// Lista de títulos (pagar/receber) em aberto pra vincular manualmente a um
+// movimento — recurso novo confirmado em 21/08/2026.
+function getFinanceiroTitulosConciliar(params, actorId) {
+  return lovableGet('/api/public/internal/financeiro', { recurso: 'titulos-conciliar', ...params }, actorId);
+}
+
 // params: { empresaCodigo(s)/filiais, dataInicial, dataFinal, apuracaoCaixa }
 function getFinanceiroBalancete(params, actorId) {
   return lovableGet('/api/public/internal/financeiro', { recurso: 'balancete', ...params }, actorId);
@@ -2093,6 +2105,8 @@ module.exports = {
   getFinanceiroConciliacao,
   postFinanceiroConciliar,
   deleteFinanceiroConciliar,
+  postFinanceiroDesconciliar,
+  getFinanceiroTitulosConciliar,
   getFinanceiroBalancete,
   getFinanceiroFornecedores,
   getFinanceiroCentrosCusto,

@@ -15,6 +15,8 @@ const {
   postFinanceiroIaReanalisar,
   getFinanceiroProjecoes,
   getFinanceiroRelatorio,
+  postFinanceiroDesconciliar,
+  getFinanceiroTitulosConciliar,
   getFinanceiroConfig,
   postFinanceiroConfigChave,
   postFinanceiroConfigTestar,
@@ -89,6 +91,9 @@ router.get('/', async (req, res) => {
       case 'relatorio':
         json = await getFinanceiroRelatorio(params, actorId);
         break;
+      case 'titulos-conciliar':
+        json = await getFinanceiroTitulosConciliar(params, actorId);
+        break;
       case 'config':
         json = await getFinanceiroConfig(actorId);
         break;
@@ -115,12 +120,25 @@ router.post('/conciliar', async (req, res) => {
 });
 
 // DELETE /api/financeiro/conciliar/:movimentoCodigo?actorId= — desvincular
+// (mantido por compatibilidade; o dispatch completo da Lovable, confirmado em
+// 21/08/2026, usa a AÇÃO "desconciliar" via POST — ver rota abaixo).
 router.delete('/conciliar/:movimentoCodigo', async (req, res) => {
   try {
     await deleteFinanceiroConciliar(req.params.movimentoCodigo, req.query.actorId);
     res.json({ ok: true });
   } catch (err) {
     console.error('[financeiro conciliar DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/financeiro/desconciliar?actorId= — body: { movimento_codigo }
+router.post('/desconciliar', async (req, res) => {
+  try {
+    const json = await postFinanceiroDesconciliar(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[financeiro desconciliar POST] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });

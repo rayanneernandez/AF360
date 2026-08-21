@@ -165,6 +165,41 @@ function formatDateIsoBR(iso: string | null | undefined): string | null {
   return `${day}/${month}/${year}`;
 }
 
+function toIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Converte os pills de período (Hoje/Próximos 7 dias/Mês/Este ano etc.) pro
+// contrato real confirmado pela Lovable em 21/08/2026: dataInicial/dataFinal
+// (YYYY-MM-DD). Sem seleção = mês corrente até hoje (default do backend).
+function financeiroMesesAtras(meses: number): { dataInicial: string; dataFinal: string } {
+  const hoje = new Date();
+  const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - meses, hoje.getDate());
+  return { dataInicial: toIsoDate(inicio), dataFinal: toIsoDate(hoje) };
+}
+
+function financeiroPeriodoParaDatas(periodo: 'hoje' | '7dias' | 'mes' | 'ano'): { dataInicial: string; dataFinal: string } {
+  const hoje = new Date();
+  if (periodo === 'hoje') {
+    const iso = toIsoDate(hoje);
+    return { dataInicial: iso, dataFinal: iso };
+  }
+  if (periodo === '7dias') {
+    const fim = new Date(hoje);
+    fim.setDate(fim.getDate() + 7);
+    return { dataInicial: toIsoDate(hoje), dataFinal: toIsoDate(fim) };
+  }
+  if (periodo === 'ano') {
+    return { dataInicial: `${hoje.getFullYear()}-01-01`, dataFinal: `${hoje.getFullYear()}-12-31` };
+  }
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+  return { dataInicial: toIsoDate(inicioMes), dataFinal: toIsoDate(fimMes) };
+}
+
 function showFinanceiroError(err: unknown, fallback: string) {
   const message = err instanceof Error ? err.message : fallback;
   // eslint-disable-next-line no-alert -- mesmo padrão de showRhSaveError (RH.tsx): Alert.alert já é usado direto nas telas que chamam isso.
@@ -182,6 +217,8 @@ function FinanceiroEmptyState({ message }: { message: string }) {
 // Filtro de posto por pills (a lista de postos vem de fin_dre_chaves via
 // fetchFinanceiroConfig — não é rh_unidades). "Todos os postos" sempre
 // disponível mesmo sem nenhum posto configurado ainda.
+// unidadeIds usa o `id` (uuid) do posto — confirmado pela Lovable em
+// 21/08/2026 — NÃO é o empresaCodigo (esse só aparece pra exibição).
 function FinanceiroPostoFilterRow({
   postos,
   selected,
@@ -189,7 +226,7 @@ function FinanceiroPostoFilterRow({
 }: {
   postos: FinanceiroPostoConfig[];
   selected: string | null;
-  onSelect: (empresaCodigo: string | null) => void;
+  onSelect: (unidadeId: string | null) => void;
 }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
@@ -203,7 +240,7 @@ function FinanceiroPostoFilterRow({
           </Text>
         </Pressable>
         {postos.map((posto) => {
-          const value = String(posto.empresaCodigo);
+          const value = posto.id;
           const isActive = selected === value;
           return (
             <Pressable
@@ -321,7 +358,10 @@ export function FinanceiroContasBancariasScreen({ navigation }: ScreenProps<'Fin
   const load = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroContasBancarias({ posto: postoSelecionado ?? undefined, busca: busca.trim() || undefined })
+    fetchFinanceiroContasBancarias({
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+      busca: busca.trim() || undefined,
+    })
       .then(setItens)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar as contas bancárias.')))
       .finally(() => setIsLoading(false));
@@ -388,18 +428,18 @@ export function FinanceiroContasBancariasScreen({ navigation }: ScreenProps<'Fin
 // ---------- Fornecedores ----------
 
 const financeiroFornecedorPeriodoOptions = [
-  { label: 'Últimos 3 meses', value: '3m' },
-  { label: 'Últimos 6 meses', value: '6m' },
-  { label: 'Últimos 12 meses', value: '12m' },
+  { label: 'Últimos 3 meses', value: 3 },
+  { label: 'Últimos 6 meses', value: 6 },
+  { label: 'Últimos 12 meses', value: 12 },
 ];
 
 function FinanceiroFornecedorDetalheModal({
   fornecedorCodigo,
-  periodo,
+  meses,
   onClose,
 }: {
   fornecedorCodigo: string | null;
-  periodo: string;
+  meses: number;
   onClose: () => void;
 }) {
   const [detalhe, setDetalhe] = useState<FinanceiroFornecedorItem | null>(null);
@@ -409,11 +449,11 @@ function FinanceiroFornecedorDetalheModal({
     if (!fornecedorCodigo) return;
     setIsLoading(true);
     setDetalhe(null);
-    fetchFinanceiroFornecedorDetalhe(fornecedorCodigo, { periodo })
+    fetchFinanceiroFornecedorDetalhe(fornecedorCodigo, financeiroMesesAtras(meses))
       .then(setDetalhe)
       .catch(() => setDetalhe(null))
       .finally(() => setIsLoading(false));
-  }, [fornecedorCodigo, periodo]);
+  }, [fornecedorCodigo, meses]);
 
   return (
     <Modal visible={fornecedorCodigo !== null} animationType="fade" transparent onRequestClose={onClose}>
@@ -480,7 +520,7 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
-  const [periodo, setPeriodo] = useState('3m');
+  const [meses, setMeses] = useState(3);
   const [selecionadoCodigo, setSelecionadoCodigo] = useState<string | null>(null);
 
   useEffect(() => {
@@ -492,11 +532,15 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
   const load = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroFornecedores({ periodo, posto: postoSelecionado ?? undefined, busca: busca.trim() || undefined })
+    fetchFinanceiroFornecedores({
+      ...financeiroMesesAtras(meses),
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+      busca: busca.trim() || undefined,
+    })
       .then(setItens)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar os fornecedores.')))
       .finally(() => setIsLoading(false));
-  }, [periodo, postoSelecionado, busca]);
+  }, [meses, postoSelecionado, busca]);
 
   useEffect(() => {
     const timeout = setTimeout(load, 300);
@@ -515,12 +559,12 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {financeiroFornecedorPeriodoOptions.map((opt) => {
-              const isActive = periodo === opt.value;
+              const isActive = meses === opt.value;
               return (
                 <Pressable
                   key={opt.value}
                   style={[fnStyles.filterPill, isActive ? fnStyles.filterPillActive : null]}
-                  onPress={() => setPeriodo(opt.value)}
+                  onPress={() => setMeses(opt.value)}
                 >
                   <Text style={[fnStyles.filterPillText, isActive ? fnStyles.filterPillTextActive : null]}>{opt.label}</Text>
                 </Pressable>
@@ -568,7 +612,7 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
 
       <FinanceiroFornecedorDetalheModal
         fornecedorCodigo={selecionadoCodigo}
-        periodo={periodo}
+        meses={meses}
         onClose={() => setSelecionadoCodigo(null)}
       />
     </SafeAreaView>
@@ -591,7 +635,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroDashboard({ posto: postoSelecionado ?? undefined })
+    fetchFinanceiroDashboard({ unidadeIds: postoSelecionado ? [postoSelecionado] : undefined })
       .then(setData)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar o dashboard.')))
       .finally(() => setIsLoading(false));
@@ -766,7 +810,12 @@ function FinanceiroContasScreenBase({
   const load = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroContas({ tipo, periodo, posto: postoSelecionado ?? undefined, busca: busca.trim() || undefined })
+    fetchFinanceiroContas({
+      tipo,
+      ...financeiroPeriodoParaDatas(periodo),
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+      busca: busca.trim() || undefined,
+    })
       .then((result) => {
         setItens(result.data);
         setUltimoCodigo(result.ultimoCodigo);
@@ -785,7 +834,13 @@ function FinanceiroContasScreenBase({
   const handleLoadMore = () => {
     if (!ultimoCodigo || isLoadingMore) return;
     setIsLoadingMore(true);
-    fetchFinanceiroContas({ tipo, periodo, posto: postoSelecionado ?? undefined, busca: busca.trim() || undefined, ultimoCodigo })
+    fetchFinanceiroContas({
+      tipo,
+      ...financeiroPeriodoParaDatas(periodo),
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+      busca: busca.trim() || undefined,
+      ultimoCodigo,
+    })
       .then((result) => {
         setItens((current) => [...current, ...result.data]);
         setUltimoCodigo(result.ultimoCodigo);
@@ -917,7 +972,7 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
   const [data, setData] = useState<FinanceiroFluxoCaixaData | null>(null);
   const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
-  const [periodo, setPeriodo] = useState<'dia' | 'mes' | 'ano'>('mes');
+  const [periodo, setPeriodo] = useState<'hoje' | 'mes' | 'ano'>('mes');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -930,7 +985,10 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroFluxoCaixa({ periodo, posto: postoSelecionado ?? undefined })
+    fetchFinanceiroFluxoCaixa({
+      ...financeiroPeriodoParaDatas(periodo),
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+    })
       .then(setData)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar o fluxo de caixa.')))
       .finally(() => setIsLoading(false));
@@ -954,9 +1012,9 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            {(['dia', 'mes', 'ano'] as const).map((opt) => {
+            {(['hoje', 'mes', 'ano'] as const).map((opt) => {
               const isActive = periodo === opt;
-              const label = opt === 'dia' ? 'Hoje' : opt === 'mes' ? 'Este mês' : 'Este ano';
+              const label = opt === 'hoje' ? 'Hoje' : opt === 'mes' ? 'Este mês' : 'Este ano';
               return (
                 <Pressable
                   key={opt}
@@ -1067,19 +1125,31 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
   const load = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroConciliacao({ aba, posto: postoSelecionado ?? undefined, busca: busca.trim() || undefined })
+    fetchFinanceiroConciliacao({
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+      busca: busca.trim() || undefined,
+    })
       .then((result) => {
         setMovimentos(result.movimentos);
         setResumo(result.resumo);
       })
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar a conciliação.')))
       .finally(() => setIsLoading(false));
-  }, [aba, postoSelecionado, busca]);
+  }, [postoSelecionado, busca]);
 
   useEffect(() => {
     const timeout = setTimeout(load, 300);
     return () => clearTimeout(timeout);
   }, [load]);
+
+  // Servidor retorna todos os movimentos; a aba (pendentes/com-sugestão/
+  // conciliados) é um filtro puramente client-side sobre os mesmos dados
+  // reais — a Lovable não expõe "aba" como parâmetro do endpoint.
+  const movimentosFiltrados = useMemo(() => {
+    if (aba === 'com-sugestao') return movimentos.filter((m) => m.sugestao);
+    if (aba === 'conciliados') return movimentos.filter((m) => m.conciliacao);
+    return movimentos.filter((m) => !m.sugestao && !m.conciliacao);
+  }, [movimentos, aba]);
 
   const handleConfirmarSugestao = (movimento: FinanceiroMovimentoItem) => {
     if (!movimento.sugestao) return;
@@ -1162,16 +1232,16 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
         <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
         <FinanceiroSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por descrição..." />
 
-        <Text style={fnStyles.countLabel}>{movimentos.length} movimento(s)</Text>
+        <Text style={fnStyles.countLabel}>{movimentosFiltrados.length} movimento(s)</Text>
 
         {isLoading ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
         ) : errorMessage ? (
           <FinanceiroEmptyState message={errorMessage} />
-        ) : movimentos.length === 0 ? (
+        ) : movimentosFiltrados.length === 0 ? (
           <FinanceiroEmptyState message="Nenhum movimento encontrado nesta aba." />
         ) : (
-          movimentos.map((mov) => (
+          movimentosFiltrados.map((mov) => (
             <View key={mov.codigo} style={[fnStyles.listRow, { flexDirection: 'column', alignItems: 'stretch' }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <View style={{ flex: 1 }}>
@@ -1261,7 +1331,15 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroBalancete({ mes, ano, janela, posto: postoSelecionado ?? undefined, apuracaoCaixa })
+    const janelaMesesCount = janela === 'mes' ? 1 : janela === '3meses' ? 3 : janela === '6meses' ? 6 : 12;
+    const mesIni = Math.max(1, mes - janelaMesesCount + 1);
+    fetchFinanceiroBalancete({
+      ano,
+      mesIni,
+      mesFim: mes,
+      apuracaoCaixa,
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+    })
       .then(setMeses)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar o balancete/DRE.')))
       .finally(() => setIsLoading(false));
@@ -1423,7 +1501,10 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
   const load = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroIaPredicoes({ posto: postoSelecionado ?? undefined, mostrarRespondidos })
+    fetchFinanceiroIaPredicoes({
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+      incluirRespondidos: mostrarRespondidos,
+    })
       .then(setItens)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar as previsões da IA.')))
       .finally(() => setIsLoading(false));
@@ -1566,7 +1647,7 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroProjecoes({ posto: postoSelecionado ?? undefined, horizonteMeses })
+    fetchFinanceiroProjecoes({ unidadeIds: postoSelecionado ? [postoSelecionado] : undefined, horizonteMeses })
       .then(setData)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar as projeções.')))
       .finally(() => setIsLoading(false));
@@ -1698,7 +1779,10 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroRelatorio<Record<string, unknown>>({ tipo, posto: postoSelecionado ?? undefined })
+    fetchFinanceiroRelatorio<Record<string, unknown>>({
+      tipo,
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+    })
       .then(setItens)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível gerar o relatório.')))
       .finally(() => setIsLoading(false));
