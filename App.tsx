@@ -9785,6 +9785,14 @@ function LavaRapidoScreen({ navigation }: ScreenProps<'LavaRapido'>) {
       ? `${MARGIN_MONTH_NAMES[lavaAnchorDate.getMonth()]} / ${lavaAnchorDate.getFullYear()}`
       : `${lavaAnchorDate.getFullYear()}`;
 
+  // "posto" filtra por id no backend (lovable.js) — mandar o nome direto
+  // fazia o filtro nunca bater com nenhum posto específico (mesmo bug do
+  // EstoqueParadoScreen). Resolve o id igual às outras telas de Diretoria.
+  const selectedPostoId = useMemo(
+    () => postos.find((p) => p.nome === selectedStation)?.id,
+    [postos, selectedStation]
+  );
+
   const lavaFiltros = useMemo(() => {
     let de: Date;
     let ate: Date;
@@ -9801,13 +9809,13 @@ function LavaRapidoScreen({ navigation }: ScreenProps<'LavaRapido'>) {
     return {
       de: toApiDateOnly(de),
       ate: toApiDateOnly(ate),
-      posto: selectedStation === 'Todos os postos' ? undefined : selectedStation,
+      posto: selectedStation === 'Todos os postos' ? undefined : selectedPostoId,
       placa: placaSearch.trim() || undefined,
       pagina: historicoPagina,
       porPagina: HISTORICO_POR_PAGINA,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lavaViewMode, lavaAnchorDate, selectedStation, placaSearch, historicoPagina]);
+  }, [lavaViewMode, lavaAnchorDate, selectedStation, selectedPostoId, placaSearch, historicoPagina]);
 
   const {
     dados: lava,
@@ -10113,13 +10121,22 @@ function EstoqueParadoScreen({ navigation }: ScreenProps<'EstoqueParado'>) {
   const [buscaProduto, setBuscaProduto] = useState('');
   const [expandedPostoIds, setExpandedPostoIds] = useState<Record<string, boolean>>({});
 
+  // "posto" filtra por id no backend (lovable.js) — mandar o nome direto
+  // (como estava antes) fazia o filtro nunca bater com nenhum posto
+  // específico. Resolve o id do mesmo jeito que as outras telas de
+  // Diretoria (Vendas/Margem/Estoques/GNV) já fazem.
+  const selectedPostoId = useMemo(
+    () => postos.find((p) => p.nome === selectedStation)?.id,
+    [postos, selectedStation]
+  );
+
   const filtros = useMemo(
     () => ({
-      posto: selectedStation === 'Todos os postos' ? undefined : selectedStation,
+      posto: selectedStation === 'Todos os postos' ? undefined : selectedPostoId,
       faixa: selectedFaixaValue === 'todas' ? undefined : selectedFaixaValue,
       busca: buscaProduto.trim() || undefined,
     }),
-    [selectedStation, selectedFaixaValue, buscaProduto]
+    [selectedStation, selectedPostoId, selectedFaixaValue, buscaProduto]
   );
 
   const {
