@@ -67,6 +67,23 @@ import {
   RHTreinamentosScreen,
 } from './RH';
 import {
+  FinanceiroDashboardScreen,
+  FinanceiroProfileScreen,
+  FinanceiroContasAPagarScreen,
+  FinanceiroContasAReceberScreen,
+  FinanceiroFluxoCaixaScreen,
+  FinanceiroConciliacaoScreen,
+  FinanceiroBalanceteDreScreen,
+  FinanceiroFornecedoresScreen,
+  FinanceiroCentrosCustoScreen,
+  FinanceiroContasBancariasScreen,
+  FinanceiroInteligenciaIAScreen,
+  FinanceiroProjecoesScreen,
+  FinanceiroRelatoriosScreen,
+  FinanceiroNotificationsScreen,
+  FinanceiroConfiguracoesScreen,
+} from './Financeiro';
+import {
   AdminDashboardScreen,
   AdminProfileScreen,
   AdminUsuariosScreen,
@@ -234,6 +251,21 @@ export type RootStackParamList = {
   AdminVersoes: undefined;
   AdminNotifications: undefined;
   AdminLogs: undefined;
+  FinanceiroDashboard: undefined;
+  FinanceiroProfile: undefined;
+  FinanceiroContasAPagar: undefined;
+  FinanceiroContasAReceber: undefined;
+  FinanceiroFluxoCaixa: undefined;
+  FinanceiroConciliacao: undefined;
+  FinanceiroBalanceteDre: undefined;
+  FinanceiroFornecedores: undefined;
+  FinanceiroCentrosCusto: undefined;
+  FinanceiroContasBancarias: undefined;
+  FinanceiroInteligenciaIA: undefined;
+  FinanceiroProjecoes: undefined;
+  FinanceiroRelatorios: undefined;
+  FinanceiroNotifications: undefined;
+  FinanceiroConfiguracoes: undefined;
 };
 
 export type ScreenProps<RouteName extends keyof RootStackParamList> = NativeStackScreenProps<
@@ -371,7 +403,7 @@ type SideMenuRoute =
   | 'Requests'
   | 'Profile';
 
-export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador';
+export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador' | 'financeiro';
 
 type DirectorSideMenuRoute =
   | 'DirectorDashboard'
@@ -427,6 +459,29 @@ export type AdminSideMenuRoute =
   | 'AdminNotifications'
   | 'AdminLogs'
   | 'AdminProfile';
+
+// "Financeiro" (Gestão de Caixa) — perfil novo (21/08/2026). Ainda sem
+// integração real com o banco: aguardando a Lovable confirmar as
+// tabelas/campos de contas a pagar/receber, fluxo de caixa, conciliação
+// etc. (mensagem enviada em 21/08/2026). Por enquanto as telas mostram
+// estado honesto de "aguardando integração" em vez de qualquer dado
+// inventado — nunca preencher com números fake.
+export type FinanceiroSideMenuRoute =
+  | 'FinanceiroDashboard'
+  | 'FinanceiroContasAPagar'
+  | 'FinanceiroContasAReceber'
+  | 'FinanceiroFluxoCaixa'
+  | 'FinanceiroConciliacao'
+  | 'FinanceiroBalanceteDre'
+  | 'FinanceiroFornecedores'
+  | 'FinanceiroCentrosCusto'
+  | 'FinanceiroContasBancarias'
+  | 'FinanceiroInteligenciaIA'
+  | 'FinanceiroProjecoes'
+  | 'FinanceiroRelatorios'
+  | 'FinanceiroNotifications'
+  | 'FinanceiroConfiguracoes'
+  | 'FinanceiroProfile';
 
 type SummaryCardItem = {
   id: string;
@@ -1365,6 +1420,70 @@ export const adminSideMenuSections: Array<{
       { id: 'admin-versoes', label: 'Versões', icon: 'refresh-cw', route: 'AdminVersoes' },
       { id: 'admin-notifications', label: 'Notificações', icon: 'bell', route: 'AdminNotifications' },
       { id: 'admin-logs', label: 'Logs', icon: 'file-text', route: 'AdminLogs' },
+    ],
+  },
+];
+
+// Placeholder até o painel Financeiro ser conectado ao login real (identity
+// do AuthIdentityContext) — mesmo padrão do adminUser: front primeiro, back
+// depois. Trocar por identity.fullName/email quando vier o backend.
+export const financeiroUser = {
+  fullName: 'Financeiro',
+  role: 'Financeiro',
+  roleAndUnit: 'Financeiro · American Fuel',
+  area: 'Gestão de Caixa',
+  email: 'financeiro@americanfuel.com.br',
+  phone: '(11) 99120-0000',
+  accessLabel: 'Contas, fluxo de caixa e conciliação',
+};
+
+// "FN" fixo (não via getInitials), mesmo motivo do adminUserInitials.
+export const financeiroUserInitials = 'FN';
+
+export const financeiroSideMenuSections: Array<{
+  title: string;
+  items: Array<{
+    id: string;
+    label: string;
+    icon: keyof typeof Feather.glyphMap;
+    route?: FinanceiroSideMenuRoute;
+  }>;
+}> = [
+  {
+    title: 'VISÃO GERAL',
+    items: [{ id: 'financeiro-dashboard', label: 'Dashboard', icon: 'grid', route: 'FinanceiroDashboard' }],
+  },
+  {
+    title: 'CONTAS',
+    items: [
+      { id: 'financeiro-contas-a-pagar', label: 'Contas a Pagar', icon: 'arrow-down-circle', route: 'FinanceiroContasAPagar' },
+      { id: 'financeiro-contas-a-receber', label: 'Contas a Receber', icon: 'arrow-up-circle', route: 'FinanceiroContasAReceber' },
+      { id: 'financeiro-fluxo-caixa', label: 'Fluxo de Caixa', icon: 'file', route: 'FinanceiroFluxoCaixa' },
+      { id: 'financeiro-conciliacao', label: 'Conciliação', icon: 'archive', route: 'FinanceiroConciliacao' },
+      { id: 'financeiro-balancete-dre', label: 'Balancete / DRE', icon: 'bar-chart-2', route: 'FinanceiroBalanceteDre' },
+    ],
+  },
+  {
+    title: 'CADASTROS',
+    items: [
+      { id: 'financeiro-fornecedores', label: 'Fornecedores', icon: 'briefcase', route: 'FinanceiroFornecedores' },
+      { id: 'financeiro-centros-custo', label: 'Centros de Custo', icon: 'layers', route: 'FinanceiroCentrosCusto' },
+      { id: 'financeiro-contas-bancarias', label: 'Contas Bancárias', icon: 'credit-card', route: 'FinanceiroContasBancarias' },
+    ],
+  },
+  {
+    title: 'ANÁLISES',
+    items: [
+      { id: 'financeiro-ia', label: 'Inteligência IA', icon: 'zap', route: 'FinanceiroInteligenciaIA' },
+      { id: 'financeiro-projecoes', label: 'Projeções', icon: 'trending-up', route: 'FinanceiroProjecoes' },
+      { id: 'financeiro-relatorios', label: 'Relatórios', icon: 'file-text', route: 'FinanceiroRelatorios' },
+    ],
+  },
+  {
+    title: 'ADMINISTRAÇÃO',
+    items: [
+      { id: 'financeiro-notifications', label: 'Notificações', icon: 'bell', route: 'FinanceiroNotifications' },
+      { id: 'financeiro-configuracoes', label: 'Configurações', icon: 'settings', route: 'FinanceiroConfiguracoes' },
     ],
   },
 ];
@@ -2643,6 +2762,21 @@ export default function App() {
                     <Stack.Screen name="AdminVersoes" component={AdminVersoesScreen} />
                     <Stack.Screen name="AdminNotifications" component={AdminNotificationsScreen} />
                     <Stack.Screen name="AdminLogs" component={AdminLogsScreen} />
+                    <Stack.Screen name="FinanceiroDashboard" component={FinanceiroDashboardScreen} />
+                    <Stack.Screen name="FinanceiroProfile" component={FinanceiroProfileScreen} />
+                    <Stack.Screen name="FinanceiroContasAPagar" component={FinanceiroContasAPagarScreen} />
+                    <Stack.Screen name="FinanceiroContasAReceber" component={FinanceiroContasAReceberScreen} />
+                    <Stack.Screen name="FinanceiroFluxoCaixa" component={FinanceiroFluxoCaixaScreen} />
+                    <Stack.Screen name="FinanceiroConciliacao" component={FinanceiroConciliacaoScreen} />
+                    <Stack.Screen name="FinanceiroBalanceteDre" component={FinanceiroBalanceteDreScreen} />
+                    <Stack.Screen name="FinanceiroFornecedores" component={FinanceiroFornecedoresScreen} />
+                    <Stack.Screen name="FinanceiroCentrosCusto" component={FinanceiroCentrosCustoScreen} />
+                    <Stack.Screen name="FinanceiroContasBancarias" component={FinanceiroContasBancariasScreen} />
+                    <Stack.Screen name="FinanceiroInteligenciaIA" component={FinanceiroInteligenciaIAScreen} />
+                    <Stack.Screen name="FinanceiroProjecoes" component={FinanceiroProjecoesScreen} />
+                    <Stack.Screen name="FinanceiroRelatorios" component={FinanceiroRelatoriosScreen} />
+                    <Stack.Screen name="FinanceiroNotifications" component={FinanceiroNotificationsScreen} />
+                    <Stack.Screen name="FinanceiroConfiguracoes" component={FinanceiroConfiguracoesScreen} />
                   </Stack.Navigator>
 
                   {isMenuOpen ? (
@@ -2723,6 +2857,8 @@ function getDashboardRouteForRole(role: UserRole): keyof RootStackParamList {
     ? 'RHDashboard'
     : role === 'administrador'
     ? 'AdminDashboard'
+    : role === 'financeiro'
+    ? 'FinanceiroDashboard'
     : 'Dashboard';
 }
 
@@ -2981,6 +3117,13 @@ const PANEL_OPTION_META: Record<
     icon: 'shield',
     color: '#1B2340',
     tint: '#E7E9F2',
+  },
+  financeiro: {
+    label: 'Financeiro',
+    subtitle: 'Gestão de caixa (contas, fluxo, conciliação)',
+    icon: 'dollar-sign',
+    color: '#C05621',
+    tint: '#FCEDE1',
   },
 };
 
@@ -12768,6 +12911,7 @@ export function SideMenuOverlay({
   const isDirector = variant === 'diretoria';
   const isRH = variant === 'rh';
   const isAdmin = variant === 'administrador';
+  const isFinanceiro = variant === 'financeiro';
   const { identity } = useContext(AuthIdentityContext);
   const { perfil: colaboradorPerfil, isLoading: isLoadingColaboradorPerfil } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
@@ -12777,6 +12921,8 @@ export function SideMenuOverlay({
     ? rhSideMenuSections
     : isAdmin
     ? adminSideMenuSections
+    : isFinanceiro
+    ? financeiroSideMenuSections
     : sideMenuSections;
   // Nome/cargo reais (rh_colaboradores, via ColaboradorPerfilContext) em
   // todos os painéis — nunca os mocks "Bruno Lyra"/"Marina Costa"/etc. Sem
@@ -12784,6 +12930,8 @@ export function SideMenuOverlay({
   const headerName = colaboradorPerfil?.nome_completo || identity?.fullName || '—';
   const headerRole = isAdmin
     ? 'Administrador'
+    : isFinanceiro
+    ? 'Financeiro'
     : (colaboradorPerfil?.cargo as string | undefined) ||
       (isLoadingColaboradorPerfil ? 'Carregando…' : identity?.colaboradorId ? '—' : 'Sem vínculo no RH');
   const headerGradientColors: [string, string] = isDirector
@@ -12792,10 +12940,14 @@ export function SideMenuOverlay({
     ? ['#1B6E3A', '#2A9D51']
     : isAdmin
     ? ['#1B2340', '#2F3A5C']
+    : isFinanceiro
+    ? ['#C05621', '#DD6B20']
     : ['#2F4EA8', '#4C439E'];
   const insets = useSafeAreaInsets();
 
-  const handleItemPress = (route?: SideMenuRoute | DirectorSideMenuRoute | RHSideMenuRoute | AdminSideMenuRoute) => {
+  const handleItemPress = (
+    route?: SideMenuRoute | DirectorSideMenuRoute | RHSideMenuRoute | AdminSideMenuRoute | FinanceiroSideMenuRoute
+  ) => {
     onClose();
 
     if (route && navigationRef.isReady()) {
@@ -12915,6 +13067,7 @@ export function TopBar({
   const isDirector = variant === 'diretoria';
   const isRH = variant === 'rh';
   const isAdmin = variant === 'administrador';
+  const isFinanceiro = variant === 'financeiro';
   const hasUnreadNotifications = colaboradorNotificationItems.some(
     (item) => item.unread && !readNotificationIds[item.id]
   );
@@ -12937,12 +13090,14 @@ export function TopBar({
         <RHBrandLogo />
       ) : isAdmin ? (
         <AdminBrandLogo />
+      ) : isFinanceiro ? (
+        <FinanceiroBrandLogo />
       ) : (
         <BrandLogo compact theme={onColor ? 'light' : 'dark'} />
       )}
 
       <View style={styles.topBarRight}>
-        {isDirector || isRH || isAdmin ? null : (
+        {isDirector || isRH || isAdmin || isFinanceiro ? null : (
           <Pressable style={styles.notificationBellButton} onPress={openNotifications}>
             <Feather name="bell" size={17} color="#313951" />
             {hasUnreadNotifications ? <View style={styles.notificationBellDot} /> : null}
@@ -12950,7 +13105,12 @@ export function TopBar({
         )}
 
         <Pressable
-          style={[styles.avatar, isRH ? styles.avatarRH : null, isAdmin ? styles.avatarAdmin : null]}
+          style={[
+            styles.avatar,
+            isRH ? styles.avatarRH : null,
+            isAdmin ? styles.avatarAdmin : null,
+            isFinanceiro ? styles.avatarFinanceiro : null,
+          ]}
           onPress={onAvatarPress}
           disabled={!onAvatarPress}
         >
@@ -13000,6 +13160,20 @@ function AdminBrandLogo() {
       <View>
         <Text style={styles.adminBrandTitle}>Administrador</Text>
         <Text style={styles.adminBrandSubtitle}>PAINEL DE GESTÃO</Text>
+      </View>
+    </View>
+  );
+}
+
+function FinanceiroBrandLogo() {
+  return (
+    <View style={styles.directorBrandRow}>
+      <View style={styles.financeiroBrandIconShell}>
+        <Feather name="dollar-sign" size={16} color="#FFFFFF" />
+      </View>
+      <View>
+        <Text style={styles.financeiroBrandTitle}>Financeiro</Text>
+        <Text style={styles.financeiroBrandSubtitle}>GESTÃO DE CAIXA</Text>
       </View>
     </View>
   );
@@ -14257,6 +14431,9 @@ export const styles = StyleSheet.create({
   avatarAdmin: {
     backgroundColor: '#1B2340',
   },
+  avatarFinanceiro: {
+    backgroundColor: '#C05621',
+  },
   rhBrandIconShell: {
     width: 32,
     height: 32,
@@ -14290,6 +14467,25 @@ export const styles = StyleSheet.create({
     fontWeight: '800',
   },
   adminBrandSubtitle: {
+    color: '#7C8397',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  financeiroBrandIconShell: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#C05621',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  financeiroBrandTitle: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  financeiroBrandSubtitle: {
     color: '#7C8397',
     fontSize: 9,
     fontWeight: '700',

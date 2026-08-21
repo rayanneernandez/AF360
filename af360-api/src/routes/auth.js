@@ -41,6 +41,7 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
     roles.add('administrador');
     roles.add('diretoria');
     roles.add('rh');
+    roles.add('financeiro');
   }
 
   // b) Sinal real pro resto: módulos efetivos (Cargo ∪ user_modules).
@@ -50,6 +51,7 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   if (effectiveModules?.has('administrador')) roles.add('administrador');
   if (effectiveModules?.has('diretoria')) roles.add('diretoria');
   if (effectiveModules?.has('rh')) roles.add('rh');
+  if (effectiveModules?.has('financeiro')) roles.add('financeiro');
 
   // c) Ponte temporária por e-mail conhecido — só pra cobrir usuários de
   // teste cujo acesso ainda não tem os módulos certos configurados.
@@ -65,10 +67,10 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   // não houver ficha de RH vinculada, o app mostra estado vazio honesto
   // ("Seu acesso ainda não está vinculado a um colaborador no RH...") em vez
   // de fabricar dado — nunca finge um painel pessoal com números inventados.
-  // Marketing, Financeiro, Gestão, R&S e Administrativo sozinhos (sem RH/
-  // Diretoria/Administrador/Colaborador) não entram em nenhum painel de
-  // propósito — o app mobile só tem 4 perfis por enquanto (colaborador,
-  // rh, diretoria, administrador).
+  // Marketing, Gestão, R&S e Administrativo sozinhos (sem RH/Diretoria/
+  // Administrador/Colaborador/Financeiro) não entram em nenhum painel de
+  // propósito — o app mobile tem 5 perfis (colaborador, rh, diretoria,
+  // administrador, financeiro). "Financeiro" foi ligado em 21/08/2026.
   if (rhColaborador || effectiveModules?.has('colaborador')) roles.add('colaborador');
 
   return Array.from(roles);

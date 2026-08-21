@@ -1896,14 +1896,14 @@ export type AuthIdentity = {
   profileId: string;
   email: string;
   fullName: string | null;
-  role: 'colaborador' | 'rh' | 'diretoria' | 'administrador';
+  role: 'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro';
   // Lista de painéis que esse login pode abrir de verdade (pode ter mais de
   // 1 — ex: alguém com módulo RH que também tem ficha de colaborador
   // vinculada vê ['rh', 'colaborador']; contas master também podem ter
   // 'administrador' aqui). 'role' acima é só o primeiro/principal, mantido
   // por compatibilidade; o app decide se mostra a tela de seleção de painel
   // com base neste array.
-  availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador'>;
+  availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro'>;
   colaboradorId: string | null;
   empresaId: string | null;
 };
