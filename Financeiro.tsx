@@ -834,6 +834,24 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
 
   const saldoHoje = (data?.receberHoje ?? 0) - (data?.pagarHoje ?? 0);
 
+  // A biblioteca de gráfico calcula a escala do eixo Y usando só a 1ª série (data),
+  // ignorando data2/data3 — por isso Pagamentos/Saldo (que têm valores bem maiores
+  // que Recebimentos) estouravam pra fora da área do gráfico. Calculamos aqui o
+  // máximo/mínimo considerando as 3 séries juntas, com uma folga de 10%.
+  const curvaRange = useMemo(() => {
+    const valores = (data?.curva ?? []).flatMap((p) => [p.recebimentos, p.pagamentos, p.saldo]);
+    const max = Math.max(0, ...valores);
+    const min = Math.min(0, ...valores);
+    return { max: max > 0 ? max * 1.1 : 1, min: min < 0 ? min * 1.1 : 0 };
+  }, [data]);
+
+  const projRange = useMemo(() => {
+    const valores = (data?.projecao ?? []).flatMap((p) => [p.faturamento, p.pagamentos]);
+    const max = Math.max(0, ...valores);
+    const min = Math.min(0, ...valores);
+    return { max: max > 0 ? max * 1.1 : 1, min: min < 0 ? min * 1.1 : 0 };
+  }, [data]);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -894,10 +912,10 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
               <View style={[fnStyles.kpiCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: '#7C5CFC' }]}>
                 <Text style={fnStyles.kpiLabel}>A receber hoje</Text>
                 <Text
-                  style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 13 }]}
+                  style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 14 }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
-                  minimumFontScale={0.7}
+                  minimumFontScale={0.85}
                 >
                   {formatBRL(data.receberHoje)}
                 </Text>
@@ -905,10 +923,10 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
               <View style={[fnStyles.kpiCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: '#E6213D' }]}>
                 <Text style={fnStyles.kpiLabel}>A pagar hoje</Text>
                 <Text
-                  style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: 13 }]}
+                  style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: 14 }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
-                  minimumFontScale={0.7}
+                  minimumFontScale={0.85}
                 >
                   {formatBRL(data.pagarHoje)}
                 </Text>
@@ -916,10 +934,10 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
               <View style={[fnStyles.kpiCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: '#2F6FED' }]}>
                 <Text style={fnStyles.kpiLabel}>Saldo</Text>
                 <Text
-                  style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D', fontSize: 13 }]}
+                  style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D', fontSize: 14 }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
-                  minimumFontScale={0.7}
+                  minimumFontScale={0.85}
                 >
                   {formatBRL(saldoHoje)}
                 </Text>
@@ -948,7 +966,8 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   hideDataPoints2
                   dataPointsRadius3={3}
                   dataPointsColor3="#C05621"
-                  overflowTop={110}
+                  maxValue={curvaRange.max}
+                  mostNegativeValue={curvaRange.min}
                   curved
                   width={chartWidth}
                   adjustToWidth
@@ -1017,7 +1036,8 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   color2="#E6213D"
                   thickness1={2}
                   thickness2={2}
-                  overflowTop={90}
+                  maxValue={projRange.max}
+                  mostNegativeValue={projRange.min}
                   curved
                   width={chartWidth}
                   adjustToWidth
