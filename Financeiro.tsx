@@ -291,7 +291,7 @@ function FinanceiroDashboardListCard({
           {items.map((item, idx) => (
             <View key={idx} style={fnStyles.dashboardListCardRow}>
               <View style={{ flex: 1 }}>
-                <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                <Text style={fnStyles.dashboardListCardRowTitle} numberOfLines={1}>
                   {item.descricao}
                 </Text>
                 <Text style={fnStyles.listRowMeta} numberOfLines={1}>
@@ -300,7 +300,7 @@ function FinanceiroDashboardListCard({
                   {item.vencimento ? ` · Vence ${formatDateIsoBR(item.vencimento) ?? ''}` : ''}
                 </Text>
               </View>
-              <Text style={fnStyles.listRowValue}>{formatBRL(item.valor)}</Text>
+              <Text style={fnStyles.dashboardListCardRowValue}>{formatBRL(item.valor)}</Text>
             </View>
           ))}
         </ScrollView>
@@ -945,6 +945,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   hideDataPoints2
                   dataPointsRadius3={3}
                   dataPointsColor3="#C05621"
+                  overflowTop={110}
                   curved
                   width={chartWidth}
                   adjustToWidth
@@ -966,8 +967,8 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                     radius: 5,
                     activatePointersInstantlyOnTouch: true,
                     persistPointer: true,
-                    pointerLabelWidth: 170,
-                    pointerLabelHeight: 100,
+                    pointerLabelWidth: 190,
+                    pointerLabelHeight: 110,
                     pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
                       const ponto = data.curva[pointerIndex];
                       if (!ponto) return null;
@@ -1005,6 +1006,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   color2="#E6213D"
                   thickness1={2}
                   thickness2={2}
+                  overflowTop={90}
                   curved
                   width={chartWidth}
                   adjustToWidth
@@ -3107,6 +3109,16 @@ const fnStyles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F2F6',
+  },
+  dashboardListCardRowTitle: {
+    color: '#0C1736',
+    fontSize: 14,
+    fontWeight: '400',
+  },
+  dashboardListCardRowValue: {
+    color: '#0C1736',
+    fontSize: 14,
+    fontWeight: '400',
   },
   filterTriggerButton: {
     flexDirection: 'row',
