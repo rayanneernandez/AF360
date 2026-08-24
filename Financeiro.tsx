@@ -974,7 +974,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#7C5CFC' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel}>
+                <Text style={[fnStyles.kpiLabel, { fontSize: 9 }]}>
                   A receber hoje <Text style={fnStyles.kpiLabelUnidade}>(R$)</Text>
                 </Text>
                 <Text
@@ -992,7 +992,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#E6213D' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel}>
+                <Text style={[fnStyles.kpiLabel, { fontSize: 9 }]}>
                   A pagar hoje <Text style={fnStyles.kpiLabelUnidade}>(R$)</Text>
                 </Text>
                 <Text
@@ -1010,7 +1010,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#2F6FED' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel}>
+                <Text style={[fnStyles.kpiLabel, { fontSize: 9 }]}>
                   Saldo <Text style={fnStyles.kpiLabelUnidade}>(R$)</Text>
                 </Text>
                 <Text
@@ -3611,7 +3611,7 @@ const fnStyles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   kpiLabelUnidade: {
-    fontSize: 8,
+    fontSize: 7,
     fontWeight: '600',
     color: '#B7BECC',
     letterSpacing: 0,
