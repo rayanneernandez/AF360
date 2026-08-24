@@ -62,6 +62,7 @@ import {
   type FinanceiroPostoConfig,
   type FinanceiroContaItem,
   type FinanceiroDashboardData,
+  type FinanceiroPagamentoResumo,
   type FinanceiroFluxoCaixaData,
   type FinanceiroMovimentoItem,
   type FinanceiroConciliacaoResumo,
@@ -242,6 +243,57 @@ function FinanceiroChartLegendDot({ color, label }: { color: string; label: stri
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
       <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
       <Text style={{ fontSize: 11, color: '#5E667D' }}>{label}</Text>
+    </View>
+  );
+}
+
+// Card com cabeçalho (ícone + título + total) e lista rolável por dentro —
+// mesmo formato de duas caixas separadas do web (Pagamentos para hoje /
+// Pagamentos nos próximos 7 dias), só que empilhadas no app.
+function FinanceiroDashboardListCard({
+  icon,
+  title,
+  emptyMessage,
+  items,
+}: {
+  icon: React.ComponentProps<typeof Feather>['name'];
+  title: string;
+  emptyMessage: string;
+  items: FinanceiroPagamentoResumo[];
+}) {
+  const total = items.reduce((acc, item) => acc + item.valor, 0);
+  return (
+    <View style={fnStyles.dashboardListCard}>
+      <View style={fnStyles.dashboardListCardHeader}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+          <Feather name={icon} size={16} color="#C05621" />
+          <Text style={fnStyles.dashboardListCardTitle} numberOfLines={1}>
+            {title}
+          </Text>
+        </View>
+        <Text style={fnStyles.dashboardListCardTotal}>{formatBRL(total)}</Text>
+      </View>
+      {items.length === 0 ? (
+        <FinanceiroEmptyState message={emptyMessage} />
+      ) : (
+        <ScrollView style={fnStyles.dashboardListCardBody} nestedScrollEnabled showsVerticalScrollIndicator>
+          {items.map((item, idx) => (
+            <View key={idx} style={fnStyles.dashboardListCardRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                  {item.descricao}
+                </Text>
+                <Text style={fnStyles.listRowMeta} numberOfLines={1}>
+                  {item.contraparte}
+                  {item.posto ? ` · ${item.posto}` : ''}
+                  {item.vencimento ? ` · Vence ${formatDateIsoBR(item.vencimento) ?? ''}` : ''}
+                </Text>
+              </View>
+              <Text style={fnStyles.listRowValue}>{formatBRL(item.valor)}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -992,46 +1044,19 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
               </View>
             ) : null}
 
-            <Text style={fnStyles.sectionTitle}>Pagamentos e recebimentos de hoje</Text>
-            {data.pagamentosHoje.length === 0 ? (
-              <FinanceiroEmptyState message="Nada previsto para hoje." />
-            ) : (
-              data.pagamentosHoje.map((item, idx) => (
-                <View key={idx} style={fnStyles.listRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={fnStyles.listRowTitle} numberOfLines={1}>
-                      {item.descricao}
-                    </Text>
-                    <Text style={fnStyles.listRowMeta} numberOfLines={1}>
-                      {item.contraparte}
-                      {item.posto ? ` · ${item.posto}` : ''}
-                    </Text>
-                  </View>
-                  <Text style={fnStyles.listRowValue}>{formatBRL(item.valor)}</Text>
-                </View>
-              ))
-            )}
+            <FinanceiroDashboardListCard
+              icon="calendar"
+              title="Pagamentos para hoje"
+              emptyMessage="Nada previsto para hoje."
+              items={data.pagamentosHoje}
+            />
 
-            <Text style={[fnStyles.sectionTitle, { marginTop: 16 }]}>Próximos 7 dias</Text>
-            {data.pagamentos7d.length === 0 ? (
-              <FinanceiroEmptyState message="Nada previsto para os próximos 7 dias." />
-            ) : (
-              data.pagamentos7d.map((item, idx) => (
-                <View key={idx} style={fnStyles.listRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={fnStyles.listRowTitle} numberOfLines={1}>
-                      {item.descricao}
-                    </Text>
-                    <Text style={fnStyles.listRowMeta} numberOfLines={1}>
-                      {item.contraparte}
-                      {item.posto ? ` · ${item.posto}` : ''}
-                      {item.vencimento ? ` · Vence ${formatDateIsoBR(item.vencimento) ?? ''}` : ''}
-                    </Text>
-                  </View>
-                  <Text style={fnStyles.listRowValue}>{formatBRL(item.valor)}</Text>
-                </View>
-              ))
-            )}
+            <FinanceiroDashboardListCard
+              icon="clock"
+              title="Pagamentos nos próximos 7 dias"
+              emptyMessage="Nada previsto para os próximos 7 dias."
+              items={data.pagamentos7d}
+            />
           </>
         )}
       </ScrollView>
@@ -3035,6 +3060,41 @@ const fnStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginTop: 2,
+  },
+  dashboardListCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 12,
+    marginBottom: 14,
+  },
+  dashboardListCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  dashboardListCardTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0C1736',
+  },
+  dashboardListCardTotal: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0C1736',
+  },
+  dashboardListCardBody: {
+    maxHeight: 260,
+  },
+  dashboardListCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F6',
   },
   filterTriggerButton: {
     flexDirection: 'row',
