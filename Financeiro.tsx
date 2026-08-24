@@ -70,6 +70,7 @@ import {
   type FinanceiroDreMes,
   type FinanceiroIaPredicaoItem,
   type FinanceiroProjecoesData,
+  type FinanceiroProjecaoMes,
   type FinanceiroConfigData,
   type FinanceiroNotifRotinaItem,
   type FinanceiroNotifTemplateItem,
@@ -787,6 +788,11 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   const [postoModalOpen, setPostoModalOpen] = useState(false);
   const [curvaPointerIdx, setCurvaPointerIdx] = useState<number | null>(null);
   const [projPointerIdx, setProjPointerIdx] = useState<number | null>(null);
+  // Projeção do dashboard tem horizonte próprio (6 meses, como no web), independente
+  // do filtro Dia/Mês/Ano acima — por isso usa o mesmo recurso "projecoes" já usado
+  // na tela de Projeções, em vez do campo "projecao" do dashboard (que segue a janela
+  // de data do filtro e por isso só trazia 1-2 meses quando o filtro era "Mês").
+  const [projecaoMeses, setProjecaoMeses] = useState<FinanceiroProjecaoMes[]>([]);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -803,6 +809,12 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar o dashboard.')))
       .finally(() => setIsLoading(false));
   }, [periodo, refMes, refAno, postoSelecionado]);
+
+  useEffect(() => {
+    fetchFinanceiroProjecoes({ unidadeIds: postoSelecionado ? [postoSelecionado] : undefined, horizonteMeses: 6 })
+      .then((result) => setProjecaoMeses(result.meses))
+      .catch(() => setProjecaoMeses([]));
+  }, [postoSelecionado]);
 
   const handlePeriodoAnterior = () => {
     if (periodo === 'ano') {
@@ -853,16 +865,16 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
 
   // Com muitos dias no período, um rótulo por ponto vira uma sopa de letrinhas
   // cortadas ("0..0..0.."). Mostramos só ~1 a cada N dias, como no web.
-  const curvaLabelStep = Math.max(1, Math.ceil((data?.curva.length ?? 0) / 10));
+  const curvaLabelStep = Math.max(1, Math.ceil((data?.curva.length ?? 0) / 7));
 
   const projRange = useMemo(() => {
-    const valores = (data?.projecao ?? []).flatMap((p) => [p.faturamento, p.pagamentos]);
+    const valores = projecaoMeses.flatMap((p) => [p.receberPrevisto, p.pagarPrevisto]);
     const max = Math.max(0, ...valores);
     const min = Math.min(0, ...valores);
     const maxComFolga = max > 0 ? max * 1.1 : 1;
     const offset = min < 0 ? min * 1.1 : 0;
     return { max: maxComFolga - offset, offset };
-  }, [data]);
+  }, [projecaoMeses]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -988,10 +1000,11 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   height={140}
                   noOfSections={4}
                   rotateLabel
-                  xAxisLabelsHeight={34}
-                  xAxisLabelsVerticalShift={2}
+                  xAxisLabelsHeight={46}
+                  xAxisLabelsVerticalShift={4}
+                  labelsExtraHeight={40}
                   yAxisTextStyle={{ color: '#8891A6', fontSize: 9 }}
-                  xAxisLabelTextStyle={{ color: '#8891A6', fontSize: 8 }}
+                  xAxisLabelTextStyle={{ color: '#5E667D', fontSize: 10, fontWeight: '600' }}
                   xAxisColor="#E2E6F0"
                   yAxisColor="#E2E6F0"
                   rulesColor="#F1F2F6"
@@ -1036,17 +1049,17 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
               </View>
             ) : null}
 
-            {data.projecao.length > 0 ? (
+            {projecaoMeses.length > 0 ? (
               <View style={fnStyles.chartCard}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Feather name="activity" size={14} color="#C05621" />
                   <Text style={fnStyles.sectionTitle}>Projeção</Text>
                 </View>
-                <Text style={fnStyles.chartSubtitle}>Títulos já lançados com vencimento nos próximos meses.</Text>
+                <Text style={fnStyles.chartSubtitle}>Previsão de recebimentos e pagamentos nos próximos 6 meses.</Text>
 
                 <LineChart
-                  data={data.projecao.map((p) => ({ value: p.faturamento, label: p.periodo }))}
-                  data2={data.projecao.map((p) => ({ value: p.pagamentos }))}
+                  data={projecaoMeses.map((p) => ({ value: p.receberPrevisto, label: p.label }))}
+                  data2={projecaoMeses.map((p) => ({ value: p.pagarPrevisto }))}
                   color1="#2F6FED"
                   color2="#E6213D"
                   thickness1={2}
@@ -1060,8 +1073,12 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   endSpacing={8}
                   height={140}
                   noOfSections={4}
+                  rotateLabel
+                  xAxisLabelsHeight={46}
+                  xAxisLabelsVerticalShift={4}
+                  labelsExtraHeight={40}
                   yAxisTextStyle={{ color: '#8891A6', fontSize: 9 }}
-                  xAxisLabelTextStyle={{ color: '#8891A6', fontSize: 8 }}
+                  xAxisLabelTextStyle={{ color: '#5E667D', fontSize: 10, fontWeight: '600' }}
                   xAxisColor="#E2E6F0"
                   yAxisColor="#E2E6F0"
                   rulesColor="#F1F2F6"
@@ -1085,14 +1102,14 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   <FinanceiroChartLegendDot color="#2F6FED" label="A receber" />
                   <FinanceiroChartLegendDot color="#E6213D" label="A pagar" />
                 </View>
-                {projPointerIdx !== null && data.projecao[projPointerIdx] ? (
+                {projPointerIdx !== null && projecaoMeses[projPointerIdx] ? (
                   <View style={fnStyles.chartTooltip}>
-                    <Text style={fnStyles.chartTooltipDate}>{data.projecao[projPointerIdx].periodo}</Text>
+                    <Text style={fnStyles.chartTooltipDate}>{projecaoMeses[projPointerIdx].label}</Text>
                     <Text style={[fnStyles.chartTooltipLine, { color: '#2F6FED' }]}>
-                      A receber: {formatBRL(data.projecao[projPointerIdx].faturamento)}
+                      A receber: {formatBRL(projecaoMeses[projPointerIdx].receberPrevisto)}
                     </Text>
                     <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>
-                      A pagar: {formatBRL(data.projecao[projPointerIdx].pagamentos)}
+                      A pagar: {formatBRL(projecaoMeses[projPointerIdx].pagarPrevisto)}
                     </Text>
                   </View>
                 ) : (
