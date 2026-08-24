@@ -205,6 +205,13 @@ function financeiroPeriodoParaDatas(periodo: 'hoje' | '7dias' | 'mes' | 'ano'): 
 
 // Rótulo compacto pro eixo Y dos gráficos (evita números longos tipo
 // "-22.155.656,68" espremidos na lateral do gráfico).
+// Mesmo valor de formatBRL, mas sem o prefixo "R$" — usado nos 3 cards do topo do
+// Dashboard, onde o "R$" vai junto do rótulo (ex.: "A receber hoje (R$)") pra sobrar
+// mais espaço/fonte maior pro número em si.
+function formatBRLValor(value: number | null | undefined): string {
+  return formatBRL(value).replace(/R\$\s?/, '').trim();
+}
+
 function formatBRLCompact(value: number): string {
   const abs = Math.abs(value);
   const sinal = value < 0 ? '-' : '';
@@ -954,14 +961,14 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#7C5CFC' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel}>A receber hoje</Text>
+                <Text style={fnStyles.kpiLabel}>A receber hoje (R$)</Text>
                 <Text
-                  style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 15 }]}
+                  style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 18 }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.75}
                 >
-                  {formatBRL(data.receberHoje)}
+                  {formatBRLValor(data.receberHoje)}
                 </Text>
               </View>
               <View
@@ -970,14 +977,14 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#E6213D' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel}>A pagar hoje</Text>
+                <Text style={fnStyles.kpiLabel}>A pagar hoje (R$)</Text>
                 <Text
-                  style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: 15 }]}
+                  style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: 18 }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.75}
                 >
-                  {formatBRL(data.pagarHoje)}
+                  {formatBRLValor(data.pagarHoje)}
                 </Text>
               </View>
               <View
@@ -986,14 +993,14 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#2F6FED' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel}>Saldo</Text>
+                <Text style={fnStyles.kpiLabel}>Saldo (R$)</Text>
                 <Text
-                  style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D', fontSize: 15 }]}
+                  style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D', fontSize: 18 }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.75}
                 >
-                  {formatBRL(saldoHoje)}
+                  {formatBRLValor(saldoHoje)}
                 </Text>
               </View>
             </View>
