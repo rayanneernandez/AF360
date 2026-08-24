@@ -1446,13 +1446,16 @@ export function FinanceiroContasAReceberScreen({ navigation }: ScreenProps<'Fina
 }
 
 export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'FinanceiroFluxoCaixa'>) {
+  const now = new Date();
   const [data, setData] = useState<FinanceiroFluxoCaixaData | null>(null);
   const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
-  const [periodo, setPeriodo] = useState<'hoje' | 'mes' | 'ano'>('mes');
+  const [periodo, setPeriodo] = useState<'dia' | 'mes' | 'ano'>('mes');
+  const [refMes, setRefMes] = useState(now.getMonth() + 1);
+  const [refAno, setRefAno] = useState(now.getFullYear());
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -1463,14 +1466,44 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
+    const { dataInicial, dataFinal } = financeiroDashboardPeriodoDatas(periodo, refMes, refAno);
     fetchFinanceiroFluxoCaixa({
-      ...financeiroPeriodoParaDatas(periodo),
+      dataInicial,
+      dataFinal,
       unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
     })
       .then(setData)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar o fluxo de caixa.')))
       .finally(() => setIsLoading(false));
-  }, [periodo, postoSelecionado]);
+  }, [periodo, refMes, refAno, postoSelecionado]);
+
+  const handlePeriodoAnterior = () => {
+    if (periodo === 'ano') {
+      setRefAno((a) => a - 1);
+      return;
+    }
+    if (refMes === 1) {
+      setRefMes(12);
+      setRefAno((a) => a - 1);
+    } else {
+      setRefMes((m) => m - 1);
+    }
+  };
+  const handlePeriodoProximo = () => {
+    if (periodo === 'ano') {
+      setRefAno((a) => a + 1);
+      return;
+    }
+    if (refMes === 12) {
+      setRefMes(1);
+      setRefAno((a) => a + 1);
+    } else {
+      setRefMes((m) => m + 1);
+    }
+  };
+
+  const periodoLabel = periodo === 'ano' ? String(refAno) : periodo === 'dia' ? 'Hoje' : `${financeiroMesesNomes[refMes - 1]} / ${refAno}`;
+  const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
 
   const saldoPeriodo = (data?.entradasPeriodo ?? 0) - (data?.saidasPeriodo ?? 0);
   const saldoFinal = data?.extrato.length ? data.extrato[data.extrato.length - 1].saldoAcumulado : 0;
@@ -1488,10 +1521,40 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
           subtitle="Entradas, saídas e saldo diário consolidado da rede."
         />
 
-        <FinanceiroFilterTriggerButton
-          onPress={() => setFiltersOpen(true)}
-          activeCount={(postoSelecionado ? 1 : 0) + (periodo !== 'mes' ? 1 : 0)}
-        />
+        <View style={fnStyles.filterSegmentRow}>
+          {(['dia', 'mes', 'ano'] as const).map((opt) => {
+            const isActive = periodo === opt;
+            const label = opt === 'dia' ? 'Dia' : opt === 'mes' ? 'Mês' : 'Ano';
+            return (
+              <Pressable
+                key={opt}
+                style={[fnStyles.filterSegmentButton, isActive ? fnStyles.filterSegmentButtonActive : null]}
+                onPress={() => setPeriodo(opt)}
+              >
+                <Text style={[fnStyles.filterSegmentText, isActive ? fnStyles.filterSegmentTextActive : null]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {periodo !== 'dia' ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 10 }}>
+            <Pressable onPress={handlePeriodoAnterior} style={fnStyles.monthNavButton}>
+              <Feather name="chevron-left" size={18} color="#5E667D" />
+            </Pressable>
+            <Text style={fnStyles.monthLabel}>{periodoLabel}</Text>
+            <Pressable onPress={handlePeriodoProximo} style={fnStyles.monthNavButton}>
+              <Feather name="chevron-right" size={18} color="#5E667D" />
+            </Pressable>
+          </View>
+        ) : null}
+
+        <Pressable style={[fnStyles.postoSelectButton, { marginBottom: 12 }]} onPress={() => setPostoModalOpen(true)}>
+          <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+            {postoLabel}
+          </Text>
+          <Feather name="chevron-down" size={16} color="#5E667D" />
+        </Pressable>
 
         {isLoading ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
@@ -1501,22 +1564,45 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
           <FinanceiroEmptyState message="Sem dados para o período." />
         ) : (
           <>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                <Text style={fnStyles.kpiLabel}>Entradas</Text>
-                <Text style={[fnStyles.kpiValue, { color: '#18955A' }]}>{formatBRL(data.entradasPeriodo)}</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' }]}>
+                <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                  Entradas
+                </Text>
+                <Text style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                  {formatBRL(data.entradasPeriodo)}
+                </Text>
               </View>
-              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                <Text style={fnStyles.kpiLabel}>Saídas</Text>
-                <Text style={[fnStyles.kpiValue, { color: '#E6213D' }]}>{formatBRL(data.saidasPeriodo)}</Text>
+              <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' }]}>
+                <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                  Saídas
+                </Text>
+                <Text style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                  {formatBRL(data.saidasPeriodo)}
+                </Text>
               </View>
-              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                <Text style={fnStyles.kpiLabel}>Saldo do período</Text>
-                <Text style={[fnStyles.kpiValue, { color: saldoPeriodo >= 0 ? '#18955A' : '#E6213D' }]}>{formatBRL(saldoPeriodo)}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' }]}>
+                <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                  Saldo do período
+                </Text>
+                <Text
+                  style={[fnStyles.kpiValue, { color: saldoPeriodo >= 0 ? '#18955A' : '#E6213D', fontSize: 15 }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
+                  {formatBRL(saldoPeriodo)}
+                </Text>
               </View>
-              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                <Text style={fnStyles.kpiLabel}>Saldo acumulado</Text>
-                <Text style={fnStyles.kpiValue}>{formatBRL(saldoFinal)}</Text>
+              <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' }]}>
+                <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                  Saldo acumulado
+                </Text>
+                <Text style={[fnStyles.kpiValue, { fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                  {formatBRL(saldoFinal)}
+                </Text>
               </View>
             </View>
 
@@ -1559,17 +1645,7 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
         )}
       </ScrollView>
 
-      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
-        <FinanceiroFilterSectionTitle label="Período" />
-        {(['hoje', 'mes', 'ano'] as const).map((opt) => (
-          <FinanceiroFilterOptionRow
-            key={opt}
-            label={opt === 'hoje' ? 'Hoje' : opt === 'mes' ? 'Este mês' : 'Este ano'}
-            active={periodo === opt}
-            onPress={() => setPeriodo(opt)}
-          />
-        ))}
-        <FinanceiroFilterSectionTitle label="Posto" />
+      <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
         <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
       </FinanceiroFilterModal>
     </SafeAreaView>
