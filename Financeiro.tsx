@@ -784,6 +784,10 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   const now = new Date();
   const { width: windowWidth } = useWindowDimensions();
   const chartWidth = Math.max(220, windowWidth - 40 - 24 - 32);
+  // A biblioteca soma o "yAxisLabelWidth" (a coluna de números da esquerda) por
+  // cima da "width" que a gente passa — então o desenho ficava mais largo que o
+  // card e o último ponto/bolinha vazava pela borda direita. Descontamos aqui.
+  const chartPlotWidth = Math.max(160, chartWidth - 44);
   const [data, setData] = useState<FinanceiroDashboardData | null>(null);
   const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
@@ -1049,7 +1053,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   maxValue={curvaRange.max}
                   yAxisOffset={curvaRange.offset}
                   curved
-                  width={chartWidth}
+                  width={chartPlotWidth}
                   adjustToWidth
                   initialSpacing={8}
                   endSpacing={8}
@@ -1147,7 +1151,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   maxValue={projRange.max}
                   yAxisOffset={projRange.offset}
                   curved
-                  width={chartWidth}
+                  width={chartPlotWidth}
                   adjustToWidth
                   initialSpacing={8}
                   endSpacing={8}
