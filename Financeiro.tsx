@@ -975,7 +975,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
               <View
                 style={[
                   fnStyles.kpiCard,
-                  { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#7C5CFC' },
+                  { flex: 1, minWidth: 0, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#7C5CFC' },
                 ]}
               >
                 <Text style={[fnStyles.kpiLabel, { fontSize: 9 }]}>
@@ -993,7 +993,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
               <View
                 style={[
                   fnStyles.kpiCard,
-                  { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#E6213D' },
+                  { flex: 1, minWidth: 0, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#E6213D' },
                 ]}
               >
                 <Text style={[fnStyles.kpiLabel, { fontSize: 9 }]}>
@@ -1011,7 +1011,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
               <View
                 style={[
                   fnStyles.kpiCard,
-                  { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#2F6FED' },
+                  { flex: 1, minWidth: 0, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#2F6FED' },
                 ]}
               >
                 <Text style={[fnStyles.kpiLabel, { fontSize: 9 }]}>
@@ -1251,7 +1251,8 @@ function FinanceiroContasScreenBase({
   const [busca, setBusca] = useState('');
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<'hoje' | '7dias' | 'mes'>('7dias');
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
+  const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -1322,10 +1323,27 @@ function FinanceiroContasScreenBase({
           }
         />
 
-        <FinanceiroFilterTriggerButton
-          onPress={() => setFiltersOpen(true)}
-          activeCount={(postoSelecionado ? 1 : 0) + (periodo !== '7dias' ? 1 : 0)}
-        />
+        <View style={fnStyles.filterSegmentRow}>
+          {financeiroContasPeriodoOptions.map((opt) => (
+            <Pressable
+              key={opt.value}
+              style={[fnStyles.filterSegmentButton, periodo === opt.value ? fnStyles.filterSegmentButtonActive : null]}
+              onPress={() => setPeriodo(opt.value)}
+            >
+              <Text style={[fnStyles.filterSegmentText, periodo === opt.value ? fnStyles.filterSegmentTextActive : null]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Pressable style={[fnStyles.postoSelectButton, { marginBottom: 10 }]} onPress={() => setPostoModalOpen(true)}>
+          <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+            {postoLabel}
+          </Text>
+          <Feather name="chevron-down" size={16} color="#5E667D" />
+        </Pressable>
+
         <FinanceiroSearchInput
           value={busca}
           onChangeText={setBusca}
@@ -1333,7 +1351,7 @@ function FinanceiroContasScreenBase({
         />
 
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-          <View style={[fnStyles.kpiCard, { flex: 1, paddingHorizontal: 8 }]}>
+          <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, paddingHorizontal: 8 }]}>
             <Text style={fnStyles.kpiLabel} numberOfLines={1}>
               {tipo === 'pagar' ? 'Total a pagar' : 'Total a receber'}
             </Text>
@@ -1341,7 +1359,7 @@ function FinanceiroContasScreenBase({
               {formatBRL(totalValor)}
             </Text>
           </View>
-          <View style={[fnStyles.kpiCard, { flex: 1, paddingHorizontal: 8 }]}>
+          <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, paddingHorizontal: 8 }]}>
             <Text style={fnStyles.kpiLabel} numberOfLines={1}>
               Em aberto
             </Text>
@@ -1349,7 +1367,7 @@ function FinanceiroContasScreenBase({
               {formatBRL(emAbertoValor)}
             </Text>
           </View>
-          <View style={[fnStyles.kpiCard, { flex: 1, paddingHorizontal: 8 }]}>
+          <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, paddingHorizontal: 8 }]}>
             <Text style={[fnStyles.kpiLabel, { color: '#E6213D' }]} numberOfLines={1}>
               Vencidos
             </Text>
@@ -1412,17 +1430,7 @@ function FinanceiroContasScreenBase({
         )}
       </ScrollView>
 
-      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
-        <FinanceiroFilterSectionTitle label="Período" />
-        {financeiroContasPeriodoOptions.map((opt) => (
-          <FinanceiroFilterOptionRow
-            key={opt.value}
-            label={opt.label}
-            active={periodo === opt.value}
-            onPress={() => setPeriodo(opt.value)}
-          />
-        ))}
-        <FinanceiroFilterSectionTitle label="Posto" />
+      <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
         <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
       </FinanceiroFilterModal>
     </SafeAreaView>
