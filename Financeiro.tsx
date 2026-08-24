@@ -276,14 +276,15 @@ function FinanceiroDashboardListCard({
   return (
     <View style={fnStyles.dashboardListCard}>
       <View style={fnStyles.dashboardListCardHeader}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Feather name={icon} size={16} color="#C05621" />
-          <Text style={fnStyles.dashboardListCardTitle} numberOfLines={1}>
-            {title}
-          </Text>
+          <Text style={fnStyles.dashboardListCardTitle}>{title}</Text>
         </View>
-        <Text style={fnStyles.dashboardListCardTotal}>{formatBRL(total)}</Text>
+        <Text style={fnStyles.dashboardListCardTotal} numberOfLines={1}>
+          {formatBRL(total)}
+        </Text>
       </View>
+      <View style={fnStyles.dashboardListCardDivider} />
       {items.length === 0 ? (
         <FinanceiroEmptyState message={emptyMessage} />
       ) : (
@@ -784,6 +785,8 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [postoModalOpen, setPostoModalOpen] = useState(false);
+  const [curvaPointerIdx, setCurvaPointerIdx] = useState<number | null>(null);
+  const [projPointerIdx, setProjPointerIdx] = useState<number | null>(null);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -967,19 +970,11 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                     radius: 5,
                     activatePointersInstantlyOnTouch: true,
                     persistPointer: true,
-                    pointerLabelWidth: 190,
-                    pointerLabelHeight: 110,
                     pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
-                      const ponto = data.curva[pointerIndex];
-                      if (!ponto) return null;
-                      return (
-                        <View style={fnStyles.chartTooltip}>
-                          <Text style={fnStyles.chartTooltipDate}>{ponto.periodo}</Text>
-                          <Text style={[fnStyles.chartTooltipLine, { color: '#18955A' }]}>Recebimentos: {formatBRL(ponto.recebimentos)}</Text>
-                          <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>Pagamentos: {formatBRL(ponto.pagamentos)}</Text>
-                          <Text style={[fnStyles.chartTooltipLine, { color: '#C05621' }]}>Saldo: {formatBRL(ponto.saldo)}</Text>
-                        </View>
-                      );
+                      // Não renderiza balão flutuante (fica cortado pelo container do gráfico).
+                      // Só atualiza o painel fixo abaixo do gráfico.
+                      setTimeout(() => setCurvaPointerIdx(pointerIndex), 0);
+                      return null;
                     },
                   }}
                 />
@@ -988,6 +983,22 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   <FinanceiroChartLegendDot color="#E6213D" label="Pagamentos" />
                   <FinanceiroChartLegendDot color="#C05621" label="Saldo" />
                 </View>
+                {curvaPointerIdx !== null && data.curva[curvaPointerIdx] ? (
+                  <View style={fnStyles.chartTooltip}>
+                    <Text style={fnStyles.chartTooltipDate}>{data.curva[curvaPointerIdx].periodo}</Text>
+                    <Text style={[fnStyles.chartTooltipLine, { color: '#18955A' }]}>
+                      Recebimentos: {formatBRL(data.curva[curvaPointerIdx].recebimentos)}
+                    </Text>
+                    <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>
+                      Pagamentos: {formatBRL(data.curva[curvaPointerIdx].pagamentos)}
+                    </Text>
+                    <Text style={[fnStyles.chartTooltipLine, { color: '#C05621' }]}>
+                      Saldo: {formatBRL(data.curva[curvaPointerIdx].saldo)}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={fnStyles.chartSubtitle}>Toque em um ponto da linha para ver os valores aqui.</Text>
+                )}
               </View>
             ) : null}
 
@@ -1028,18 +1039,10 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                     radius: 5,
                     activatePointersInstantlyOnTouch: true,
                     persistPointer: true,
-                    pointerLabelWidth: 170,
-                    pointerLabelHeight: 90,
                     pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
-                      const ponto = data.projecao[pointerIndex];
-                      if (!ponto) return null;
-                      return (
-                        <View style={fnStyles.chartTooltip}>
-                          <Text style={fnStyles.chartTooltipDate}>{ponto.periodo}</Text>
-                          <Text style={[fnStyles.chartTooltipLine, { color: '#2F6FED' }]}>A receber: {formatBRL(ponto.faturamento)}</Text>
-                          <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>A pagar: {formatBRL(ponto.pagamentos)}</Text>
-                        </View>
-                      );
+                      // Painel fixo abaixo do gráfico em vez de balão flutuante (evita corte).
+                      setTimeout(() => setProjPointerIdx(pointerIndex), 0);
+                      return null;
                     },
                   }}
                 />
@@ -1047,6 +1050,19 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   <FinanceiroChartLegendDot color="#2F6FED" label="A receber" />
                   <FinanceiroChartLegendDot color="#E6213D" label="A pagar" />
                 </View>
+                {projPointerIdx !== null && data.projecao[projPointerIdx] ? (
+                  <View style={fnStyles.chartTooltip}>
+                    <Text style={fnStyles.chartTooltipDate}>{data.projecao[projPointerIdx].periodo}</Text>
+                    <Text style={[fnStyles.chartTooltipLine, { color: '#2F6FED' }]}>
+                      A receber: {formatBRL(data.projecao[projPointerIdx].faturamento)}
+                    </Text>
+                    <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>
+                      A pagar: {formatBRL(data.projecao[projPointerIdx].pagamentos)}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={fnStyles.chartSubtitle}>Toque em um ponto da linha para ver os valores aqui.</Text>
+                )}
               </View>
             ) : null}
 
@@ -3084,9 +3100,8 @@ const fnStyles = StyleSheet.create({
     marginBottom: 14,
   },
   dashboardListCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
+    gap: 4,
     marginBottom: 8,
   },
   dashboardListCardTitle: {
@@ -3095,9 +3110,15 @@ const fnStyles = StyleSheet.create({
     color: '#0C1736',
   },
   dashboardListCardTotal: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '800',
     color: '#0C1736',
+    alignSelf: 'flex-end',
+  },
+  dashboardListCardDivider: {
+    height: 1,
+    backgroundColor: '#F1F2F6',
+    marginBottom: 6,
   },
   dashboardListCardBody: {
     maxHeight: 260,
