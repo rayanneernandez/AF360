@@ -200,6 +200,29 @@ function financeiroPeriodoParaDatas(periodo: 'hoje' | '7dias' | 'mes' | 'ano'): 
   return { dataInicial: toIsoDate(inicioMes), dataFinal: toIsoDate(fimMes) };
 }
 
+const financeiroMesesNomes = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+// Dia/Mês/Ano com navegação de período (como no web) — usado no Dashboard.
+function financeiroDashboardPeriodoDatas(
+  periodo: 'dia' | 'mes' | 'ano',
+  refMes: number,
+  refAno: number
+): { dataInicial: string; dataFinal: string } {
+  if (periodo === 'dia') {
+    const iso = toIsoDate(new Date());
+    return { dataInicial: iso, dataFinal: iso };
+  }
+  if (periodo === 'ano') {
+    return { dataInicial: `${refAno}-01-01`, dataFinal: `${refAno}-12-31` };
+  }
+  const inicio = new Date(refAno, refMes - 1, 1);
+  const fim = new Date(refAno, refMes, 0);
+  return { dataInicial: toIsoDate(inicio), dataFinal: toIsoDate(fim) };
+}
+
 function showFinanceiroError(err: unknown, fallback: string) {
   const message = err instanceof Error ? err.message : fallback;
   // eslint-disable-next-line no-alert -- mesmo padrão de showRhSaveError (RH.tsx): Alert.alert já é usado direto nas telas que chamam isso.
@@ -210,6 +233,15 @@ function FinanceiroEmptyState({ message }: { message: string }) {
   return (
     <View style={fnStyles.emptyCard}>
       <Text style={fnStyles.emptyText}>{message}</Text>
+    </View>
+  );
+}
+
+function FinanceiroChartLegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
+      <Text style={{ fontSize: 11, color: '#5E667D' }}>{label}</Text>
     </View>
   );
 }
@@ -677,12 +709,18 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
 }
 
 export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'FinanceiroDashboard'>) {
+  const now = new Date();
   const [data, setData] = useState<FinanceiroDashboardData | null>(null);
   const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [periodo, setPeriodo] = useState<'dia' | 'mes' | 'ano'>('mes');
+  const [refMes, setRefMes] = useState(now.getMonth() + 1);
+  const [refAno, setRefAno] = useState(now.getFullYear());
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
+  const [curvaSelIdx, setCurvaSelIdx] = useState<number | null>(null);
+  const [projSelIdx, setProjSelIdx] = useState<number | null>(null);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -693,14 +731,48 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroDashboard({ unidadeIds: postoSelecionado ? [postoSelecionado] : undefined })
-      .then(setData)
+    const { dataInicial, dataFinal } = financeiroDashboardPeriodoDatas(periodo, refMes, refAno);
+    fetchFinanceiroDashboard({ dataInicial, dataFinal, unidadeIds: postoSelecionado ? [postoSelecionado] : undefined })
+      .then((result) => {
+        setData(result);
+        setCurvaSelIdx(null);
+        setProjSelIdx(null);
+      })
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar o dashboard.')))
       .finally(() => setIsLoading(false));
-  }, [postoSelecionado]);
+  }, [periodo, refMes, refAno, postoSelecionado]);
+
+  const handlePeriodoAnterior = () => {
+    if (periodo === 'ano') {
+      setRefAno((a) => a - 1);
+      return;
+    }
+    if (refMes === 1) {
+      setRefMes(12);
+      setRefAno((a) => a - 1);
+    } else {
+      setRefMes((m) => m - 1);
+    }
+  };
+  const handlePeriodoProximo = () => {
+    if (periodo === 'ano') {
+      setRefAno((a) => a + 1);
+      return;
+    }
+    if (refMes === 12) {
+      setRefMes(1);
+      setRefAno((a) => a + 1);
+    } else {
+      setRefMes((m) => m + 1);
+    }
+  };
+
+  const periodoLabel = periodo === 'ano' ? String(refAno) : periodo === 'dia' ? 'Hoje' : `${financeiroMesesNomes[refMes - 1]} / ${refAno}`;
+  const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
 
   const saldoHoje = (data?.receberHoje ?? 0) - (data?.pagarHoje ?? 0);
   const maxCurva = Math.max(1, ...(data?.curva.map((p) => Math.max(p.recebimentos, p.pagamentos)) ?? [1]));
+  const maxProjecao = Math.max(1, ...(data?.projecao.map((p) => Math.max(p.faturamento, p.pagamentos)) ?? [1]));
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -715,7 +787,40 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
           subtitle="Contas a receber, contas a pagar, saldo e projeções da rede."
         />
 
-        <FinanceiroFilterTriggerButton onPress={() => setFiltersOpen(true)} activeCount={postoSelecionado ? 1 : 0} />
+        <View style={fnStyles.filterSegmentRow}>
+          {(['dia', 'mes', 'ano'] as const).map((opt) => {
+            const isActive = periodo === opt;
+            const label = opt === 'dia' ? 'Dia' : opt === 'mes' ? 'Mês' : 'Ano';
+            return (
+              <Pressable
+                key={opt}
+                style={[fnStyles.filterSegmentButton, isActive ? fnStyles.filterSegmentButtonActive : null]}
+                onPress={() => setPeriodo(opt)}
+              >
+                <Text style={[fnStyles.filterSegmentText, isActive ? fnStyles.filterSegmentTextActive : null]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {periodo !== 'dia' ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 10 }}>
+            <Pressable onPress={handlePeriodoAnterior} style={fnStyles.monthNavButton}>
+              <Feather name="chevron-left" size={18} color="#5E667D" />
+            </Pressable>
+            <Text style={fnStyles.monthLabel}>{periodoLabel}</Text>
+            <Pressable onPress={handlePeriodoProximo} style={fnStyles.monthNavButton}>
+              <Feather name="chevron-right" size={18} color="#5E667D" />
+            </Pressable>
+          </View>
+        ) : null}
+
+        <Pressable style={fnStyles.postoSelectButton} onPress={() => setPostoModalOpen(true)}>
+          <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+            {postoLabel}
+          </Text>
+          <Feather name="chevron-down" size={16} color="#5E667D" />
+        </Pressable>
 
         {isLoading ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
@@ -725,60 +830,164 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
           <FinanceiroEmptyState message="Sem dados para o período." />
         ) : (
           <>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              <View style={[fnStyles.kpiCard, { flex: 1 }]}>
                 <Text style={fnStyles.kpiLabel}>A receber hoje</Text>
-                <Text style={[fnStyles.kpiValue, { color: '#18955A' }]}>{formatBRL(data.receberHoje)}</Text>
+                <Text
+                  style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 13 }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
+                  {formatBRL(data.receberHoje)}
+                </Text>
               </View>
-              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
+              <View style={[fnStyles.kpiCard, { flex: 1 }]}>
                 <Text style={fnStyles.kpiLabel}>A pagar hoje</Text>
-                <Text style={[fnStyles.kpiValue, { color: '#E6213D' }]}>{formatBRL(data.pagarHoje)}</Text>
+                <Text
+                  style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: 13 }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
+                  {formatBRL(data.pagarHoje)}
+                </Text>
               </View>
-              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '100%' }]}>
-                <Text style={fnStyles.kpiLabel}>Saldo projetado do dia</Text>
-                <Text style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D' }]}>{formatBRL(saldoHoje)}</Text>
+              <View style={[fnStyles.kpiCard, { flex: 1 }]}>
+                <Text style={fnStyles.kpiLabel}>Saldo do dia</Text>
+                <Text
+                  style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D', fontSize: 13 }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
+                  {formatBRL(saldoHoje)}
+                </Text>
               </View>
             </View>
 
             {data.curva.length > 0 ? (
               <View style={{ marginBottom: 20 }}>
                 <Text style={fnStyles.sectionTitle}>Curva financeira</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 120, paddingTop: 8 }}>
-                  {data.curva.map((ponto, idx) => (
-                    <View key={`${ponto.periodo}-${idx}`} style={{ flex: 1, alignItems: 'center' }}>
-                      <View style={{ width: '100%', flexDirection: 'row', gap: 2, alignItems: 'flex-end', height: 90 }}>
-                        <View
-                          style={{
-                            flex: 1,
-                            height: Math.max(4, (ponto.recebimentos / maxCurva) * 90),
-                            backgroundColor: '#18955A',
-                            borderRadius: 3,
-                          }}
-                        />
-                        <View
-                          style={{
-                            flex: 1,
-                            height: Math.max(4, (ponto.pagamentos / maxCurva) * 90),
-                            backgroundColor: '#E6213D',
-                            borderRadius: 3,
-                          }}
-                        />
-                      </View>
-                      <Text style={{ fontSize: 9, color: '#8891A6', marginTop: 4 }} numberOfLines={1}>
-                        {ponto.periodo}
-                      </Text>
-                    </View>
-                  ))}
+                <Text style={fnStyles.chartSubtitle}>Recebimentos, pagamentos e saldo no período — toque numa coluna para ver os valores.</Text>
+
+                {curvaSelIdx !== null && data.curva[curvaSelIdx] ? (
+                  <View style={fnStyles.chartTooltip}>
+                    <Text style={fnStyles.chartTooltipDate}>{data.curva[curvaSelIdx].periodo}</Text>
+                    <Text style={[fnStyles.chartTooltipLine, { color: '#18955A' }]}>
+                      Recebimentos: {formatBRL(data.curva[curvaSelIdx].recebimentos)}
+                    </Text>
+                    <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>
+                      Pagamentos: {formatBRL(data.curva[curvaSelIdx].pagamentos)}
+                    </Text>
+                    <Text style={[fnStyles.chartTooltipLine, { color: '#C05621' }]}>
+                      Saldo: {formatBRL(data.curva[curvaSelIdx].saldo)}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 120, paddingTop: 8 }}>
+                  {data.curva.map((ponto, idx) => {
+                    const isSel = idx === curvaSelIdx;
+                    return (
+                      <Pressable
+                        key={`${ponto.periodo}-${idx}`}
+                        style={{ flex: 1, alignItems: 'center' }}
+                        onPress={() => setCurvaSelIdx(isSel ? null : idx)}
+                      >
+                        <View style={{ width: '100%', flexDirection: 'row', gap: 2, alignItems: 'flex-end', height: 90 }}>
+                          <View
+                            style={{
+                              flex: 1,
+                              height: Math.max(4, (ponto.recebimentos / maxCurva) * 90),
+                              backgroundColor: isSel ? '#0F7A44' : '#18955A',
+                              borderRadius: 3,
+                            }}
+                          />
+                          <View
+                            style={{
+                              flex: 1,
+                              height: Math.max(4, (ponto.pagamentos / maxCurva) * 90),
+                              backgroundColor: isSel ? '#B71C33' : '#E6213D',
+                              borderRadius: 3,
+                            }}
+                          />
+                        </View>
+                        <Text
+                          style={{ fontSize: 9, color: isSel ? '#0C1736' : '#8891A6', marginTop: 4, fontWeight: isSel ? '800' : '400' }}
+                          numberOfLines={1}
+                        >
+                          {ponto.periodo}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
-                <View style={{ flexDirection: 'row', gap: 16, marginTop: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#18955A' }} />
-                    <Text style={{ fontSize: 11, color: '#5E667D' }}>Recebimentos</Text>
+                <View style={{ flexDirection: 'row', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
+                  <FinanceiroChartLegendDot color="#18955A" label="Recebimentos" />
+                  <FinanceiroChartLegendDot color="#E6213D" label="Pagamentos" />
+                  <FinanceiroChartLegendDot color="#C05621" label="Saldo (toque na coluna)" />
+                </View>
+              </View>
+            ) : null}
+
+            {data.projecao.length > 0 ? (
+              <View style={{ marginBottom: 20 }}>
+                <Text style={fnStyles.sectionTitle}>Projeção</Text>
+                <Text style={fnStyles.chartSubtitle}>Títulos já lançados com vencimento nos próximos meses.</Text>
+
+                {projSelIdx !== null && data.projecao[projSelIdx] ? (
+                  <View style={fnStyles.chartTooltip}>
+                    <Text style={fnStyles.chartTooltipDate}>{data.projecao[projSelIdx].periodo}</Text>
+                    <Text style={[fnStyles.chartTooltipLine, { color: '#2F6FED' }]}>
+                      A receber: {formatBRL(data.projecao[projSelIdx].faturamento)}
+                    </Text>
+                    <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>
+                      A pagar: {formatBRL(data.projecao[projSelIdx].pagamentos)}
+                    </Text>
                   </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#E6213D' }} />
-                    <Text style={{ fontSize: 11, color: '#5E667D' }}>Pagamentos</Text>
-                  </View>
+                ) : null}
+
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 120, paddingTop: 8 }}>
+                  {data.projecao.map((ponto, idx) => {
+                    const isSel = idx === projSelIdx;
+                    return (
+                      <Pressable
+                        key={`${ponto.periodo}-${idx}`}
+                        style={{ flex: 1, alignItems: 'center' }}
+                        onPress={() => setProjSelIdx(isSel ? null : idx)}
+                      >
+                        <View style={{ width: '100%', flexDirection: 'row', gap: 2, alignItems: 'flex-end', height: 90 }}>
+                          <View
+                            style={{
+                              flex: 1,
+                              height: Math.max(4, (ponto.faturamento / maxProjecao) * 90),
+                              backgroundColor: isSel ? '#1D4FBE' : '#2F6FED',
+                              borderRadius: 3,
+                            }}
+                          />
+                          <View
+                            style={{
+                              flex: 1,
+                              height: Math.max(4, (ponto.pagamentos / maxProjecao) * 90),
+                              backgroundColor: isSel ? '#B71C33' : '#E6213D',
+                              borderRadius: 3,
+                            }}
+                          />
+                        </View>
+                        <Text
+                          style={{ fontSize: 9, color: isSel ? '#0C1736' : '#8891A6', marginTop: 4, fontWeight: isSel ? '800' : '400' }}
+                          numberOfLines={1}
+                        >
+                          {ponto.periodo}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <View style={{ flexDirection: 'row', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
+                  <FinanceiroChartLegendDot color="#2F6FED" label="A receber" />
+                  <FinanceiroChartLegendDot color="#E6213D" label="A pagar" />
                 </View>
               </View>
             ) : null}
@@ -827,8 +1036,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
         )}
       </ScrollView>
 
-      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
-        <FinanceiroFilterSectionTitle label="Posto" />
+      <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
         <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
       </FinanceiroFilterModal>
     </SafeAreaView>
@@ -2756,6 +2964,77 @@ const fnStyles = StyleSheet.create({
   },
   filterPillTextActive: {
     color: '#FFFFFF',
+  },
+  filterSegmentRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 10,
+  },
+  filterSegmentButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+  },
+  filterSegmentButtonActive: {
+    backgroundColor: '#C05621',
+    borderColor: '#C05621',
+  },
+  filterSegmentText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#5E667D',
+  },
+  filterSegmentTextActive: {
+    color: '#FFFFFF',
+  },
+  postoSelectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 12,
+  },
+  postoSelectText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0C1736',
+    flex: 1,
+    marginRight: 8,
+  },
+  chartSubtitle: {
+    fontSize: 11,
+    color: '#8891A6',
+    marginTop: -4,
+    marginBottom: 8,
+  },
+  chartTooltip: {
+    backgroundColor: '#F8F9FC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 10,
+    marginBottom: 8,
+  },
+  chartTooltipDate: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0C1736',
+    marginBottom: 4,
+  },
+  chartTooltipLine: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
   },
   filterTriggerButton: {
     flexDirection: 'row',
