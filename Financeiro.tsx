@@ -987,6 +987,9 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   endSpacing={8}
                   height={140}
                   noOfSections={4}
+                  rotateLabel
+                  xAxisLabelsHeight={34}
+                  xAxisLabelsVerticalShift={2}
                   yAxisTextStyle={{ color: '#8891A6', fontSize: 9 }}
                   xAxisLabelTextStyle={{ color: '#8891A6', fontSize: 8 }}
                   xAxisColor="#E2E6F0"
