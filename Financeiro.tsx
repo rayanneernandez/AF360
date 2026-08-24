@@ -37,6 +37,7 @@ import {
   fetchFinanceiroConciliacao,
   conciliarFinanceiroMovimento,
   desvincularFinanceiroMovimento,
+  fetchFinanceiroTitulosConciliar,
   fetchFinanceiroBalancete,
   fetchFinanceiroIaPredicoes,
   responderFinanceiroIaPredicao,
@@ -1667,6 +1668,14 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actingCodigo, setActingCodigo] = useState<string | null>(null);
   const [postoModalOpen, setPostoModalOpen] = useState(false);
+  // Renderizar milhares de linhas de uma vez (ScrollView + .map, sem virtualização)
+  // deixava a troca de aba bem lenta — mostramos só um pedaço por vez.
+  const [visibleCount, setVisibleCount] = useState(50);
+  // Vincular manualmente: título escolhido à mão (quando não há sugestão automática).
+  const [vincularMov, setVincularMov] = useState<FinanceiroMovimentoItem | null>(null);
+  const [vincularTitulos, setVincularTitulos] = useState<FinanceiroContaItem[]>([]);
+  const [vincularBusca, setVincularBusca] = useState('');
+  const [isLoadingVincular, setIsLoadingVincular] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -1762,6 +1771,56 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
     desvincularFinanceiroMovimento(movimento.codigo)
       .then(load)
       .catch((err) => showFinanceiroError(err, 'Não foi possível desvincular.'))
+      .finally(() => setActingCodigo(null));
+  };
+
+  // Mostrar só um pedaço da lista de cada vez (renderizar milhares de linhas
+  // de uma vez com ScrollView + .map travava a troca de aba).
+  useEffect(() => {
+    setVisibleCount(50);
+  }, [aba, busca, periodo, refMes, refAno, postoSelecionado]);
+
+  useEffect(() => {
+    if (!vincularMov) return;
+    setIsLoadingVincular(true);
+    fetchFinanceiroTitulosConciliar({
+      tipo: vincularMov.tipo === 'credito' ? 'receber' : 'pagar',
+      busca: vincularBusca.trim() || undefined,
+    })
+      .then(setVincularTitulos)
+      .catch(() => setVincularTitulos([]))
+      .finally(() => setIsLoadingVincular(false));
+  }, [vincularMov, vincularBusca]);
+
+  const handleAbrirVincularManual = (movimento: FinanceiroMovimentoItem) => {
+    setVincularBusca('');
+    setVincularTitulos([]);
+    setVincularMov(movimento);
+  };
+
+  const handleVincularManual = (titulo: FinanceiroContaItem) => {
+    if (!vincularMov) return;
+    setActingCodigo(vincularMov.codigo);
+    conciliarFinanceiroMovimento({
+      empresa_codigo: vincularMov.empresaCodigo,
+      conta_codigo: vincularMov.contaCodigo,
+      movimento_codigo: vincularMov.codigo,
+      movimento_data: vincularMov.data,
+      movimento_valor: vincularMov.valor,
+      movimento_descricao: vincularMov.descricao,
+      titulo_tipo: vincularMov.tipo === 'credito' ? 'receber' : 'pagar',
+      titulo_codigo: titulo.codigo,
+      titulo_vencimento: titulo.vencimento,
+      titulo_valor: titulo.valor,
+      titulo_descricao: titulo.descricao,
+      titulo_contraparte: titulo.contraparte,
+      origem: 'manual',
+    })
+      .then(() => {
+        setVincularMov(null);
+        load();
+      })
+      .catch((err) => showFinanceiroError(err, 'Não foi possível vincular manualmente.'))
       .finally(() => setActingCodigo(null));
   };
 
@@ -1888,7 +1947,7 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
         ) : movimentosFiltrados.length === 0 ? (
           <FinanceiroEmptyState message="Nenhum movimento encontrado nesta aba." />
         ) : (
-          movimentosFiltrados.map((mov) => (
+          movimentosFiltrados.slice(0, visibleCount).map((mov) => (
             <View key={mov.codigo} style={[fnStyles.listRow, { flexDirection: 'column', alignItems: 'stretch' }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <View style={{ flex: 1 }}>
@@ -1941,14 +2000,64 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
                     )}
                   </Pressable>
                 </View>
-              ) : null}
+              ) : (
+                <Pressable style={fnStyles.linkManualButton} onPress={() => handleAbrirVincularManual(mov)}>
+                  <Feather name="link" size={13} color="#5E667D" />
+                  <Text style={fnStyles.linkManualButtonText}>Vincular manualmente</Text>
+                </Pressable>
+              )}
             </View>
           ))
         )}
+        {!isLoading && movimentosFiltrados.length > visibleCount ? (
+          <Pressable style={fnStyles.loadMoreButton} onPress={() => setVisibleCount((c) => c + 50)}>
+            <Text style={fnStyles.loadMoreText}>Carregar mais</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
 
       <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
         <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
+
+      <FinanceiroFilterModal
+        visible={vincularMov !== null}
+        title="Vincular manualmente"
+        onClose={() => setVincularMov(null)}
+      >
+        <FinanceiroSearchInput value={vincularBusca} onChangeText={setVincularBusca} placeholder="Buscar título..." />
+        {isLoadingVincular ? (
+          <ActivityIndicator color="#C05621" style={{ marginTop: 16 }} />
+        ) : vincularTitulos.length === 0 ? (
+          <FinanceiroEmptyState message="Nenhum título em aberto encontrado." />
+        ) : (
+          vincularTitulos.map((titulo) => (
+            <View key={titulo.id} style={fnStyles.listRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[fnStyles.listRowTitle, { fontWeight: '400' }]} numberOfLines={1}>
+                  {titulo.descricao}
+                </Text>
+                <Text style={fnStyles.listRowMeta} numberOfLines={1}>
+                  {titulo.contraparte} · vence {formatDateIsoBR(titulo.vencimento) ?? '—'}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={[fnStyles.listRowValue, { fontWeight: '400' }]}>{formatBRL(titulo.valor)}</Text>
+                <Pressable
+                  style={[fnStyles.suggestionButton, { marginTop: 6 }]}
+                  onPress={() => handleVincularManual(titulo)}
+                  disabled={actingCodigo === vincularMov?.codigo}
+                >
+                  {actingCodigo === vincularMov?.codigo ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={fnStyles.suggestionButtonText}>Vincular</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          ))
+        )}
       </FinanceiroFilterModal>
     </SafeAreaView>
   );
@@ -3612,6 +3721,24 @@ const fnStyles = StyleSheet.create({
   },
   suggestionButtonText: {
     color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  linkManualButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+  },
+  linkManualButtonText: {
+    color: '#5E667D',
     fontSize: 12,
     fontWeight: '700',
   },
