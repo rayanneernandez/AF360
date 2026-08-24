@@ -964,14 +964,17 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
           <FinanceiroEmptyState message="Sem dados para o período." />
         ) : (
           <>
-            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+            {/* marginHorizontal negativo "cancela" o respiro lateral da tela (20px de
+                cada lado), pra esses 3 cards ficarem um pouco mais largos e o texto
+                "(R$)" caber sem cortar. */}
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16, marginHorizontal: -20 }}>
               <View
                 style={[
                   fnStyles.kpiCard,
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#7C5CFC' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                <Text style={fnStyles.kpiLabel}>
                   A receber hoje <Text style={fnStyles.kpiLabelUnidade}>(R$)</Text>
                 </Text>
                 <Text
@@ -989,7 +992,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#E6213D' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                <Text style={fnStyles.kpiLabel}>
                   A pagar hoje <Text style={fnStyles.kpiLabelUnidade}>(R$)</Text>
                 </Text>
                 <Text
@@ -1007,7 +1010,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#2F6FED' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                <Text style={fnStyles.kpiLabel}>
                   Saldo <Text style={fnStyles.kpiLabelUnidade}>(R$)</Text>
                 </Text>
                 <Text
