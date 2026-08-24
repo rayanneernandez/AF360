@@ -967,7 +967,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
             {/* marginHorizontal negativo "cancela" o respiro lateral da tela (20px de
                 cada lado), pra esses 3 cards ficarem um pouco mais largos e o texto
                 "(R$)" caber sem cortar. */}
-            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16, marginHorizontal: -20 }}>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16, marginHorizontal: -10 }}>
               <View
                 style={[
                   fnStyles.kpiCard,
@@ -3611,8 +3611,9 @@ const fnStyles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   kpiLabelUnidade: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '600',
+    color: '#B7BECC',
     letterSpacing: 0,
   },
   kpiValue: {
