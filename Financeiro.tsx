@@ -856,6 +856,16 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
 
   const saldoHoje = (data?.receberHoje ?? 0) - (data?.pagarHoje ?? 0);
 
+  // Os 3 números precisam ter sempre o MESMO tamanho — em vez de cada um encolher
+  // sozinho (o que deixava "A receber hoje" maior que os outros dois, que são
+  // valores mais compridos), calculamos 1 tamanho de fonte único a partir do maior
+  // dos 3 textos e aplicamos igual nos 3 cards.
+  const kpiValorReceber = formatBRLValor(data?.receberHoje ?? 0);
+  const kpiValorPagar = formatBRLValor(data?.pagarHoje ?? 0);
+  const kpiValorSaldo = formatBRLValor(saldoHoje);
+  const kpiMaiorTamanho = Math.max(kpiValorReceber.length, kpiValorPagar.length, kpiValorSaldo.length);
+  const kpiFontSize = kpiMaiorTamanho <= 9 ? 18 : kpiMaiorTamanho <= 11 ? 16 : kpiMaiorTamanho <= 13 ? 15 : 13;
+
   // A biblioteca de gráfico calcula a escala do eixo Y usando só a 1ª série (data),
   // ignorando data2/data3 — por isso Pagamentos/Saldo (que têm valores bem maiores
   // que Recebimentos) estouravam pra fora da área do gráfico. Calculamos aqui o
@@ -961,14 +971,16 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#7C5CFC' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel}>A receber hoje (R$)</Text>
+                <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                  A receber hoje <Text style={fnStyles.kpiLabelUnidade}>(R$)</Text>
+                </Text>
                 <Text
-                  style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 18 }]}
+                  style={[fnStyles.kpiValue, { color: '#18955A', fontSize: kpiFontSize }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.75}
                 >
-                  {formatBRLValor(data.receberHoje)}
+                  {kpiValorReceber}
                 </Text>
               </View>
               <View
@@ -977,14 +989,16 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#E6213D' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel}>A pagar hoje (R$)</Text>
+                <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                  A pagar hoje <Text style={fnStyles.kpiLabelUnidade}>(R$)</Text>
+                </Text>
                 <Text
-                  style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: 18 }]}
+                  style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: kpiFontSize }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.75}
                 >
-                  {formatBRLValor(data.pagarHoje)}
+                  {kpiValorPagar}
                 </Text>
               </View>
               <View
@@ -993,14 +1007,16 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   { flex: 1, paddingHorizontal: 8, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#2F6FED' },
                 ]}
               >
-                <Text style={fnStyles.kpiLabel}>Saldo (R$)</Text>
+                <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                  Saldo <Text style={fnStyles.kpiLabelUnidade}>(R$)</Text>
+                </Text>
                 <Text
-                  style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D', fontSize: 18 }]}
+                  style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D', fontSize: kpiFontSize }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.75}
                 >
-                  {formatBRLValor(saldoHoje)}
+                  {kpiValorSaldo}
                 </Text>
               </View>
             </View>
@@ -3590,6 +3606,11 @@ const fnStyles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  kpiLabelUnidade: {
+    fontSize: 9,
+    fontWeight: '600',
+    letterSpacing: 0,
   },
   kpiValue: {
     marginTop: 4,
