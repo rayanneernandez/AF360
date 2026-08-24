@@ -977,7 +977,13 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                 <Text style={fnStyles.chartSubtitle}>Recebimentos, pagamentos e saldo no período — toque no gráfico para ver os valores.</Text>
 
                 <LineChart
-                  data={data.curva.map((p, idx) => ({ value: p.recebimentos, label: idx % curvaLabelStep === 0 ? p.periodo : '' }))}
+                  data={data.curva.map((p, idx) => ({
+                    value: p.recebimentos,
+                    // Só o dia (sem o mês) — o mês já aparece no seletor "Agosto / 2026" acima.
+                    // Rótulo na diagonal (rotateLabel) subia por cima do gráfico; assim, na
+                    // horizontal, cabe sem precisar girar.
+                    label: idx % curvaLabelStep === 0 ? p.periodo.split('/')[0] : '',
+                  }))}
                   data2={data.curva.map((p) => ({ value: p.pagamentos }))}
                   data3={data.curva.map((p) => ({ value: p.saldo }))}
                   color1="#18955A"
@@ -999,10 +1005,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   endSpacing={8}
                   height={140}
                   noOfSections={4}
-                  rotateLabel
-                  xAxisLabelsHeight={46}
-                  xAxisLabelsVerticalShift={4}
-                  labelsExtraHeight={40}
+                  xAxisLabelsHeight={20}
                   yAxisTextStyle={{ color: '#8891A6', fontSize: 9 }}
                   xAxisLabelTextStyle={{ color: '#5E667D', fontSize: 10, fontWeight: '600' }}
                   xAxisColor="#E2E6F0"
@@ -1073,12 +1076,9 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   endSpacing={8}
                   height={140}
                   noOfSections={4}
-                  rotateLabel
-                  xAxisLabelsHeight={46}
-                  xAxisLabelsVerticalShift={4}
-                  labelsExtraHeight={40}
+                  xAxisLabelsHeight={20}
                   yAxisTextStyle={{ color: '#8891A6', fontSize: 9 }}
-                  xAxisLabelTextStyle={{ color: '#5E667D', fontSize: 10, fontWeight: '600' }}
+                  xAxisLabelTextStyle={{ color: '#5E667D', fontSize: 9, fontWeight: '600' }}
                   xAxisColor="#E2E6F0"
                   yAxisColor="#E2E6F0"
                   rulesColor="#F1F2F6"
