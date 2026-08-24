@@ -837,19 +837,27 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   // A biblioteca de gráfico calcula a escala do eixo Y usando só a 1ª série (data),
   // ignorando data2/data3 — por isso Pagamentos/Saldo (que têm valores bem maiores
   // que Recebimentos) estouravam pra fora da área do gráfico. Calculamos aqui o
-  // máximo/mínimo considerando as 3 séries juntas, com uma folga de 10%.
+  // máximo/mínimo considerando as 3 séries juntas.
+  // Quando existe um mínimo bem negativo (Saldo acumulado caindo forte), a biblioteca
+  // soma uma altura extra proporcional pra caber a parte negativa, o que deixava o
+  // gráfico gigantesco. Usamos yAxisOffset pra deslocar tudo pra cima do zero — o
+  // gráfico some com a "área negativa" mas o eixo continua mostrando o valor real.
   const curvaRange = useMemo(() => {
     const valores = (data?.curva ?? []).flatMap((p) => [p.recebimentos, p.pagamentos, p.saldo]);
     const max = Math.max(0, ...valores);
     const min = Math.min(0, ...valores);
-    return { max: max > 0 ? max * 1.1 : 1, min: min < 0 ? min * 1.1 : 0 };
+    const maxComFolga = max > 0 ? max * 1.1 : 1;
+    const offset = min < 0 ? min * 1.1 : 0;
+    return { max: maxComFolga - offset, offset };
   }, [data]);
 
   const projRange = useMemo(() => {
     const valores = (data?.projecao ?? []).flatMap((p) => [p.faturamento, p.pagamentos]);
     const max = Math.max(0, ...valores);
     const min = Math.min(0, ...valores);
-    return { max: max > 0 ? max * 1.1 : 1, min: min < 0 ? min * 1.1 : 0 };
+    const maxComFolga = max > 0 ? max * 1.1 : 1;
+    const offset = min < 0 ? min * 1.1 : 0;
+    return { max: maxComFolga - offset, offset };
   }, [data]);
 
   return (
@@ -967,7 +975,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   dataPointsRadius3={3}
                   dataPointsColor3="#C05621"
                   maxValue={curvaRange.max}
-                  mostNegativeValue={curvaRange.min}
+                  yAxisOffset={curvaRange.offset}
                   curved
                   width={chartWidth}
                   adjustToWidth
@@ -1037,7 +1045,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   thickness1={2}
                   thickness2={2}
                   maxValue={projRange.max}
-                  mostNegativeValue={projRange.min}
+                  yAxisOffset={projRange.offset}
                   curved
                   width={chartWidth}
                   adjustToWidth
