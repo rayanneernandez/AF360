@@ -1040,10 +1040,17 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                 {curvaAxisLabels.length > 0 ? (
                   // paddingLeft cobre a coluna de valores do eixo Y (yAxisLabelWidth) + o
                   // initialSpacing do gráfico, pra "02/08" cair embaixo do 1º ponto real,
-                  // não embaixo dos números do eixo Y.
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 44 + 8, paddingRight: 8, marginTop: 4 }}>
+                  // não embaixo dos números do eixo Y. O último rótulo fica alinhado à
+                  // direita (em vez de "vazar" pro lado de fora do card).
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 44 + 8, paddingRight: 16, marginTop: 4 }}>
                     {curvaAxisLabels.map((label, idx) => (
-                      <Text key={idx} style={fnStyles.chartAxisLabel}>
+                      <Text
+                        key={idx}
+                        style={[
+                          fnStyles.chartAxisLabel,
+                          idx === 0 ? { textAlign: 'left' } : idx === curvaAxisLabels.length - 1 ? { textAlign: 'right' } : { textAlign: 'center' },
+                        ]}
+                      >
                         {label}
                       </Text>
                     ))}
