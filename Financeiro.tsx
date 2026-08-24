@@ -1332,18 +1332,35 @@ function FinanceiroContasScreenBase({
           placeholder={tipo === 'pagar' ? 'Buscar fornecedor ou título...' : 'Buscar cliente ou título...'}
         />
 
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-            <Text style={fnStyles.kpiLabel}>{tipo === 'pagar' ? 'Total a pagar' : 'Total a receber'}</Text>
-            <Text style={fnStyles.kpiValue}>{formatBRL(totalValor)}</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <View style={[fnStyles.kpiCard, { flex: 1, paddingHorizontal: 8 }]}>
+            <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+              {tipo === 'pagar' ? 'Total a pagar' : 'Total a receber'}
+            </Text>
+            <Text style={[fnStyles.kpiValue, { fontSize: 13 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+              {formatBRL(totalValor)}
+            </Text>
           </View>
-          <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-            <Text style={fnStyles.kpiLabel}>Em aberto</Text>
-            <Text style={fnStyles.kpiValue}>{formatBRL(emAbertoValor)}</Text>
+          <View style={[fnStyles.kpiCard, { flex: 1, paddingHorizontal: 8 }]}>
+            <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+              Em aberto
+            </Text>
+            <Text style={[fnStyles.kpiValue, { fontSize: 13 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+              {formatBRL(emAbertoValor)}
+            </Text>
           </View>
-          <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-            <Text style={[fnStyles.kpiLabel, { color: '#E6213D' }]}>Vencidos</Text>
-            <Text style={[fnStyles.kpiValue, { color: vencidosValor > 0 ? '#E6213D' : '#0C1736' }]}>{formatBRL(vencidosValor)}</Text>
+          <View style={[fnStyles.kpiCard, { flex: 1, paddingHorizontal: 8 }]}>
+            <Text style={[fnStyles.kpiLabel, { color: '#E6213D' }]} numberOfLines={1}>
+              Vencidos
+            </Text>
+            <Text
+              style={[fnStyles.kpiValue, { color: vencidosValor > 0 ? '#E6213D' : '#0C1736', fontSize: 13 }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+            >
+              {formatBRL(vencidosValor)}
+            </Text>
           </View>
         </View>
 
@@ -1362,7 +1379,7 @@ function FinanceiroContasScreenBase({
               return (
                 <View key={item.id} style={fnStyles.listRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                    <Text style={[fnStyles.listRowTitle, { fontWeight: '400' }]} numberOfLines={1}>
                       {item.descricao}
                     </Text>
                     <Text style={fnStyles.listRowMeta} numberOfLines={1}>
@@ -1374,7 +1391,7 @@ function FinanceiroContasScreenBase({
                     </Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={fnStyles.listRowValue}>{formatBRL(item.valor)}</Text>
+                    <Text style={[fnStyles.listRowValue, { fontWeight: '400' }]}>{formatBRL(item.valor)}</Text>
                     <View style={[fnStyles.badge, { backgroundColor: statusMeta.bg, marginTop: 4 }]}>
                       <Text style={[fnStyles.badgeText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
                     </View>
