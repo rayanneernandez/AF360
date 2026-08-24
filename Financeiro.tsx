@@ -1015,6 +1015,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   height={140}
                   noOfSections={4}
                   xAxisLabelsHeight={0}
+                  yAxisLabelWidth={44}
                   yAxisTextStyle={{ color: '#8891A6', fontSize: 9 }}
                   xAxisColor="#E2E6F0"
                   yAxisColor="#E2E6F0"
@@ -1037,7 +1038,10 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   }}
                 />
                 {curvaAxisLabels.length > 0 ? (
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 2, marginTop: 4 }}>
+                  // paddingLeft cobre a coluna de valores do eixo Y (yAxisLabelWidth) + o
+                  // initialSpacing do gráfico, pra "02/08" cair embaixo do 1º ponto real,
+                  // não embaixo dos números do eixo Y.
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 44 + 8, paddingRight: 8, marginTop: 4 }}>
                     {curvaAxisLabels.map((label, idx) => (
                       <Text key={idx} style={fnStyles.chartAxisLabel}>
                         {label}
