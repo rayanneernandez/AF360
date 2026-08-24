@@ -851,6 +851,10 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
     return { max: maxComFolga - offset, offset };
   }, [data]);
 
+  // Com muitos dias no período, um rótulo por ponto vira uma sopa de letrinhas
+  // cortadas ("0..0..0.."). Mostramos só ~1 a cada N dias, como no web.
+  const curvaLabelStep = Math.max(1, Math.ceil((data?.curva.length ?? 0) / 10));
+
   const projRange = useMemo(() => {
     const valores = (data?.projecao ?? []).flatMap((p) => [p.faturamento, p.pagamentos]);
     const max = Math.max(0, ...valores);
@@ -961,7 +965,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                 <Text style={fnStyles.chartSubtitle}>Recebimentos, pagamentos e saldo no período — toque no gráfico para ver os valores.</Text>
 
                 <LineChart
-                  data={data.curva.map((p) => ({ value: p.recebimentos, label: p.periodo }))}
+                  data={data.curva.map((p, idx) => ({ value: p.recebimentos, label: idx % curvaLabelStep === 0 ? p.periodo : '' }))}
                   data2={data.curva.map((p) => ({ value: p.pagamentos }))}
                   data3={data.curva.map((p) => ({ value: p.saldo }))}
                   color1="#18955A"
