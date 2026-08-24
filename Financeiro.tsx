@@ -793,6 +793,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   // na tela de Projeções, em vez do campo "projecao" do dashboard (que segue a janela
   // de data do filtro e por isso só trazia 1-2 meses quando o filtro era "Mês").
   const [projecaoMeses, setProjecaoMeses] = useState<FinanceiroProjecaoMes[]>([]);
+  const [isLoadingProjecao, setIsLoadingProjecao] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -811,9 +812,11 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   }, [periodo, refMes, refAno, postoSelecionado]);
 
   useEffect(() => {
+    setIsLoadingProjecao(true);
     fetchFinanceiroProjecoes({ unidadeIds: postoSelecionado ? [postoSelecionado] : undefined, horizonteMeses: 6 })
       .then((result) => setProjecaoMeses(result.meses))
-      .catch(() => setProjecaoMeses([]));
+      .catch(() => setProjecaoMeses([]))
+      .finally(() => setIsLoadingProjecao(false));
   }, [postoSelecionado]);
 
   const handlePeriodoAnterior = () => {
@@ -863,9 +866,21 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
     return { max: maxComFolga - offset, offset };
   }, [data]);
 
-  // Com muitos dias no período, um rótulo por ponto vira uma sopa de letrinhas
-  // cortadas ("0..0..0.."). Mostramos só ~1 a cada N dias, como no web.
-  const curvaLabelStep = Math.max(1, Math.ceil((data?.curva.length ?? 0) / 7));
+  // A biblioteca reserva pra cada rótulo do eixo X só a largura entre 2 pontos —
+  // com muitos dias no período essa largura é menor que 1 caractere, então a data
+  // vinha sempre cortada (girada ou não). Em vez de usar o rótulo nativo, escondemos
+  // ele e desenhamos nós mesmos uma linha de datas abaixo do gráfico, espaçadas
+  // uniformemente (largura livre, sem essa limitação).
+  const curvaAxisLabels = useMemo(() => {
+    const pontos = data?.curva ?? [];
+    if (pontos.length === 0) return [];
+    const quantidade = Math.min(6, pontos.length);
+    const indices = Array.from({ length: quantidade }, (_, i) =>
+      Math.round((i * (pontos.length - 1)) / Math.max(1, quantidade - 1))
+    );
+    const indicesUnicos = Array.from(new Set(indices));
+    return indicesUnicos.map((idx) => pontos[idx].periodo);
+  }, [data]);
 
   const projRange = useMemo(() => {
     const valores = projecaoMeses.flatMap((p) => [p.receberPrevisto, p.pagarPrevisto]);
@@ -977,13 +992,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                 <Text style={fnStyles.chartSubtitle}>Recebimentos, pagamentos e saldo no período — toque no gráfico para ver os valores.</Text>
 
                 <LineChart
-                  data={data.curva.map((p, idx) => ({
-                    value: p.recebimentos,
-                    // Só o dia (sem o mês) — o mês já aparece no seletor "Agosto / 2026" acima.
-                    // Rótulo na diagonal (rotateLabel) subia por cima do gráfico; assim, na
-                    // horizontal, cabe sem precisar girar.
-                    label: idx % curvaLabelStep === 0 ? p.periodo.split('/')[0] : '',
-                  }))}
+                  data={data.curva.map((p) => ({ value: p.recebimentos }))}
                   data2={data.curva.map((p) => ({ value: p.pagamentos }))}
                   data3={data.curva.map((p) => ({ value: p.saldo }))}
                   color1="#18955A"
@@ -1005,9 +1014,8 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   endSpacing={8}
                   height={140}
                   noOfSections={4}
-                  xAxisLabelsHeight={20}
+                  xAxisLabelsHeight={0}
                   yAxisTextStyle={{ color: '#8891A6', fontSize: 9 }}
-                  xAxisLabelTextStyle={{ color: '#5E667D', fontSize: 10, fontWeight: '600' }}
                   xAxisColor="#E2E6F0"
                   yAxisColor="#E2E6F0"
                   rulesColor="#F1F2F6"
@@ -1028,6 +1036,15 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                     },
                   }}
                 />
+                {curvaAxisLabels.length > 0 ? (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 2, marginTop: 4 }}>
+                    {curvaAxisLabels.map((label, idx) => (
+                      <Text key={idx} style={fnStyles.chartAxisLabel}>
+                        {label}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
                 <View style={{ flexDirection: 'row', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
                   <FinanceiroChartLegendDot color="#18955A" label="Recebimentos" />
                   <FinanceiroChartLegendDot color="#E6213D" label="Pagamentos" />
@@ -1052,7 +1069,15 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
               </View>
             ) : null}
 
-            {projecaoMeses.length > 0 ? (
+            {isLoadingProjecao && projecaoMeses.length === 0 ? (
+              <View style={fnStyles.chartCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Feather name="activity" size={14} color="#C05621" />
+                  <Text style={fnStyles.sectionTitle}>Projeção</Text>
+                </View>
+                <ActivityIndicator color="#C05621" style={{ marginVertical: 24 }} />
+              </View>
+            ) : projecaoMeses.length > 0 ? (
               <View style={fnStyles.chartCard}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Feather name="activity" size={14} color="#C05621" />
@@ -3134,6 +3159,11 @@ const fnStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginTop: 2,
+  },
+  chartAxisLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#5E667D',
   },
   chartCard: {
     backgroundColor: '#FFFFFF',
