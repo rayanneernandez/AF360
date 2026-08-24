@@ -948,36 +948,36 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
         ) : (
           <>
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-              <View style={[fnStyles.kpiCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: '#7C5CFC' }]}>
+              <View
+                style={[
+                  fnStyles.kpiCard,
+                  { flex: 1, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#7C5CFC' },
+                ]}
+              >
                 <Text style={fnStyles.kpiLabel}>A receber hoje</Text>
-                <Text
-                  style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 14 }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}
-                >
+                <Text style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 14 }]} numberOfLines={2}>
                   {formatBRL(data.receberHoje)}
                 </Text>
               </View>
-              <View style={[fnStyles.kpiCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: '#E6213D' }]}>
+              <View
+                style={[
+                  fnStyles.kpiCard,
+                  { flex: 1, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#E6213D' },
+                ]}
+              >
                 <Text style={fnStyles.kpiLabel}>A pagar hoje</Text>
-                <Text
-                  style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: 14 }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}
-                >
+                <Text style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: 14 }]} numberOfLines={2}>
                   {formatBRL(data.pagarHoje)}
                 </Text>
               </View>
-              <View style={[fnStyles.kpiCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: '#2F6FED' }]}>
+              <View
+                style={[
+                  fnStyles.kpiCard,
+                  { flex: 1, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0', borderLeftWidth: 3, borderLeftColor: '#2F6FED' },
+                ]}
+              >
                 <Text style={fnStyles.kpiLabel}>Saldo</Text>
-                <Text
-                  style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D', fontSize: 14 }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}
-                >
+                <Text style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D', fontSize: 14 }]} numberOfLines={2}>
                   {formatBRL(saldoHoje)}
                 </Text>
               </View>
