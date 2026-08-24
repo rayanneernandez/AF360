@@ -1865,6 +1865,20 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
           </View>
         ) : null}
 
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          {(['pendentes', 'com-sugestao', 'conciliados'] as const).map((opt) => (
+            <Pressable
+              key={opt}
+              style={[fnStyles.filterPill, aba === opt ? fnStyles.filterPillActive : null]}
+              onPress={() => setAba(opt)}
+            >
+              <Text style={[fnStyles.filterPillText, aba === opt ? fnStyles.filterPillTextActive : null]}>
+                {opt === 'pendentes' ? 'Pendentes' : opt === 'com-sugestao' ? 'Com sugestão' : 'Conciliados'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
         <Text style={fnStyles.countLabel}>{movimentosFiltrados.length} movimento(s)</Text>
 
         {isLoading ? (
