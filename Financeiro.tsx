@@ -2,8 +2,9 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useIsFocused } from '@react-navigation/native';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LineChart } from 'react-native-gifted-charts';
 import {
   styles,
   TopBar,
@@ -199,6 +200,16 @@ function financeiroPeriodoParaDatas(periodo: 'hoje' | '7dias' | 'mes' | 'ano'): 
   const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
   const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
   return { dataInicial: toIsoDate(inicioMes), dataFinal: toIsoDate(fimMes) };
+}
+
+// Rótulo compacto pro eixo Y dos gráficos (evita números longos tipo
+// "-22.155.656,68" espremidos na lateral do gráfico).
+function formatBRLCompact(value: number): string {
+  const abs = Math.abs(value);
+  const sinal = value < 0 ? '-' : '';
+  if (abs >= 1_000_000) return `${sinal}${(abs / 1_000_000).toFixed(1)}mi`;
+  if (abs >= 1_000) return `${sinal}${(abs / 1_000).toFixed(0)}mil`;
+  return `${sinal}${abs.toFixed(0)}`;
 }
 
 const financeiroMesesNomes = [
@@ -762,6 +773,8 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
 
 export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'FinanceiroDashboard'>) {
   const now = new Date();
+  const { width: windowWidth } = useWindowDimensions();
+  const chartWidth = Math.max(220, windowWidth - 40 - 24 - 32);
   const [data, setData] = useState<FinanceiroDashboardData | null>(null);
   const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
@@ -771,8 +784,6 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [postoModalOpen, setPostoModalOpen] = useState(false);
-  const [curvaSelIdx, setCurvaSelIdx] = useState<number | null>(null);
-  const [projSelIdx, setProjSelIdx] = useState<number | null>(null);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -785,11 +796,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
     setErrorMessage(null);
     const { dataInicial, dataFinal } = financeiroDashboardPeriodoDatas(periodo, refMes, refAno);
     fetchFinanceiroDashboard({ dataInicial, dataFinal, unidadeIds: postoSelecionado ? [postoSelecionado] : undefined })
-      .then((result) => {
-        setData(result);
-        setCurvaSelIdx(null);
-        setProjSelIdx(null);
-      })
+      .then(setData)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar o dashboard.')))
       .finally(() => setIsLoading(false));
   }, [periodo, refMes, refAno, postoSelecionado]);
@@ -823,8 +830,6 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
   const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
 
   const saldoHoje = (data?.receberHoje ?? 0) - (data?.pagarHoje ?? 0);
-  const maxCurva = Math.max(1, ...(data?.curva.map((p) => Math.max(p.recebimentos, p.pagamentos)) ?? [1]));
-  const maxProjecao = Math.max(1, ...(data?.projecao.map((p) => Math.max(p.faturamento, p.pagamentos)) ?? [1]));
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -883,7 +888,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
         ) : (
           <>
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-              <View style={[fnStyles.kpiCard, { flex: 1 }]}>
+              <View style={[fnStyles.kpiCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: '#7C5CFC' }]}>
                 <Text style={fnStyles.kpiLabel}>A receber hoje</Text>
                 <Text
                   style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 13 }]}
@@ -894,7 +899,7 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   {formatBRL(data.receberHoje)}
                 </Text>
               </View>
-              <View style={[fnStyles.kpiCard, { flex: 1 }]}>
+              <View style={[fnStyles.kpiCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: '#E6213D' }]}>
                 <Text style={fnStyles.kpiLabel}>A pagar hoje</Text>
                 <Text
                   style={[fnStyles.kpiValue, { color: '#E6213D', fontSize: 13 }]}
@@ -905,8 +910,8 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
                   {formatBRL(data.pagarHoje)}
                 </Text>
               </View>
-              <View style={[fnStyles.kpiCard, { flex: 1 }]}>
-                <Text style={fnStyles.kpiLabel}>Saldo do dia</Text>
+              <View style={[fnStyles.kpiCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: '#2F6FED' }]}>
+                <Text style={fnStyles.kpiLabel}>Saldo</Text>
                 <Text
                   style={[fnStyles.kpiValue, { color: saldoHoje >= 0 ? '#18955A' : '#E6213D', fontSize: 13 }]}
                   numberOfLines={1}
@@ -919,125 +924,124 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
             </View>
 
             {data.curva.length > 0 ? (
-              <View style={{ marginBottom: 20 }}>
-                <Text style={fnStyles.sectionTitle}>Curva financeira</Text>
-                <Text style={fnStyles.chartSubtitle}>Recebimentos, pagamentos e saldo no período — toque numa coluna para ver os valores.</Text>
-
-                {curvaSelIdx !== null && data.curva[curvaSelIdx] ? (
-                  <View style={fnStyles.chartTooltip}>
-                    <Text style={fnStyles.chartTooltipDate}>{data.curva[curvaSelIdx].periodo}</Text>
-                    <Text style={[fnStyles.chartTooltipLine, { color: '#18955A' }]}>
-                      Recebimentos: {formatBRL(data.curva[curvaSelIdx].recebimentos)}
-                    </Text>
-                    <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>
-                      Pagamentos: {formatBRL(data.curva[curvaSelIdx].pagamentos)}
-                    </Text>
-                    <Text style={[fnStyles.chartTooltipLine, { color: '#C05621' }]}>
-                      Saldo: {formatBRL(data.curva[curvaSelIdx].saldo)}
-                    </Text>
-                  </View>
-                ) : null}
-
-                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 120, paddingTop: 8 }}>
-                  {data.curva.map((ponto, idx) => {
-                    const isSel = idx === curvaSelIdx;
-                    return (
-                      <Pressable
-                        key={`${ponto.periodo}-${idx}`}
-                        style={{ flex: 1, alignItems: 'center' }}
-                        onPress={() => setCurvaSelIdx(isSel ? null : idx)}
-                      >
-                        <View style={{ width: '100%', flexDirection: 'row', gap: 2, alignItems: 'flex-end', height: 90 }}>
-                          <View
-                            style={{
-                              flex: 1,
-                              height: Math.max(4, (ponto.recebimentos / maxCurva) * 90),
-                              backgroundColor: isSel ? '#0F7A44' : '#18955A',
-                              borderRadius: 3,
-                            }}
-                          />
-                          <View
-                            style={{
-                              flex: 1,
-                              height: Math.max(4, (ponto.pagamentos / maxCurva) * 90),
-                              backgroundColor: isSel ? '#B71C33' : '#E6213D',
-                              borderRadius: 3,
-                            }}
-                          />
-                        </View>
-                        <Text
-                          style={{ fontSize: 9, color: isSel ? '#0C1736' : '#8891A6', marginTop: 4, fontWeight: isSel ? '800' : '400' }}
-                          numberOfLines={1}
-                        >
-                          {ponto.periodo}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+              <View style={fnStyles.chartCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Feather name="trending-up" size={14} color="#C05621" />
+                  <Text style={fnStyles.sectionTitle}>Curva financeira</Text>
                 </View>
-                <View style={{ flexDirection: 'row', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
+                <Text style={fnStyles.chartSubtitle}>Recebimentos, pagamentos e saldo no período — toque no gráfico para ver os valores.</Text>
+
+                <LineChart
+                  data={data.curva.map((p) => ({ value: p.recebimentos, label: p.periodo }))}
+                  data2={data.curva.map((p) => ({ value: p.pagamentos }))}
+                  data3={data.curva.map((p) => ({ value: p.saldo }))}
+                  color1="#18955A"
+                  color2="#E6213D"
+                  color3="#C05621"
+                  thickness1={1.5}
+                  thickness2={1.5}
+                  thickness3={2}
+                  hideDataPoints1
+                  hideDataPoints2
+                  dataPointsRadius3={3}
+                  dataPointsColor3="#C05621"
+                  curved
+                  width={chartWidth}
+                  adjustToWidth
+                  initialSpacing={8}
+                  endSpacing={8}
+                  height={140}
+                  noOfSections={4}
+                  yAxisTextStyle={{ color: '#8891A6', fontSize: 9 }}
+                  xAxisLabelTextStyle={{ color: '#8891A6', fontSize: 8 }}
+                  xAxisColor="#E2E6F0"
+                  yAxisColor="#E2E6F0"
+                  rulesColor="#F1F2F6"
+                  formatYLabel={(label: string) => formatBRLCompact(Number(label))}
+                  pointerConfig={{
+                    pointerStripHeight: 140,
+                    pointerStripColor: '#E2E6F0',
+                    pointerStripWidth: 2,
+                    pointerColor: '#C05621',
+                    radius: 5,
+                    activatePointersInstantlyOnTouch: true,
+                    persistPointer: true,
+                    pointerLabelWidth: 170,
+                    pointerLabelHeight: 100,
+                    pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
+                      const ponto = data.curva[pointerIndex];
+                      if (!ponto) return null;
+                      return (
+                        <View style={fnStyles.chartTooltip}>
+                          <Text style={fnStyles.chartTooltipDate}>{ponto.periodo}</Text>
+                          <Text style={[fnStyles.chartTooltipLine, { color: '#18955A' }]}>Recebimentos: {formatBRL(ponto.recebimentos)}</Text>
+                          <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>Pagamentos: {formatBRL(ponto.pagamentos)}</Text>
+                          <Text style={[fnStyles.chartTooltipLine, { color: '#C05621' }]}>Saldo: {formatBRL(ponto.saldo)}</Text>
+                        </View>
+                      );
+                    },
+                  }}
+                />
+                <View style={{ flexDirection: 'row', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
                   <FinanceiroChartLegendDot color="#18955A" label="Recebimentos" />
                   <FinanceiroChartLegendDot color="#E6213D" label="Pagamentos" />
-                  <FinanceiroChartLegendDot color="#C05621" label="Saldo (toque na coluna)" />
+                  <FinanceiroChartLegendDot color="#C05621" label="Saldo" />
                 </View>
               </View>
             ) : null}
 
             {data.projecao.length > 0 ? (
-              <View style={{ marginBottom: 20 }}>
-                <Text style={fnStyles.sectionTitle}>Projeção</Text>
+              <View style={fnStyles.chartCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Feather name="activity" size={14} color="#C05621" />
+                  <Text style={fnStyles.sectionTitle}>Projeção</Text>
+                </View>
                 <Text style={fnStyles.chartSubtitle}>Títulos já lançados com vencimento nos próximos meses.</Text>
 
-                {projSelIdx !== null && data.projecao[projSelIdx] ? (
-                  <View style={fnStyles.chartTooltip}>
-                    <Text style={fnStyles.chartTooltipDate}>{data.projecao[projSelIdx].periodo}</Text>
-                    <Text style={[fnStyles.chartTooltipLine, { color: '#2F6FED' }]}>
-                      A receber: {formatBRL(data.projecao[projSelIdx].faturamento)}
-                    </Text>
-                    <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>
-                      A pagar: {formatBRL(data.projecao[projSelIdx].pagamentos)}
-                    </Text>
-                  </View>
-                ) : null}
-
-                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 120, paddingTop: 8 }}>
-                  {data.projecao.map((ponto, idx) => {
-                    const isSel = idx === projSelIdx;
-                    return (
-                      <Pressable
-                        key={`${ponto.periodo}-${idx}`}
-                        style={{ flex: 1, alignItems: 'center' }}
-                        onPress={() => setProjSelIdx(isSel ? null : idx)}
-                      >
-                        <View style={{ width: '100%', flexDirection: 'row', gap: 2, alignItems: 'flex-end', height: 90 }}>
-                          <View
-                            style={{
-                              flex: 1,
-                              height: Math.max(4, (ponto.faturamento / maxProjecao) * 90),
-                              backgroundColor: isSel ? '#1D4FBE' : '#2F6FED',
-                              borderRadius: 3,
-                            }}
-                          />
-                          <View
-                            style={{
-                              flex: 1,
-                              height: Math.max(4, (ponto.pagamentos / maxProjecao) * 90),
-                              backgroundColor: isSel ? '#B71C33' : '#E6213D',
-                              borderRadius: 3,
-                            }}
-                          />
+                <LineChart
+                  data={data.projecao.map((p) => ({ value: p.faturamento, label: p.periodo }))}
+                  data2={data.projecao.map((p) => ({ value: p.pagamentos }))}
+                  color1="#2F6FED"
+                  color2="#E6213D"
+                  thickness1={2}
+                  thickness2={2}
+                  curved
+                  width={chartWidth}
+                  adjustToWidth
+                  initialSpacing={8}
+                  endSpacing={8}
+                  height={140}
+                  noOfSections={4}
+                  yAxisTextStyle={{ color: '#8891A6', fontSize: 9 }}
+                  xAxisLabelTextStyle={{ color: '#8891A6', fontSize: 8 }}
+                  xAxisColor="#E2E6F0"
+                  yAxisColor="#E2E6F0"
+                  rulesColor="#F1F2F6"
+                  formatYLabel={(label: string) => formatBRLCompact(Number(label))}
+                  pointerConfig={{
+                    pointerStripHeight: 140,
+                    pointerStripColor: '#E2E6F0',
+                    pointerStripWidth: 2,
+                    pointerColor: '#2F6FED',
+                    radius: 5,
+                    activatePointersInstantlyOnTouch: true,
+                    persistPointer: true,
+                    pointerLabelWidth: 170,
+                    pointerLabelHeight: 90,
+                    pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
+                      const ponto = data.projecao[pointerIndex];
+                      if (!ponto) return null;
+                      return (
+                        <View style={fnStyles.chartTooltip}>
+                          <Text style={fnStyles.chartTooltipDate}>{ponto.periodo}</Text>
+                          <Text style={[fnStyles.chartTooltipLine, { color: '#2F6FED' }]}>A receber: {formatBRL(ponto.faturamento)}</Text>
+                          <Text style={[fnStyles.chartTooltipLine, { color: '#E6213D' }]}>A pagar: {formatBRL(ponto.pagamentos)}</Text>
                         </View>
-                        <Text
-                          style={{ fontSize: 9, color: isSel ? '#0C1736' : '#8891A6', marginTop: 4, fontWeight: isSel ? '800' : '400' }}
-                          numberOfLines={1}
-                        >
-                          {ponto.periodo}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <View style={{ flexDirection: 'row', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
+                      );
+                    },
+                  }}
+                />
+                <View style={{ flexDirection: 'row', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
                   <FinanceiroChartLegendDot color="#2F6FED" label="A receber" />
                   <FinanceiroChartLegendDot color="#E6213D" label="A pagar" />
                 </View>
@@ -3060,6 +3064,14 @@ const fnStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginTop: 2,
+  },
+  chartCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 12,
+    marginBottom: 16,
   },
   dashboardListCard: {
     backgroundColor: '#FFFFFF',
