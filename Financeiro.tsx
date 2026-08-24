@@ -1653,16 +1653,20 @@ export function FinanceiroFluxoCaixaScreen({ navigation }: ScreenProps<'Financei
 }
 
 export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'FinanceiroConciliacao'>) {
+  const now = new Date();
   const [movimentos, setMovimentos] = useState<FinanceiroMovimentoItem[]>([]);
   const [resumo, setResumo] = useState<FinanceiroConciliacaoResumo | null>(null);
   const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [periodo, setPeriodo] = useState<'dia' | 'mes' | 'ano'>('mes');
+  const [refMes, setRefMes] = useState(now.getMonth() + 1);
+  const [refAno, setRefAno] = useState(now.getFullYear());
   const [busca, setBusca] = useState('');
   const [aba, setAba] = useState<'pendentes' | 'com-sugestao' | 'conciliados'>('com-sugestao');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actingCodigo, setActingCodigo] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -1673,7 +1677,10 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
   const load = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
+    const { dataInicial, dataFinal } = financeiroDashboardPeriodoDatas(periodo, refMes, refAno);
     fetchFinanceiroConciliacao({
+      dataInicial,
+      dataFinal,
       unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
       busca: busca.trim() || undefined,
     })
@@ -1683,7 +1690,35 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
       })
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar a conciliação.')))
       .finally(() => setIsLoading(false));
-  }, [postoSelecionado, busca]);
+  }, [periodo, refMes, refAno, postoSelecionado, busca]);
+
+  const handlePeriodoAnterior = () => {
+    if (periodo === 'ano') {
+      setRefAno((a) => a - 1);
+      return;
+    }
+    if (refMes === 1) {
+      setRefMes(12);
+      setRefAno((a) => a - 1);
+    } else {
+      setRefMes((m) => m - 1);
+    }
+  };
+  const handlePeriodoProximo = () => {
+    if (periodo === 'ano') {
+      setRefAno((a) => a + 1);
+      return;
+    }
+    if (refMes === 12) {
+      setRefMes(1);
+      setRefAno((a) => a + 1);
+    } else {
+      setRefMes((m) => m + 1);
+    }
+  };
+
+  const periodoLabel = periodo === 'ano' ? String(refAno) : periodo === 'dia' ? 'Hoje' : `${financeiroMesesNomes[refMes - 1]} / ${refAno}`;
+  const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
 
   useEffect(() => {
     const timeout = setTimeout(load, 300);
@@ -1743,34 +1778,92 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
           subtitle="Conciliação bancária entre extratos e lançamentos do sistema."
         />
 
-        {resumo ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-            <Pressable
-              style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }, aba === 'pendentes' ? fnStyles.kpiCardActive : null]}
-              onPress={() => setAba('pendentes')}
-            >
-              <Text style={fnStyles.kpiLabel}>Pendentes</Text>
-              <Text style={fnStyles.kpiValue}>{resumo.pendentes}</Text>
+        <View style={fnStyles.filterSegmentRow}>
+          {(['dia', 'mes', 'ano'] as const).map((opt) => {
+            const isActive = periodo === opt;
+            const label = opt === 'dia' ? 'Dia' : opt === 'mes' ? 'Mês' : 'Ano';
+            return (
+              <Pressable
+                key={opt}
+                style={[fnStyles.filterSegmentButton, isActive ? fnStyles.filterSegmentButtonActive : null]}
+                onPress={() => setPeriodo(opt)}
+              >
+                <Text style={[fnStyles.filterSegmentText, isActive ? fnStyles.filterSegmentTextActive : null]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {periodo !== 'dia' ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 10 }}>
+            <Pressable onPress={handlePeriodoAnterior} style={fnStyles.monthNavButton}>
+              <Feather name="chevron-left" size={18} color="#5E667D" />
             </Pressable>
-            <Pressable
-              style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }, aba === 'com-sugestao' ? fnStyles.kpiCardActive : null]}
-              onPress={() => setAba('com-sugestao')}
-            >
-              <Text style={fnStyles.kpiLabel}>Com sugestão</Text>
-              <Text style={fnStyles.kpiValue}>{resumo.comSugestao}</Text>
-            </Pressable>
-            <Pressable
-              style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }, aba === 'conciliados' ? fnStyles.kpiCardActive : null]}
-              onPress={() => setAba('conciliados')}
-            >
-              <Text style={[fnStyles.kpiLabel, { color: '#18955A' }]}>Conciliados</Text>
-              <Text style={[fnStyles.kpiValue, { color: '#18955A' }]}>{resumo.conciliados}</Text>
+            <Text style={fnStyles.monthLabel}>{periodoLabel}</Text>
+            <Pressable onPress={handlePeriodoProximo} style={fnStyles.monthNavButton}>
+              <Feather name="chevron-right" size={18} color="#5E667D" />
             </Pressable>
           </View>
         ) : null}
 
-        <FinanceiroFilterTriggerButton onPress={() => setFiltersOpen(true)} activeCount={postoSelecionado ? 1 : 0} />
+        <Pressable style={[fnStyles.postoSelectButton, { marginBottom: 10 }]} onPress={() => setPostoModalOpen(true)}>
+          <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+            {postoLabel}
+          </Text>
+          <Feather name="chevron-down" size={16} color="#5E667D" />
+        </Pressable>
+
         <FinanceiroSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por descrição..." />
+
+        {resumo ? (
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 12 }}>
+            <Pressable
+              style={[
+                fnStyles.kpiCard,
+                { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' },
+                aba === 'conciliados' ? fnStyles.kpiCardActive : null,
+              ]}
+              onPress={() => setAba('conciliados')}
+            >
+              <Text style={[fnStyles.kpiLabel, { color: '#18955A' }]} numberOfLines={1}>
+                Conciliados
+              </Text>
+              <Text style={[fnStyles.kpiValue, { color: '#18955A', fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                {resumo.conciliados}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                fnStyles.kpiCard,
+                { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' },
+                aba === 'pendentes' ? fnStyles.kpiCardActive : null,
+              ]}
+              onPress={() => setAba('pendentes')}
+            >
+              <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                Pendentes
+              </Text>
+              <Text style={[fnStyles.kpiValue, { fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                {resumo.pendentes}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                fnStyles.kpiCard,
+                { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' },
+                aba === 'com-sugestao' ? fnStyles.kpiCardActive : null,
+              ]}
+              onPress={() => setAba('com-sugestao')}
+            >
+              <Text style={fnStyles.kpiLabel} numberOfLines={1}>
+                Com sugestão
+              </Text>
+              <Text style={[fnStyles.kpiValue, { fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                {resumo.comSugestao}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <Text style={fnStyles.countLabel}>{movimentosFiltrados.length} movimento(s)</Text>
 
@@ -1785,14 +1878,14 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
             <View key={mov.codigo} style={[fnStyles.listRow, { flexDirection: 'column', alignItems: 'stretch' }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                  <Text style={[fnStyles.listRowTitle, { fontWeight: '400' }]} numberOfLines={1}>
                     {mov.descricao}
                   </Text>
                   <Text style={fnStyles.listRowMeta}>
                     {formatDateIsoBR(mov.data) ?? mov.data} · {mov.posto}
                   </Text>
                 </View>
-                <Text style={[fnStyles.listRowValue, { color: mov.tipo === 'credito' ? '#18955A' : '#E6213D' }]}>
+                <Text style={[fnStyles.listRowValue, { color: mov.tipo === 'credito' ? '#18955A' : '#E6213D', fontWeight: '400' }]}>
                   {mov.tipo === 'debito' ? '-' : ''}
                   {formatBRL(Math.abs(mov.valor))}
                 </Text>
@@ -1840,8 +1933,7 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
         )}
       </ScrollView>
 
-      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
-        <FinanceiroFilterSectionTitle label="Posto" />
+      <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
         <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
       </FinanceiroFilterModal>
     </SafeAreaView>
