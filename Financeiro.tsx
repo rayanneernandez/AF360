@@ -1979,7 +1979,7 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
                       {actingCodigo === mov.codigo ? (
                         <ActivityIndicator color="#FFFFFF" size="small" />
                       ) : (
-                        <Text style={fnStyles.suggestionButtonText}>Confirmar vínculo</Text>
+                        <Text style={fnStyles.suggestionButtonText}>Conciliar</Text>
                       )}
                     </Pressable>
                   </View>
