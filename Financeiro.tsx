@@ -2087,7 +2087,8 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
   const [meses, setMeses] = useState<FinanceiroDreMes[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
+  const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -2147,17 +2148,39 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
             <Feather name="chevron-left" size={18} color="#5E667D" />
           </Pressable>
           <Text style={fnStyles.monthLabel}>
-            {String(mes).padStart(2, '0')}/{ano}
+            {financeiroMesesNomes[mes - 1]} / {ano}
           </Text>
           <Pressable onPress={handleMesProximo} style={fnStyles.monthNavButton}>
             <Feather name="chevron-right" size={18} color="#5E667D" />
           </Pressable>
         </View>
 
-        <FinanceiroFilterTriggerButton
-          onPress={() => setFiltersOpen(true)}
-          activeCount={(postoSelecionado ? 1 : 0) + (janela !== '6meses' ? 1 : 0) + (apuracaoCaixa ? 1 : 0)}
-        />
+        <View style={fnStyles.filterSegmentRow}>
+          {financeiroJanelaOptions.map((opt) => {
+            const isActive = janela === opt.value;
+            return (
+              <Pressable
+                key={opt.value}
+                style={[fnStyles.filterSegmentButton, isActive ? fnStyles.filterSegmentButtonActive : null]}
+                onPress={() => setJanela(opt.value)}
+              >
+                <Text style={[fnStyles.filterSegmentText, isActive ? fnStyles.filterSegmentTextActive : null]}>{opt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Pressable style={[fnStyles.postoSelectButton, { marginBottom: 10 }]} onPress={() => setPostoModalOpen(true)}>
+          <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+            {postoLabel}
+          </Text>
+          <Feather name="chevron-down" size={16} color="#5E667D" />
+        </Pressable>
+
+        <View style={[fnStyles.filterOptionRow, { marginBottom: 12 }]}>
+          <Text style={fnStyles.filterOptionRowText}>Regime de caixa</Text>
+          <ToggleSwitch value={apuracaoCaixa} onValueChange={() => setApuracaoCaixa((v) => !v)} />
+        </View>
 
         {isLoading ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
@@ -2224,21 +2247,7 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
         )}
       </ScrollView>
 
-      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
-        <FinanceiroFilterSectionTitle label="Janela" />
-        {financeiroJanelaOptions.map((opt) => (
-          <FinanceiroFilterOptionRow
-            key={opt.value}
-            label={opt.label}
-            active={janela === opt.value}
-            onPress={() => setJanela(opt.value)}
-          />
-        ))}
-        <View style={[fnStyles.filterOptionRow, { marginTop: 8 }]}>
-          <Text style={fnStyles.filterOptionRowText}>Regime de caixa</Text>
-          <ToggleSwitch value={apuracaoCaixa} onValueChange={() => setApuracaoCaixa((v) => !v)} />
-        </View>
-        <FinanceiroFilterSectionTitle label="Posto" />
+      <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
         <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
       </FinanceiroFilterModal>
     </SafeAreaView>
