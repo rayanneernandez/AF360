@@ -1965,23 +1965,29 @@ export function FinanceiroConciliacaoScreen({ navigation }: ScreenProps<'Finance
               </View>
 
               {mov.sugestao ? (
-                <View style={fnStyles.suggestionBox}>
-                  <Text style={fnStyles.suggestionText}>
-                    Sugestão: {mov.sugestao.tituloContraparte} · {mov.sugestao.tituloDescricao} ·{' '}
-                    {formatBRL(mov.sugestao.tituloValor)} · vence {formatDateIsoBR(mov.sugestao.tituloVencimento) ?? ''}
-                  </Text>
-                  <Pressable
-                    style={fnStyles.suggestionButton}
-                    onPress={() => handleConfirmarSugestao(mov)}
-                    disabled={actingCodigo === mov.codigo}
-                  >
-                    {actingCodigo === mov.codigo ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <Text style={fnStyles.suggestionButtonText}>Confirmar vínculo</Text>
-                    )}
+                <>
+                  <View style={fnStyles.suggestionBox}>
+                    <Text style={fnStyles.suggestionText}>
+                      Sugestão: {mov.sugestao.tituloContraparte} · {mov.sugestao.tituloDescricao} ·{' '}
+                      {formatBRL(mov.sugestao.tituloValor)} · vence {formatDateIsoBR(mov.sugestao.tituloVencimento) ?? ''}
+                    </Text>
+                    <Pressable
+                      style={fnStyles.suggestionButton}
+                      onPress={() => handleConfirmarSugestao(mov)}
+                      disabled={actingCodigo === mov.codigo}
+                    >
+                      {actingCodigo === mov.codigo ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <Text style={fnStyles.suggestionButtonText}>Confirmar vínculo</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                  <Pressable style={fnStyles.linkManualButton} onPress={() => handleAbrirVincularManual(mov)}>
+                    <Feather name="link" size={13} color="#5E667D" />
+                    <Text style={fnStyles.linkManualButtonText}>Vincular manualmente</Text>
                   </Pressable>
-                </View>
+                </>
               ) : mov.conciliacao ? (
                 <View style={fnStyles.suggestionBox}>
                   <Text style={fnStyles.suggestionText}>
