@@ -2858,15 +2858,24 @@ function FinanceiroRelatorioDetalheModal({
 }
 
 export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'FinanceiroRelatorios'>) {
+  const now = new Date();
   const [tipo, setTipo] = useState<'contas' | 'conciliacoes' | 'fornecedores' | 'centros_custo'>('contas');
   const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  // Antes não mandava NENHUM filtro de data — pedia o histórico inteiro de
+  // uma vez (o web sempre limita a 1 mês), o que deixava a tela extremamente
+  // lenta/travada com milhares de registros. Igual às outras telas: por
+  // padrão só o mês atual, com navegação de mês.
+  const [refMes, setRefMes] = useState(now.getMonth() + 1);
+  const [refAno, setRefAno] = useState(now.getFullYear());
   const [itens, setItens] = useState<Record<string, unknown>[]>([]);
+  const [visibleCount, setVisibleCount] = useState(50);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [postoModalOpen, setPostoModalOpen] = useState(false);
   const [detalheItem, setDetalheItem] = useState<Record<string, unknown> | null>(null);
   const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
+  const mesLabel = `${financeiroMesesNomes[refMes - 1]} / ${refAno}`;
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -2877,14 +2886,35 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
+    setVisibleCount(50);
+    const { dataInicial, dataFinal } = financeiroDashboardPeriodoDatas('mes', refMes, refAno);
     fetchFinanceiroRelatorio<Record<string, unknown>>({
       tipo,
       unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+      dataInicial,
+      dataFinal,
     })
       .then(setItens)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível gerar o relatório.')))
       .finally(() => setIsLoading(false));
-  }, [tipo, postoSelecionado]);
+  }, [tipo, postoSelecionado, refMes, refAno]);
+
+  const handleMesAnterior = () => {
+    if (refMes === 1) {
+      setRefMes(12);
+      setRefAno((a) => a - 1);
+    } else {
+      setRefMes((m) => m - 1);
+    }
+  };
+  const handleMesProximo = () => {
+    if (refMes === 12) {
+      setRefMes(1);
+      setRefAno((a) => a + 1);
+    } else {
+      setRefMes((m) => m + 1);
+    }
+  };
 
   const renderLinha = (item: Record<string, unknown>, idx: number) => {
     let title = '—';
@@ -2982,6 +3012,18 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
           </View>
         </View>
 
+        {tipo === 'contas' || tipo === 'conciliacoes' ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 10 }}>
+            <Pressable onPress={handleMesAnterior} style={fnStyles.monthNavButton}>
+              <Feather name="chevron-left" size={18} color="#5E667D" />
+            </Pressable>
+            <Text style={fnStyles.monthLabel}>{mesLabel}</Text>
+            <Pressable onPress={handleMesProximo} style={fnStyles.monthNavButton}>
+              <Feather name="chevron-right" size={18} color="#5E667D" />
+            </Pressable>
+          </View>
+        ) : null}
+
         <Pressable style={[fnStyles.postoSelectButton, { marginBottom: 10 }]} onPress={() => setPostoModalOpen(true)}>
           <Text style={fnStyles.postoSelectText} numberOfLines={1}>
             {postoLabel}
@@ -2989,23 +3031,35 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
           <Feather name="chevron-down" size={16} color="#5E667D" />
         </Pressable>
 
-        <View style={fnStyles.suggestionBox}>
-          <Text style={fnStyles.suggestionText}>
-            Esta tela mostra os dados reais do relatório selecionado. A exportação em Excel/PDF ainda depende de um endpoint de
-            geração de arquivo que a Lovable ainda não confirmou — assim que confirmado, o botão de exportar é ativado aqui.
-          </Text>
-        </View>
-
-        <Text style={fnStyles.countLabel}>{itens.length} registro(s)</Text>
-
         {isLoading ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
         ) : errorMessage ? (
           <FinanceiroEmptyState message={errorMessage} />
-        ) : itens.length === 0 ? (
-          <FinanceiroEmptyState message="Nenhum registro encontrado." />
         ) : (
-          itens.map((item, idx) => renderLinha(item, idx))
+          <>
+            <View style={fnStyles.suggestionBox}>
+              <Text style={fnStyles.suggestionText}>
+                Esta tela mostra os dados reais do relatório selecionado. A exportação em Excel/PDF ainda depende de um endpoint
+                de geração de arquivo que a Lovable ainda não confirmou — assim que confirmado, o botão de exportar é ativado
+                aqui.
+              </Text>
+            </View>
+
+            <Text style={fnStyles.countLabel}>{itens.length} registro(s)</Text>
+
+            {itens.length === 0 ? (
+              <FinanceiroEmptyState message="Nenhum registro encontrado." />
+            ) : (
+              <>
+                {itens.slice(0, visibleCount).map((item, idx) => renderLinha(item, idx))}
+                {itens.length > visibleCount ? (
+                  <Pressable style={fnStyles.loadMoreButton} onPress={() => setVisibleCount((c) => c + 50)}>
+                    <Text style={fnStyles.loadMoreText}>Carregar mais</Text>
+                  </Pressable>
+                ) : null}
+              </>
+            )}
+          </>
         )}
       </ScrollView>
 
