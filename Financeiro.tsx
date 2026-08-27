@@ -2139,6 +2139,9 @@ const financeiroJanelaOptions: Array<{ label: string; value: 'mes' | '3meses' | 
 
 export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'FinanceiroBalanceteDre'>) {
   const now = new Date();
+  const { width: windowWidth } = useWindowDimensions();
+  const chartWidth = Math.max(220, windowWidth - 40 - 24 - 32);
+  const chartPlotWidth = Math.max(160, chartWidth - 44);
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [ano, setAno] = useState(now.getFullYear());
   const [janela, setJanela] = useState<'mes' | '3meses' | '6meses' | '12meses'>('6meses');
@@ -2149,7 +2152,19 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [postoModalOpen, setPostoModalOpen] = useState(false);
+  const [dreChartPointerIdx, setDreChartPointerIdx] = useState<number | null>(null);
   const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
+  // O topo (KPIs, equação, maiores saídas, vendas por grupo) mostra sempre o
+  // mês "atual" navegado — igual ao web, que fixa isso no mês selecionado no
+  // seletor, independente da janela (3/6/12 meses) que só afeta o gráfico e
+  // a tabela mês a mês abaixo.
+  const mesAtual = meses.length > 0 ? meses[meses.length - 1] : null;
+
+  const dreChartRange = useMemo(() => {
+    const valores = meses.flatMap((m) => [m.entradas, m.saidas]);
+    const max = Math.max(0, ...valores);
+    return { max: max > 0 ? max * 1.1 : 1 };
+  }, [meses]);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -2247,53 +2262,178 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
         ) : errorMessage ? (
           <FinanceiroEmptyState message={errorMessage} />
-        ) : meses.length === 0 ? (
+        ) : !mesAtual ? (
           <FinanceiroEmptyState message="Sem dados para o período selecionado." />
         ) : (
-          meses.map((item) => (
-            <View key={item.periodo} style={fnStyles.dreCard}>
-              <Text style={fnStyles.sectionTitle}>{item.label}</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-                <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                  <Text style={fnStyles.kpiLabel}>Receita líquida</Text>
-                  <Text style={fnStyles.kpiValue}>{formatBRL(item.receitaLiquida)}</Text>
+          <>
+            {/* 3 KPIs do mês atual, igual ao web (Entradas/Saídas/Resultado) */}
+            <View style={{ gap: 8, marginBottom: 10 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={[fnStyles.dreKpiCard, { borderLeftColor: '#5B3EBF' }]}>
+                  <Text style={fnStyles.kpiLabel}>Entradas</Text>
+                  <Text style={[fnStyles.kpiValue, { fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                    {formatBRL(mesAtual.entradas)}
+                  </Text>
+                  <Text style={fnStyles.kpiLabelUnidade}>receita bruta + outras receitas</Text>
                 </View>
-                <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                  <Text style={fnStyles.kpiLabel}>Despesas</Text>
-                  <Text style={fnStyles.kpiValue}>{formatBRL(item.despesas)}</Text>
+                <View style={[fnStyles.dreKpiCard, { borderLeftColor: '#C05621' }]}>
+                  <Text style={fnStyles.kpiLabel}>Saídas</Text>
+                  <Text style={[fnStyles.kpiValue, { fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                    {formatBRL(mesAtual.saidas)}
+                  </Text>
+                  <Text style={fnStyles.kpiLabelUnidade}>deduções fiscais + pagamentos</Text>
                 </View>
-                <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                  <Text style={fnStyles.kpiLabel}>Resultado</Text>
-                  <Text style={[fnStyles.kpiValue, { color: item.resultado >= 0 ? '#18955A' : '#E6213D' }]}>
+              </View>
+              <View style={[fnStyles.dreKpiCard, { borderLeftColor: mesAtual.resultado >= 0 ? '#18955A' : '#E6213D' }]}>
+                <Text style={fnStyles.kpiLabel}>Resultado</Text>
+                <Text
+                  style={[fnStyles.kpiValue, { fontSize: 17, color: mesAtual.resultado >= 0 ? '#18955A' : '#E6213D' }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
+                  {formatBRL(mesAtual.resultado)}
+                </Text>
+                <Text style={fnStyles.kpiLabelUnidade}>margem {mesAtual.margem.toFixed(1)}%</Text>
+              </View>
+            </View>
+
+            {/* Equação: Entradas - Saídas = Resultado */}
+            <View style={fnStyles.dreEquationCard}>
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={fnStyles.kpiLabelUnidade}>ENTRADAS</Text>
+                <Text style={[fnStyles.dreEquationValue, { color: '#18955A' }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                  {formatBRL(mesAtual.entradas)}
+                </Text>
+              </View>
+              <Text style={fnStyles.dreEquationSign}>−</Text>
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={fnStyles.kpiLabelUnidade}>SAÍDAS</Text>
+                <Text style={[fnStyles.dreEquationValue, { color: '#E6213D' }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                  {formatBRL(mesAtual.saidas)}
+                </Text>
+              </View>
+              <Text style={fnStyles.dreEquationSign}>=</Text>
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={fnStyles.kpiLabelUnidade}>RESULTADO</Text>
+                <Text
+                  style={[fnStyles.dreEquationValue, { color: mesAtual.resultado >= 0 ? '#18955A' : '#E6213D' }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
+                >
+                  {formatBRL(mesAtual.resultado)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Gráfico mês a mês (cobre toda a janela 3/6/12 meses, não só o mês atual) */}
+            <View style={fnStyles.dreCard}>
+              <Text style={fnStyles.sectionTitle}>Mês a mês</Text>
+              <LineChart
+                data={meses.map((m) => ({ value: m.entradas }))}
+                data2={meses.map((m) => ({ value: m.saidas }))}
+                width={chartPlotWidth}
+                height={160}
+                thickness={2.5}
+                color="#18955A"
+                color2="#E6213D"
+                maxValue={dreChartRange.max}
+                yAxisLabelWidth={44}
+                yAxisTextStyle={{ color: '#8A93A8', fontSize: 9 }}
+                noOfSections={4}
+                xAxisLabelsHeight={0}
+                hideRules
+                initialSpacing={8}
+                endSpacing={8}
+                pointerConfig={{
+                  pointerStripHeight: 140,
+                  pointerStripColor: '#C7CCD9',
+                  pointerColor: '#5E667D',
+                  radius: 5,
+                  activatePointersInstantlyOnTouch: true,
+                  persistPointer: true,
+                  pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
+                    setTimeout(() => setDreChartPointerIdx(pointerIndex), 0);
+                    return null;
+                  },
+                }}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 44 + 8, paddingRight: 8, marginTop: 4 }}>
+                {meses.map((m, idx) => (
+                  <Text
+                    key={m.periodo}
+                    style={[
+                      fnStyles.chartAxisLabel,
+                      idx === 0 ? { textAlign: 'left' } : idx === meses.length - 1 ? { textAlign: 'right' } : { textAlign: 'center' },
+                    ]}
+                  >
+                    {m.label}
+                  </Text>
+                ))}
+              </View>
+              <View style={{ flexDirection: 'row', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
+                <FinanceiroChartLegendDot color="#18955A" label="Entradas" />
+                <FinanceiroChartLegendDot color="#E6213D" label="Saídas" />
+              </View>
+              <Text style={[fnStyles.listRowMeta, { marginTop: 8, textAlign: 'center' }]}>
+                {dreChartPointerIdx !== null && meses[dreChartPointerIdx]
+                  ? `${meses[dreChartPointerIdx].label} · Entradas: ${formatBRL(meses[dreChartPointerIdx].entradas)} · Saídas: ${formatBRL(meses[dreChartPointerIdx].saidas)} · Resultado: ${formatBRL(meses[dreChartPointerIdx].resultado)}`
+                  : 'Toque em um ponto da linha para ver os valores daquele mês.'}
+              </Text>
+            </View>
+
+            {/* Tabela mês a mês (mesma janela do gráfico) */}
+            {meses.map((item) => (
+              <View key={item.periodo} style={fnStyles.dreCard}>
+                <Text style={fnStyles.sectionTitle}>{item.label}</Text>
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>Receita bruta</Text>
+                  <Text style={fnStyles.dreLineValue}>{formatBRL(item.receitaBruta)}</Text>
+                </View>
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>Deduções</Text>
+                  <Text style={fnStyles.dreLineValue}>{formatBRL(item.deducaoFiscal)}</Text>
+                </View>
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>Outras receitas</Text>
+                  <Text style={fnStyles.dreLineValue}>{formatBRL(item.outrasReceitas)}</Text>
+                </View>
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>Pagamentos</Text>
+                  <Text style={fnStyles.dreLineValue}>{formatBRL(item.saidas - item.deducaoFiscal)}</Text>
+                </View>
+                <View style={[fnStyles.dreLine, { borderTopWidth: 1, borderTopColor: '#F1F2F6', marginTop: 4, paddingTop: 8 }]}>
+                  <Text style={fnStyles.dreLineLabel}>Entradas</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: '#18955A' }]}>{formatBRL(item.entradas)}</Text>
+                </View>
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>Saídas</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: '#E6213D' }]}>{formatBRL(item.saidas)}</Text>
+                </View>
+                <View style={[fnStyles.dreLine, { borderTopWidth: 1, borderTopColor: '#F1F2F6', marginTop: 4, paddingTop: 8 }]}>
+                  <Text style={[fnStyles.dreLineLabel, { fontWeight: '700' }]}>Resultado</Text>
+                  <Text style={[fnStyles.dreLineValue, { fontWeight: '700', color: item.resultado >= 0 ? '#18955A' : '#E6213D' }]}>
                     {formatBRL(item.resultado)}
                   </Text>
                 </View>
-                <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                  <Text style={fnStyles.kpiLabel}>Margem</Text>
-                  <Text style={[fnStyles.kpiValue, { color: item.margem >= 0 ? '#18955A' : '#E6213D' }]}>
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>Margem</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: item.margem >= 0 ? '#18955A' : '#E6213D' }]}>
                     {item.margem.toFixed(1)}%
                   </Text>
                 </View>
               </View>
+            ))}
 
-              {item.gruposVenda.length > 0 ? (
-                <>
-                  <Text style={fnStyles.dreSubTitle}>Vendas por grupo</Text>
-                  {item.gruposVenda.map((grupo, idx) => (
-                    <View key={idx} style={fnStyles.dreLine}>
-                      <Text style={fnStyles.dreLineLabel} numberOfLines={1}>
-                        {grupo.grupo}
-                      </Text>
-                      <Text style={fnStyles.dreLineValue}>{formatBRL(grupo.venda)}</Text>
-                    </View>
-                  ))}
-                </>
-              ) : null}
-
-              {item.despesasPorConta.length > 0 ? (
-                <>
-                  <Text style={[fnStyles.dreSubTitle, { marginTop: 8 }]}>Despesas por conta</Text>
-                  {item.despesasPorConta.map((conta, idx) => (
+            {/* Maiores saídas do mês atual (despesasPorConta, maior pro menor) */}
+            {mesAtual.despesasPorConta.length > 0 ? (
+              <View style={fnStyles.dreCard}>
+                <Text style={fnStyles.sectionTitle}>Maiores saídas · {mesAtual.label}</Text>
+                {[...mesAtual.despesasPorConta]
+                  .sort((a, b) => b.valor - a.valor)
+                  .slice(0, 10)
+                  .map((conta, idx) => (
                     <View key={idx} style={fnStyles.dreLine}>
                       <Text style={fnStyles.dreLineLabel} numberOfLines={1}>
                         {conta.conta}
@@ -2301,10 +2441,29 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
                       <Text style={[fnStyles.dreLineValue, { color: '#E6213D' }]}>{formatBRL(conta.valor)}</Text>
                     </View>
                   ))}
-                </>
-              ) : null}
-            </View>
-          ))
+              </View>
+            ) : null}
+
+            {/* Vendas por grupo do mês atual, com margem — igual ao web */}
+            {mesAtual.gruposVenda.length > 0 ? (
+              <View style={fnStyles.dreCard}>
+                <Text style={fnStyles.sectionTitle}>Vendas por grupo · {mesAtual.label}</Text>
+                {[...mesAtual.gruposVenda]
+                  .sort((a, b) => b.venda - a.venda)
+                  .map((grupo, idx) => (
+                    <View key={idx} style={fnStyles.dreLine}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={fnStyles.dreLineLabel} numberOfLines={1}>
+                          {grupo.grupo}
+                        </Text>
+                        <Text style={fnStyles.kpiLabelUnidade}>margem {grupo.margem.toFixed(1)}%</Text>
+                      </View>
+                      <Text style={[fnStyles.dreLineValue, { color: '#18955A' }]}>{formatBRL(grupo.venda)}</Text>
+                    </View>
+                  ))}
+              </View>
+            ) : null}
+          </>
         )}
       </ScrollView>
 
@@ -4759,5 +4918,36 @@ const fnStyles = StyleSheet.create({
   exportButtonText: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  dreKpiCard: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderLeftWidth: 3,
+    borderRadius: 10,
+    padding: 12,
+  },
+  dreEquationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    padding: 12,
+    gap: 6,
+    marginBottom: 16,
+  },
+  dreEquationValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  dreEquationSign: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#8A93A8',
   },
 });
