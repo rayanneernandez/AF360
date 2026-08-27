@@ -2508,9 +2508,12 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
     return { max: maxComFolga - offset, offset };
   }, [data]);
 
+  // Igual ao web: soma do "Resultado" de cada mês do período — NÃO é a
+  // diferença entre saldo final e saldo inicial (isso dava um número bem
+  // diferente do que o web mostra).
   const resultadoProjetado = useMemo(() => {
-    if (!data || data.meses.length === 0) return 0;
-    return data.meses[data.meses.length - 1].saldoBase - data.saldoInicial;
+    if (!data) return 0;
+    return data.meses.reduce((acc, m) => acc + m.resultado, 0);
   }, [data]);
 
   const saldoFimHorizonte = data && data.meses.length > 0 ? data.meses[data.meses.length - 1].saldoBase : 0;
