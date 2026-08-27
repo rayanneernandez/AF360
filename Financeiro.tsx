@@ -2460,14 +2460,25 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
   );
 }
 
+const financeiroProjecaoHorizonteOptions = [
+  { label: '3 meses', value: 3 },
+  { label: '6 meses', value: 6 },
+  { label: '12 meses', value: 12 },
+];
+
 export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'FinanceiroProjecoes'>) {
+  const { width: windowWidth } = useWindowDimensions();
+  const chartWidth = Math.max(220, windowWidth - 40 - 24 - 32);
+  const chartPlotWidth = Math.max(160, chartWidth - 44);
   const [data, setData] = useState<FinanceiroProjecoesData | null>(null);
   const [postos, setPostos] = useState<FinanceiroPostoConfig[]>([]);
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
   const [horizonteMeses, setHorizonteMeses] = useState(6);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
+  const [projPointerIdx, setProjPointerIdx] = useState<number | null>(null);
+  const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -2484,6 +2495,30 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
       .finally(() => setIsLoading(false));
   }, [postoSelecionado, horizonteMeses]);
 
+  // Mesma lógica de escala/offset usada no gráfico "Curva financeira" do
+  // Dashboard — aqui só existe 1 série (saldoBase), mas o saldo pode ficar
+  // bem negativo, então precisamos do yAxisOffset pra não gerar um gráfico
+  // gigante (ver comentário detalhado lá no Dashboard).
+  const saldoRange = useMemo(() => {
+    const valores = (data?.meses ?? []).map((m) => m.saldoBase);
+    const max = Math.max(0, ...valores);
+    const min = Math.min(0, ...valores);
+    const maxComFolga = max > 0 ? max * 1.1 : 1;
+    const offset = min < 0 ? min * 1.1 : 0;
+    return { max: maxComFolga - offset, offset };
+  }, [data]);
+
+  const resultadoProjetado = useMemo(() => {
+    if (!data || data.meses.length === 0) return 0;
+    return data.meses[data.meses.length - 1].saldoBase - data.saldoInicial;
+  }, [data]);
+
+  const saldoFimHorizonte = data && data.meses.length > 0 ? data.meses[data.meses.length - 1].saldoBase : 0;
+
+  // Primeiro mês em que o saldo projetado (cenário base) vira negativo —
+  // mesmo aviso que aparece no web.
+  const mesNegativo = useMemo(() => data?.meses.find((m) => m.saldoBase < 0) ?? null, [data]);
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -2497,10 +2532,29 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
           subtitle="Faturamento e pagamentos projetados para os próximos meses."
         />
 
-        <FinanceiroFilterTriggerButton
-          onPress={() => setFiltersOpen(true)}
-          activeCount={(postoSelecionado ? 1 : 0) + (horizonteMeses !== 6 ? 1 : 0)}
-        />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Pressable style={[fnStyles.postoSelectButton, { flex: 1 }]} onPress={() => setPostoModalOpen(true)}>
+            <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+              {postoLabel}
+            </Text>
+            <Feather name="chevron-down" size={16} color="#5E667D" />
+          </Pressable>
+        </View>
+
+        <View style={[fnStyles.filterSegmentRow, { marginBottom: 12 }]}>
+          {financeiroProjecaoHorizonteOptions.map((opt) => {
+            const isActive = horizonteMeses === opt.value;
+            return (
+              <Pressable
+                key={opt.value}
+                style={[fnStyles.filterSegmentButton, isActive ? fnStyles.filterSegmentButtonActive : null]}
+                onPress={() => setHorizonteMeses(opt.value)}
+              >
+                <Text style={[fnStyles.filterSegmentText, isActive ? fnStyles.filterSegmentTextActive : null]}>{opt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
         {isLoading ? (
           <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
@@ -2510,77 +2564,174 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
           <FinanceiroEmptyState message="Sem dados de projeção." />
         ) : (
           <>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                <Text style={fnStyles.kpiLabel}>Saldo atual</Text>
-                <Text style={fnStyles.kpiValue}>{formatBRL(data.saldoInicial)}</Text>
+            <View style={{ gap: 8, marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' }]}>
+                  <Text style={fnStyles.kpiLabel}>Saldo bancário atual</Text>
+                  <Text style={[fnStyles.kpiValue, { fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                    {formatBRL(data.saldoInicial)}
+                  </Text>
+                </View>
+                <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' }]}>
+                  <Text style={fnStyles.kpiLabel}>Resultado projetado</Text>
+                  <Text
+                    style={[fnStyles.kpiValue, { fontSize: 15, color: resultadoProjetado >= 0 ? '#18955A' : '#E6213D' }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
+                  >
+                    {formatBRL(resultadoProjetado)}
+                  </Text>
+                </View>
               </View>
-              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                <Text style={fnStyles.kpiLabel}>Média mensal recebido</Text>
-                <Text style={[fnStyles.kpiValue, { color: '#18955A' }]}>{formatBRL(data.mediaReceber)}</Text>
-              </View>
-              <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '100%' }]}>
-                <Text style={fnStyles.kpiLabel}>Média mensal pago</Text>
-                <Text style={[fnStyles.kpiValue, { color: '#E6213D' }]}>{formatBRL(data.mediaPagar)}</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' }]}>
+                  <Text style={fnStyles.kpiLabel}>Saldo ao fim do horizonte</Text>
+                  <Text
+                    style={[fnStyles.kpiValue, { fontSize: 15, color: saldoFimHorizonte >= 0 ? '#0C1736' : '#E6213D' }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
+                  >
+                    {formatBRL(saldoFimHorizonte)}
+                  </Text>
+                </View>
+                <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' }]}>
+                  <Text style={fnStyles.kpiLabel}>Média histórica ({horizonteMeses}M)</Text>
+                  <Text style={[fnStyles.kpiValue, { fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                    {formatBRL(data.mediaReceber)}
+                  </Text>
+                  <Text style={[fnStyles.kpiLabelUnidade, { marginTop: 2 }]} numberOfLines={1}>
+                    Pagamentos: {formatBRLValor(data.mediaPagar)}
+                  </Text>
+                </View>
               </View>
             </View>
 
-            {data.meses.map((mesItem) => (
-              <View key={mesItem.mes} style={fnStyles.dreCard}>
-                <Text style={fnStyles.sectionTitle}>{mesItem.label}</Text>
-                {mesItem.alerta ? (
-                  <View style={[fnStyles.badge, { alignSelf: 'flex-start', backgroundColor: '#FBE7E9', marginBottom: 8 }]}>
-                    <Text style={[fnStyles.badgeText, { color: '#E6213D' }]}>{mesItem.alerta}</Text>
-                  </View>
-                ) : null}
-                <View style={fnStyles.dreLine}>
-                  <Text style={fnStyles.dreLineLabel}>A receber previsto</Text>
-                  <Text style={[fnStyles.dreLineValue, { color: '#18955A' }]}>{formatBRL(mesItem.receberPrevisto)}</Text>
-                </View>
-                <View style={fnStyles.dreLine}>
-                  <Text style={fnStyles.dreLineLabel}>A pagar previsto</Text>
-                  <Text style={[fnStyles.dreLineValue, { color: '#E6213D' }]}>{formatBRL(mesItem.pagarPrevisto)}</Text>
-                </View>
-                <View style={fnStyles.dreLine}>
-                  <Text style={fnStyles.dreLineLabel}>Resultado do mês</Text>
-                  <Text style={[fnStyles.dreLineValue, { color: mesItem.resultado >= 0 ? '#18955A' : '#E6213D' }]}>
-                    {formatBRL(mesItem.resultado)}
+            {mesNegativo ? (
+              <View style={fnStyles.projAlertBanner}>
+                <Feather name="alert-triangle" size={16} color="#B3172F" />
+                <Text style={fnStyles.projAlertText}>
+                  Saldo projetado fica negativo em {mesNegativo.label} ({formatBRL(mesNegativo.saldoBase)}).
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={fnStyles.dreCard}>
+              <Text style={fnStyles.sectionTitle}>Curva de caixa projetada</Text>
+              <LineChart
+                data={data.meses.map((m) => ({ value: m.saldoBase }))}
+                width={chartPlotWidth}
+                height={160}
+                thickness={2.5}
+                color="#E0603D"
+                areaChart
+                startFillColor="#E0603D"
+                endFillColor="#E0603D"
+                startOpacity={0.25}
+                endOpacity={0.02}
+                yAxisLabelWidth={44}
+                yAxisTextStyle={{ color: '#8A93A8', fontSize: 9 }}
+                noOfSections={4}
+                maxValue={saldoRange.max}
+                yAxisOffset={saldoRange.offset}
+                xAxisLabelsHeight={0}
+                hideRules
+                hideDataPoints={false}
+                dataPointsColor="#E0603D"
+                dataPointsRadius={3}
+                initialSpacing={8}
+                endSpacing={8}
+                pointerConfig={{
+                  pointerStripHeight: 140,
+                  pointerStripColor: '#C7CCD9',
+                  pointerColor: '#E0603D',
+                  radius: 5,
+                  pointerLabelComponent: (items: Array<{ value: number }>, pointerIndex: number) => {
+                    setTimeout(() => setProjPointerIdx(pointerIndex), 0);
+                    return null;
+                  },
+                }}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 44 + 8, paddingRight: 8, marginTop: 4 }}>
+                {data.meses.map((m, idx) => (
+                  <Text
+                    key={m.mes}
+                    style={[
+                      fnStyles.chartAxisLabel,
+                      idx === 0 ? { textAlign: 'left' } : idx === data.meses.length - 1 ? { textAlign: 'right' } : { textAlign: 'center' },
+                    ]}
+                  >
+                    {m.label}
                   </Text>
+                ))}
+              </View>
+              <Text style={[fnStyles.listRowMeta, { marginTop: 8, textAlign: 'center' }]}>
+                {projPointerIdx !== null && data.meses[projPointerIdx]
+                  ? `${data.meses[projPointerIdx].label} · Saldo projetado: ${formatBRL(data.meses[projPointerIdx].saldoBase)}`
+                  : 'Toque em um ponto da linha para ver o saldo projetado daquele mês.'}
+              </Text>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={fnStyles.projTableCard}>
+              <View>
+                <View style={fnStyles.projTableHeaderRow}>
+                  <Text style={[fnStyles.projTableHeaderCell, { width: 70 }]}>Mês</Text>
+                  <Text style={[fnStyles.projTableHeaderCell, { width: 110, textAlign: 'right' }]}>A receber{'\n'}(lançado)</Text>
+                  <Text style={[fnStyles.projTableHeaderCell, { width: 100, textAlign: 'right' }]}>+ média</Text>
+                  <Text style={[fnStyles.projTableHeaderCell, { width: 110, textAlign: 'right' }]}>A pagar{'\n'}(lançado)</Text>
+                  <Text style={[fnStyles.projTableHeaderCell, { width: 100, textAlign: 'right' }]}>+ média</Text>
+                  <Text style={[fnStyles.projTableHeaderCell, { width: 120, textAlign: 'right' }]}>Resultado</Text>
+                  <Text style={[fnStyles.projTableHeaderCell, { width: 140, textAlign: 'right' }]}>Saldo{'\n'}projetado</Text>
                 </View>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                  <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
-                    <Text style={fnStyles.kpiLabel}>Pessimista</Text>
-                    <Text style={[fnStyles.kpiValue, { fontSize: 14, color: mesItem.saldoPessimista >= 0 ? '#0C1736' : '#E6213D' }]}>
-                      {formatBRL(mesItem.saldoPessimista)}
+                {data.meses.map((m) => (
+                  <View key={m.mes} style={fnStyles.projTableRow}>
+                    <Text style={[fnStyles.projTableCell, { width: 70 }]}>{m.label}</Text>
+                    <Text style={[fnStyles.projTableCell, { width: 110, textAlign: 'right', color: '#18955A' }]}>
+                      {formatBRL(m.receberPrevisto)}
+                    </Text>
+                    <Text style={[fnStyles.projTableCell, { width: 100, textAlign: 'right', color: '#8A93A8', fontWeight: '400' }]}>
+                      {formatBRL(m.receberMedia)}
+                    </Text>
+                    <Text style={[fnStyles.projTableCell, { width: 110, textAlign: 'right', color: '#E6213D' }]}>
+                      {formatBRL(m.pagarPrevisto)}
+                    </Text>
+                    <Text style={[fnStyles.projTableCell, { width: 100, textAlign: 'right', color: '#8A93A8', fontWeight: '400' }]}>
+                      {formatBRL(m.pagarMedia)}
+                    </Text>
+                    <Text
+                      style={[
+                        fnStyles.projTableCell,
+                        { width: 120, textAlign: 'right', color: m.resultado >= 0 ? '#18955A' : '#E6213D' },
+                      ]}
+                    >
+                      {formatBRL(m.resultado)}
+                    </Text>
+                    <Text
+                      style={[
+                        fnStyles.projTableCell,
+                        { width: 140, textAlign: 'right', color: m.saldoBase >= 0 ? '#0C1736' : '#E6213D' },
+                      ]}
+                    >
+                      {formatBRL(m.saldoBase)}
                     </Text>
                   </View>
-                  <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
-                    <Text style={fnStyles.kpiLabel}>Base</Text>
-                    <Text style={[fnStyles.kpiValue, { fontSize: 14 }]}>{formatBRL(mesItem.saldoBase)}</Text>
-                  </View>
-                  <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '30%' }]}>
-                    <Text style={fnStyles.kpiLabel}>Otimista</Text>
-                    <Text style={[fnStyles.kpiValue, { fontSize: 14, color: '#18955A' }]}>{formatBRL(mesItem.saldoOtimista)}</Text>
-                  </View>
-                </View>
+                ))}
               </View>
-            ))}
+            </ScrollView>
           </>
         )}
       </ScrollView>
 
-      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
-        <FinanceiroFilterSectionTitle label="Horizonte" />
-        {[3, 6, 12].map((n) => (
-          <FinanceiroFilterOptionRow
-            key={n}
-            label={`${n} meses`}
-            active={horizonteMeses === n}
-            onPress={() => setHorizonteMeses(n)}
-          />
-        ))}
-        <FinanceiroFilterSectionTitle label="Posto" />
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
+        <FinanceiroPostoFilterRow
+          postos={postos}
+          selected={postoSelecionado}
+          onSelect={(id) => {
+            setPostoSelecionado(id);
+            setPostoModalOpen(false);
+          }}
+        />
       </FinanceiroFilterModal>
     </SafeAreaView>
   );
@@ -4113,5 +4264,54 @@ const fnStyles = StyleSheet.create({
   profileFieldText: {
     color: '#3A415C',
     fontSize: 13,
+  },
+  projAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FBE7E9',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  projAlertText: {
+    flex: 1,
+    color: '#B3172F',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  projTableCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    paddingVertical: 4,
+    marginBottom: 16,
+  },
+  projTableHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E6F0',
+    paddingBottom: 8,
+    paddingTop: 8,
+  },
+  projTableRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F2F6',
+    paddingVertical: 10,
+  },
+  projTableHeaderCell: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#677089',
+    paddingHorizontal: 10,
+  },
+  projTableCell: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0C1736',
+    paddingHorizontal: 10,
   },
 });
