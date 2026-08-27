@@ -503,7 +503,8 @@ export function FinanceiroContasBancariasScreen({ navigation }: ScreenProps<'Fin
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
+  const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -538,7 +539,12 @@ export function FinanceiroContasBancariasScreen({ navigation }: ScreenProps<'Fin
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <FinanceiroPageHeader icon="credit-card" title="Contas Bancárias" subtitle="Contas bancárias das unidades e saldos de referência." />
-        <FinanceiroFilterTriggerButton onPress={() => setFiltersOpen(true)} activeCount={postoSelecionado ? 1 : 0} />
+        <Pressable style={[fnStyles.postoSelectButton, { marginBottom: 10 }]} onPress={() => setPostoModalOpen(true)}>
+          <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+            {postoLabel}
+          </Text>
+          <Feather name="chevron-down" size={16} color="#5E667D" />
+        </Pressable>
         <FinanceiroSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar conta..." />
         <View style={fnStyles.countRow}>
           <Text style={fnStyles.countLabel}>{itens.length} conta(s)</Text>
@@ -578,9 +584,15 @@ export function FinanceiroContasBancariasScreen({ navigation }: ScreenProps<'Fin
         )}
       </ScrollView>
 
-      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
-        <FinanceiroFilterSectionTitle label="Posto" />
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
+        <FinanceiroPostoFilterRow
+          postos={postos}
+          selected={postoSelecionado}
+          onSelect={(id) => {
+            setPostoSelecionado(id);
+            setPostoModalOpen(false);
+          }}
+        />
       </FinanceiroFilterModal>
     </SafeAreaView>
   );
@@ -633,22 +645,26 @@ function FinanceiroFornecedorDetalheModal({
               <ActivityIndicator color="#C05621" style={{ marginTop: 20 }} />
             ) : (
               <>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                  <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                    <Text style={fnStyles.kpiLabel}>Títulos no período</Text>
-                    <Text style={fnStyles.kpiValue}>{detalhe.titulos}</Text>
+                <View style={{ gap: 8, marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
+                      <Text style={fnStyles.kpiLabel}>Títulos no período</Text>
+                      <Text style={fnStyles.kpiValue}>{detalhe.titulos}</Text>
+                    </View>
+                    <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
+                      <Text style={fnStyles.kpiLabel}>Total</Text>
+                      <Text style={fnStyles.kpiValue}>{formatBRL(detalhe.valorTotal)}</Text>
+                    </View>
                   </View>
-                  <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                    <Text style={fnStyles.kpiLabel}>Total</Text>
-                    <Text style={fnStyles.kpiValue}>{formatBRL(detalhe.valorTotal)}</Text>
-                  </View>
-                  <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                    <Text style={fnStyles.kpiLabel}>Em aberto</Text>
-                    <Text style={fnStyles.kpiValue}>{formatBRL(detalhe.valorAberto ?? 0)}</Text>
-                  </View>
-                  <View style={[fnStyles.kpiCard, { flexGrow: 1, minWidth: '45%' }]}>
-                    <Text style={fnStyles.kpiLabel}>Último vencimento</Text>
-                    <Text style={fnStyles.kpiValue}>{formatDateIsoBR(detalhe.ultimoVencimento) ?? '—'}</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
+                      <Text style={fnStyles.kpiLabel}>Em aberto</Text>
+                      <Text style={fnStyles.kpiValue}>{formatBRL(detalhe.valorAberto ?? 0)}</Text>
+                    </View>
+                    <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
+                      <Text style={fnStyles.kpiLabel}>Último vencimento</Text>
+                      <Text style={fnStyles.kpiValue}>{formatDateIsoBR(detalhe.ultimoVencimento) ?? '—'}</Text>
+                    </View>
                   </View>
                 </View>
 
@@ -2285,7 +2301,8 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
   const [isReanalisando, setIsReanalisando] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
+  const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -2336,21 +2353,29 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
           subtitle="Lançamentos previstos pela IA a partir do histórico de cada posto."
         />
 
-        <Pressable style={fnStyles.reanalisarButton} onPress={handleReanalisar} disabled={isReanalisando}>
-          {isReanalisando ? (
-            <ActivityIndicator color="#C05621" size="small" />
-          ) : (
-            <>
-              <Feather name="refresh-cw" size={14} color="#C05621" />
-              <Text style={fnStyles.reanalisarButtonText}>Reanalisar agora</Text>
-            </>
-          )}
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Pressable style={[fnStyles.postoSelectButton, { flex: 1 }]} onPress={() => setPostoModalOpen(true)}>
+            <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+              {postoLabel}
+            </Text>
+            <Feather name="chevron-down" size={16} color="#5E667D" />
+          </Pressable>
+          <Pressable style={fnStyles.reanalisarButton} onPress={handleReanalisar} disabled={isReanalisando}>
+            {isReanalisando ? (
+              <ActivityIndicator color="#C05621" size="small" />
+            ) : (
+              <>
+                <Feather name="refresh-cw" size={14} color="#C05621" />
+                <Text style={fnStyles.reanalisarButtonText}>Reanalisar agora</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
 
-        <FinanceiroFilterTriggerButton
-          onPress={() => setFiltersOpen(true)}
-          activeCount={(postoSelecionado ? 1 : 0) + (mostrarRespondidos ? 1 : 0)}
-        />
+        <View style={[fnStyles.filterOptionRow, { marginBottom: 10 }]}>
+          <Text style={fnStyles.filterOptionRowText}>Mostrar respondidos</Text>
+          <ToggleSwitch value={mostrarRespondidos} onValueChange={() => setMostrarRespondidos((v) => !v)} />
+        </View>
 
         <Text style={fnStyles.countLabel}>{itens.length} previsão(ões)</Text>
 
@@ -2363,20 +2388,25 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
         ) : (
           itens.map((item) => (
             <View key={item.id} style={fnStyles.dreCard}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                <Text style={fnStyles.listRowTitle} numberOfLines={1}>
-                  {item.fornecedor_nome}
-                </Text>
-                <View style={[fnStyles.badge, { backgroundColor: '#EDE7FB' }]}>
-                  <Text style={[fnStyles.badgeText, { color: '#5B3EBF' }]}>{Math.round(item.confianca * 100)}% confiança</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                    {item.fornecedor_nome || '—'}
+                  </Text>
+                  <Text style={fnStyles.listRowMeta} numberOfLines={1}>
+                    Posto {item.posto}
+                  </Text>
                 </View>
+                <Text style={[fnStyles.listRowValue, { fontSize: 16 }]}>{formatBRL(item.valor_esperado)}</Text>
               </View>
-              <Text style={fnStyles.listRowMeta}>{item.mensagem}</Text>
+              <Text style={[fnStyles.listRowMeta, { marginBottom: 4 }]}>{item.mensagem}</Text>
               <Text style={fnStyles.listRowMeta}>
                 {item.posto} · {item.tipo} · Competência {item.competencia} · {item.periodicidade}
               </Text>
-              {item.detalhe ? <Text style={fnStyles.listRowMeta}>{item.detalhe}</Text> : null}
-              <Text style={[fnStyles.listRowValue, { marginTop: 6 }]}>{formatBRL(item.valor_esperado)}</Text>
+              <Text style={fnStyles.listRowMeta}>
+                {item.detalhe ? `${item.detalhe} · ` : ''}
+                {item.ocorrencias} ocorrência(s) nos últimos 12 meses · confiança {Math.round(item.confianca * 100)}%
+              </Text>
 
               {item.status === 'pendente' ? (
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
@@ -2416,13 +2446,15 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
         )}
       </ScrollView>
 
-      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
-        <FinanceiroFilterSectionTitle label="Posto" />
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
-        <View style={[fnStyles.filterOptionRow, { marginTop: 8 }]}>
-          <Text style={fnStyles.filterOptionRowText}>Mostrar respondidos</Text>
-          <ToggleSwitch value={mostrarRespondidos} onValueChange={() => setMostrarRespondidos((v) => !v)} />
-        </View>
+      <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
+        <FinanceiroPostoFilterRow
+          postos={postos}
+          selected={postoSelecionado}
+          onSelect={(id) => {
+            setPostoSelecionado(id);
+            setPostoModalOpen(false);
+          }}
+        />
       </FinanceiroFilterModal>
     </SafeAreaView>
   );
