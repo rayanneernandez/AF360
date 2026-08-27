@@ -2894,21 +2894,21 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
       title = String(item.razao ?? item.fantasia ?? '—');
       meta = String(item.cnpjCpf ?? '');
     } else if (tipo === 'centros_custo') {
-      title = String(item.descricao ?? '—');
-      meta = String(item.tipo ?? '');
+      title = String(item.posto ?? item.descricao ?? '—');
+      meta = String(item.descricao ?? item.tipo ?? '');
     } else if (tipo === 'contas') {
-      title = String(item.descricao ?? '—');
-      meta = `${String(item.contraparte ?? '')} · ${String(item.status ?? '')}`;
+      title = String(item.posto ?? '—');
+      meta = `${String(item.descricao ?? '')} · ${String(item.contraparte ?? '')} · ${String(item.status ?? '')}`;
       valor = Number(item.valor ?? 0);
     } else {
-      title = String(item.movimentoDescricao ?? item.tituloDescricao ?? '—');
-      meta = String(item.tituloContraparte ?? '');
+      title = String(item.posto ?? '—');
+      meta = `${String(item.movimentoDescricao ?? item.tituloDescricao ?? '')} · ${String(item.tituloContraparte ?? '')}`;
       valor = Number(item.movimentoValor ?? item.tituloValor ?? 0);
     }
     return (
       <Pressable key={idx} style={fnStyles.listRow} onPress={() => setDetalheItem(item)}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+          <Text style={[fnStyles.listRowTitle, { fontWeight: '400' }]} numberOfLines={1}>
             {title}
           </Text>
           {meta ? (
