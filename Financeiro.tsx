@@ -2340,7 +2340,7 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
                 ])}
                 width={chartPlotWidth}
                 height={160}
-                barWidth={meses.length > 6 ? 10 : 18}
+                barWidth={meses.length > 6 ? 12 : 22}
                 barBorderRadius={3}
                 maxValue={dreChartRange.max}
                 yAxisLabelWidth={44}
@@ -2369,7 +2369,7 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
                   },
                 }}
               />
-              <Text style={[fnStyles.listRowMeta, { marginTop: 8, textAlign: 'center' }]}>
+              <Text style={[fnStyles.chartTooltipText, { marginTop: 8, textAlign: 'center' }]}>
                 {dreChartPointerIdx !== null && meses[dreChartPointerIdx]
                   ? `${meses[dreChartPointerIdx].label} · Entradas: ${formatBRL(meses[dreChartPointerIdx].entradas)} · Saídas: ${formatBRL(meses[dreChartPointerIdx].saidas)} · Resultado: ${formatBRL(meses[dreChartPointerIdx].resultado)}`
                   : 'Toque numa barra para ver os valores daquele mês.'}
@@ -4319,6 +4319,11 @@ const fnStyles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: '#5E667D',
+  },
+  chartTooltipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0C1736',
   },
   chartCard: {
     backgroundColor: '#FFFFFF',
