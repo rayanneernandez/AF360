@@ -3509,12 +3509,12 @@ export function FinanceiroNotificationsScreen({ navigation }: ScreenProps<'Finan
 
         {activeTab === 'routines' ? (
           <>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <Text style={fnStyles.countLabel}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Text style={[fnStyles.countLabel, { flex: 1, minWidth: 0 }]}>
                 {isLoadingRoutines ? 'Carregando...' : `${routines.length} rotina(s) cadastrada(s)`}
               </Text>
               <Pressable
-                style={[fnStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                style={[fnStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }]}
                 onPress={() => {
                   setEditingRoutine(null);
                   setIsRoutineFormOpen(true);
@@ -3596,14 +3596,14 @@ export function FinanceiroNotificationsScreen({ navigation }: ScreenProps<'Finan
           </>
         ) : (
           <>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <Text style={fnStyles.countLabel}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Text style={[fnStyles.countLabel, { flex: 1, minWidth: 0 }]}>
                 {isLoadingTemplates
                   ? 'Carregando...'
                   : `${templates.length} template(s)${templates.length > 0 ? ' — ⭐ padrão do sistema, demais customizados' : ''}`}
               </Text>
               <Pressable
-                style={[fnStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                style={[fnStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }]}
                 onPress={() => {
                   setEditingTemplate(null);
                   setIsTemplateFormOpen(true);
@@ -3625,9 +3625,25 @@ export function FinanceiroNotificationsScreen({ navigation }: ScreenProps<'Finan
                 <View key={template.id} style={fnStyles.dreCard}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     {template.isSystemDefault ? <Feather name="star" size={14} color="#D79A22" /> : null}
-                    <Text style={fnStyles.listRowTitle} numberOfLines={1}>
+                    <Text style={[fnStyles.listRowTitle, { flex: 1, minWidth: 0 }]} numberOfLines={1}>
                       {template.title}
                     </Text>
+                    <View style={{ flexDirection: 'row', gap: 14 }}>
+                      <Pressable
+                        onPress={() => {
+                          setEditingTemplate(template);
+                          setIsTemplateFormOpen(true);
+                        }}
+                        hitSlop={6}
+                      >
+                        <Feather name="edit-2" size={15} color="#3457D5" />
+                      </Pressable>
+                      {!template.isSystemDefault ? (
+                        <Pressable onPress={() => handleDeleteTemplate(template)} hitSlop={6}>
+                          <Feather name="trash-2" size={15} color="#E6213D" />
+                        </Pressable>
+                      ) : null}
+                    </View>
                   </View>
                   <Text style={fnStyles.listRowMeta}>{template.code}</Text>
                   <Text style={[fnStyles.listRowMeta, { marginTop: 4 }]}>{template.messageTitle}</Text>
@@ -3640,23 +3656,6 @@ export function FinanceiroNotificationsScreen({ navigation }: ScreenProps<'Finan
                         <Text style={[fnStyles.badgeText, { color: '#5E667D' }]}>{variable}</Text>
                       </View>
                     ))}
-                  </View>
-
-                  <View style={{ flexDirection: 'row', gap: 14, marginTop: 10 }}>
-                    <Pressable
-                      onPress={() => {
-                        setEditingTemplate(template);
-                        setIsTemplateFormOpen(true);
-                      }}
-                      hitSlop={6}
-                    >
-                      <Feather name="edit-2" size={15} color="#3457D5" />
-                    </Pressable>
-                    {!template.isSystemDefault ? (
-                      <Pressable onPress={() => handleDeleteTemplate(template)} hitSlop={6}>
-                        <Feather name="trash-2" size={15} color="#E6213D" />
-                      </Pressable>
-                    ) : null}
                   </View>
                 </View>
               ))
