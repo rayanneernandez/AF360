@@ -2327,60 +2327,92 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
               </View>
             </View>
 
-            {/* Gráfico mês a mês (cobre toda a janela 3/6/12 meses, não só o mês atual) */}
+            {/* Gráfico mês a mês (cobre toda a janela 3/6/12 meses, não só o mês atual).
+                Com 1 mês só (janela "Mês") a biblioteca de linha quebra o layout
+                (ela divide o espaçamento por "n-1" pontos, e com 1 ponto isso
+                dá conta errada) — nesse caso mostramos 2 barrinhas simples em
+                vez da linha, que fica sem sentido com um único mês mesmo. */}
             <View style={fnStyles.dreCard}>
               <Text style={fnStyles.sectionTitle}>Mês a mês</Text>
-              <LineChart
-                data={meses.map((m) => ({ value: m.entradas }))}
-                data2={meses.map((m) => ({ value: m.saidas }))}
-                width={chartPlotWidth}
-                height={160}
-                thickness={2.5}
-                color="#18955A"
-                color2="#E6213D"
-                maxValue={dreChartRange.max}
-                yAxisLabelWidth={44}
-                yAxisTextStyle={{ color: '#8A93A8', fontSize: 9 }}
-                noOfSections={4}
-                xAxisLabelsHeight={0}
-                hideRules
-                initialSpacing={8}
-                endSpacing={8}
-                pointerConfig={{
-                  pointerStripHeight: 140,
-                  pointerStripColor: '#C7CCD9',
-                  pointerColor: '#5E667D',
-                  radius: 5,
-                  activatePointersInstantlyOnTouch: true,
-                  persistPointer: true,
-                  pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
-                    setTimeout(() => setDreChartPointerIdx(pointerIndex), 0);
-                    return null;
-                  },
-                }}
-              />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 44 + 8, paddingRight: 8, marginTop: 4 }}>
-                {meses.map((m, idx) => (
-                  <Text
-                    key={m.periodo}
-                    style={[
-                      fnStyles.chartAxisLabel,
-                      idx === 0 ? { textAlign: 'left' } : idx === meses.length - 1 ? { textAlign: 'right' } : { textAlign: 'center' },
-                    ]}
+              {meses.length > 1 ? (
+                <>
+                  <LineChart
+                    data={meses.map((m) => ({ value: m.entradas }))}
+                    data2={meses.map((m) => ({ value: m.saidas }))}
+                    width={chartPlotWidth}
+                    height={160}
+                    thickness={2.5}
+                    color="#18955A"
+                    color2="#E6213D"
+                    maxValue={dreChartRange.max}
+                    yAxisLabelWidth={44}
+                    yAxisTextStyle={{ color: '#8A93A8', fontSize: 9 }}
+                    noOfSections={4}
+                    xAxisLabelsHeight={0}
+                    hideRules
+                    initialSpacing={8}
+                    endSpacing={8}
+                    pointerConfig={{
+                      pointerStripHeight: 140,
+                      pointerStripColor: '#C7CCD9',
+                      pointerColor: '#5E667D',
+                      radius: 5,
+                      activatePointersInstantlyOnTouch: true,
+                      persistPointer: true,
+                      pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
+                        setTimeout(() => setDreChartPointerIdx(pointerIndex), 0);
+                        return null;
+                      },
+                    }}
+                  />
+                  <View
+                    style={{ flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 44 + 8, paddingRight: 8, marginTop: 4 }}
                   >
-                    {m.label}
+                    {meses.map((m, idx) => (
+                      <Text
+                        key={m.periodo}
+                        style={[
+                          fnStyles.chartAxisLabel,
+                          idx === 0 ? { textAlign: 'left' } : idx === meses.length - 1 ? { textAlign: 'right' } : { textAlign: 'center' },
+                        ]}
+                      >
+                        {m.label}
+                      </Text>
+                    ))}
+                  </View>
+                  <Text style={[fnStyles.listRowMeta, { marginTop: 8, textAlign: 'center' }]}>
+                    {dreChartPointerIdx !== null && meses[dreChartPointerIdx]
+                      ? `${meses[dreChartPointerIdx].label} · Entradas: ${formatBRL(meses[dreChartPointerIdx].entradas)} · Saídas: ${formatBRL(meses[dreChartPointerIdx].saidas)} · Resultado: ${formatBRL(meses[dreChartPointerIdx].resultado)}`
+                      : 'Toque em um ponto da linha para ver os valores daquele mês.'}
                   </Text>
-                ))}
-              </View>
+                </>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 24, height: 140, paddingHorizontal: 24, marginTop: 8 }}>
+                  {(['entradas', 'saidas'] as const).map((chave) => {
+                    const valor = mesAtual[chave];
+                    const maiorValor = Math.max(mesAtual.entradas, mesAtual.saidas, 1);
+                    const alturaBarra = Math.max(4, (valor / maiorValor) * 120);
+                    return (
+                      <View key={chave} style={{ flex: 1, alignItems: 'center' }}>
+                        <Text style={fnStyles.kpiLabelUnidade}>{formatBRLValor(valor)}</Text>
+                        <View
+                          style={{
+                            width: '70%',
+                            height: alturaBarra,
+                            backgroundColor: chave === 'entradas' ? '#18955A' : '#E6213D',
+                            borderRadius: 6,
+                            marginTop: 6,
+                          }}
+                        />
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
               <View style={{ flexDirection: 'row', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
                 <FinanceiroChartLegendDot color="#18955A" label="Entradas" />
                 <FinanceiroChartLegendDot color="#E6213D" label="Saídas" />
               </View>
-              <Text style={[fnStyles.listRowMeta, { marginTop: 8, textAlign: 'center' }]}>
-                {dreChartPointerIdx !== null && meses[dreChartPointerIdx]
-                  ? `${meses[dreChartPointerIdx].label} · Entradas: ${formatBRL(meses[dreChartPointerIdx].entradas)} · Saídas: ${formatBRL(meses[dreChartPointerIdx].saidas)} · Resultado: ${formatBRL(meses[dreChartPointerIdx].resultado)}`
-                  : 'Toque em um ponto da linha para ver os valores daquele mês.'}
-              </Text>
             </View>
 
             {/* Tabela mês a mês (mesma janela do gráfico) */}
