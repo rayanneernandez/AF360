@@ -2364,11 +2364,14 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
                   // só um toque de cada vez, sem precisar segurar.
                   persistPointer: false,
                   resetPointerIndexOnRelease: true,
-                  onTouchEnd: () => setDreChartPointerIdx(null),
+                  onTouchEnd: () => setTimeout(() => setDreChartPointerIdx(null), 0),
                   pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
                     // Cada mês vira 2 barras no array (entradas, saídas) —
                     // o índice do mês é o índice da barra dividido por 2.
-                    setDreChartPointerIdx(Math.floor(pointerIndex / 2));
+                    // setTimeout evita "Cannot update a component while
+                    // rendering a different component" — esse callback é
+                    // chamado durante o render do próprio gráfico.
+                    setTimeout(() => setDreChartPointerIdx(Math.floor(pointerIndex / 2)), 0);
                     return null;
                   },
                 }}
