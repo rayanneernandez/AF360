@@ -5400,6 +5400,15 @@ function extrairFinanceiroLista<T>(raw: unknown): T[] {
     if (Array.isArray(obj.linhas)) return obj.linhas as T[];
     if (Array.isArray(obj.data)) return obj.data as T[];
     if (Array.isArray(obj.itens)) return obj.itens as T[];
+    if (Array.isArray(obj.meses)) return obj.meses as T[];
+    if (Array.isArray(obj.periodos)) return obj.periodos as T[];
+    // Quando o período pedido é 1 mês só, algumas rotas (ex: balancete)
+    // devolvem o objeto do mês direto, sem embrulhar numa lista — se o
+    // objeto tem cara de item de período (campo "periodo" ou "label"),
+    // tratamos como uma lista de 1 item em vez de mostrar "sem dados".
+    if (('periodo' in obj || 'label' in obj) && !Array.isArray(obj)) {
+      return [obj as T];
+    }
   }
   return [];
 }
