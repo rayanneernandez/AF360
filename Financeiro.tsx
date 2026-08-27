@@ -882,7 +882,11 @@ export function FinanceiroDashboardScreen({ navigation }: ScreenProps<'Financeir
 
   useEffect(() => {
     setIsLoadingProjecao(true);
-    fetchFinanceiroProjecoes({ unidadeIds: postoSelecionado ? [postoSelecionado] : undefined, horizonteMeses: 6 })
+    fetchFinanceiroProjecoes({
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+      horizonteMeses: 6,
+      mesesHistorico: 6,
+    })
       .then((result) => setProjecaoMeses(result.meses))
       .catch(() => setProjecaoMeses([]))
       .finally(() => setIsLoadingProjecao(false));
@@ -2410,13 +2414,15 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={fnStyles.listRowTitle} numberOfLines={1}>
-                    {item.fornecedor_nome || '—'}
+                    {item.fornecedor_nome || String(item.fornecedor ?? '') || '—'}
                   </Text>
                   <Text style={fnStyles.listRowMeta} numberOfLines={1}>
                     Posto {item.posto}
                   </Text>
                 </View>
-                <Text style={[fnStyles.listRowValue, { fontSize: 16 }]}>{formatBRL(item.valor_esperado)}</Text>
+                <Text style={[fnStyles.listRowValue, { fontSize: 16 }]}>
+                  {formatBRL(item.valor_esperado ?? Number(item.valor ?? 0))}
+                </Text>
               </View>
               <Text style={[fnStyles.listRowMeta, { marginBottom: 4 }]}>{item.mensagem}</Text>
               <Text style={fnStyles.listRowMeta}>
@@ -2508,7 +2514,11 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchFinanceiroProjecoes({ unidadeIds: postoSelecionado ? [postoSelecionado] : undefined, horizonteMeses })
+    fetchFinanceiroProjecoes({
+      unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
+      horizonteMeses,
+      mesesHistorico: horizonteMeses,
+    })
       .then(setData)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar as projeções.')))
       .finally(() => setIsLoading(false));
