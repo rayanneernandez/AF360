@@ -2676,52 +2676,39 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
               </Text>
             </View>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={fnStyles.projTableCard}>
-              <View>
-                <View style={fnStyles.projTableHeaderRow}>
-                  <Text style={[fnStyles.projTableHeaderCell, { width: 70 }]}>Mês</Text>
-                  <Text style={[fnStyles.projTableHeaderCell, { width: 110, textAlign: 'right' }]}>A receber{'\n'}(lançado)</Text>
-                  <Text style={[fnStyles.projTableHeaderCell, { width: 100, textAlign: 'right' }]}>+ média</Text>
-                  <Text style={[fnStyles.projTableHeaderCell, { width: 110, textAlign: 'right' }]}>A pagar{'\n'}(lançado)</Text>
-                  <Text style={[fnStyles.projTableHeaderCell, { width: 100, textAlign: 'right' }]}>+ média</Text>
-                  <Text style={[fnStyles.projTableHeaderCell, { width: 120, textAlign: 'right' }]}>Resultado</Text>
-                  <Text style={[fnStyles.projTableHeaderCell, { width: 140, textAlign: 'right' }]}>Saldo{'\n'}projetado</Text>
+            {data.meses.map((m) => (
+              <View key={m.mes} style={fnStyles.dreCard}>
+                <Text style={fnStyles.sectionTitle}>{m.label}</Text>
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>A receber (lançado)</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: '#18955A' }]}>{formatBRL(m.receberPrevisto)}</Text>
                 </View>
-                {data.meses.map((m) => (
-                  <View key={m.mes} style={fnStyles.projTableRow}>
-                    <Text style={[fnStyles.projTableCell, { width: 70 }]}>{m.label}</Text>
-                    <Text style={[fnStyles.projTableCell, { width: 110, textAlign: 'right', color: '#18955A' }]}>
-                      {formatBRL(m.receberPrevisto)}
-                    </Text>
-                    <Text style={[fnStyles.projTableCell, { width: 100, textAlign: 'right', color: '#8A93A8', fontWeight: '400' }]}>
-                      {formatBRL(m.receberMedia)}
-                    </Text>
-                    <Text style={[fnStyles.projTableCell, { width: 110, textAlign: 'right', color: '#E6213D' }]}>
-                      {formatBRL(m.pagarPrevisto)}
-                    </Text>
-                    <Text style={[fnStyles.projTableCell, { width: 100, textAlign: 'right', color: '#8A93A8', fontWeight: '400' }]}>
-                      {formatBRL(m.pagarMedia)}
-                    </Text>
-                    <Text
-                      style={[
-                        fnStyles.projTableCell,
-                        { width: 120, textAlign: 'right', color: m.resultado >= 0 ? '#18955A' : '#E6213D' },
-                      ]}
-                    >
-                      {formatBRL(m.resultado)}
-                    </Text>
-                    <Text
-                      style={[
-                        fnStyles.projTableCell,
-                        { width: 140, textAlign: 'right', color: m.saldoBase >= 0 ? '#0C1736' : '#E6213D' },
-                      ]}
-                    >
-                      {formatBRL(m.saldoBase)}
-                    </Text>
-                  </View>
-                ))}
+                <View style={fnStyles.dreLine}>
+                  <Text style={[fnStyles.dreLineLabel, { color: '#8A93A8' }]}>+ média</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: '#8A93A8', fontWeight: '400' }]}>{formatBRL(m.receberMedia)}</Text>
+                </View>
+                <View style={fnStyles.dreLine}>
+                  <Text style={fnStyles.dreLineLabel}>A pagar (lançado)</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: '#E6213D' }]}>{formatBRL(m.pagarPrevisto)}</Text>
+                </View>
+                <View style={fnStyles.dreLine}>
+                  <Text style={[fnStyles.dreLineLabel, { color: '#8A93A8' }]}>+ média</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: '#8A93A8', fontWeight: '400' }]}>{formatBRL(m.pagarMedia)}</Text>
+                </View>
+                <View style={[fnStyles.dreLine, { borderTopWidth: 1, borderTopColor: '#F1F2F6', marginTop: 4, paddingTop: 8 }]}>
+                  <Text style={fnStyles.dreLineLabel}>Resultado</Text>
+                  <Text style={[fnStyles.dreLineValue, { color: m.resultado >= 0 ? '#18955A' : '#E6213D' }]}>
+                    {formatBRL(m.resultado)}
+                  </Text>
+                </View>
+                <View style={fnStyles.dreLine}>
+                  <Text style={[fnStyles.dreLineLabel, { fontWeight: '700' }]}>Saldo projetado</Text>
+                  <Text style={[fnStyles.dreLineValue, { fontWeight: '700', color: m.saldoBase >= 0 ? '#0C1736' : '#E6213D' }]}>
+                    {formatBRL(m.saldoBase)}
+                  </Text>
+                </View>
               </View>
-            </ScrollView>
+            ))}
           </>
         )}
       </ScrollView>
