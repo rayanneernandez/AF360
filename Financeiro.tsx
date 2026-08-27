@@ -2517,7 +2517,10 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
     fetchFinanceiroProjecoes({
       unidadeIds: postoSelecionado ? [postoSelecionado] : undefined,
       horizonteMeses,
-      mesesHistorico: horizonteMeses,
+      // Igual ao web: a média histórica usada na projeção é SEMPRE de 6
+      // meses, independente do horizonte (3/6/12) escolhido — só o horizonte
+      // muda quantos meses futuros são projetados.
+      mesesHistorico: 6,
     })
       .then(setData)
       .catch((err) => setErrorMessage(showFinanceiroError(err, 'Não foi possível carregar as projeções.')))
@@ -2629,7 +2632,7 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
                   </Text>
                 </View>
                 <View style={[fnStyles.kpiCard, { flex: 1, minWidth: 0, backgroundColor: '#FFFFFF', borderColor: '#E2E6F0' }]}>
-                  <Text style={fnStyles.kpiLabel}>Média histórica ({horizonteMeses}M)</Text>
+                  <Text style={fnStyles.kpiLabel}>Média histórica (6M)</Text>
                   <Text style={[fnStyles.kpiValue, { fontSize: 15 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                     {formatBRL(data.mediaReceber)}
                   </Text>
