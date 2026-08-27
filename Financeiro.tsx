@@ -5,6 +5,10 @@ import { useIsFocused } from '@react-navigation/native';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LineChart } from 'react-native-gifted-charts';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as Print from 'expo-print';
+import * as XLSX from 'xlsx';
 import {
   styles,
   TopBar,
@@ -211,6 +215,14 @@ function financeiroPeriodoParaDatas(periodo: 'hoje' | '7dias' | 'mes' | 'ano'): 
 // mais espaço/fonte maior pro número em si.
 function formatBRLValor(value: number | null | undefined): string {
   return formatBRL(value).replace(/R\$\s?/, '').trim();
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function formatBRLCompact(value: number): string {
@@ -2874,6 +2886,8 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [postoModalOpen, setPostoModalOpen] = useState(false);
   const [detalheItem, setDetalheItem] = useState<Record<string, unknown> | null>(null);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
   const mesLabel = `${financeiroMesesNomes[refMes - 1]} / ${refAno}`;
 
@@ -2913,6 +2927,152 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
       setRefAno((a) => a + 1);
     } else {
       setRefMes((m) => m + 1);
+    }
+  };
+
+  // Colunas exportadas em Excel/PDF variam por tipo de relatório — mesmos
+  // campos já usados na lista/detalhe da tela, só organizados em tabela.
+  const colunasExport: Array<{ header: string; get: (item: Record<string, unknown>) => string }> =
+    tipo === 'fornecedores'
+      ? [
+          { header: 'Razão social', get: (i) => String(i.razao ?? '') },
+          { header: 'Fantasia', get: (i) => String(i.fantasia ?? '') },
+          { header: 'CNPJ/CPF', get: (i) => String(i.cnpjCpf ?? '') },
+          { header: 'Títulos', get: (i) => String(i.titulos ?? '') },
+          { header: 'Valor total', get: (i) => formatBRL(Number(i.valorTotal ?? 0)) },
+          { header: 'Valor em aberto', get: (i) => formatBRL(Number(i.valorAberto ?? 0)) },
+        ]
+      : tipo === 'centros_custo'
+      ? [
+          { header: 'Posto', get: (i) => String(i.posto ?? '') },
+          { header: 'Descrição', get: (i) => String(i.descricao ?? '') },
+          { header: 'Tipo', get: (i) => String(i.tipo ?? '') },
+          { header: 'Valor', get: (i) => formatBRL(Number(i.valor ?? 0)) },
+        ]
+      : tipo === 'conciliacoes'
+      ? [
+          { header: 'Posto', get: (i) => String(i.posto ?? '') },
+          { header: 'Data', get: (i) => formatDateIsoBR(String(i.movimentoData ?? '')) ?? String(i.movimentoData ?? '') },
+          { header: 'Descrição', get: (i) => String(i.movimentoDescricao ?? i.tituloDescricao ?? '') },
+          { header: 'Contraparte', get: (i) => String(i.tituloContraparte ?? '') },
+          { header: 'Origem', get: (i) => String(i.origem ?? '') },
+          { header: 'Valor', get: (i) => formatBRL(Number(i.movimentoValor ?? i.tituloValor ?? 0)) },
+        ]
+      : [
+          { header: 'Tipo', get: (i) => String(i.tipo ?? '') },
+          { header: 'Vencimento', get: (i) => formatDateIsoBR(String(i.vencimento ?? '')) ?? String(i.vencimento ?? '') },
+          { header: 'Posto', get: (i) => String(i.posto ?? '') },
+          { header: 'Contraparte', get: (i) => String(i.contraparte ?? '') },
+          { header: 'Descrição', get: (i) => String(i.descricao ?? '') },
+          { header: 'Categoria', get: (i) => String(i.categoria ?? '') },
+          { header: 'Status', get: (i) => String(i.status ?? '') },
+          { header: 'Valor', get: (i) => formatBRL(Number(i.valor ?? 0)) },
+        ];
+
+  const arquivoLabel = `${tipo}_${refMes}_${refAno}`;
+
+  const handleExportExcel = async () => {
+    if (itens.length === 0) {
+      Alert.alert('Nada para exportar', 'Não há registros no período selecionado.');
+      return;
+    }
+    setIsExportingExcel(true);
+    try {
+      const linhas = itens.map((item) => {
+        const linha: Record<string, string> = {};
+        colunasExport.forEach((coluna) => {
+          linha[coluna.header] = coluna.get(item);
+        });
+        return linha;
+      });
+      const worksheet = XLSX.utils.json_to_sheet(linhas);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Relatorio');
+      const base64 = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
+
+      const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!baseDirectory) {
+        Alert.alert('Exportação indisponível', 'Não foi possível gerar o Excel neste dispositivo.');
+        return;
+      }
+      const fileUri = `${baseDirectory}relatorio_${arquivoLabel}.xlsx`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          dialogTitle: 'Exportar relatório (Excel)',
+          UTI: 'org.openxmlformats.spreadsheetml.sheet',
+        });
+      } else {
+        Alert.alert('Excel gerado', `Arquivo salvo em:\n${fileUri}`);
+      }
+    } catch {
+      Alert.alert('Erro ao exportar', 'Não foi possível gerar o Excel agora.');
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (itens.length === 0) {
+      Alert.alert('Nada para exportar', 'Não há registros no período selecionado.');
+      return;
+    }
+    setIsExportingPdf(true);
+    try {
+      const geradoEm = new Date().toLocaleString('pt-BR');
+      const tipoLabel = financeiroRelatorioTipos.find((o) => o.value === tipo)?.label ?? 'Relatório';
+      const linhasHtml = itens
+        .map(
+          (item) =>
+            `<tr>${colunasExport.map((coluna) => `<td>${escapeHtml(coluna.get(item))}</td>`).join('')}</tr>`
+        )
+        .join('');
+      const html = `
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              body { font-family: Helvetica, Arial, sans-serif; padding: 24px; color: #1B2540; }
+              h1 { font-size: 20px; margin-bottom: 4px; }
+              .meta { font-size: 12px; color: #5E667D; margin-bottom: 16px; }
+              table { width: 100%; border-collapse: collapse; font-size: 9px; }
+              th { background: #C05621; color: #FFFFFF; text-align: left; padding: 6px; }
+              td { border-bottom: 1px solid #EEF0F6; padding: 6px; vertical-align: top; }
+            </style>
+          </head>
+          <body>
+            <h1>${escapeHtml(tipoLabel)}</h1>
+            <div class="meta">
+              Período: ${mesLabel} &nbsp;•&nbsp; ${itens.length} registro(s) &nbsp;•&nbsp; Gerado em ${geradoEm}
+            </div>
+            <table>
+              <thead><tr>${colunasExport.map((coluna) => `<th>${escapeHtml(coluna.header)}</th>`).join('')}</tr></thead>
+              <tbody>${linhasHtml}</tbody>
+            </table>
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html });
+      const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      const destino = baseDirectory ? `${baseDirectory}relatorio_${arquivoLabel}.pdf` : uri;
+      if (baseDirectory) {
+        await FileSystem.copyAsync({ from: uri, to: destino });
+      }
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(destino, { mimeType: 'application/pdf', dialogTitle: 'Exportar relatório (PDF)' });
+      } else {
+        Alert.alert('PDF gerado', `Arquivo salvo em:\n${destino}`);
+      }
+    } catch {
+      Alert.alert('Erro ao exportar', 'Não foi possível gerar o PDF agora.');
+    } finally {
+      setIsExportingPdf(false);
     }
   };
 
@@ -3037,12 +3197,35 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
           <FinanceiroEmptyState message={errorMessage} />
         ) : (
           <>
-            <View style={fnStyles.suggestionBox}>
-              <Text style={fnStyles.suggestionText}>
-                Esta tela mostra os dados reais do relatório selecionado. A exportação em Excel/PDF ainda depende de um endpoint
-                de geração de arquivo que a Lovable ainda não confirmou — assim que confirmado, o botão de exportar é ativado
-                aqui.
-              </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+              <Pressable
+                style={[fnStyles.exportButton, itens.length === 0 ? { opacity: 0.5 } : null]}
+                onPress={handleExportExcel}
+                disabled={itens.length === 0 || isExportingExcel}
+              >
+                {isExportingExcel ? (
+                  <ActivityIndicator color="#18955A" size="small" />
+                ) : (
+                  <>
+                    <Feather name="file-plus" size={14} color="#18955A" />
+                    <Text style={[fnStyles.exportButtonText, { color: '#18955A' }]}>Excel</Text>
+                  </>
+                )}
+              </Pressable>
+              <Pressable
+                style={[fnStyles.exportButton, itens.length === 0 ? { opacity: 0.5 } : null]}
+                onPress={handleExportPdf}
+                disabled={itens.length === 0 || isExportingPdf}
+              >
+                {isExportingPdf ? (
+                  <ActivityIndicator color="#E6213D" size="small" />
+                ) : (
+                  <>
+                    <Feather name="file-text" size={14} color="#E6213D" />
+                    <Text style={[fnStyles.exportButtonText, { color: '#E6213D' }]}>PDF</Text>
+                  </>
+                )}
+              </Pressable>
             </View>
 
             <Text style={fnStyles.countLabel}>{itens.length} registro(s)</Text>
@@ -4538,5 +4721,21 @@ const fnStyles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#0C1736',
+  },
+  exportButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  exportButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
