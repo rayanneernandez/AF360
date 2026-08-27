@@ -2647,7 +2647,10 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
                   pointerStripColor: '#C7CCD9',
                   pointerColor: '#E0603D',
                   radius: 5,
-                  pointerLabelComponent: (items: Array<{ value: number }>, pointerIndex: number) => {
+                  activatePointersInstantlyOnTouch: true,
+                  persistPointer: true,
+                  pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
+                    // Painel fixo abaixo do gráfico em vez de balão flutuante (evita corte).
                     setTimeout(() => setProjPointerIdx(pointerIndex), 0);
                     return null;
                   },
