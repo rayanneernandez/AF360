@@ -2360,16 +2360,20 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
                   pointerColor: '#5E667D',
                   radius: 5,
                   activatePointersInstantlyOnTouch: true,
-                  persistPointer: true,
+                  // Ao soltar o dedo, o valor some (não fica "grudado") — é
+                  // só um toque de cada vez, sem precisar segurar.
+                  persistPointer: false,
+                  resetPointerIndexOnRelease: true,
+                  onTouchEnd: () => setDreChartPointerIdx(null),
                   pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
                     // Cada mês vira 2 barras no array (entradas, saídas) —
                     // o índice do mês é o índice da barra dividido por 2.
-                    setTimeout(() => setDreChartPointerIdx(Math.floor(pointerIndex / 2)), 0);
+                    setDreChartPointerIdx(Math.floor(pointerIndex / 2));
                     return null;
                   },
                 }}
               />
-              <Text style={[fnStyles.chartTooltipText, { marginTop: 8, textAlign: 'center' }]}>
+              <Text style={[fnStyles.chartTooltipText, { marginTop: 8, textAlign: 'center', fontWeight: '400' }]}>
                 {dreChartPointerIdx !== null && meses[dreChartPointerIdx]
                   ? `${meses[dreChartPointerIdx].label} · Entradas: ${formatBRL(meses[dreChartPointerIdx].entradas)} · Saídas: ${formatBRL(meses[dreChartPointerIdx].saidas)} · Resultado: ${formatBRL(meses[dreChartPointerIdx].resultado)}`
                   : 'Toque numa barra para ver os valores daquele mês.'}
@@ -2453,7 +2457,7 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
                         <Text style={fnStyles.dreLineLabel} numberOfLines={1}>
                           {grupo.grupo}
                         </Text>
-                        <Text style={fnStyles.kpiLabelUnidade}>margem {grupo.margem.toFixed(1)}%</Text>
+                        <Text style={[fnStyles.listRowMeta, { color: '#5E667D', fontSize: 12 }]}>margem {grupo.margem.toFixed(1)}%</Text>
                       </View>
                       <Text style={[fnStyles.dreLineValue, { color: '#18955A' }]}>{formatBRL(grupo.venda)}</Text>
                     </View>
