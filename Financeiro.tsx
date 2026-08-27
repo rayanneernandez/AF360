@@ -2405,7 +2405,7 @@ export function FinanceiroInteligenciaIAScreen({ navigation }: ScreenProps<'Fina
               </Text>
               <Text style={fnStyles.listRowMeta}>
                 {item.detalhe ? `${item.detalhe} · ` : ''}
-                {item.ocorrencias} ocorrência(s) nos últimos 12 meses · confiança {Math.round(item.confianca * 100)}%
+                confiança {Math.round(item.confianca * 100)}%
               </Text>
 
               {item.status === 'pendente' ? (
