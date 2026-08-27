@@ -658,8 +658,8 @@ function FinanceiroFornecedorDetalheModal({
 
                 <Text style={[fnStyles.listRowTitle, { marginTop: 14, marginBottom: 6 }]}>Por posto</Text>
                 {(detalhe.porPosto ?? []).map((linha) => (
-                  <View key={linha.posto} style={fnStyles.listRowSimple}>
-                    <Text style={fnStyles.listRowMeta}>{linha.posto}</Text>
+                  <View key={linha.posto} style={[fnStyles.listRowSimple, { flexDirection: 'column', alignItems: 'stretch' }]}>
+                    <Text style={[fnStyles.listRowTitle, { fontSize: 13, fontWeight: '400' }]}>{linha.posto}</Text>
                     <Text style={fnStyles.listRowMeta}>
                       {linha.titulos} título(s) · {formatBRL(linha.valor)}
                     </Text>
@@ -683,7 +683,8 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
   const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
   const [meses, setMeses] = useState(3);
   const [selecionadoCodigo, setSelecionadoCodigo] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [periodoModalOpen, setPeriodoModalOpen] = useState(false);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -718,10 +719,20 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <FinanceiroPageHeader icon="briefcase" title="Fornecedores" subtitle="Cadastro de fornecedores, condições e dados de pagamento." />
 
-        <FinanceiroFilterTriggerButton
-          onPress={() => setFiltersOpen(true)}
-          activeCount={(postoSelecionado ? 1 : 0) + (meses !== 3 ? 1 : 0)}
-        />
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+          <Pressable style={[fnStyles.postoSelectButton, { flex: 1 }]} onPress={() => setPeriodoModalOpen(true)}>
+            <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+              {financeiroFornecedorPeriodoOptions.find((o) => o.value === meses)?.label ?? 'Período'}
+            </Text>
+            <Feather name="chevron-down" size={14} color="#5E667D" />
+          </Pressable>
+          <Pressable style={[fnStyles.postoSelectButton, { flex: 1 }]} onPress={() => setPostoModalOpen(true)}>
+            <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+              {postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos'}
+            </Text>
+            <Feather name="chevron-down" size={14} color="#5E667D" />
+          </Pressable>
+        </View>
         <FinanceiroSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar fornecedor, CNPJ..." />
         <Text style={fnStyles.countLabel}>{itens.length} fornecedor(es)</Text>
 
@@ -758,18 +769,29 @@ export function FinanceiroFornecedoresScreen({ navigation }: ScreenProps<'Financ
         )}
       </ScrollView>
 
-      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
-        <FinanceiroFilterSectionTitle label="Período" />
+      <FinanceiroFilterModal visible={periodoModalOpen} title="Período" onClose={() => setPeriodoModalOpen(false)}>
         {financeiroFornecedorPeriodoOptions.map((opt) => (
           <FinanceiroFilterOptionRow
             key={opt.value}
             label={opt.label}
             active={meses === opt.value}
-            onPress={() => setMeses(opt.value)}
+            onPress={() => {
+              setMeses(opt.value);
+              setPeriodoModalOpen(false);
+            }}
           />
         ))}
-        <FinanceiroFilterSectionTitle label="Posto" />
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      </FinanceiroFilterModal>
+
+      <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
+        <FinanceiroPostoFilterRow
+          postos={postos}
+          selected={postoSelecionado}
+          onSelect={(id) => {
+            setPostoSelecionado(id);
+            setPostoModalOpen(false);
+          }}
+        />
       </FinanceiroFilterModal>
 
       <FinanceiroFornecedorDetalheModal
