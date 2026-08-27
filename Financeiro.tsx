@@ -2730,12 +2730,132 @@ export function FinanceiroProjecoesScreen({ navigation }: ScreenProps<'Financeir
   );
 }
 
-const financeiroRelatorioTipos: Array<{ label: string; value: 'contas' | 'conciliacoes' | 'fornecedores' | 'centros_custo' }> = [
-  { label: 'Contas', value: 'contas' },
-  { label: 'Conciliações', value: 'conciliacoes' },
-  { label: 'Fornecedores', value: 'fornecedores' },
-  { label: 'Centros de custo', value: 'centros_custo' },
+const financeiroRelatorioTipos: Array<{
+  label: string;
+  subtitle: string;
+  icon: keyof typeof Feather.glyphMap;
+  value: 'contas' | 'conciliacoes' | 'fornecedores' | 'centros_custo';
+}> = [
+  {
+    label: 'Contas pagas e recebidas',
+    subtitle: 'Títulos a pagar e a receber do período, com status.',
+    icon: 'file-text',
+    value: 'contas',
+  },
+  {
+    label: 'Conciliações do período',
+    subtitle: 'Movimentos conciliados, título vinculado e responsável.',
+    icon: 'link',
+    value: 'conciliacoes',
+  },
+  {
+    label: 'Ranking de fornecedores',
+    subtitle: 'Fornecedores por valor total e valor em aberto.',
+    icon: 'bar-chart-2',
+    value: 'fornecedores',
+  },
+  {
+    label: 'Despesas por centro de custo',
+    subtitle: 'Rateio das contas a pagar por centro de custo.',
+    icon: 'pie-chart',
+    value: 'centros_custo',
+  },
 ];
+
+// Rótulos amigáveis pros nomes de campo cru que vêm da API, usados no modal
+// de detalhe (que mostra TODOS os campos do registro, já que cada tipo de
+// relatório tem um formato diferente e não vale a pena mapear campo a campo
+// igual às listas resumidas).
+const financeiroRelatorioCampoLabels: Record<string, string> = {
+  movimentoDescricao: 'Descrição do movimento',
+  tituloDescricao: 'Descrição do título',
+  tituloContraparte: 'Contraparte',
+  tituloTipo: 'Tipo',
+  tituloVencimento: 'Vencimento',
+  tituloValor: 'Valor do título',
+  tituloStatus: 'Status',
+  tituloCodigo: 'Código do título',
+  movimentoValor: 'Valor do movimento',
+  movimentoData: 'Data do movimento',
+  movimentoCodigo: 'Código do movimento',
+  posto: 'Posto',
+  categoria: 'Categoria',
+  status: 'Status',
+  contraparte: 'Contraparte',
+  descricao: 'Descrição',
+  razao: 'Razão social',
+  fantasia: 'Nome fantasia',
+  cnpjCpf: 'CNPJ/CPF',
+  valorTotal: 'Valor total',
+  valorAberto: 'Valor em aberto',
+  titulos: 'Título(s)',
+  origem: 'Origem',
+  observacao: 'Observação',
+  vencimento: 'Vencimento',
+  valor: 'Valor',
+  tipo: 'Tipo',
+};
+
+function financeiroRelatorioCampoLabel(key: string): string {
+  if (financeiroRelatorioCampoLabels[key]) return financeiroRelatorioCampoLabels[key];
+  // camelCase -> "Palavra Palavra" como fallback pra campo sem rótulo mapeado.
+  const comEspacos = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  return comEspacos.charAt(0).toUpperCase() + comEspacos.slice(1);
+}
+
+const financeiroRelatorioCamposValorMonetario = new Set([
+  'tituloValor',
+  'movimentoValor',
+  'valor',
+  'valorTotal',
+  'valorAberto',
+]);
+
+function financeiroRelatorioFormatarValorCampo(key: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (financeiroRelatorioCamposValorMonetario.has(key) && typeof value === 'number') {
+    return formatBRL(value);
+  }
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'boolean') return value ? 'Sim' : 'Não';
+  const texto = String(value);
+  const dataFormatada = /^\d{4}-\d{2}-\d{2}/.test(texto) ? formatDateIsoBR(texto) : null;
+  return dataFormatada ?? texto;
+}
+
+function FinanceiroRelatorioDetalheModal({
+  item,
+  onClose,
+}: {
+  item: Record<string, unknown> | null;
+  onClose: () => void;
+}) {
+  const campos = item ? Object.entries(item).filter(([key]) => key !== 'id') : [];
+  return (
+    <Modal visible={item !== null} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={fnStyles.modalBackdrop}>
+        <View style={[fnStyles.modalCard, { maxHeight: '80%' }]}>
+          <View style={fnStyles.modalHeader}>
+            <Text style={fnStyles.modalTitle}>Detalhes do registro</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {campos.map(([key, value]) => (
+              <View key={key} style={fnStyles.listRowSimple}>
+                <Text style={[fnStyles.listRowMeta, { flex: 1, marginRight: 8 }]}>{financeiroRelatorioCampoLabel(key)}</Text>
+                <Text style={[fnStyles.listRowTitle, { fontSize: 13, fontWeight: '600', textAlign: 'right', flexShrink: 1 }]}>
+                  {financeiroRelatorioFormatarValorCampo(key, value)}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'FinanceiroRelatorios'>) {
   const [tipo, setTipo] = useState<'contas' | 'conciliacoes' | 'fornecedores' | 'centros_custo'>('contas');
@@ -2744,7 +2864,9 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
   const [itens, setItens] = useState<Record<string, unknown>[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
+  const [detalheItem, setDetalheItem] = useState<Record<string, unknown> | null>(null);
+  const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Todos os postos';
 
   useEffect(() => {
     fetchFinanceiroConfig()
@@ -2765,55 +2887,38 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
   }, [tipo, postoSelecionado]);
 
   const renderLinha = (item: Record<string, unknown>, idx: number) => {
+    let title = '—';
+    let meta = '';
+    let valor: number | null = null;
     if (tipo === 'fornecedores') {
-      return (
-        <View key={idx} style={fnStyles.listRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={fnStyles.listRowTitle} numberOfLines={1}>
-              {String(item.razao ?? item.fantasia ?? '—')}
-            </Text>
-            <Text style={fnStyles.listRowMeta}>{String(item.cnpjCpf ?? '')}</Text>
-          </View>
-        </View>
-      );
-    }
-    if (tipo === 'centros_custo') {
-      return (
-        <View key={idx} style={fnStyles.listRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={fnStyles.listRowTitle} numberOfLines={1}>
-              {String(item.descricao ?? '—')}
-            </Text>
-            <Text style={fnStyles.listRowMeta}>{String(item.tipo ?? '')}</Text>
-          </View>
-        </View>
-      );
-    }
-    if (tipo === 'contas') {
-      return (
-        <View key={idx} style={fnStyles.listRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={fnStyles.listRowTitle} numberOfLines={1}>
-              {String(item.descricao ?? '—')}
-            </Text>
-            <Text style={fnStyles.listRowMeta}>
-              {String(item.contraparte ?? '')} · {String(item.status ?? '')}
-            </Text>
-          </View>
-          <Text style={fnStyles.listRowValue}>{formatBRL(Number(item.valor ?? 0))}</Text>
-        </View>
-      );
+      title = String(item.razao ?? item.fantasia ?? '—');
+      meta = String(item.cnpjCpf ?? '');
+    } else if (tipo === 'centros_custo') {
+      title = String(item.descricao ?? '—');
+      meta = String(item.tipo ?? '');
+    } else if (tipo === 'contas') {
+      title = String(item.descricao ?? '—');
+      meta = `${String(item.contraparte ?? '')} · ${String(item.status ?? '')}`;
+      valor = Number(item.valor ?? 0);
+    } else {
+      title = String(item.movimentoDescricao ?? item.tituloDescricao ?? '—');
+      meta = String(item.tituloContraparte ?? '');
+      valor = Number(item.movimentoValor ?? item.tituloValor ?? 0);
     }
     return (
-      <View key={idx} style={fnStyles.listRow}>
-        <View style={{ flex: 1 }}>
+      <Pressable key={idx} style={fnStyles.listRow} onPress={() => setDetalheItem(item)}>
+        <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={fnStyles.listRowTitle} numberOfLines={1}>
-            {String(item.movimentoDescricao ?? item.tituloDescricao ?? '—')}
+            {title}
           </Text>
-          <Text style={fnStyles.listRowMeta}>{String(item.tituloContraparte ?? '')}</Text>
+          {meta ? (
+            <Text style={fnStyles.listRowMeta} numberOfLines={1}>
+              {meta}
+            </Text>
+          ) : null}
         </View>
-        <Text style={fnStyles.listRowValue}>{formatBRL(Number(item.movimentoValor ?? item.tituloValor ?? 0))}</Text>
-      </View>
+        {valor !== null ? <Text style={fnStyles.listRowValue}>{formatBRL(valor)}</Text> : null}
+      </Pressable>
     );
   };
 
@@ -2830,8 +2935,43 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
           subtitle="Relatórios financeiros e exportações por período."
         />
 
-        <FinanceiroFilterTriggerButton onPress={() => setFiltersOpen(true)} activeCount={postoSelecionado ? 1 : 0} />
-        <Text style={fnStyles.countLabel}>Tipo: {financeiroRelatorioTipos.find((o) => o.value === tipo)?.label}</Text>
+        <View style={{ gap: 8, marginBottom: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {financeiroRelatorioTipos.slice(0, 2).map((opt) => (
+              <Pressable
+                key={opt.value}
+                style={[fnStyles.relatorioTipoCard, tipo === opt.value ? fnStyles.relatorioTipoCardActive : null]}
+                onPress={() => setTipo(opt.value)}
+              >
+                <Feather name={opt.icon} size={16} color={tipo === opt.value ? '#C05621' : '#5E667D'} />
+                <Text style={fnStyles.relatorioTipoLabel} numberOfLines={2}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {financeiroRelatorioTipos.slice(2, 4).map((opt) => (
+              <Pressable
+                key={opt.value}
+                style={[fnStyles.relatorioTipoCard, tipo === opt.value ? fnStyles.relatorioTipoCardActive : null]}
+                onPress={() => setTipo(opt.value)}
+              >
+                <Feather name={opt.icon} size={16} color={tipo === opt.value ? '#C05621' : '#5E667D'} />
+                <Text style={fnStyles.relatorioTipoLabel} numberOfLines={2}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <Pressable style={[fnStyles.postoSelectButton, { marginBottom: 10 }]} onPress={() => setPostoModalOpen(true)}>
+          <Text style={fnStyles.postoSelectText} numberOfLines={1}>
+            {postoLabel}
+          </Text>
+          <Feather name="chevron-down" size={16} color="#5E667D" />
+        </Pressable>
 
         <View style={fnStyles.suggestionBox}>
           <Text style={fnStyles.suggestionText}>
@@ -2853,19 +2993,18 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
         )}
       </ScrollView>
 
-      <FinanceiroFilterModal visible={filtersOpen} onClose={() => setFiltersOpen(false)}>
-        <FinanceiroFilterSectionTitle label="Tipo de relatório" />
-        {financeiroRelatorioTipos.map((opt) => (
-          <FinanceiroFilterOptionRow
-            key={opt.value}
-            label={opt.label}
-            active={tipo === opt.value}
-            onPress={() => setTipo(opt.value)}
-          />
-        ))}
-        <FinanceiroFilterSectionTitle label="Posto" />
-        <FinanceiroPostoFilterRow postos={postos} selected={postoSelecionado} onSelect={setPostoSelecionado} />
+      <FinanceiroFilterModal visible={postoModalOpen} title="Posto" onClose={() => setPostoModalOpen(false)}>
+        <FinanceiroPostoFilterRow
+          postos={postos}
+          selected={postoSelecionado}
+          onSelect={(id) => {
+            setPostoSelecionado(id);
+            setPostoModalOpen(false);
+          }}
+        />
       </FinanceiroFilterModal>
+
+      <FinanceiroRelatorioDetalheModal item={detalheItem} onClose={() => setDetalheItem(null)} />
     </SafeAreaView>
   );
 }
@@ -4306,5 +4445,28 @@ const fnStyles = StyleSheet.create({
     fontWeight: '600',
     color: '#0C1736',
     paddingHorizontal: 10,
+  },
+  relatorioTipoCard: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
+  relatorioTipoCardActive: {
+    borderColor: '#C05621',
+    backgroundColor: '#FFF6EE',
+  },
+  relatorioTipoLabel: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0C1736',
   },
 });

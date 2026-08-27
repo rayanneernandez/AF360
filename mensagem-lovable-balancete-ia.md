@@ -17,3 +17,9 @@ No app, os campos `fornecedor_nome`, `valor_esperado` e `ocorrencias` de cada pr
 Isso indica que esses 3 campos específicos não estão sendo preenchidos na resposta que o app recebe.
 
 Podem confirmar os nomes exatos desses campos no JSON de resposta desse recurso?
+
+## 3. Projeções (`recurso=projecoes`)
+
+O "Saldo bancário atual" (saldoInicial) bate certinho entre app e web. Mas o mês final do período (ex: jan/27, no horizonte de 6 meses) vem com um saldo projetado bem diferente entre os dois — no app deu -R$3.602.432.001,76, no web deu R$3.486.041.432,82 (diferença de ~R$116 milhões). Como o ponto de partida é igual, a diferença está em algum dos meses intermediários (provavelmente na média de pagamentos, que é o valor de maior magnitude).
+
+Isso pode ser só reflexo de ser uma API "ao vivo" que recalcula a cada chamada (e os dois lados consultaram em momentos diferentes) — mas se não for esse o motivo, vale confirmar se a agregação de postos é sempre a mesma entre as duas rotas.
