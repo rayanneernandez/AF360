@@ -2898,29 +2898,45 @@ export function FinanceiroRelatoriosScreen({ navigation }: ScreenProps<'Financei
       meta = String(item.descricao ?? item.tipo ?? '');
     } else if (tipo === 'contas') {
       title = String(item.posto ?? '—');
+      const vencimento = formatDateIsoBR(String(item.vencimento ?? '')) ?? String(item.vencimento ?? '');
       meta = `${String(item.descricao ?? '')} · ${String(item.contraparte ?? '')} · ${String(item.status ?? '')}`;
       valor = Number(item.valor ?? 0);
+      return renderRelatorioLinha(idx, item, title, meta, vencimento, valor);
     } else {
       title = String(item.posto ?? '—');
+      const vencimento = item.tituloVencimento
+        ? formatDateIsoBR(String(item.tituloVencimento)) ?? String(item.tituloVencimento)
+        : '';
       meta = `${String(item.movimentoDescricao ?? item.tituloDescricao ?? '')} · ${String(item.tituloContraparte ?? '')}`;
       valor = Number(item.movimentoValor ?? item.tituloValor ?? 0);
+      return renderRelatorioLinha(idx, item, title, meta, vencimento, valor);
     }
-    return (
-      <Pressable key={idx} style={fnStyles.listRow} onPress={() => setDetalheItem(item)}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[fnStyles.listRowTitle, { fontWeight: '400' }]} numberOfLines={1}>
-            {title}
-          </Text>
-          {meta ? (
-            <Text style={fnStyles.listRowMeta} numberOfLines={1}>
-              {meta}
-            </Text>
-          ) : null}
-        </View>
-        {valor !== null ? <Text style={fnStyles.listRowValue}>{formatBRL(valor)}</Text> : null}
-      </Pressable>
-    );
+    return renderRelatorioLinha(idx, item, title, meta, '', valor);
   };
+
+  const renderRelatorioLinha = (
+    idx: number,
+    item: Record<string, unknown>,
+    title: string,
+    meta: string,
+    vencimento: string,
+    valor: number | null
+  ) => (
+    <Pressable key={idx} style={fnStyles.listRow} onPress={() => setDetalheItem(item)}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[fnStyles.listRowTitle, { fontWeight: '400' }]} numberOfLines={1}>
+          {title}
+        </Text>
+        {meta ? (
+          <Text style={fnStyles.listRowMeta} numberOfLines={1}>
+            {meta}
+          </Text>
+        ) : null}
+        {vencimento ? <Text style={fnStyles.listRowMeta}>Vencimento: {vencimento}</Text> : null}
+      </View>
+      {valor !== null ? <Text style={[fnStyles.listRowValue, { fontWeight: '400' }]}>{formatBRL(valor)}</Text> : null}
+    </Pressable>
+  );
 
   return (
     <SafeAreaView style={styles.screen}>
