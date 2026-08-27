@@ -5409,6 +5409,10 @@ function extrairFinanceiroLista<T>(raw: unknown): T[] {
     if (('periodo' in obj || 'label' in obj) && !Array.isArray(obj)) {
       return [obj as T];
     }
+    // Nenhum formato conhecido bateu — loga a forma real da resposta pra
+    // facilitar o diagnóstico (visível no console do Metro), em vez de só
+    // mostrar "sem dados" silenciosamente.
+    console.warn('[financeiro] extrairFinanceiroLista: formato de resposta não reconhecido', Object.keys(obj));
   }
   return [];
 }
