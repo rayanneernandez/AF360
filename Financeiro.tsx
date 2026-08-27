@@ -2166,6 +2166,22 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
     return { max: max > 0 ? max * 1.1 : 1 };
   }, [meses]);
 
+  // Largura das barras calculada a partir de quantos meses existem, pra
+  // NUNCA passar da largura do card (antes era fixa e com 6+ meses as
+  // últimas barras/rótulos vazavam pra fora, cortados sem aviso nenhum).
+  const dreBarasLayout = useMemo(() => {
+    const n = Math.max(1, meses.length);
+    const espacoDisponivel = Math.max(60, chartPlotWidth - 16); // 16 = initialSpacing + endSpacing
+    const espacoPorMes = espacoDisponivel / n;
+    const barWidth = Math.max(4, Math.min(22, espacoPorMes * 0.3));
+    const internalGap = Math.max(1, Math.min(4, espacoPorMes * 0.06));
+    const groupGap = Math.max(2, espacoPorMes - barWidth * 2 - internalGap);
+    return { barWidth, internalGap, groupGap };
+  }, [meses.length, chartPlotWidth]);
+  const dreBarWidth = dreBarasLayout.barWidth;
+  const dreBarInternalGap = dreBarasLayout.internalGap;
+  const dreBarGroupGap = dreBarasLayout.groupGap;
+
   useEffect(() => {
     fetchFinanceiroConfig()
       .then((result) => setPostos(result.postos))
@@ -2335,12 +2351,12 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
               <Text style={fnStyles.sectionTitle}>Mês a mês</Text>
               <BarChart
                 data={meses.flatMap((m) => [
-                  { value: m.entradas, frontColor: '#18955A', spacing: 2 },
-                  { value: m.saidas, frontColor: '#E6213D', label: m.label, spacing: 20 },
+                  { value: m.entradas, frontColor: '#18955A', spacing: dreBarInternalGap },
+                  { value: m.saidas, frontColor: '#E6213D', label: m.label, spacing: dreBarGroupGap },
                 ])}
                 width={chartPlotWidth}
                 height={160}
-                barWidth={meses.length > 6 ? 12 : 22}
+                barWidth={dreBarWidth}
                 barBorderRadius={3}
                 maxValue={dreChartRange.max}
                 yAxisLabelWidth={44}
@@ -2360,11 +2376,8 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
                   pointerColor: '#5E667D',
                   radius: 5,
                   activatePointersInstantlyOnTouch: true,
-                  // Ao soltar o dedo, o valor some (não fica "grudado") — é
-                  // só um toque de cada vez, sem precisar segurar.
-                  persistPointer: false,
-                  resetPointerIndexOnRelease: true,
-                  onTouchEnd: () => setTimeout(() => setDreChartPointerIdx(null), 0),
+                  // Fica fixado no último mês tocado até tocar em outro.
+                  persistPointer: true,
                   pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
                     // Cada mês vira 2 barras no array (entradas, saídas) —
                     // o índice do mês é o índice da barra dividido por 2.
@@ -2376,11 +2389,11 @@ export function FinanceiroBalanceteDreScreen({ navigation }: ScreenProps<'Financ
                   },
                 }}
               />
-              <Text style={[fnStyles.chartTooltipText, { marginTop: 8, textAlign: 'center', fontWeight: '400' }]}>
-                {dreChartPointerIdx !== null && meses[dreChartPointerIdx]
-                  ? `${meses[dreChartPointerIdx].label} · Entradas: ${formatBRL(meses[dreChartPointerIdx].entradas)} · Saídas: ${formatBRL(meses[dreChartPointerIdx].saidas)} · Resultado: ${formatBRL(meses[dreChartPointerIdx].resultado)}`
-                  : 'Toque numa barra para ver os valores daquele mês.'}
-              </Text>
+              {dreChartPointerIdx !== null && meses[dreChartPointerIdx] ? (
+                <Text style={[fnStyles.chartTooltipText, { marginTop: 8, textAlign: 'center' }]}>
+                  {`${meses[dreChartPointerIdx].label} · Entradas: ${formatBRL(meses[dreChartPointerIdx].entradas)} · Saídas: ${formatBRL(meses[dreChartPointerIdx].saidas)} · Resultado: ${formatBRL(meses[dreChartPointerIdx].resultado)}`}
+                </Text>
+              ) : null}
               <View style={{ flexDirection: 'row', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
                 <FinanceiroChartLegendDot color="#18955A" label="Entradas" />
                 <FinanceiroChartLegendDot color="#E6213D" label="Saídas" />
