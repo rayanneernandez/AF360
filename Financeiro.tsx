@@ -217,6 +217,13 @@ function formatBRLValor(value: number | null | undefined): string {
   return formatBRL(value).replace(/R\$\s?/, '').trim();
 }
 
+function formatDateHoraBR(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('pt-BR');
+}
+
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -3854,7 +3861,7 @@ export function FinanceiroConfiguracoesScreen({ navigation }: ScreenProps<'Finan
           <>
             <View style={fnStyles.dreCard}>
               <Text style={fnStyles.sectionTitle}>Integração Quality</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <View style={[fnStyles.badge, { backgroundColor: config?.chaveDefinida ? '#E3F5EA' : '#FBE7E9' }]}>
                   <Text style={[fnStyles.badgeText, { color: config?.chaveDefinida ? '#18955A' : '#E6213D' }]}>
                     {config?.chaveDefinida ? 'Chave configurada' : 'Sem chave'}
@@ -3941,6 +3948,9 @@ export function FinanceiroConfiguracoesScreen({ navigation }: ScreenProps<'Finan
                       {posto.idq ? ` · IDQ ${posto.idq}` : ''}
                     </Text>
                     <Text style={fnStyles.listRowMeta}>{posto.temChave ? 'Herda a chave global' : 'Sem chave de integração'}</Text>
+                    {posto.atualizadoEm ? (
+                      <Text style={fnStyles.listRowMeta}>Atualizado em {formatDateHoraBR(posto.atualizadoEm)}</Text>
+                    ) : null}
                   </View>
                   <View style={{ alignItems: 'flex-end', gap: 6 }}>
                     <View style={[fnStyles.badge, { backgroundColor: posto.ativo ? '#E3F5EA' : '#FBE7E9' }]}>
