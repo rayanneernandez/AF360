@@ -42,6 +42,7 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
     roles.add('diretoria');
     roles.add('rh');
     roles.add('financeiro');
+    roles.add('gestao');
   }
 
   // b) Sinal real pro resto: módulos efetivos (Cargo ∪ user_modules).
@@ -52,6 +53,10 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   if (effectiveModules?.has('diretoria')) roles.add('diretoria');
   if (effectiveModules?.has('rh')) roles.add('rh');
   if (effectiveModules?.has('financeiro')) roles.add('financeiro');
+  // "Gestão" (Vendas/Abastecimento/Margem/Encerrante) ligado em 28/08/2026 —
+  // normalizeModuleName já vira "Gestão" -> "gestao", mesmo módulo que a
+  // Lovable já usa no painel web pra dar acesso a essa área.
+  if (effectiveModules?.has('gestao')) roles.add('gestao');
 
   // c) Ponte temporária por e-mail conhecido — só pra cobrir usuários de
   // teste cujo acesso ainda não tem os módulos certos configurados.
@@ -67,10 +72,11 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   // não houver ficha de RH vinculada, o app mostra estado vazio honesto
   // ("Seu acesso ainda não está vinculado a um colaborador no RH...") em vez
   // de fabricar dado — nunca finge um painel pessoal com números inventados.
-  // Marketing, Gestão, R&S e Administrativo sozinhos (sem RH/Diretoria/
-  // Administrador/Colaborador/Financeiro) não entram em nenhum painel de
-  // propósito — o app mobile tem 5 perfis (colaborador, rh, diretoria,
-  // administrador, financeiro). "Financeiro" foi ligado em 21/08/2026.
+  // Marketing e Administrativo sozinhos (sem RH/Diretoria/Administrador/
+  // Colaborador/Financeiro/Gestão) não entram em nenhum painel de propósito —
+  // o app mobile tem 6 perfis (colaborador, rh, diretoria, administrador,
+  // financeiro, gestao). "Financeiro" foi ligado em 21/08/2026, "Gestão" em
+  // 28/08/2026.
   if (rhColaborador || effectiveModules?.has('colaborador')) roles.add('colaborador');
 
   return Array.from(roles);

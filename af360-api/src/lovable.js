@@ -1852,6 +1852,53 @@ function postFinanceiroConfigLimparCache(actorId) {
   return lovablePost('/api/public/internal/financeiro', { recurso: 'config-limpar-cache' }, {}, actorId);
 }
 
+// --- Gestão (painel de Vendas/Abastecimento/Margem/Encerrante da rede,
+// espelho do painel web "Gestão") — endpoint confirmado pela Lovable em
+// 28/08/2026: /api/public/internal/gestao (mesma auth: x-internal-secret +
+// x-actor-id). Query params comuns: dataInicial, dataFinal (YYYY-MM-DD),
+// postoIds (csv de idq; vazio = consolidado). "recurso" pode ser: postos,
+// ultima-data, dashboard, vendas, abastecimentos, margem, encerrante.
+// Encerrante ainda está bloqueado no backend deles (depende da coluna
+// "encerrante" na base de abastecimentos, que não é capturada pelo robô em
+// todos os postos ainda) — devolve { disponivel: false, mensagem }, nunca
+// simular dados aqui. Notificações (rotinas/templates) usam a MESMA
+// infraestrutura genérica do Financeiro/Admin (getAdminNotifRotinas/
+// getAdminNotifTemplates já exportados abaixo), só com modulo='gst'.
+
+function getGestaoPostos(actorId) {
+  return lovableGet('/api/public/internal/gestao', { recurso: 'postos' }, actorId);
+}
+
+function getGestaoUltimaData(actorId) {
+  return lovableGet('/api/public/internal/gestao', { recurso: 'ultima-data' }, actorId);
+}
+
+// params: { dataInicial, dataFinal, postoIds, agruparPor: 'frentista'|'posto' }
+function getGestaoDashboard(params, actorId) {
+  return lovableGet('/api/public/internal/gestao', { recurso: 'dashboard', ...params }, actorId);
+}
+
+// params: { dataInicial, dataFinal, postoIds, divisao: 'PISTA'|'LOJA' }
+function getGestaoVendas(params, actorId) {
+  return lovableGet('/api/public/internal/gestao', { recurso: 'vendas', ...params }, actorId);
+}
+
+// params: { dataInicial, dataFinal, postoIds }
+function getGestaoAbastecimentos(params, actorId) {
+  return lovableGet('/api/public/internal/gestao', { recurso: 'abastecimentos', ...params }, actorId);
+}
+
+// params: { postoIds, margemMin } — sem período (cadastro de produto por posto)
+function getGestaoMargem(params, actorId) {
+  return lovableGet('/api/public/internal/gestao', { recurso: 'margem', ...params }, actorId);
+}
+
+// { disponivel: false, mensagem } enquanto o backend deles não capturar a
+// coluna "encerrante" em todos os postos — nunca simular dados aqui.
+function getGestaoEncerrante(params, actorId) {
+  return lovableGet('/api/public/internal/gestao', { recurso: 'encerrante', ...params }, actorId);
+}
+
 module.exports = {
   getRhUniformesCobrancas,
   postRhUniformeCobranca,
@@ -2123,4 +2170,11 @@ module.exports = {
   patchFinanceiroConfigPosto,
   deleteFinanceiroConfigPosto,
   postFinanceiroConfigLimparCache,
+  getGestaoPostos,
+  getGestaoUltimaData,
+  getGestaoDashboard,
+  getGestaoVendas,
+  getGestaoAbastecimentos,
+  getGestaoMargem,
+  getGestaoEncerrante,
 };

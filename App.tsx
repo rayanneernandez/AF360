@@ -84,6 +84,17 @@ import {
   FinanceiroConfiguracoesScreen,
 } from './Financeiro';
 import {
+  GestaoDashboardScreen,
+  GestaoProfileScreen,
+  GestaoVendasPistaScreen,
+  GestaoAbastecimentoScreen,
+  GestaoEncerranteScreen,
+  GestaoVendasLojaScreen,
+  GestaoMargemLojaScreen,
+  GestaoNotificationsScreen,
+  GestaoConfiguracoesScreen,
+} from './Gestao';
+import {
   AdminDashboardScreen,
   AdminProfileScreen,
   AdminUsuariosScreen,
@@ -266,6 +277,15 @@ export type RootStackParamList = {
   FinanceiroRelatorios: undefined;
   FinanceiroNotifications: undefined;
   FinanceiroConfiguracoes: undefined;
+  GestaoDashboard: undefined;
+  GestaoProfile: undefined;
+  GestaoVendasPista: undefined;
+  GestaoAbastecimento: undefined;
+  GestaoEncerrante: undefined;
+  GestaoVendasLoja: undefined;
+  GestaoMargemLoja: undefined;
+  GestaoNotifications: undefined;
+  GestaoConfiguracoes: undefined;
 };
 
 export type ScreenProps<RouteName extends keyof RootStackParamList> = NativeStackScreenProps<
@@ -403,7 +423,7 @@ type SideMenuRoute =
   | 'Requests'
   | 'Profile';
 
-export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador' | 'financeiro';
+export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador' | 'financeiro' | 'gestao';
 
 type DirectorSideMenuRoute =
   | 'DirectorDashboard'
@@ -482,6 +502,21 @@ export type FinanceiroSideMenuRoute =
   | 'FinanceiroNotifications'
   | 'FinanceiroConfiguracoes'
   | 'FinanceiroProfile';
+
+// "Gestão" (Vendas/Abastecimento/Margem/Encerrante da rede) — perfil novo
+// (28/08/2026), espelho do painel web "Gestão". Endpoint confirmado pela
+// Lovable: /api/public/internal/gestao. Encerrante ainda bloqueado no
+// backend deles — mostrar o aviso real, nunca dado inventado.
+export type GestaoSideMenuRoute =
+  | 'GestaoDashboard'
+  | 'GestaoVendasPista'
+  | 'GestaoAbastecimento'
+  | 'GestaoEncerrante'
+  | 'GestaoVendasLoja'
+  | 'GestaoMargemLoja'
+  | 'GestaoNotifications'
+  | 'GestaoConfiguracoes'
+  | 'GestaoProfile';
 
 type SummaryCardItem = {
   id: string;
@@ -1484,6 +1519,59 @@ export const financeiroSideMenuSections: Array<{
     items: [
       { id: 'financeiro-notifications', label: 'Notificações', icon: 'bell', route: 'FinanceiroNotifications' },
       { id: 'financeiro-configuracoes', label: 'Configurações', icon: 'settings', route: 'FinanceiroConfiguracoes' },
+    ],
+  },
+];
+
+// Placeholder até o painel Gestão ser conectado ao login real (identity do
+// AuthIdentityContext) — mesmo padrão do financeiroUser: front primeiro,
+// back depois.
+export const gestaoUser = {
+  fullName: 'Gestão',
+  role: 'Gestão',
+  roleAndUnit: 'Gestão · American Fuel',
+  area: 'Vendas, Abastecimento e Margem',
+  email: 'gestao@americanfuel.com.br',
+  phone: '(11) 99120-0000',
+  accessLabel: 'Vendas, abastecimento, margem e encerrante',
+};
+
+// "GT" fixo (não via getInitials), mesmo motivo do financeiroUserInitials.
+export const gestaoUserInitials = 'GT';
+
+export const gestaoSideMenuSections: Array<{
+  title: string;
+  items: Array<{
+    id: string;
+    label: string;
+    icon: keyof typeof Feather.glyphMap;
+    route?: GestaoSideMenuRoute;
+  }>;
+}> = [
+  {
+    title: 'VISÃO GERAL',
+    items: [{ id: 'gestao-dashboard', label: 'Dashboard', icon: 'grid', route: 'GestaoDashboard' }],
+  },
+  {
+    title: 'PISTA',
+    items: [
+      { id: 'gestao-vendas-pista', label: 'Vendas', icon: 'dollar-sign', route: 'GestaoVendasPista' },
+      { id: 'gestao-abastecimento', label: 'Abastecimento', icon: 'droplet', route: 'GestaoAbastecimento' },
+      { id: 'gestao-encerrante', label: 'Encerrante', icon: 'shield', route: 'GestaoEncerrante' },
+    ],
+  },
+  {
+    title: 'LOJA',
+    items: [
+      { id: 'gestao-vendas-loja', label: 'Vendas', icon: 'shopping-bag', route: 'GestaoVendasLoja' },
+      { id: 'gestao-margem-loja', label: 'Margem', icon: 'percent', route: 'GestaoMargemLoja' },
+    ],
+  },
+  {
+    title: 'ADMINISTRAÇÃO',
+    items: [
+      { id: 'gestao-notifications', label: 'Notificações', icon: 'bell', route: 'GestaoNotifications' },
+      { id: 'gestao-configuracoes', label: 'Configurações', icon: 'settings', route: 'GestaoConfiguracoes' },
     ],
   },
 ];
@@ -2777,6 +2865,15 @@ export default function App() {
                     <Stack.Screen name="FinanceiroRelatorios" component={FinanceiroRelatoriosScreen} />
                     <Stack.Screen name="FinanceiroNotifications" component={FinanceiroNotificationsScreen} />
                     <Stack.Screen name="FinanceiroConfiguracoes" component={FinanceiroConfiguracoesScreen} />
+                    <Stack.Screen name="GestaoDashboard" component={GestaoDashboardScreen} />
+                    <Stack.Screen name="GestaoProfile" component={GestaoProfileScreen} />
+                    <Stack.Screen name="GestaoVendasPista" component={GestaoVendasPistaScreen} />
+                    <Stack.Screen name="GestaoAbastecimento" component={GestaoAbastecimentoScreen} />
+                    <Stack.Screen name="GestaoEncerrante" component={GestaoEncerranteScreen} />
+                    <Stack.Screen name="GestaoVendasLoja" component={GestaoVendasLojaScreen} />
+                    <Stack.Screen name="GestaoMargemLoja" component={GestaoMargemLojaScreen} />
+                    <Stack.Screen name="GestaoNotifications" component={GestaoNotificationsScreen} />
+                    <Stack.Screen name="GestaoConfiguracoes" component={GestaoConfiguracoesScreen} />
                   </Stack.Navigator>
 
                   {isMenuOpen ? (
@@ -2788,6 +2885,10 @@ export default function App() {
                           ? rhUserInitials
                           : activeRole === 'administrador'
                           ? adminUserInitials
+                          : activeRole === 'financeiro'
+                          ? financeiroUserInitials
+                          : activeRole === 'gestao'
+                          ? gestaoUserInitials
                           : currentUserInitials
                       }
                       currentRoute={currentRoute}
@@ -2859,6 +2960,8 @@ function getDashboardRouteForRole(role: UserRole): keyof RootStackParamList {
     ? 'AdminDashboard'
     : role === 'financeiro'
     ? 'FinanceiroDashboard'
+    : role === 'gestao'
+    ? 'GestaoDashboard'
     : 'Dashboard';
 }
 
@@ -3124,6 +3227,13 @@ const PANEL_OPTION_META: Record<
     icon: 'dollar-sign',
     color: '#C05621',
     tint: '#FCEDE1',
+  },
+  gestao: {
+    label: 'Gestão',
+    subtitle: 'Vendas, abastecimento e margem da rede',
+    icon: 'grid',
+    color: '#7C3AED',
+    tint: '#F3EEFE',
   },
 };
 
@@ -12912,6 +13022,7 @@ export function SideMenuOverlay({
   const isRH = variant === 'rh';
   const isAdmin = variant === 'administrador';
   const isFinanceiro = variant === 'financeiro';
+  const isGestao = variant === 'gestao';
   const { identity } = useContext(AuthIdentityContext);
   const { perfil: colaboradorPerfil, isLoading: isLoadingColaboradorPerfil } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
@@ -12923,6 +13034,8 @@ export function SideMenuOverlay({
     ? adminSideMenuSections
     : isFinanceiro
     ? financeiroSideMenuSections
+    : isGestao
+    ? gestaoSideMenuSections
     : sideMenuSections;
   // Nome/cargo reais (rh_colaboradores, via ColaboradorPerfilContext) em
   // todos os painéis — nunca os mocks "Bruno Lyra"/"Marina Costa"/etc. Sem
@@ -12932,6 +13045,8 @@ export function SideMenuOverlay({
     ? 'Administrador'
     : isFinanceiro
     ? 'Financeiro'
+    : isGestao
+    ? 'Gestão'
     : (colaboradorPerfil?.cargo as string | undefined) ||
       (isLoadingColaboradorPerfil ? 'Carregando…' : identity?.colaboradorId ? '—' : 'Sem vínculo no RH');
   const headerGradientColors: [string, string] = isDirector
@@ -12942,11 +13057,19 @@ export function SideMenuOverlay({
     ? ['#1B2340', '#2F3A5C']
     : isFinanceiro
     ? ['#C05621', '#DD6B20']
+    : isGestao
+    ? ['#7C3AED', '#9B6DF5']
     : ['#2F4EA8', '#4C439E'];
   const insets = useSafeAreaInsets();
 
   const handleItemPress = (
-    route?: SideMenuRoute | DirectorSideMenuRoute | RHSideMenuRoute | AdminSideMenuRoute | FinanceiroSideMenuRoute
+    route?:
+      | SideMenuRoute
+      | DirectorSideMenuRoute
+      | RHSideMenuRoute
+      | AdminSideMenuRoute
+      | FinanceiroSideMenuRoute
+      | GestaoSideMenuRoute
   ) => {
     onClose();
 
@@ -13068,6 +13191,7 @@ export function TopBar({
   const isRH = variant === 'rh';
   const isAdmin = variant === 'administrador';
   const isFinanceiro = variant === 'financeiro';
+  const isGestao = variant === 'gestao';
   const hasUnreadNotifications = colaboradorNotificationItems.some(
     (item) => item.unread && !readNotificationIds[item.id]
   );
@@ -13092,12 +13216,14 @@ export function TopBar({
         <AdminBrandLogo />
       ) : isFinanceiro ? (
         <FinanceiroBrandLogo />
+      ) : isGestao ? (
+        <GestaoBrandLogo />
       ) : (
         <BrandLogo compact theme={onColor ? 'light' : 'dark'} />
       )}
 
       <View style={styles.topBarRight}>
-        {isDirector || isRH || isAdmin || isFinanceiro ? null : (
+        {isDirector || isRH || isAdmin || isFinanceiro || isGestao ? null : (
           <Pressable style={styles.notificationBellButton} onPress={openNotifications}>
             <Feather name="bell" size={17} color="#313951" />
             {hasUnreadNotifications ? <View style={styles.notificationBellDot} /> : null}
@@ -13110,6 +13236,7 @@ export function TopBar({
             isRH ? styles.avatarRH : null,
             isAdmin ? styles.avatarAdmin : null,
             isFinanceiro ? styles.avatarFinanceiro : null,
+            isGestao ? styles.avatarGestao : null,
           ]}
           onPress={onAvatarPress}
           disabled={!onAvatarPress}
@@ -13174,6 +13301,20 @@ function FinanceiroBrandLogo() {
       <View>
         <Text style={styles.financeiroBrandTitle}>Financeiro</Text>
         <Text style={styles.financeiroBrandSubtitle}>GESTÃO DE CAIXA</Text>
+      </View>
+    </View>
+  );
+}
+
+function GestaoBrandLogo() {
+  return (
+    <View style={styles.directorBrandRow}>
+      <View style={styles.gestaoBrandIconShell}>
+        <Feather name="grid" size={16} color="#FFFFFF" />
+      </View>
+      <View>
+        <Text style={styles.gestaoBrandTitle}>Gestão</Text>
+        <Text style={styles.gestaoBrandSubtitle}>VENDAS E ABASTECIMENTO</Text>
       </View>
     </View>
   );
@@ -14490,6 +14631,28 @@ export const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 0.4,
+  },
+  gestaoBrandIconShell: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gestaoBrandTitle: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  gestaoBrandSubtitle: {
+    color: '#7C8397',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  avatarGestao: {
+    backgroundColor: '#7C3AED',
   },
   panelHero: {
     borderRadius: 24,

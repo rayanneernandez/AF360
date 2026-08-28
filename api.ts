@@ -1903,7 +1903,7 @@ export type AuthIdentity = {
   // 'administrador' aqui). 'role' acima é só o primeiro/principal, mantido
   // por compatibilidade; o app decide se mostra a tela de seleção de painel
   // com base neste array.
-  availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro'>;
+  availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro' | 'gestao'>;
   colaboradorId: string | null;
   empresaId: string | null;
 };
@@ -6134,4 +6134,372 @@ export async function updateFinanceiroNotifTemplate(
 
 export async function deleteFinanceiroNotifTemplate(id: string, actorId?: string | null): Promise<void> {
   await api.delete(withActorId(`/api/financeiro/notif-templates/${encodeURIComponent(id)}`, actorId));
+}
+
+// --- Gestão (painel de Vendas/Abastecimento/Margem/Encerrante da rede,
+// espelho do painel web "Gestão") — endpoint confirmado pela Lovable em
+// 28/08/2026: /api/public/internal/gestao (via proxy /api/gestao, mesma auth
+// x-internal-secret). Query params comuns: dataInicial, dataFinal
+// (YYYY-MM-DD), postoIds (csv de idq; vazio = consolidado). ---
+
+async function fetchGestaoRecurso<T>(
+  recurso: string,
+  params: Record<string, string | number | boolean | undefined> = {}
+): Promise<{ data: T; count?: number }> {
+  const search = new URLSearchParams();
+  search.set('recurso', recurso);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === '') return;
+    search.set(key, String(value));
+  });
+  const json = await api.get(`/api/gestao?${search.toString()}`);
+  return { data: json.data as T, count: json.count as number | undefined };
+}
+
+export type GestaoFiltroComum = {
+  dataInicial?: string;
+  dataFinal?: string;
+  postoIds?: string[];
+};
+
+function gestaoFiltroParams(filtro?: GestaoFiltroComum): { dataInicial?: string; dataFinal?: string; postoIds?: string } {
+  return {
+    dataInicial: filtro?.dataInicial,
+    dataFinal: filtro?.dataFinal,
+    postoIds: filtro?.postoIds && filtro.postoIds.length > 0 ? filtro.postoIds.join(',') : undefined,
+  };
+}
+
+export type GestaoPosto = { idq: string; nome: string };
+
+export async function fetchGestaoPostos(): Promise<GestaoPosto[]> {
+  const { data } = await fetchGestaoRecurso<GestaoPosto[]>('postos');
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchGestaoUltimaData(): Promise<string | null> {
+  const { data } = await fetchGestaoRecurso<{ data: string | null }>('ultima-data');
+  return data?.data ?? null;
+}
+
+// --- Dashboard ---
+
+export type GestaoCombustivelItem = {
+  tipo: string;
+  familia: 'GASOLINA' | 'ETANOL' | 'DIESEL' | 'GNV';
+  aditivado: boolean;
+  unidade: 'L' | 'm³';
+  quantidade: number;
+  faturamento: number;
+  preco_venda: number;
+  custo: number;
+  margem: number;
+  [key: string]: unknown;
+};
+
+export type GestaoCategoriaItem = {
+  familia: string;
+  tipo: string;
+  aditivado: boolean;
+  unidade: string;
+  quantidade: number;
+  faturamento: number;
+  pct_familia: number;
+};
+
+export type GestaoSplitAditivadoItem = {
+  familia: string;
+  comum: number;
+  aditivado: number;
+  total: number;
+  pct_aditivado: number;
+};
+
+export type GestaoRankingItem = { label: string; litros?: number; itens?: number; faturamento: number };
+
+export type GestaoDashboardData = {
+  totais: {
+    faturamento_total: number;
+    litros_total: number;
+    preco_medio_litro: number;
+    custo_medio_litro: number;
+    margem_litro: number;
+    gnv_m3: number;
+    gnv_faturamento: number;
+    preco_medio_m3: number;
+    custo_medio_m3: number;
+    margem_m3: number;
+  };
+  combustiveis: GestaoCombustivelItem[];
+  categorias: GestaoCategoriaItem[];
+  split_aditivado: GestaoSplitAditivadoItem[];
+  ranking_gasolina_aditivada: GestaoRankingItem[];
+  ranking_lubrificantes: GestaoRankingItem[];
+  agrupado_por: string;
+};
+
+const GESTAO_TOTAIS_VAZIOS: GestaoDashboardData['totais'] = {
+  faturamento_total: 0,
+  litros_total: 0,
+  preco_medio_litro: 0,
+  custo_medio_litro: 0,
+  margem_litro: 0,
+  gnv_m3: 0,
+  gnv_faturamento: 0,
+  preco_medio_m3: 0,
+  custo_medio_m3: 0,
+  margem_m3: 0,
+};
+
+export async function fetchGestaoDashboard(
+  filtro: GestaoFiltroComum & { agruparPor?: 'frentista' | 'posto' } = {}
+): Promise<GestaoDashboardData> {
+  const { agruparPor, ...resto } = filtro;
+  const { data } = await fetchGestaoRecurso<Partial<GestaoDashboardData>>('dashboard', {
+    agruparPor,
+    ...gestaoFiltroParams(resto),
+  });
+  return {
+    totais: { ...GESTAO_TOTAIS_VAZIOS, ...(data.totais ?? {}) },
+    combustiveis: data.combustiveis ?? [],
+    categorias: data.categorias ?? [],
+    split_aditivado: data.split_aditivado ?? [],
+    ranking_gasolina_aditivada: data.ranking_gasolina_aditivada ?? [],
+    ranking_lubrificantes: data.ranking_lubrificantes ?? [],
+    agrupado_por: data.agrupado_por ?? agruparPor ?? 'posto',
+  };
+}
+
+// --- Vendas (Pista/Loja) ---
+
+export type GestaoVendasPorDiaItem = { dia: string; cupons: number; faturamento: number; cancelados: number };
+export type GestaoVendasPorPagamentoItem = { forma: string; qtde: number; valor: number };
+export type GestaoVendasPorPostoItem = { posto_id: string; posto_nome: string; cupons: number; faturamento: number };
+export type GestaoVendasPorGrupoItem = { grupo: string; itens: number; faturamento: number };
+export type GestaoVendasPorVendedorItem = { vendedor: string; cupons: number; faturamento: number };
+
+export type GestaoVendasData = {
+  periodo: { ini: string; fim: string };
+  totais: { total_cupons: number; total_faturamento: number; total_desconto: number; total_cancelados: number };
+  por_dia: GestaoVendasPorDiaItem[];
+  por_pagamento: GestaoVendasPorPagamentoItem[];
+  por_posto: GestaoVendasPorPostoItem[];
+  por_grupo: GestaoVendasPorGrupoItem[];
+  por_vendedor: GestaoVendasPorVendedorItem[];
+};
+
+export async function fetchGestaoVendas(
+  filtro: GestaoFiltroComum & { divisao: 'PISTA' | 'LOJA' }
+): Promise<GestaoVendasData> {
+  const { divisao, ...resto } = filtro;
+  const { data } = await fetchGestaoRecurso<Partial<GestaoVendasData>>('vendas', {
+    divisao,
+    ...gestaoFiltroParams(resto),
+  });
+  return {
+    periodo: data.periodo ?? { ini: '', fim: '' },
+    totais: {
+      total_cupons: data.totais?.total_cupons ?? 0,
+      total_faturamento: data.totais?.total_faturamento ?? 0,
+      total_desconto: data.totais?.total_desconto ?? 0,
+      total_cancelados: data.totais?.total_cancelados ?? 0,
+    },
+    por_dia: data.por_dia ?? [],
+    por_pagamento: data.por_pagamento ?? [],
+    por_posto: data.por_posto ?? [],
+    por_grupo: data.por_grupo ?? [],
+    por_vendedor: data.por_vendedor ?? [],
+  };
+}
+
+// --- Abastecimento ---
+
+export type GestaoAbastecimentoPorDiaItem = { dia: string; abastecimentos: number; litros: number; faturamento: number };
+export type GestaoAbastecimentoPorCombustivelItem = { produto: string; abastecimentos: number; litros: number; faturamento: number };
+export type GestaoAbastecimentoPorPostoItem = {
+  posto_id: string;
+  posto_nome: string;
+  abastecimentos: number;
+  litros: number;
+  faturamento: number;
+};
+
+export type GestaoAbastecimentoData = {
+  totais: { total_registros: number; total_validos: number; total_cancelados: number; total_litros: number; total_faturamento: number };
+  por_dia: GestaoAbastecimentoPorDiaItem[];
+  por_combustivel: GestaoAbastecimentoPorCombustivelItem[];
+  por_bomba: Array<{ bomba: string; [key: string]: unknown }>;
+  por_turno: Array<{ turno: string; [key: string]: unknown }>;
+  por_posto: GestaoAbastecimentoPorPostoItem[];
+  preco_dia_combustivel: Array<{ dia: string; produto: string; preco_medio: number | null }>;
+  litros_dia_combustivel: Array<{ dia: string; produto: string; litros: number }>;
+};
+
+export async function fetchGestaoAbastecimentos(filtro: GestaoFiltroComum = {}): Promise<GestaoAbastecimentoData> {
+  const { data } = await fetchGestaoRecurso<Partial<GestaoAbastecimentoData>>('abastecimentos', gestaoFiltroParams(filtro));
+  return {
+    totais: {
+      total_registros: data.totais?.total_registros ?? 0,
+      total_validos: data.totais?.total_validos ?? 0,
+      total_cancelados: data.totais?.total_cancelados ?? 0,
+      total_litros: data.totais?.total_litros ?? 0,
+      total_faturamento: data.totais?.total_faturamento ?? 0,
+    },
+    por_dia: data.por_dia ?? [],
+    por_combustivel: data.por_combustivel ?? [],
+    por_bomba: data.por_bomba ?? [],
+    por_turno: data.por_turno ?? [],
+    por_posto: data.por_posto ?? [],
+    preco_dia_combustivel: data.preco_dia_combustivel ?? [],
+    litros_dia_combustivel: data.litros_dia_combustivel ?? [],
+  };
+}
+
+// --- Margem (Loja) — cadastro de produto por posto, sem filtro de período ---
+
+export type GestaoMargemOfensorItem = {
+  posto_id: string;
+  posto_nome: string;
+  codpro: string;
+  nompro: string;
+  codgru: string | null;
+  ativo: boolean;
+  preco_venda: number;
+  custo: number;
+  lucro_un: number;
+  margem_pct: number;
+  markup_pct: number;
+};
+
+export type GestaoMargemData = {
+  parametros: { margem_min: number; limit: number };
+  totais: {
+    total_produtos: number;
+    produtos_ofensores: number;
+    produtos_prejuizo: number;
+    ofensores_ativos: number;
+    margem_media: number;
+    margem_media_ofensores: number;
+  };
+  distribuicao: { prejuizo: number; ate_10: number; de_10_a_20: number; de_20_a_30: number; de_30_a_50: number; acima_50: number };
+  ofensores: GestaoMargemOfensorItem[];
+};
+
+export async function fetchGestaoMargem(
+  params: { postoIds?: string[]; margemMin?: number } = {}
+): Promise<GestaoMargemData> {
+  const { data } = await fetchGestaoRecurso<Partial<GestaoMargemData>>('margem', {
+    postoIds: params.postoIds && params.postoIds.length > 0 ? params.postoIds.join(',') : undefined,
+    margemMin: params.margemMin,
+  });
+  return {
+    parametros: { margem_min: data.parametros?.margem_min ?? 30, limit: data.parametros?.limit ?? 500 },
+    totais: {
+      total_produtos: data.totais?.total_produtos ?? 0,
+      produtos_ofensores: data.totais?.produtos_ofensores ?? 0,
+      produtos_prejuizo: data.totais?.produtos_prejuizo ?? 0,
+      ofensores_ativos: data.totais?.ofensores_ativos ?? 0,
+      margem_media: data.totais?.margem_media ?? 0,
+      margem_media_ofensores: data.totais?.margem_media_ofensores ?? 0,
+    },
+    distribuicao: {
+      prejuizo: data.distribuicao?.prejuizo ?? 0,
+      ate_10: data.distribuicao?.ate_10 ?? 0,
+      de_10_a_20: data.distribuicao?.de_10_a_20 ?? 0,
+      de_20_a_30: data.distribuicao?.de_20_a_30 ?? 0,
+      de_30_a_50: data.distribuicao?.de_30_a_50 ?? 0,
+      acima_50: data.distribuicao?.acima_50 ?? 0,
+    },
+    ofensores: data.ofensores ?? [],
+  };
+}
+
+// --- Encerrante — ainda bloqueado no backend deles (depende da coluna
+// "encerrante" na base de abastecimentos, não capturada pelo robô em todos os
+// postos ainda). NUNCA simular dados aqui — mostrar o aviso real. ---
+
+export type GestaoEncerranteData = { disponivel: boolean; mensagem: string | null };
+
+export async function fetchGestaoEncerrante(filtro: GestaoFiltroComum = {}): Promise<GestaoEncerranteData> {
+  const { data } = await fetchGestaoRecurso<Partial<GestaoEncerranteData>>('encerrante', gestaoFiltroParams(filtro));
+  return { disponivel: data.disponivel ?? false, mensagem: data.mensagem ?? null };
+}
+
+// --- Notificações (Rotinas + Templates) — mesmo sistema genérico do
+// Financeiro/Admin, fixado no servidor em modulo=gst, confirmado pela
+// Lovable em 28/08/2026. Reaproveita os mesmos tipos do Financeiro (mesmo
+// formato de linha). ---
+
+export type GestaoNotifPublicoTipo = FinanceiroNotifPublicoTipo;
+export type GestaoNotifRotinaItem = FinanceiroNotifRotinaItem;
+export type GestaoNotifRotinasResponse = { rotinas: GestaoNotifRotinaItem[]; count: number };
+export type GestaoNotifRotinaWriteBody = FinanceiroNotifRotinaWriteBody;
+
+export async function fetchGestaoNotifRotinas(params?: { q?: string; ativa?: boolean }): Promise<GestaoNotifRotinasResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativa !== undefined) search.set('ativa', String(params.ativa));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/gestao/notif-rotinas${query}`);
+  return json.data as GestaoNotifRotinasResponse;
+}
+
+export async function createGestaoNotifRotina(
+  body: GestaoNotifRotinaWriteBody,
+  actorId?: string | null
+): Promise<GestaoNotifRotinaItem> {
+  const json = await api.post(withActorId('/api/gestao/notif-rotinas', actorId), body);
+  return json.data as GestaoNotifRotinaItem;
+}
+
+export async function updateGestaoNotifRotina(
+  id: string,
+  body: GestaoNotifRotinaWriteBody,
+  actorId?: string | null
+): Promise<GestaoNotifRotinaItem> {
+  const json = await api.patch(withActorId(`/api/gestao/notif-rotinas/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as GestaoNotifRotinaItem;
+}
+
+export async function deleteGestaoNotifRotina(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/gestao/notif-rotinas/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function executarGestaoNotifRotina(id: string, actorId?: string | null): Promise<GestaoNotifRotinaItem> {
+  const json = await api.post(withActorId(`/api/gestao/notif-rotinas/${encodeURIComponent(id)}/executar`, actorId));
+  return json.data as GestaoNotifRotinaItem;
+}
+
+export type GestaoNotifTemplateItem = FinanceiroNotifTemplateItem;
+export type GestaoNotifTemplatesResponse = { templates: GestaoNotifTemplateItem[]; count: number };
+export type GestaoNotifTemplateWriteBody = FinanceiroNotifTemplateWriteBody;
+
+export async function fetchGestaoNotifTemplates(params?: { q?: string; ativo?: boolean }): Promise<GestaoNotifTemplatesResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativo !== undefined) search.set('ativo', String(params.ativo));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/gestao/notif-templates${query}`);
+  return json.data as GestaoNotifTemplatesResponse;
+}
+
+export async function createGestaoNotifTemplate(
+  body: GestaoNotifTemplateWriteBody,
+  actorId?: string | null
+): Promise<GestaoNotifTemplateItem> {
+  const json = await api.post(withActorId('/api/gestao/notif-templates', actorId), body);
+  return json.data as GestaoNotifTemplateItem;
+}
+
+export async function updateGestaoNotifTemplate(
+  id: string,
+  body: GestaoNotifTemplateWriteBody,
+  actorId?: string | null
+): Promise<GestaoNotifTemplateItem> {
+  const json = await api.patch(withActorId(`/api/gestao/notif-templates/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as GestaoNotifTemplateItem;
+}
+
+export async function deleteGestaoNotifTemplate(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/gestao/notif-templates/${encodeURIComponent(id)}`, actorId));
 }

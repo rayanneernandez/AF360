@@ -40,6 +40,7 @@ const rhWorkflowRoutes = require('./routes/rhWorkflow');
 const rhRelatoriosRoutes = require('./routes/rhRelatorios');
 const rhConfigRoutes = require('./routes/rhConfig');
 const financeiroRoutes = require('./routes/financeiro');
+const gestaoRoutes = require('./routes/gestao');
 
 const app = express();
 
@@ -92,6 +93,7 @@ app.use('/api/rh/workflow', rhWorkflowRoutes);
 app.use('/api/rh/relatorios', rhRelatoriosRoutes);
 app.use('/api/rh/config', rhConfigRoutes);
 app.use('/api/financeiro', financeiroRoutes);
+app.use('/api/gestao', gestaoRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'af360-api', message: 'Veja /api/health' });
