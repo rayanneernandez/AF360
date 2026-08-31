@@ -818,7 +818,7 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
                 )}
               </MktDashboardListCard>
             </View>
-            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', marginBottom: 6 }}>
               <MktDashboardListCard title="Ocorrências por canal" icon="briefcase" items={data.por_canal as Array<Record<string, unknown>>}>
                 {(item) => (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
@@ -829,6 +829,8 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
                   </View>
                 )}
               </MktDashboardListCard>
+            </View>
+            <View style={{ flexDirection: 'row', marginBottom: 16 }}>
               <MktDashboardListCard title="SLA por canal" icon="clock" items={data.sla_por_canal as Array<Record<string, unknown>>}>
                 {(item) => (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
