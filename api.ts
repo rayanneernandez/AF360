@@ -1903,7 +1903,7 @@ export type AuthIdentity = {
   // 'administrador' aqui). 'role' acima é só o primeiro/principal, mantido
   // por compatibilidade; o app decide se mostra a tela de seleção de painel
   // com base neste array.
-  availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro' | 'gestao'>;
+  availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo'>;
   colaboradorId: string | null;
   empresaId: string | null;
 };
@@ -6502,4 +6502,440 @@ export async function updateGestaoNotifTemplate(
 
 export async function deleteGestaoNotifTemplate(id: string, actorId?: string | null): Promise<void> {
   await api.delete(withActorId(`/api/gestao/notif-templates/${encodeURIComponent(id)}`, actorId));
+}
+
+// --- Administrativo (Operação física dos postos: alvarás/licenças,
+// manutenções, almoxarifado, frota) — endpoint confirmado pela Lovable em
+// 31/08/2026: /api/public/internal/administrativo (via proxy
+// /api/administrativo, mesma auth x-internal-secret). Query params comuns:
+// postoIds (csv de empresas.id; vazio = rede toda), dataInicial/dataFinal
+// (YYYY-MM-DD), busca, status, prioridade, categoria. Painel DIFERENTE do
+// "Administrador" (gestão da plataforma) já existente no app. ---
+
+async function fetchAdministrativoRecurso<T>(
+  recurso: string,
+  params: Record<string, string | number | boolean | undefined> = {}
+): Promise<{ data: T; count?: number }> {
+  const search = new URLSearchParams();
+  search.set('recurso', recurso);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === '') return;
+    search.set(key, String(value));
+  });
+  const json = await api.get(`/api/administrativo?${search.toString()}`);
+  return { data: json.data as T, count: json.count as number | undefined };
+}
+
+export type AdministrativoFiltroComum = {
+  dataInicial?: string;
+  dataFinal?: string;
+  postoIds?: string[];
+  busca?: string;
+  status?: string;
+  prioridade?: string;
+  categoria?: string;
+};
+
+function administrativoFiltroParams(filtro?: AdministrativoFiltroComum): Record<string, string | undefined> {
+  return {
+    dataInicial: filtro?.dataInicial,
+    dataFinal: filtro?.dataFinal,
+    postoIds: filtro?.postoIds && filtro.postoIds.length > 0 ? filtro.postoIds.join(',') : undefined,
+    busca: filtro?.busca,
+    status: filtro?.status,
+    prioridade: filtro?.prioridade,
+    categoria: filtro?.categoria,
+  };
+}
+
+// --- Dashboard ---
+
+export type AdministrativoLicencaCritica = {
+  id: string;
+  documento: string;
+  numero: string | null;
+  posto_nome: string | null;
+  vencimento: string;
+  status: 'vencido' | 'proximo' | 'regular';
+  status_label: string;
+  dias_restantes: number | null;
+  dias_atraso: number | null;
+};
+
+export type AdministrativoChamadoPorStatusItem = { status: string; label: string; total: number };
+
+export type AdministrativoDashboardData = {
+  kpis: {
+    alvaras_a_vencer: number;
+    alvaras_vencidos: number;
+    chamados_abertos: number;
+    chamados_total: number;
+    insumos_criticos: number;
+    insumos_total: number;
+    veiculos_oficina: number;
+    veiculos_total: number;
+  };
+  chamados_por_status: AdministrativoChamadoPorStatusItem[];
+  licencas_criticas: AdministrativoLicencaCritica[];
+  solicitacoes_pendentes: Array<Record<string, unknown>>;
+};
+
+const ADMINISTRATIVO_KPIS_VAZIOS: AdministrativoDashboardData['kpis'] = {
+  alvaras_a_vencer: 0,
+  alvaras_vencidos: 0,
+  chamados_abertos: 0,
+  chamados_total: 0,
+  insumos_criticos: 0,
+  insumos_total: 0,
+  veiculos_oficina: 0,
+  veiculos_total: 0,
+};
+
+// Período só filtra as solicitações pendentes (igual ao painel web);
+// alvarás/chamados/frota mostram o estado atual, não o do período.
+export async function fetchAdministrativoDashboard(
+  filtro: AdministrativoFiltroComum = {}
+): Promise<AdministrativoDashboardData> {
+  const { data } = await fetchAdministrativoRecurso<Partial<AdministrativoDashboardData>>(
+    'dashboard',
+    administrativoFiltroParams(filtro)
+  );
+  return {
+    kpis: { ...ADMINISTRATIVO_KPIS_VAZIOS, ...(data.kpis ?? {}) },
+    chamados_por_status: data.chamados_por_status ?? [],
+    licencas_criticas: data.licencas_criticas ?? [],
+    solicitacoes_pendentes: data.solicitacoes_pendentes ?? [],
+  };
+}
+
+// --- Alvarás e Licenças ---
+
+export type AdministrativoLicencaItem = {
+  id: string;
+  documento: string;
+  numero: string | null;
+  orgao: string;
+  posto_id: string | null;
+  posto_nome: string | null;
+  emissao: string | null;
+  vencimento: string;
+  observacao: string | null;
+  // Calculados pelo backend — nunca recalcular no cliente.
+  status: 'vencido' | 'proximo' | 'regular';
+  status_label: string;
+  dias_restantes: number | null;
+  dias_atraso: number | null;
+};
+
+export async function fetchAdministrativoLicencas(filtro: AdministrativoFiltroComum = {}): Promise<AdministrativoLicencaItem[]> {
+  const { data } = await fetchAdministrativoRecurso<AdministrativoLicencaItem[]>('licencas', administrativoFiltroParams(filtro));
+  return Array.isArray(data) ? data : [];
+}
+
+// documento, orgao, vencimento são obrigatórios; numero, empresa_id, emissao, observacao são opcionais.
+export type AdministrativoLicencaWriteBody = {
+  documento: string;
+  orgao: string;
+  vencimento: string;
+  numero?: string;
+  empresa_id?: string;
+  emissao?: string;
+  observacao?: string;
+};
+
+export async function createAdministrativoLicenca(
+  body: AdministrativoLicencaWriteBody,
+  actorId?: string | null
+): Promise<AdministrativoLicencaItem> {
+  const json = await api.post(withActorId('/api/administrativo/licenca', actorId), body);
+  return json.data as AdministrativoLicencaItem;
+}
+
+export async function updateAdministrativoLicenca(
+  id: string,
+  body: Partial<AdministrativoLicencaWriteBody>,
+  actorId?: string | null
+): Promise<AdministrativoLicencaItem> {
+  const json = await api.patch(withActorId(`/api/administrativo/licenca/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdministrativoLicencaItem;
+}
+
+// Inativa (não exclui de verdade).
+export async function deleteAdministrativoLicenca(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/administrativo/licenca/${encodeURIComponent(id)}`, actorId));
+}
+
+// --- Manutenções (Chamados) ---
+
+export type AdministrativoChamadoStatus = 'aberto' | 'em_andamento' | 'aguardando_peca' | 'concluido' | 'cancelado';
+export type AdministrativoChamadoPrioridade = 'alta' | 'media' | 'baixa';
+
+export type AdministrativoChamadoItem = {
+  id: string;
+  protocolo: string;
+  titulo: string;
+  descricao: string | null;
+  local: string | null;
+  posto_id: string | null;
+  posto_nome: string | null;
+  prioridade: AdministrativoChamadoPrioridade;
+  responsavel: string | null;
+  status: AdministrativoChamadoStatus;
+  aberto_em: string | null;
+  concluido_em: string | null;
+};
+
+export async function fetchAdministrativoChamados(filtro: AdministrativoFiltroComum = {}): Promise<AdministrativoChamadoItem[]> {
+  const { data } = await fetchAdministrativoRecurso<AdministrativoChamadoItem[]>('chamados', administrativoFiltroParams(filtro));
+  return Array.isArray(data) ? data : [];
+}
+
+// titulo é obrigatório; protocolo CH-AAAA-NNNN é gerado por trigger no backend.
+export type AdministrativoChamadoWriteBody = {
+  titulo: string;
+  descricao?: string;
+  local?: string;
+  empresa_id?: string;
+  prioridade?: AdministrativoChamadoPrioridade;
+  responsavel?: string;
+};
+
+export async function createAdministrativoChamado(
+  body: AdministrativoChamadoWriteBody,
+  actorId?: string | null
+): Promise<AdministrativoChamadoItem> {
+  const json = await api.post(withActorId('/api/administrativo/chamado', actorId), body);
+  return json.data as AdministrativoChamadoItem;
+}
+
+export async function updateAdministrativoChamadoStatus(
+  id: string,
+  status: AdministrativoChamadoStatus,
+  actorId?: string | null
+): Promise<AdministrativoChamadoItem> {
+  const json = await api.patch(withActorId(`/api/administrativo/chamado/${encodeURIComponent(id)}`, actorId), { status });
+  return json.data as AdministrativoChamadoItem;
+}
+
+// --- Almoxarifado ---
+
+export type AdministrativoInsumoStatus = 'normal' | 'atencao' | 'zerado';
+
+export type AdministrativoInsumoItem = {
+  id: string;
+  nome: string;
+  categoria: string;
+  unidade: string;
+  quantidade: number;
+  estoque_minimo: number;
+  posto_id: string | null;
+  posto_nome: string | null;
+  // Calculado pelo backend a partir de estoque_minimo — nunca recalcular no cliente.
+  status: AdministrativoInsumoStatus;
+};
+
+export async function fetchAdministrativoInsumos(filtro: AdministrativoFiltroComum = {}): Promise<AdministrativoInsumoItem[]> {
+  const { data } = await fetchAdministrativoRecurso<AdministrativoInsumoItem[]>('insumos', administrativoFiltroParams(filtro));
+  return Array.isArray(data) ? data : [];
+}
+
+export type AdministrativoSolicitacaoItem = {
+  id: string;
+  insumo_id: string;
+  insumo_nome: string | null;
+  empresa_id: string | null;
+  posto_nome: string | null;
+  quantidade: number;
+  observacao: string | null;
+  status: string | null;
+  criado_em: string | null;
+};
+
+export async function fetchAdministrativoSolicitacoes(
+  filtro: AdministrativoFiltroComum = {}
+): Promise<AdministrativoSolicitacaoItem[]> {
+  const { data } = await fetchAdministrativoRecurso<AdministrativoSolicitacaoItem[]>(
+    'solicitacoes',
+    administrativoFiltroParams(filtro)
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+export type AdministrativoSolicitacaoWriteBody = {
+  insumo_id: string;
+  empresa_id?: string;
+  quantidade: number;
+  observacao?: string;
+};
+
+export async function createAdministrativoSolicitacao(
+  body: AdministrativoSolicitacaoWriteBody,
+  actorId?: string | null
+): Promise<AdministrativoSolicitacaoItem> {
+  const json = await api.post(withActorId('/api/administrativo/solicitacao', actorId), body);
+  return json.data as AdministrativoSolicitacaoItem;
+}
+
+// --- Frota ---
+
+export type AdministrativoVeiculoItem = {
+  id: string;
+  veiculo: string;
+  modelo: string | null;
+  ano: number | null;
+  placa: string;
+  empresa_id: string | null;
+  // "Escritório / Rede" quando sem empresa vinculada (confirmado pela Lovable).
+  posto_nome: string | null;
+  km: number;
+  status: 'ativo' | 'oficina' | string;
+};
+
+export async function fetchAdministrativoFrota(filtro: AdministrativoFiltroComum = {}): Promise<AdministrativoVeiculoItem[]> {
+  const { data } = await fetchAdministrativoRecurso<AdministrativoVeiculoItem[]>('frota', administrativoFiltroParams(filtro));
+  return Array.isArray(data) ? data : [];
+}
+
+export type AdministrativoVeiculoWriteBody = Partial<{
+  veiculo: string;
+  modelo: string;
+  ano: number;
+  placa: string;
+  empresa_id: string | null;
+  km: number;
+  status: string;
+}>;
+
+export async function updateAdministrativoVeiculo(
+  id: string,
+  body: AdministrativoVeiculoWriteBody,
+  actorId?: string | null
+): Promise<AdministrativoVeiculoItem> {
+  const json = await api.patch(withActorId(`/api/administrativo/veiculo/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdministrativoVeiculoItem;
+}
+
+export async function deleteAdministrativoVeiculo(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/administrativo/veiculo/${encodeURIComponent(id)}`, actorId));
+}
+
+export type AdministrativoFrotaEventoTipo = 'saida' | 'retorno' | 'manutencao' | 'abastecimento' | 'sinistro';
+
+export type AdministrativoFrotaEventoItem = {
+  id: string;
+  veiculo_id: string;
+  tipo: AdministrativoFrotaEventoTipo;
+  km: number | null;
+  observacao: string | null;
+  criado_em: string | null;
+};
+
+// "km" atualiza a quilometragem do veículo, quando informado.
+export type AdministrativoFrotaEventoWriteBody = {
+  veiculo_id: string;
+  tipo: AdministrativoFrotaEventoTipo;
+  km?: number;
+  observacao?: string;
+};
+
+export async function createAdministrativoFrotaEvento(
+  body: AdministrativoFrotaEventoWriteBody,
+  actorId?: string | null
+): Promise<AdministrativoFrotaEventoItem> {
+  const json = await api.post(withActorId('/api/administrativo/frota-evento', actorId), body);
+  return json.data as AdministrativoFrotaEventoItem;
+}
+
+export async function fetchAdministrativoFrotaEventos(veiculoId: string): Promise<AdministrativoFrotaEventoItem[]> {
+  const { data } = await fetchAdministrativoRecurso<AdministrativoFrotaEventoItem[]>('frota-eventos', { veiculoId });
+  return Array.isArray(data) ? data : [];
+}
+
+// --- Notificações (Rotinas + Templates) — mesmo sistema genérico do
+// Financeiro/Gestão, fixado no servidor em modulo=adm, confirmado pela
+// Lovable em 31/08/2026. DIFERENTE do modulo=admin do painel Administrador
+// da plataforma (já existente) — sem conflito. Reaproveita os mesmos tipos
+// do Financeiro (mesmo formato de linha). ---
+
+export type AdministrativoNotifPublicoTipo = FinanceiroNotifPublicoTipo;
+export type AdministrativoNotifRotinaItem = FinanceiroNotifRotinaItem;
+export type AdministrativoNotifRotinasResponse = { rotinas: AdministrativoNotifRotinaItem[]; count: number };
+export type AdministrativoNotifRotinaWriteBody = FinanceiroNotifRotinaWriteBody;
+
+export async function fetchAdministrativoNotifRotinas(params?: {
+  q?: string;
+  ativa?: boolean;
+}): Promise<AdministrativoNotifRotinasResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativa !== undefined) search.set('ativa', String(params.ativa));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/administrativo/notif-rotinas${query}`);
+  return json.data as AdministrativoNotifRotinasResponse;
+}
+
+export async function createAdministrativoNotifRotina(
+  body: AdministrativoNotifRotinaWriteBody,
+  actorId?: string | null
+): Promise<AdministrativoNotifRotinaItem> {
+  const json = await api.post(withActorId('/api/administrativo/notif-rotinas', actorId), body);
+  return json.data as AdministrativoNotifRotinaItem;
+}
+
+export async function updateAdministrativoNotifRotina(
+  id: string,
+  body: AdministrativoNotifRotinaWriteBody,
+  actorId?: string | null
+): Promise<AdministrativoNotifRotinaItem> {
+  const json = await api.patch(withActorId(`/api/administrativo/notif-rotinas/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdministrativoNotifRotinaItem;
+}
+
+export async function deleteAdministrativoNotifRotina(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/administrativo/notif-rotinas/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function executarAdministrativoNotifRotina(
+  id: string,
+  actorId?: string | null
+): Promise<AdministrativoNotifRotinaItem> {
+  const json = await api.post(withActorId(`/api/administrativo/notif-rotinas/${encodeURIComponent(id)}/executar`, actorId));
+  return json.data as AdministrativoNotifRotinaItem;
+}
+
+export type AdministrativoNotifTemplateItem = FinanceiroNotifTemplateItem;
+export type AdministrativoNotifTemplatesResponse = { templates: AdministrativoNotifTemplateItem[]; count: number };
+export type AdministrativoNotifTemplateWriteBody = FinanceiroNotifTemplateWriteBody;
+
+export async function fetchAdministrativoNotifTemplates(params?: {
+  q?: string;
+  ativo?: boolean;
+}): Promise<AdministrativoNotifTemplatesResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativo !== undefined) search.set('ativo', String(params.ativo));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/administrativo/notif-templates${query}`);
+  return json.data as AdministrativoNotifTemplatesResponse;
+}
+
+export async function createAdministrativoNotifTemplate(
+  body: AdministrativoNotifTemplateWriteBody,
+  actorId?: string | null
+): Promise<AdministrativoNotifTemplateItem> {
+  const json = await api.post(withActorId('/api/administrativo/notif-templates', actorId), body);
+  return json.data as AdministrativoNotifTemplateItem;
+}
+
+export async function updateAdministrativoNotifTemplate(
+  id: string,
+  body: AdministrativoNotifTemplateWriteBody,
+  actorId?: string | null
+): Promise<AdministrativoNotifTemplateItem> {
+  const json = await api.patch(withActorId(`/api/administrativo/notif-templates/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as AdministrativoNotifTemplateItem;
+}
+
+export async function deleteAdministrativoNotifTemplate(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/administrativo/notif-templates/${encodeURIComponent(id)}`, actorId));
 }

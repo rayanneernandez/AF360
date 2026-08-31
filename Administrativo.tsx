@@ -1,0 +1,1862 @@
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Feather } from '@expo/vector-icons';
+import { StatusBar } from 'expo-status-bar';
+import { useIsFocused } from '@react-navigation/native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  styles,
+  TopBar,
+  administrativoUser,
+  administrativoUserInitials,
+  AuthIdentityContext,
+  ToggleSwitch,
+  NotificationRoutineFormModal,
+  TemplateFormModal,
+  notificationTriggerOptions,
+  notificationChannelMeta,
+  notificationAudienceOptions,
+} from './App';
+import type {
+  ScreenProps,
+  NotificationRoutineItem,
+  NotificationTemplateItem,
+  NotificationChannels,
+  NotificationAudienceType,
+} from './App';
+import {
+  fetchAdministrativoDashboard,
+  fetchAdministrativoLicencas,
+  createAdministrativoLicenca,
+  updateAdministrativoLicenca,
+  deleteAdministrativoLicenca,
+  fetchAdministrativoChamados,
+  createAdministrativoChamado,
+  updateAdministrativoChamadoStatus,
+  fetchAdministrativoInsumos,
+  fetchAdministrativoSolicitacoes,
+  createAdministrativoSolicitacao,
+  fetchAdministrativoFrota,
+  updateAdministrativoVeiculo,
+  deleteAdministrativoVeiculo,
+  createAdministrativoFrotaEvento,
+  fetchAdministrativoFrotaEventos,
+  fetchAdministrativoNotifRotinas,
+  createAdministrativoNotifRotina,
+  updateAdministrativoNotifRotina,
+  deleteAdministrativoNotifRotina,
+  executarAdministrativoNotifRotina,
+  fetchAdministrativoNotifTemplates,
+  createAdministrativoNotifTemplate,
+  updateAdministrativoNotifTemplate,
+  deleteAdministrativoNotifTemplate,
+  type AdministrativoDashboardData,
+  type AdministrativoLicencaItem,
+  type AdministrativoChamadoItem,
+  type AdministrativoChamadoStatus,
+  type AdministrativoInsumoItem,
+  type AdministrativoSolicitacaoItem,
+  type AdministrativoVeiculoItem,
+  type AdministrativoFrotaEventoItem,
+  type AdministrativoFrotaEventoTipo,
+  type AdministrativoNotifRotinaItem,
+  type AdministrativoNotifTemplateItem,
+  type AdministrativoNotifPublicoTipo,
+} from './api';
+
+// --- Helpers genéricos (mesmo padrão do Gestao.tsx/Financeiro.tsx) ---
+
+function formatBRL(value: number | null | undefined): string {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function formatNumeroBR(value: number | null | undefined, decimais = 0): string {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: decimais, maximumFractionDigits: decimais });
+}
+
+function showAdmError(err: unknown, fallback: string) {
+  const message = err instanceof Error ? err.message : fallback;
+  return message || fallback;
+}
+
+function AdmPageHeader({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <View style={adStyles.pageHeaderRow}>
+      <View style={adStyles.pageHeaderIconShell}>
+        <Feather name={icon} size={20} color="#0F8B8D" />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={adStyles.pageHeaderTitle}>{title}</Text>
+        {subtitle ? <Text style={adStyles.pageHeaderSubtitle}>{subtitle}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+function AdmEmptyState({ message }: { message: string }) {
+  return (
+    <View style={adStyles.emptyCard}>
+      <Text style={adStyles.emptyText}>{message}</Text>
+    </View>
+  );
+}
+
+function AdmSearchInput({ value, onChangeText, placeholder }: { value: string; onChangeText: (v: string) => void; placeholder: string }) {
+  return (
+    <View style={adStyles.searchRow}>
+      <Feather name="search" size={15} color="#8A93A8" />
+      <TextInput
+        style={adStyles.searchInput}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#8A93A8"
+      />
+    </View>
+  );
+}
+
+function AdmModal({
+  visible,
+  title,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={adStyles.modalBackdrop}>
+        <View style={[adStyles.modalCard, { maxHeight: '86%' }]}>
+          <View style={adStyles.modalHeader}>
+            <Text style={adStyles.modalTitle}>{title}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>{children}</ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function AdmFormLabel({ children }: { children: React.ReactNode }) {
+  return <Text style={adStyles.formLabel}>{children}</Text>;
+}
+
+// --- 1. Dashboard ---
+
+export function AdministrativoDashboardScreen({ navigation }: ScreenProps<'AdministrativoDashboard'>) {
+  const [data, setData] = useState<AdministrativoDashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchAdministrativoDashboard()
+      .then(setData)
+      .catch((err) => setErrorMessage(showAdmError(err, 'Não foi possível carregar o dashboard.')))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={administrativoUserInitials}
+          variant="administrativo"
+          onAvatarPress={() => navigation.navigate('AdministrativoProfile')}
+        />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <AdmPageHeader icon="grid" title="Dashboard" subtitle="Visão consolidada de alvarás, manutenções, almoxarifado e frota." />
+
+        {isLoading ? (
+          <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <AdmEmptyState message={errorMessage} />
+        ) : !data ? (
+          <AdmEmptyState message="Sem dados disponíveis." />
+        ) : (
+          <>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+              <View style={[adStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
+                <Text style={adStyles.kpiLabel}>Alvarás a vencer (30 dias)</Text>
+                <Text style={adStyles.kpiValue}>{formatNumeroBR(data.kpis.alvaras_a_vencer)}</Text>
+                <Text style={adStyles.kpiLabelUnidade}>{formatNumeroBR(data.kpis.alvaras_vencidos)} já vencido(s)</Text>
+              </View>
+              <View style={[adStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
+                <Text style={adStyles.kpiLabel}>Chamados abertos</Text>
+                <Text style={adStyles.kpiValue}>{formatNumeroBR(data.kpis.chamados_abertos)}</Text>
+                <Text style={adStyles.kpiLabelUnidade}>de {formatNumeroBR(data.kpis.chamados_total)} chamados registrados</Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+              <View style={[adStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
+                <Text style={adStyles.kpiLabel}>Estoque crítico</Text>
+                <Text style={adStyles.kpiValue}>{formatNumeroBR(data.kpis.insumos_criticos)}</Text>
+                <Text style={adStyles.kpiLabelUnidade}>de {formatNumeroBR(data.kpis.insumos_total)} itens no almoxarifado</Text>
+              </View>
+              <View style={[adStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
+                <Text style={adStyles.kpiLabel}>Veículos em oficina</Text>
+                <Text style={adStyles.kpiValue}>{formatNumeroBR(data.kpis.veiculos_oficina)}</Text>
+                <Text style={adStyles.kpiLabelUnidade}>de {formatNumeroBR(data.kpis.veiculos_total)} veículos da frota</Text>
+              </View>
+            </View>
+
+            <View style={adStyles.chartCard}>
+              <Text style={adStyles.sectionTitle}>Status dos chamados de manutenção</Text>
+              {data.chamados_por_status.length === 0 ? (
+                <AdmEmptyState message="Nenhum chamado registrado." />
+              ) : (
+                data.chamados_por_status.map((item) => (
+                  <View key={item.status} style={adStyles.rankingRow}>
+                    <Text style={adStyles.listRowTitle} numberOfLines={1}>
+                      {item.label}
+                    </Text>
+                    <Text style={adStyles.listRowValue}>{formatNumeroBR(item.total)}</Text>
+                  </View>
+                ))
+              )}
+            </View>
+
+            <Text style={adStyles.sectionTitle}>Licenças próximas do vencimento</Text>
+            {data.licencas_criticas.length === 0 ? (
+              <AdmEmptyState message="Nenhuma licença próxima do vencimento." />
+            ) : (
+              data.licencas_criticas.map((item) => (
+                <View key={item.id} style={adStyles.dreCard}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={[adStyles.listRowTitle, { flex: 1, minWidth: 0 }]} numberOfLines={1}>
+                      {item.documento}
+                    </Text>
+                    <View
+                      style={[
+                        adStyles.badge,
+                        item.status === 'vencido'
+                          ? { backgroundColor: '#FBE4E7' }
+                          : item.status === 'proximo'
+                          ? { backgroundColor: '#FEF3D6' }
+                          : { backgroundColor: '#E3F4F4' },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          adStyles.badgeText,
+                          item.status === 'vencido'
+                            ? { color: '#C2263A' }
+                            : item.status === 'proximo'
+                            ? { color: '#8A6D1D' }
+                            : { color: '#0F8B8D' },
+                        ]}
+                      >
+                        {item.status_label}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={adStyles.listRowMeta}>{item.posto_nome ?? 'Rede toda'}</Text>
+                  <Text style={adStyles.listRowMeta}>Vencimento: {item.vencimento}</Text>
+                </View>
+              ))
+            )}
+
+            <Text style={adStyles.sectionTitle}>Últimos pedidos de insumos pendentes</Text>
+            {data.solicitacoes_pendentes.length === 0 ? (
+              <AdmEmptyState message="Nenhum pedido pendente no período." />
+            ) : (
+              data.solicitacoes_pendentes.map((item, idx) => (
+                <View key={idx} style={adStyles.dreCard}>
+                  <Text style={adStyles.listRowMeta}>{JSON.stringify(item)}</Text>
+                </View>
+              ))
+            )}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// --- 2. Alvarás e Licenças ---
+
+export function AdministrativoLicencasScreen({ navigation }: ScreenProps<'AdministrativoLicencas'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+  const [busca, setBusca] = useState('');
+  const [statusFiltro, setStatusFiltro] = useState<string | null>(null);
+  const [items, setItems] = useState<AdministrativoLicencaItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formDocumento, setFormDocumento] = useState('');
+  const [formNumero, setFormNumero] = useState('');
+  const [formOrgao, setFormOrgao] = useState('');
+  const [formVencimento, setFormVencimento] = useState('');
+  const [formObservacao, setFormObservacao] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchAdministrativoLicencas({ busca: busca || undefined, status: statusFiltro ?? undefined })
+      .then(setItems)
+      .catch((err) => setErrorMessage(showAdmError(err, 'Não foi possível carregar as licenças.')))
+      .finally(() => setIsLoading(false));
+  }, [busca, statusFiltro]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const resetForm = () => {
+    setFormDocumento('');
+    setFormNumero('');
+    setFormOrgao('');
+    setFormVencimento('');
+    setFormObservacao('');
+  };
+
+  const handleSalvar = () => {
+    if (!formDocumento.trim() || !formOrgao.trim() || !formVencimento.trim()) {
+      Alert.alert('Campos obrigatórios', 'Documento, órgão e vencimento são obrigatórios.');
+      return;
+    }
+    setIsSaving(true);
+    createAdministrativoLicenca(
+      {
+        documento: formDocumento.trim(),
+        orgao: formOrgao.trim(),
+        vencimento: formVencimento.trim(),
+        numero: formNumero.trim() || undefined,
+        observacao: formObservacao.trim() || undefined,
+      },
+      actorId
+    )
+      .then(() => {
+        setIsFormOpen(false);
+        resetForm();
+        load();
+      })
+      .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível salvar a licença.')))
+      .finally(() => setIsSaving(false));
+  };
+
+  const handleExcluir = (item: AdministrativoLicencaItem) => {
+    Alert.alert('Excluir licença', `Tem certeza que deseja excluir "${item.documento}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdministrativoLicenca(item.id, actorId)
+            .then(() => load())
+            .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível excluir a licença.')));
+        },
+      },
+    ]);
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={administrativoUserInitials}
+          variant="administrativo"
+          onAvatarPress={() => navigation.navigate('AdministrativoProfile')}
+        />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <AdmPageHeader icon="file-text" title="Alvarás e Licenças" subtitle="Documentos regulatórios da rede e seus vencimentos." />
+
+        <AdmSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por documento, órgão ou posto" />
+
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          {[
+            { value: null, label: 'Todos os status' },
+            { value: 'vencido', label: 'Vencido' },
+            { value: 'proximo', label: 'Próximo' },
+            { value: 'regular', label: 'Regular' },
+          ].map((opt) => (
+            <Pressable
+              key={opt.label}
+              style={[adStyles.filterPill, statusFiltro === opt.value ? adStyles.filterPillActive : null]}
+              onPress={() => setStatusFiltro(opt.value)}
+            >
+              <Text style={[adStyles.filterPillText, statusFiltro === opt.value ? adStyles.filterPillTextActive : null]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Pressable
+          style={[adStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }]}
+          onPress={() => {
+            resetForm();
+            setIsFormOpen(true);
+          }}
+        >
+          <Feather name="plus" size={14} color="#FFFFFF" />
+          <Text style={adStyles.suggestionButtonText}>Nova licença</Text>
+        </Pressable>
+
+        {isLoading ? (
+          <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <AdmEmptyState message={errorMessage} />
+        ) : items.length === 0 ? (
+          <AdmEmptyState message="Nenhuma licença encontrada." />
+        ) : (
+          items.map((item) => (
+            <View key={item.id} style={adStyles.dreCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={[adStyles.listRowTitle, { flex: 1, minWidth: 0 }]} numberOfLines={1}>
+                  {item.documento} {item.numero ? `· nº ${item.numero}` : ''}
+                </Text>
+                <Pressable onPress={() => handleExcluir(item)} hitSlop={6}>
+                  <Feather name="trash-2" size={15} color="#E6213D" />
+                </Pressable>
+              </View>
+              <Text style={adStyles.listRowMeta}>
+                {item.posto_nome ?? 'Rede toda'} · {item.orgao}
+              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, alignItems: 'center' }}>
+                <Text style={adStyles.listRowMeta}>
+                  Vencimento: {item.vencimento}
+                  {item.status === 'vencido' && item.dias_atraso != null
+                    ? ` · ${item.dias_atraso} dia(s) em atraso`
+                    : item.dias_restantes != null
+                    ? ` · faltam ${item.dias_restantes} dia(s)`
+                    : ''}
+                </Text>
+                <View
+                  style={[
+                    adStyles.badge,
+                    item.status === 'vencido'
+                      ? { backgroundColor: '#FBE4E7' }
+                      : item.status === 'proximo'
+                      ? { backgroundColor: '#FEF3D6' }
+                      : { backgroundColor: '#E3F4F4' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      adStyles.badgeText,
+                      item.status === 'vencido'
+                        ? { color: '#C2263A' }
+                        : item.status === 'proximo'
+                        ? { color: '#8A6D1D' }
+                        : { color: '#0F8B8D' },
+                    ]}
+                  >
+                    {item.status_label}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      <AdmModal visible={isFormOpen} title="Nova licença" onClose={() => setIsFormOpen(false)}>
+        <AdmFormLabel>Documento *</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={formDocumento} onChangeText={setFormDocumento} placeholder="Licença Ambiental" />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Número</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={formNumero} onChangeText={setFormNumero} placeholder="LO-2024-7712" />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Órgão *</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={formOrgao} onChangeText={setFormOrgao} placeholder="INEA, ANP, Bombeiros..." />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Vencimento (AAAA-MM-DD) *</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={formVencimento} onChangeText={setFormVencimento} placeholder="2026-12-31" />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Observação</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={formObservacao} onChangeText={setFormObservacao} placeholder="Opcional" multiline />
+        <Pressable
+          style={[adStyles.filterModalApplyButton, { marginTop: 18, opacity: isSaving ? 0.6 : 1 }]}
+          onPress={handleSalvar}
+          disabled={isSaving}
+        >
+          <Text style={adStyles.filterModalApplyButtonText}>{isSaving ? 'Salvando...' : 'Salvar'}</Text>
+        </Pressable>
+      </AdmModal>
+    </SafeAreaView>
+  );
+}
+
+// --- 3. Manutenções (Chamados) ---
+
+const CHAMADO_STATUS_OPTIONS: Array<{ value: AdministrativoChamadoStatus; label: string }> = [
+  { value: 'aberto', label: 'Aberto' },
+  { value: 'em_andamento', label: 'Em andamento' },
+  { value: 'aguardando_peca', label: 'Aguardando peça' },
+  { value: 'concluido', label: 'Concluído' },
+  { value: 'cancelado', label: 'Cancelado' },
+];
+
+function chamadoStatusLabel(status: AdministrativoChamadoStatus): string {
+  return CHAMADO_STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status;
+}
+
+export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'AdministrativoChamados'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+  const [busca, setBusca] = useState('');
+  const [statusFiltro, setStatusFiltro] = useState<AdministrativoChamadoStatus | null>(null);
+  const [items, setItems] = useState<AdministrativoChamadoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formTitulo, setFormTitulo] = useState('');
+  const [formDescricao, setFormDescricao] = useState('');
+  const [formLocal, setFormLocal] = useState('');
+  const [formResponsavel, setFormResponsavel] = useState('');
+  const [formPrioridade, setFormPrioridade] = useState<'alta' | 'media' | 'baixa'>('media');
+  const [isSaving, setIsSaving] = useState(false);
+  const [statusMenuOpenId, setStatusMenuOpenId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchAdministrativoChamados({ busca: busca || undefined, status: statusFiltro ?? undefined })
+      .then(setItems)
+      .catch((err) => setErrorMessage(showAdmError(err, 'Não foi possível carregar os chamados.')))
+      .finally(() => setIsLoading(false));
+  }, [busca, statusFiltro]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleAbrirChamado = () => {
+    if (!formTitulo.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe o título do chamado.');
+      return;
+    }
+    setIsSaving(true);
+    createAdministrativoChamado(
+      {
+        titulo: formTitulo.trim(),
+        descricao: formDescricao.trim() || undefined,
+        local: formLocal.trim() || undefined,
+        prioridade: formPrioridade,
+        responsavel: formResponsavel.trim() || undefined,
+      },
+      actorId
+    )
+      .then(() => {
+        setIsFormOpen(false);
+        setFormTitulo('');
+        setFormDescricao('');
+        setFormLocal('');
+        setFormResponsavel('');
+        setFormPrioridade('media');
+        load();
+      })
+      .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível abrir o chamado.')))
+      .finally(() => setIsSaving(false));
+  };
+
+  const handleMudarStatus = (item: AdministrativoChamadoItem, status: AdministrativoChamadoStatus) => {
+    setStatusMenuOpenId(null);
+    updateAdministrativoChamadoStatus(item.id, status, actorId)
+      .then(() => load())
+      .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível atualizar o status.')));
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={administrativoUserInitials}
+          variant="administrativo"
+          onAvatarPress={() => navigation.navigate('AdministrativoProfile')}
+        />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <AdmPageHeader icon="tool" title="Manutenções" subtitle="Chamados de manutenção abertos pela rede." />
+
+        <AdmSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por protocolo, problema ou posto" />
+
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <Pressable
+            style={[adStyles.filterPill, statusFiltro === null ? adStyles.filterPillActive : null]}
+            onPress={() => setStatusFiltro(null)}
+          >
+            <Text style={[adStyles.filterPillText, statusFiltro === null ? adStyles.filterPillTextActive : null]}>Todos</Text>
+          </Pressable>
+          {CHAMADO_STATUS_OPTIONS.map((opt) => (
+            <Pressable
+              key={opt.value}
+              style={[adStyles.filterPill, statusFiltro === opt.value ? adStyles.filterPillActive : null]}
+              onPress={() => setStatusFiltro(opt.value)}
+            >
+              <Text style={[adStyles.filterPillText, statusFiltro === opt.value ? adStyles.filterPillTextActive : null]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Pressable
+          style={[adStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }]}
+          onPress={() => setIsFormOpen(true)}
+        >
+          <Feather name="plus" size={14} color="#FFFFFF" />
+          <Text style={adStyles.suggestionButtonText}>Abrir chamado</Text>
+        </Pressable>
+
+        {isLoading ? (
+          <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <AdmEmptyState message={errorMessage} />
+        ) : items.length === 0 ? (
+          <AdmEmptyState message="Nenhum chamado encontrado." />
+        ) : (
+          items.map((item) => (
+            <View key={item.id} style={adStyles.dreCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={adStyles.listRowMeta}>{item.protocolo}</Text>
+                <View
+                  style={[
+                    adStyles.badge,
+                    item.prioridade === 'alta'
+                      ? { backgroundColor: '#FBE4E7' }
+                      : item.prioridade === 'media'
+                      ? { backgroundColor: '#FEF3D6' }
+                      : { backgroundColor: '#F1F2F6' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      adStyles.badgeText,
+                      item.prioridade === 'alta'
+                        ? { color: '#C2263A' }
+                        : item.prioridade === 'media'
+                        ? { color: '#8A6D1D' }
+                        : { color: '#5E667D' },
+                    ]}
+                  >
+                    {item.prioridade.toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+              <Text style={adStyles.listRowTitle}>{item.titulo}</Text>
+              <Text style={adStyles.listRowMeta} numberOfLines={2}>
+                {[item.posto_nome, item.local, item.descricao].filter(Boolean).join(' · ')}
+              </Text>
+
+              <Pressable
+                style={[adStyles.statusDropdown, { marginTop: 10 }]}
+                onPress={() => setStatusMenuOpenId(statusMenuOpenId === item.id ? null : item.id)}
+              >
+                <Text style={adStyles.statusDropdownText}>{chamadoStatusLabel(item.status)}</Text>
+                <Feather name="chevron-down" size={14} color="#5E667D" />
+              </Pressable>
+              {statusMenuOpenId === item.id ? (
+                <View style={adStyles.statusMenu}>
+                  {CHAMADO_STATUS_OPTIONS.map((opt) => (
+                    <Pressable key={opt.value} style={adStyles.statusMenuItem} onPress={() => handleMudarStatus(item, opt.value)}>
+                      <Text style={[adStyles.statusMenuItemText, opt.value === item.status ? { color: '#0F8B8D', fontWeight: '800' } : null]}>
+                        {opt.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      <AdmModal visible={isFormOpen} title="Abrir chamado" onClose={() => setIsFormOpen(false)}>
+        <AdmFormLabel>Título *</AdmFormLabel>
+        <TextInput
+          style={adStyles.formInput}
+          value={formTitulo}
+          onChangeText={setFormTitulo}
+          placeholder="Bomba 3 travando no bico de gasolina"
+        />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Local / detalhe</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={formLocal} onChangeText={setFormLocal} placeholder="Pista · Bomba 3" />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Descrição</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={formDescricao} onChangeText={setFormDescricao} placeholder="Detalhes do problema" multiline />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Responsável</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={formResponsavel} onChangeText={setFormResponsavel} placeholder="Opcional" />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Prioridade</AdmFormLabel>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {(['alta', 'media', 'baixa'] as const).map((p) => (
+            <Pressable
+              key={p}
+              style={[adStyles.filterPill, formPrioridade === p ? adStyles.filterPillActive : null]}
+              onPress={() => setFormPrioridade(p)}
+            >
+              <Text style={[adStyles.filterPillText, formPrioridade === p ? adStyles.filterPillTextActive : null]}>
+                {p === 'alta' ? 'Alta' : p === 'media' ? 'Média' : 'Baixa'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <Pressable
+          style={[adStyles.filterModalApplyButton, { marginTop: 18, opacity: isSaving ? 0.6 : 1 }]}
+          onPress={handleAbrirChamado}
+          disabled={isSaving}
+        >
+          <Text style={adStyles.filterModalApplyButtonText}>{isSaving ? 'Enviando...' : 'Abrir chamado'}</Text>
+        </Pressable>
+      </AdmModal>
+    </SafeAreaView>
+  );
+}
+
+// --- 4. Almoxarifado ---
+
+export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'AdministrativoInsumos'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+  const [busca, setBusca] = useState('');
+  const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
+  const [items, setItems] = useState<AdministrativoInsumoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [solicitarPara, setSolicitarPara] = useState<AdministrativoInsumoItem | null>(null);
+  const [quantidadeInput, setQuantidadeInput] = useState('1');
+  const [observacaoInput, setObservacaoInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchAdministrativoInsumos({ busca: busca || undefined, categoria: categoriaFiltro ?? undefined })
+      .then(setItems)
+      .catch((err) => setErrorMessage(showAdmError(err, 'Não foi possível carregar o almoxarifado.')))
+      .finally(() => setIsLoading(false));
+  }, [busca, categoriaFiltro]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const categorias = useMemo(() => Array.from(new Set(items.map((i) => i.categoria))).sort(), [items]);
+
+  const handleSolicitar = () => {
+    if (!solicitarPara) return;
+    const quantidade = Number(quantidadeInput.replace(',', '.')) || 0;
+    if (quantidade <= 0) {
+      Alert.alert('Quantidade inválida', 'Informe uma quantidade maior que zero.');
+      return;
+    }
+    setIsSaving(true);
+    createAdministrativoSolicitacao(
+      { insumo_id: solicitarPara.id, quantidade, observacao: observacaoInput.trim() || undefined },
+      actorId
+    )
+      .then(() => {
+        setSolicitarPara(null);
+        setQuantidadeInput('1');
+        setObservacaoInput('');
+        Alert.alert('Solicitação enviada', `Pedido de suprimento para "${solicitarPara.nome}" registrado.`);
+      })
+      .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível registrar a solicitação.')))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={administrativoUserInitials}
+          variant="administrativo"
+          onAvatarPress={() => navigation.navigate('AdministrativoProfile')}
+        />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <AdmPageHeader icon="package" title="Almoxarifado" subtitle="Estoque de insumos (copa, limpeza, peças, escritório)." />
+
+        <AdmSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar item" />
+
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <Pressable
+            style={[adStyles.filterPill, categoriaFiltro === null ? adStyles.filterPillActive : null]}
+            onPress={() => setCategoriaFiltro(null)}
+          >
+            <Text style={[adStyles.filterPillText, categoriaFiltro === null ? adStyles.filterPillTextActive : null]}>Todas</Text>
+          </Pressable>
+          {categorias.map((cat) => (
+            <Pressable
+              key={cat}
+              style={[adStyles.filterPill, categoriaFiltro === cat ? adStyles.filterPillActive : null]}
+              onPress={() => setCategoriaFiltro(cat)}
+            >
+              <Text style={[adStyles.filterPillText, categoriaFiltro === cat ? adStyles.filterPillTextActive : null]}>{cat}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {isLoading ? (
+          <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <AdmEmptyState message={errorMessage} />
+        ) : items.length === 0 ? (
+          <AdmEmptyState message="Nenhum item encontrado." />
+        ) : (
+          items.map((item) => (
+            <View key={item.id} style={adStyles.dreCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={[adStyles.listRowTitle, { flex: 1, minWidth: 0 }]} numberOfLines={1}>
+                  {item.nome}
+                </Text>
+                <View
+                  style={[
+                    adStyles.badge,
+                    item.status === 'zerado'
+                      ? { backgroundColor: '#FBE4E7' }
+                      : item.status === 'atencao'
+                      ? { backgroundColor: '#FEF3D6' }
+                      : { backgroundColor: '#E3F4F4' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      adStyles.badgeText,
+                      item.status === 'zerado'
+                        ? { color: '#C2263A' }
+                        : item.status === 'atencao'
+                        ? { color: '#8A6D1D' }
+                        : { color: '#0F8B8D' },
+                    ]}
+                  >
+                    {item.status === 'zerado' ? 'ZERADO' : item.status === 'atencao' ? 'ATENÇÃO' : 'NORMAL'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={adStyles.listRowMeta}>{item.categoria}</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                <Text style={adStyles.listRowMeta}>
+                  {formatNumeroBR(item.quantidade)} {item.unidade}
+                </Text>
+                <Pressable style={adStyles.smallButton} onPress={() => setSolicitarPara(item)}>
+                  <Text style={adStyles.smallButtonText}>Solicitar suprimento</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      <AdmModal visible={!!solicitarPara} title={`Solicitar: ${solicitarPara?.nome ?? ''}`} onClose={() => setSolicitarPara(null)}>
+        <AdmFormLabel>Quantidade</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={quantidadeInput} onChangeText={setQuantidadeInput} keyboardType="numeric" />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Observação</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={observacaoInput} onChangeText={setObservacaoInput} placeholder="Opcional" multiline />
+        <Pressable
+          style={[adStyles.filterModalApplyButton, { marginTop: 18, opacity: isSaving ? 0.6 : 1 }]}
+          onPress={handleSolicitar}
+          disabled={isSaving}
+        >
+          <Text style={adStyles.filterModalApplyButtonText}>{isSaving ? 'Enviando...' : 'Solicitar'}</Text>
+        </Pressable>
+      </AdmModal>
+    </SafeAreaView>
+  );
+}
+
+// --- 5. Frota ---
+
+const FROTA_EVENTO_OPTIONS: Array<{ value: AdministrativoFrotaEventoTipo; label: string; icon: keyof typeof Feather.glyphMap }> = [
+  { value: 'saida', label: 'Registrar saída', icon: 'arrow-up-right' },
+  { value: 'retorno', label: 'Registrar retorno', icon: 'arrow-down-left' },
+  { value: 'manutencao', label: 'Enviar para manutenção', icon: 'tool' },
+  { value: 'abastecimento', label: 'Registrar abastecimento', icon: 'droplet' },
+  { value: 'sinistro', label: 'Registrar sinistro', icon: 'alert-triangle' },
+];
+
+export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'AdministrativoFrota'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+  const [busca, setBusca] = useState('');
+  const [items, setItems] = useState<AdministrativoVeiculoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [eventoVeiculo, setEventoVeiculo] = useState<AdministrativoVeiculoItem | null>(null);
+  const [eventoTipo, setEventoTipo] = useState<AdministrativoFrotaEventoTipo | null>(null);
+  const [kmInput, setKmInput] = useState('');
+  const [observacaoInput, setObservacaoInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [historicoVeiculo, setHistoricoVeiculo] = useState<AdministrativoVeiculoItem | null>(null);
+  const [historico, setHistorico] = useState<AdministrativoFrotaEventoItem[]>([]);
+  const [isLoadingHistorico, setIsLoadingHistorico] = useState(false);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchAdministrativoFrota({ busca: busca || undefined })
+      .then(setItems)
+      .catch((err) => setErrorMessage(showAdmError(err, 'Não foi possível carregar a frota.')))
+      .finally(() => setIsLoading(false));
+  }, [busca]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleExcluir = (item: AdministrativoVeiculoItem) => {
+    setMenuOpenId(null);
+    Alert.alert('Excluir veículo', `Tem certeza que deseja excluir "${item.veiculo}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdministrativoVeiculo(item.id, actorId)
+            .then(() => load())
+            .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível excluir o veículo.')));
+        },
+      },
+    ]);
+  };
+
+  const handleAbrirEvento = (item: AdministrativoVeiculoItem, tipo: AdministrativoFrotaEventoTipo) => {
+    setMenuOpenId(null);
+    setEventoVeiculo(item);
+    setEventoTipo(tipo);
+    setKmInput(item.km ? String(item.km) : '');
+    setObservacaoInput('');
+  };
+
+  const handleAbrirHistorico = (item: AdministrativoVeiculoItem) => {
+    setMenuOpenId(null);
+    setHistoricoVeiculo(item);
+    setIsLoadingHistorico(true);
+    fetchAdministrativoFrotaEventos(item.id)
+      .then(setHistorico)
+      .catch(() => setHistorico([]))
+      .finally(() => setIsLoadingHistorico(false));
+  };
+
+  const handleSalvarEvento = () => {
+    if (!eventoVeiculo || !eventoTipo) return;
+    const km = kmInput.trim() ? Number(kmInput.replace(',', '.')) : undefined;
+    setIsSaving(true);
+    createAdministrativoFrotaEvento(
+      { veiculo_id: eventoVeiculo.id, tipo: eventoTipo, km, observacao: observacaoInput.trim() || undefined },
+      actorId
+    )
+      .then(() => {
+        setEventoVeiculo(null);
+        setEventoTipo(null);
+        load();
+      })
+      .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível registrar o evento.')))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={administrativoUserInitials}
+          variant="administrativo"
+          onAvatarPress={() => navigation.navigate('AdministrativoProfile')}
+        />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <AdmPageHeader icon="truck" title="Frota" subtitle="Veículos da rede, quilometragem e status." />
+
+        <AdmSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por veículo ou placa" />
+
+        {isLoading ? (
+          <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <AdmEmptyState message={errorMessage} />
+        ) : items.length === 0 ? (
+          <AdmEmptyState message="Nenhum veículo encontrado." />
+        ) : (
+          items.map((item) => (
+            <View key={item.id} style={adStyles.dreCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={[adStyles.listRowTitle, { flex: 1, minWidth: 0 }]} numberOfLines={1}>
+                  {item.veiculo} {item.ano ? `(${item.ano})` : ''}
+                </Text>
+                <Pressable onPress={() => setMenuOpenId(menuOpenId === item.id ? null : item.id)} hitSlop={6}>
+                  <Feather name="more-vertical" size={16} color="#5E667D" />
+                </Pressable>
+              </View>
+              <Text style={adStyles.listRowMeta}>
+                Placa {item.placa} · {item.posto_nome ?? 'Escritório / Rede'}
+              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+                <Text style={adStyles.listRowMeta}>{formatNumeroBR(item.km)} km</Text>
+                <View style={[adStyles.badge, item.status === 'oficina' ? { backgroundColor: '#FEF3D6' } : { backgroundColor: '#E3F4F4' }]}>
+                  <Text style={[adStyles.badgeText, item.status === 'oficina' ? { color: '#8A6D1D' } : { color: '#0F8B8D' }]}>
+                    {item.status === 'oficina' ? 'EM OFICINA' : 'ATIVO'}
+                  </Text>
+                </View>
+              </View>
+
+              {menuOpenId === item.id ? (
+                <View style={adStyles.statusMenu}>
+                  {FROTA_EVENTO_OPTIONS.map((opt) => (
+                    <Pressable key={opt.value} style={adStyles.statusMenuItem} onPress={() => handleAbrirEvento(item, opt.value)}>
+                      <Feather name={opt.icon} size={13} color="#5E667D" style={{ marginRight: 6 }} />
+                      <Text style={adStyles.statusMenuItemText}>{opt.label}</Text>
+                    </Pressable>
+                  ))}
+                  <Pressable style={adStyles.statusMenuItem} onPress={() => handleAbrirHistorico(item)}>
+                    <Feather name="clock" size={13} color="#5E667D" style={{ marginRight: 6 }} />
+                    <Text style={adStyles.statusMenuItemText}>Ver histórico</Text>
+                  </Pressable>
+                  <Pressable style={adStyles.statusMenuItem} onPress={() => handleExcluir(item)}>
+                    <Feather name="trash-2" size={13} color="#E6213D" style={{ marginRight: 6 }} />
+                    <Text style={[adStyles.statusMenuItemText, { color: '#E6213D' }]}>Excluir</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      <AdmModal
+        visible={!!eventoVeiculo && !!eventoTipo}
+        title={FROTA_EVENTO_OPTIONS.find((o) => o.value === eventoTipo)?.label ?? 'Registrar evento'}
+        onClose={() => {
+          setEventoVeiculo(null);
+          setEventoTipo(null);
+        }}
+      >
+        <AdmFormLabel>Quilometragem</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={kmInput} onChangeText={setKmInput} keyboardType="numeric" placeholder="Opcional" />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Observação</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={observacaoInput} onChangeText={setObservacaoInput} placeholder="Opcional" multiline />
+        <Pressable
+          style={[adStyles.filterModalApplyButton, { marginTop: 18, opacity: isSaving ? 0.6 : 1 }]}
+          onPress={handleSalvarEvento}
+          disabled={isSaving}
+        >
+          <Text style={adStyles.filterModalApplyButtonText}>{isSaving ? 'Salvando...' : 'Registrar'}</Text>
+        </Pressable>
+      </AdmModal>
+
+      <AdmModal visible={!!historicoVeiculo} title={`Histórico: ${historicoVeiculo?.veiculo ?? ''}`} onClose={() => setHistoricoVeiculo(null)}>
+        {isLoadingHistorico ? (
+          <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
+        ) : historico.length === 0 ? (
+          <AdmEmptyState message="Nenhum evento registrado." />
+        ) : (
+          historico.map((ev) => (
+            <View key={ev.id} style={adStyles.rankingRow}>
+              <Text style={adStyles.listRowTitle}>{FROTA_EVENTO_OPTIONS.find((o) => o.value === ev.tipo)?.label ?? ev.tipo}</Text>
+              <Text style={adStyles.listRowMeta}>{ev.km != null ? `${formatNumeroBR(ev.km)} km` : ''}</Text>
+            </View>
+          ))
+        )}
+      </AdmModal>
+    </SafeAreaView>
+  );
+}
+
+// --- 6. Notificações (mesma infra genérica do Financeiro/Gestão, modulo=adm) ---
+
+const ADMINISTRATIVO_NOTIF_AUDIENCE_TO_DB: Record<NotificationAudienceType, AdministrativoNotifPublicoTipo> = {
+  todos: 'todos',
+  colaboradores: 'colaboradores',
+  posto: 'postos',
+  cargo: 'cargos',
+};
+const ADMINISTRATIVO_NOTIF_AUDIENCE_FROM_DB: Record<AdministrativoNotifPublicoTipo, NotificationAudienceType> = {
+  todos: 'todos',
+  colaboradores: 'colaboradores',
+  postos: 'posto',
+  cargos: 'cargo',
+};
+
+function formatDateIsoBR(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
+function administrativoNotifTemplateToLocal(item: AdministrativoNotifTemplateItem): NotificationTemplateItem {
+  return {
+    id: item.id,
+    code: item.codigo ?? '',
+    title: item.nome ?? '',
+    messageTitle: item.titulo ?? '',
+    message: item.mensagem ?? '',
+    variables: item.variaveis,
+    isSystemDefault: item.isPadrao,
+  };
+}
+
+function administrativoNotifRoutineToLocal(
+  item: AdministrativoNotifRotinaItem,
+  realTemplates: AdministrativoNotifTemplateItem[]
+): NotificationRoutineItem {
+  const linkedTemplate = item.templateId ? realTemplates.find((t) => t.id === item.templateId) : null;
+  return {
+    id: item.id,
+    title: item.nome ?? '',
+    messageTitle: item.titulo ?? '',
+    template: linkedTemplate ? linkedTemplate.nome || linkedTemplate.codigo || '' : 'Mensagem customizada',
+    message: item.mensagem ?? '',
+    triggerKind: item.tipoGatilho,
+    cronSchedule: item.cronExpressao ?? '',
+    eventCode: item.eventoCodigo ?? '',
+    channels: {
+      app: item.canais.includes('app'),
+      email: item.canais.includes('email'),
+      whatsapp: item.canais.includes('whatsapp'),
+    },
+    audienceType: ADMINISTRATIVO_NOTIF_AUDIENCE_FROM_DB[item.publicoTipo] ?? 'todos',
+    audienceCargos: item.publicoTipo === 'cargos' ? item.publicoIds : [],
+    lastRunLabel: item.ultimaExecucao ? formatDateIsoBR(item.ultimaExecucao) ?? '—' : '—',
+    enabled: item.isActive,
+  };
+}
+
+function administrativoNotifRoutineToWriteBody(local: NotificationRoutineItem, realTemplates: AdministrativoNotifTemplateItem[]) {
+  const matchedTemplate =
+    local.template && local.template !== 'Mensagem customizada'
+      ? realTemplates.find((t) => (t.nome || t.codigo) === local.template)
+      : null;
+  return {
+    nome: local.title,
+    titulo: local.messageTitle,
+    mensagem: local.message,
+    template_id: matchedTemplate ? matchedTemplate.id : null,
+    ativa: local.enabled,
+    tipo_gatilho: local.triggerKind,
+    cron_expressao: local.triggerKind === 'recorrente' ? local.cronSchedule : null,
+    evento_codigo: local.triggerKind === 'evento' ? local.eventCode : null,
+    canais: (Object.keys(local.channels) as Array<keyof NotificationChannels>).filter((key) => local.channels[key]),
+    publico_tipo: ADMINISTRATIVO_NOTIF_AUDIENCE_TO_DB[local.audienceType],
+    publico_ids: local.audienceType === 'cargo' ? local.audienceCargos : [],
+  };
+}
+
+function administrativoNotifTemplateToWriteBody(local: NotificationTemplateItem) {
+  return {
+    codigo: local.code,
+    nome: local.title,
+    titulo: local.messageTitle,
+    mensagem: local.message,
+    variaveis: local.variables,
+  };
+}
+
+export function AdministrativoNotificationsScreen({ navigation }: ScreenProps<'AdministrativoNotifications'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const actorId = identity?.profileId;
+  const isFocused = useIsFocused();
+
+  const [activeTab, setActiveTab] = useState<'routines' | 'templates'>('routines');
+
+  const [realRoutines, setRealRoutines] = useState<AdministrativoNotifRotinaItem[]>([]);
+  const [isLoadingRoutines, setIsLoadingRoutines] = useState(true);
+  const [routinesError, setRoutinesError] = useState<string | null>(null);
+  const [isRoutineFormOpen, setIsRoutineFormOpen] = useState(false);
+  const [editingRoutine, setEditingRoutine] = useState<NotificationRoutineItem | null>(null);
+
+  const [realTemplates, setRealTemplates] = useState<AdministrativoNotifTemplateItem[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [isTemplateFormOpen, setIsTemplateFormOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<NotificationTemplateItem | null>(null);
+
+  const loadTemplates = useCallback(() => {
+    setIsLoadingTemplates(true);
+    setTemplatesError(null);
+    fetchAdministrativoNotifTemplates()
+      .then((data) => setRealTemplates(data.templates))
+      .catch((err) => setTemplatesError(showAdmError(err, 'Não foi possível carregar os templates.')))
+      .finally(() => setIsLoadingTemplates(false));
+  }, []);
+
+  const loadRoutines = useCallback(() => {
+    setIsLoadingRoutines(true);
+    setRoutinesError(null);
+    fetchAdministrativoNotifRotinas()
+      .then((data) => setRealRoutines(data.rotinas))
+      .catch((err) => setRoutinesError(showAdmError(err, 'Não foi possível carregar as rotinas.')))
+      .finally(() => setIsLoadingRoutines(false));
+  }, []);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadTemplates();
+  }, [loadTemplates, isFocused]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadRoutines();
+  }, [loadRoutines, isFocused]);
+
+  const templates = useMemo(() => realTemplates.map(administrativoNotifTemplateToLocal), [realTemplates]);
+  const routines = useMemo(
+    () => realRoutines.map((item) => administrativoNotifRoutineToLocal(item, realTemplates)),
+    [realRoutines, realTemplates]
+  );
+
+  const toggleRoutine = (id: string) => {
+    const target = realRoutines.find((item) => item.id === id);
+    if (!target) return;
+    setRealRoutines((current) => current.map((item) => (item.id === id ? { ...item, isActive: !item.isActive } : item)));
+    updateAdministrativoNotifRotina(id, { ativa: !target.isActive }, actorId).catch((err) => {
+      Alert.alert('Erro', showAdmError(err, 'Não foi possível atualizar a rotina.'));
+      loadRoutines();
+    });
+  };
+
+  const handleSaveRoutine = (routine: NotificationRoutineItem) => {
+    const body = administrativoNotifRoutineToWriteBody(routine, realTemplates);
+    const isExisting = realRoutines.some((item) => item.id === routine.id);
+    const request = isExisting
+      ? updateAdministrativoNotifRotina(routine.id, body, actorId)
+      : createAdministrativoNotifRotina(body, actorId);
+    request
+      .then(() => {
+        setIsRoutineFormOpen(false);
+        loadRoutines();
+      })
+      .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível salvar a rotina.')));
+  };
+
+  const handleRunRoutine = (routine: NotificationRoutineItem) => {
+    executarAdministrativoNotifRotina(routine.id, actorId)
+      .then(() => {
+        Alert.alert('Rotina executada', `"${routine.title}" foi executada agora.`);
+        loadRoutines();
+      })
+      .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível executar a rotina.')));
+  };
+
+  const handleDeleteRoutine = (routine: NotificationRoutineItem) => {
+    Alert.alert('Excluir rotina', `Tem certeza que deseja excluir "${routine.title}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdministrativoNotifRotina(routine.id, actorId)
+            .then(() => loadRoutines())
+            .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível excluir a rotina.')));
+        },
+      },
+    ]);
+  };
+
+  const handleSaveTemplate = (template: NotificationTemplateItem) => {
+    const body = administrativoNotifTemplateToWriteBody(template);
+    const isExisting = realTemplates.some((item) => item.id === template.id);
+    const request = isExisting
+      ? updateAdministrativoNotifTemplate(template.id, body, actorId)
+      : createAdministrativoNotifTemplate(body, actorId);
+    request
+      .then(() => {
+        setIsTemplateFormOpen(false);
+        loadTemplates();
+      })
+      .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível salvar o template.')));
+  };
+
+  const handleDeleteTemplate = (template: NotificationTemplateItem) => {
+    Alert.alert('Excluir template', `Tem certeza que deseja excluir "${template.title}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteAdministrativoNotifTemplate(template.id, actorId)
+            .then(() => loadTemplates())
+            .catch((err) =>
+              Alert.alert('Erro', showAdmError(err, 'Não foi possível excluir o template (templates padrão do sistema não podem ser excluídos).'))
+            );
+        },
+      },
+    ]);
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={administrativoUserInitials}
+          variant="administrativo"
+          onAvatarPress={() => navigation.navigate('AdministrativoProfile')}
+        />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <AdmPageHeader icon="bell" title="Notificações" subtitle="Envio de notificações via App, E-mail e WhatsApp." />
+
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <Pressable
+            style={[adStyles.filterPill, activeTab === 'routines' ? adStyles.filterPillActive : null]}
+            onPress={() => setActiveTab('routines')}
+          >
+            <Text style={[adStyles.filterPillText, activeTab === 'routines' ? adStyles.filterPillTextActive : null]}>Rotinas</Text>
+          </Pressable>
+          <Pressable
+            style={[adStyles.filterPill, activeTab === 'templates' ? adStyles.filterPillActive : null]}
+            onPress={() => setActiveTab('templates')}
+          >
+            <Text style={[adStyles.filterPillText, activeTab === 'templates' ? adStyles.filterPillTextActive : null]}>Templates</Text>
+          </Pressable>
+        </View>
+
+        {activeTab === 'routines' ? (
+          <>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Text style={[adStyles.countLabel, { flex: 1, minWidth: 0 }]}>
+                {isLoadingRoutines ? 'Carregando...' : `${routines.length} rotina(s) cadastrada(s)`}
+              </Text>
+              <Pressable
+                style={[adStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }]}
+                onPress={() => {
+                  setEditingRoutine(null);
+                  setIsRoutineFormOpen(true);
+                }}
+              >
+                <Feather name="plus" size={14} color="#FFFFFF" />
+                <Text style={adStyles.suggestionButtonText}>Nova rotina</Text>
+              </Pressable>
+            </View>
+
+            {isLoadingRoutines ? (
+              <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
+            ) : routinesError ? (
+              <AdmEmptyState message={routinesError} />
+            ) : routines.length === 0 ? (
+              <AdmEmptyState message="Nenhuma rotina cadastrada. Clique em Nova rotina." />
+            ) : (
+              routines.map((routine) => {
+                const triggerMeta =
+                  notificationTriggerOptions.find((option) => option.value === routine.triggerKind) ?? notificationTriggerOptions[2];
+                const triggerDetail =
+                  routine.triggerKind === 'recorrente' ? routine.cronSchedule : routine.triggerKind === 'evento' ? routine.eventCode : '';
+                const channelLabels = (Object.keys(notificationChannelMeta) as Array<keyof NotificationChannels>)
+                  .filter((key) => routine.channels[key])
+                  .map((key) => notificationChannelMeta[key].label);
+                const audienceLabel =
+                  routine.audienceType === 'cargo'
+                    ? `Por cargo (${routine.audienceCargos.length})`
+                    : notificationAudienceOptions.find((option) => option.value === routine.audienceType)?.label ?? 'Todos os colaboradores';
+
+                return (
+                  <View key={routine.id} style={adStyles.dreCard}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={adStyles.listRowTitle} numberOfLines={1}>
+                        {routine.title}
+                      </Text>
+                      <ToggleSwitch value={routine.enabled} onValueChange={() => toggleRoutine(routine.id)} />
+                    </View>
+                    <Text style={adStyles.listRowMeta}>{routine.messageTitle}</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                      <View style={[adStyles.badge, { backgroundColor: '#E3F4F4' }]}>
+                        <Text style={[adStyles.badgeText, { color: '#0F8B8D' }]}>{triggerMeta.label}</Text>
+                      </View>
+                      <Text style={adStyles.listRowMeta} numberOfLines={1}>
+                        {channelLabels.length > 0 ? channelLabels.join(', ') : 'Nenhum canal'}
+                      </Text>
+                      <Text style={adStyles.listRowMeta}>{audienceLabel}</Text>
+                    </View>
+                    {triggerDetail ? <Text style={[adStyles.listRowMeta, { marginTop: 4 }]}>{triggerDetail}</Text> : null}
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                      <Text style={adStyles.listRowMeta}>
+                        {routine.lastRunLabel === '—' ? 'Nunca executada' : `Última exec.: ${routine.lastRunLabel}`}
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 14 }}>
+                        <Pressable onPress={() => handleRunRoutine(routine)} hitSlop={6}>
+                          <Feather name="play" size={15} color="#18955A" />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            setEditingRoutine(routine);
+                            setIsRoutineFormOpen(true);
+                          }}
+                          hitSlop={6}
+                        >
+                          <Feather name="edit-2" size={15} color="#3457D5" />
+                        </Pressable>
+                        <Pressable onPress={() => handleDeleteRoutine(routine)} hitSlop={6}>
+                          <Feather name="trash-2" size={15} color="#E6213D" />
+                        </Pressable>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </>
+        ) : (
+          <>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Text style={[adStyles.countLabel, { flex: 1, minWidth: 0 }]}>
+                {isLoadingTemplates
+                  ? 'Carregando...'
+                  : `${templates.length} template(s)${templates.length > 0 ? ' — ⭐ padrão do sistema, demais customizados' : ''}`}
+              </Text>
+              <Pressable
+                style={[adStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }]}
+                onPress={() => {
+                  setEditingTemplate(null);
+                  setIsTemplateFormOpen(true);
+                }}
+              >
+                <Feather name="plus" size={14} color="#FFFFFF" />
+                <Text style={adStyles.suggestionButtonText}>Novo template</Text>
+              </Pressable>
+            </View>
+
+            {isLoadingTemplates ? (
+              <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
+            ) : templatesError ? (
+              <AdmEmptyState message={templatesError} />
+            ) : templates.length === 0 ? (
+              <AdmEmptyState message="Nenhum template cadastrado ainda." />
+            ) : (
+              templates.map((template) => (
+                <View key={template.id} style={adStyles.dreCard}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {template.isSystemDefault ? <Feather name="star" size={14} color="#D79A22" /> : null}
+                    <Text style={[adStyles.listRowTitle, { flex: 1, minWidth: 0 }]} numberOfLines={1}>
+                      {template.title}
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 14 }}>
+                      <Pressable
+                        onPress={() => {
+                          setEditingTemplate(template);
+                          setIsTemplateFormOpen(true);
+                        }}
+                        hitSlop={6}
+                      >
+                        <Feather name="edit-2" size={15} color="#3457D5" />
+                      </Pressable>
+                      {!template.isSystemDefault ? (
+                        <Pressable onPress={() => handleDeleteTemplate(template)} hitSlop={6}>
+                          <Feather name="trash-2" size={15} color="#E6213D" />
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </View>
+                  <Text style={adStyles.listRowMeta}>{template.code}</Text>
+                  <Text style={[adStyles.listRowMeta, { marginTop: 4 }]}>{template.messageTitle}</Text>
+                  <Text style={adStyles.listRowMeta} numberOfLines={2}>
+                    {template.message}
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {template.variables.map((variable) => (
+                      <View key={variable} style={[adStyles.badge, { backgroundColor: '#F1F3F8' }]}>
+                        <Text style={[adStyles.badgeText, { color: '#5E667D' }]}>{variable}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ))
+            )}
+          </>
+        )}
+      </ScrollView>
+
+      <NotificationRoutineFormModal
+        visible={isRoutineFormOpen}
+        initialRoutine={editingRoutine}
+        templates={templates}
+        onClose={() => setIsRoutineFormOpen(false)}
+        onSave={handleSaveRoutine}
+      />
+
+      <TemplateFormModal
+        visible={isTemplateFormOpen}
+        initialTemplate={editingTemplate}
+        onClose={() => setIsTemplateFormOpen(false)}
+        onSave={handleSaveTemplate}
+      />
+    </SafeAreaView>
+  );
+}
+
+// --- Perfil ---
+
+export function AdministrativoProfileScreen({ navigation }: ScreenProps<'AdministrativoProfile'>) {
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={administrativoUserInitials} variant="administrativo" />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <AdmPageHeader icon="user" title="Meu Perfil" subtitle={administrativoUser.accessLabel} />
+        <View style={adStyles.profileCard}>
+          <View style={adStyles.profileAvatarShell}>
+            <Text style={adStyles.profileAvatarText}>{administrativoUserInitials}</Text>
+          </View>
+          <Text style={adStyles.profileName}>{administrativoUser.fullName}</Text>
+          <Text style={adStyles.profileRole}>{administrativoUser.roleAndUnit}</Text>
+
+          <View style={adStyles.profileFieldRow}>
+            <Feather name="mail" size={14} color="#7C8397" />
+            <Text style={adStyles.profileFieldText}>{administrativoUser.email}</Text>
+          </View>
+          <View style={adStyles.profileFieldRow}>
+            <Feather name="phone" size={14} color="#7C8397" />
+            <Text style={adStyles.profileFieldText}>{administrativoUser.phone}</Text>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const adStyles = StyleSheet.create({
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 20,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  emptyText: {
+    color: '#7C8397',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#0C1736',
+  },
+  chartCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 12,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0C1736',
+    marginBottom: 8,
+  },
+  listRowMeta: {
+    color: '#7C8397',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  listRowTitle: {
+    color: '#0C1736',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  listRowValue: {
+    color: '#0C1736',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  rankingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F6',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(12,23,54,0.45)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  modalTitle: {
+    color: '#0C1736',
+    fontSize: 16,
+    fontWeight: '800',
+    flex: 1,
+    marginRight: 10,
+  },
+  filterModalApplyButton: {
+    marginTop: 18,
+    backgroundColor: '#0F8B8D',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  filterModalApplyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  kpiCard: {
+    backgroundColor: '#EAF7F7',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CDEAEA',
+    padding: 12,
+  },
+  kpiLabel: {
+    color: '#0F6E70',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  kpiLabelUnidade: {
+    marginTop: 4,
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#8891A6',
+  },
+  kpiValue: {
+    marginTop: 4,
+    color: '#0C1736',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  pageHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 16,
+  },
+  pageHeaderIconShell: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#E3F4F4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pageHeaderTitle: {
+    color: '#0C1736',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  pageHeaderSubtitle: {
+    marginTop: 2,
+    color: '#677089',
+    fontSize: 12,
+  },
+  dreCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 14,
+    marginBottom: 12,
+  },
+  badge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#E3F4F4',
+    alignSelf: 'flex-start',
+  },
+  badgeText: {
+    color: '#0F8B8D',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  formLabel: {
+    color: '#5E667D',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#0C1736',
+    backgroundColor: '#FFFFFF',
+  },
+  filterPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  filterPillActive: {
+    backgroundColor: '#0F8B8D',
+    borderColor: '#0F8B8D',
+  },
+  filterPillText: {
+    color: '#5E667D',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  filterPillTextActive: {
+    color: '#FFFFFF',
+  },
+  countLabel: {
+    color: '#677089',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  suggestionButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#0F8B8D',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  suggestionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  smallButton: {
+    backgroundColor: '#0F8B8D',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  smallButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statusDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  statusDropdownText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0C1736',
+  },
+  statusMenu: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  statusMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F6',
+  },
+  statusMenuItemText: {
+    fontSize: 12,
+    color: '#0C1736',
+  },
+  profileCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 20,
+    alignItems: 'center',
+  },
+  profileAvatarShell: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#0F8B8D',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  profileName: {
+    color: '#0C1736',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  profileRole: {
+    marginTop: 2,
+    color: '#677089',
+    fontSize: 12,
+    marginBottom: 14,
+  },
+  profileFieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'stretch',
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F2F6',
+  },
+  profileFieldText: {
+    color: '#3A415C',
+    fontSize: 13,
+  },
+});

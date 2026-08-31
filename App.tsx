@@ -95,6 +95,15 @@ import {
   GestaoConfiguracoesScreen,
 } from './Gestao';
 import {
+  AdministrativoDashboardScreen,
+  AdministrativoProfileScreen,
+  AdministrativoLicencasScreen,
+  AdministrativoChamadosScreen,
+  AdministrativoInsumosScreen,
+  AdministrativoFrotaScreen,
+  AdministrativoNotificationsScreen,
+} from './Administrativo';
+import {
   AdminDashboardScreen,
   AdminProfileScreen,
   AdminUsuariosScreen,
@@ -286,6 +295,13 @@ export type RootStackParamList = {
   GestaoMargemLoja: undefined;
   GestaoNotifications: undefined;
   GestaoConfiguracoes: undefined;
+  AdministrativoDashboard: undefined;
+  AdministrativoProfile: undefined;
+  AdministrativoLicencas: undefined;
+  AdministrativoChamados: undefined;
+  AdministrativoInsumos: undefined;
+  AdministrativoFrota: undefined;
+  AdministrativoNotifications: undefined;
 };
 
 export type ScreenProps<RouteName extends keyof RootStackParamList> = NativeStackScreenProps<
@@ -423,7 +439,7 @@ type SideMenuRoute =
   | 'Requests'
   | 'Profile';
 
-export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador' | 'financeiro' | 'gestao';
+export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo';
 
 type DirectorSideMenuRoute =
   | 'DirectorDashboard'
@@ -517,6 +533,20 @@ export type GestaoSideMenuRoute =
   | 'GestaoNotifications'
   | 'GestaoConfiguracoes'
   | 'GestaoProfile';
+
+// "Administrativo" (Alvarás/Licenças, Manutenções, Almoxarifado, Frota) —
+// perfil novo (31/08/2026), espelho do painel web "Administrativo"
+// (seção "OPERAÇÃO"). DIFERENTE do perfil "administrador" (gestão da
+// plataforma) já existente. Endpoint confirmado pela Lovable:
+// /api/public/internal/administrativo.
+export type AdministrativoSideMenuRoute =
+  | 'AdministrativoDashboard'
+  | 'AdministrativoLicencas'
+  | 'AdministrativoChamados'
+  | 'AdministrativoInsumos'
+  | 'AdministrativoFrota'
+  | 'AdministrativoNotifications'
+  | 'AdministrativoProfile';
 
 type SummaryCardItem = {
   id: string;
@@ -1539,6 +1569,22 @@ export const gestaoUser = {
 // "GT" fixo (não via getInitials), mesmo motivo do financeiroUserInitials.
 export const gestaoUserInitials = 'GT';
 
+// Mesmo padrão do gestaoUser: front primeiro, back depois (não vem de
+// AuthIdentityContext).
+export const administrativoUser = {
+  fullName: 'Administrativo',
+  role: 'Administrativo',
+  roleAndUnit: 'Administrativo · American Fuel',
+  area: 'Alvarás, Manutenções, Almoxarifado e Frota',
+  email: 'administrativo@americanfuel.com.br',
+  phone: '(11) 99120-0000',
+  accessLabel: 'Alvarás, manutenções, almoxarifado e frota',
+};
+
+// "OP" fixo (Operação) — evita confundir com "AD" do adminUserInitials
+// (perfil "Administrador" da plataforma, que é diferente deste).
+export const administrativoUserInitials = 'OP';
+
 export const gestaoSideMenuSections: Array<{
   title: string;
   items: Array<{
@@ -1573,6 +1619,34 @@ export const gestaoSideMenuSections: Array<{
       { id: 'gestao-notifications', label: 'Notificações', icon: 'bell', route: 'GestaoNotifications' },
       { id: 'gestao-configuracoes', label: 'Configurações', icon: 'settings', route: 'GestaoConfiguracoes' },
     ],
+  },
+];
+
+export const administrativoSideMenuSections: Array<{
+  title: string;
+  items: Array<{
+    id: string;
+    label: string;
+    icon: keyof typeof Feather.glyphMap;
+    route?: AdministrativoSideMenuRoute;
+  }>;
+}> = [
+  {
+    title: 'VISÃO GERAL',
+    items: [{ id: 'administrativo-dashboard', label: 'Dashboard', icon: 'grid', route: 'AdministrativoDashboard' }],
+  },
+  {
+    title: 'OPERAÇÃO',
+    items: [
+      { id: 'administrativo-licencas', label: 'Alvarás e Licenças', icon: 'file-text', route: 'AdministrativoLicencas' },
+      { id: 'administrativo-chamados', label: 'Manutenções', icon: 'tool', route: 'AdministrativoChamados' },
+      { id: 'administrativo-insumos', label: 'Almoxarifado', icon: 'package', route: 'AdministrativoInsumos' },
+      { id: 'administrativo-frota', label: 'Frota', icon: 'truck', route: 'AdministrativoFrota' },
+    ],
+  },
+  {
+    title: 'ADMINISTRAÇÃO',
+    items: [{ id: 'administrativo-notifications', label: 'Notificações', icon: 'bell', route: 'AdministrativoNotifications' }],
   },
 ];
 
@@ -2874,6 +2948,13 @@ export default function App() {
                     <Stack.Screen name="GestaoMargemLoja" component={GestaoMargemLojaScreen} />
                     <Stack.Screen name="GestaoNotifications" component={GestaoNotificationsScreen} />
                     <Stack.Screen name="GestaoConfiguracoes" component={GestaoConfiguracoesScreen} />
+                    <Stack.Screen name="AdministrativoDashboard" component={AdministrativoDashboardScreen} />
+                    <Stack.Screen name="AdministrativoProfile" component={AdministrativoProfileScreen} />
+                    <Stack.Screen name="AdministrativoLicencas" component={AdministrativoLicencasScreen} />
+                    <Stack.Screen name="AdministrativoChamados" component={AdministrativoChamadosScreen} />
+                    <Stack.Screen name="AdministrativoInsumos" component={AdministrativoInsumosScreen} />
+                    <Stack.Screen name="AdministrativoFrota" component={AdministrativoFrotaScreen} />
+                    <Stack.Screen name="AdministrativoNotifications" component={AdministrativoNotificationsScreen} />
                   </Stack.Navigator>
 
                   {isMenuOpen ? (
@@ -2889,6 +2970,8 @@ export default function App() {
                           ? financeiroUserInitials
                           : activeRole === 'gestao'
                           ? gestaoUserInitials
+                          : activeRole === 'administrativo'
+                          ? administrativoUserInitials
                           : currentUserInitials
                       }
                       currentRoute={currentRoute}
@@ -2962,6 +3045,8 @@ function getDashboardRouteForRole(role: UserRole): keyof RootStackParamList {
     ? 'FinanceiroDashboard'
     : role === 'gestao'
     ? 'GestaoDashboard'
+    : role === 'administrativo'
+    ? 'AdministrativoDashboard'
     : 'Dashboard';
 }
 
@@ -3234,6 +3319,13 @@ const PANEL_OPTION_META: Record<
     icon: 'grid',
     color: '#7C3AED',
     tint: '#F3EEFE',
+  },
+  administrativo: {
+    label: 'Administrativo',
+    subtitle: 'Alvarás, manutenções, almoxarifado e frota',
+    icon: 'tool',
+    color: '#0F8B8D',
+    tint: '#E3F4F4',
   },
 };
 
@@ -13023,6 +13115,7 @@ export function SideMenuOverlay({
   const isAdmin = variant === 'administrador';
   const isFinanceiro = variant === 'financeiro';
   const isGestao = variant === 'gestao';
+  const isAdministrativo = variant === 'administrativo';
   const { identity } = useContext(AuthIdentityContext);
   const { perfil: colaboradorPerfil, isLoading: isLoadingColaboradorPerfil } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
@@ -13036,6 +13129,8 @@ export function SideMenuOverlay({
     ? financeiroSideMenuSections
     : isGestao
     ? gestaoSideMenuSections
+    : isAdministrativo
+    ? administrativoSideMenuSections
     : sideMenuSections;
   // Nome/cargo reais (rh_colaboradores, via ColaboradorPerfilContext) em
   // todos os painéis — nunca os mocks "Bruno Lyra"/"Marina Costa"/etc. Sem
@@ -13047,6 +13142,8 @@ export function SideMenuOverlay({
     ? 'Financeiro'
     : isGestao
     ? 'Gestão'
+    : isAdministrativo
+    ? 'Administrativo'
     : (colaboradorPerfil?.cargo as string | undefined) ||
       (isLoadingColaboradorPerfil ? 'Carregando…' : identity?.colaboradorId ? '—' : 'Sem vínculo no RH');
   const headerGradientColors: [string, string] = isDirector
@@ -13059,6 +13156,8 @@ export function SideMenuOverlay({
     ? ['#C05621', '#DD6B20']
     : isGestao
     ? ['#7C3AED', '#9B6DF5']
+    : isAdministrativo
+    ? ['#0F8B8D', '#22B0B2']
     : ['#2F4EA8', '#4C439E'];
   const insets = useSafeAreaInsets();
 
@@ -13070,6 +13169,7 @@ export function SideMenuOverlay({
       | AdminSideMenuRoute
       | FinanceiroSideMenuRoute
       | GestaoSideMenuRoute
+      | AdministrativoSideMenuRoute
   ) => {
     onClose();
 
@@ -13192,6 +13292,7 @@ export function TopBar({
   const isAdmin = variant === 'administrador';
   const isFinanceiro = variant === 'financeiro';
   const isGestao = variant === 'gestao';
+  const isAdministrativo = variant === 'administrativo';
   const hasUnreadNotifications = colaboradorNotificationItems.some(
     (item) => item.unread && !readNotificationIds[item.id]
   );
@@ -13218,12 +13319,14 @@ export function TopBar({
         <FinanceiroBrandLogo />
       ) : isGestao ? (
         <GestaoBrandLogo />
+      ) : isAdministrativo ? (
+        <AdministrativoBrandLogo />
       ) : (
         <BrandLogo compact theme={onColor ? 'light' : 'dark'} />
       )}
 
       <View style={styles.topBarRight}>
-        {isDirector || isRH || isAdmin || isFinanceiro || isGestao ? null : (
+        {isDirector || isRH || isAdmin || isFinanceiro || isGestao || isAdministrativo ? null : (
           <Pressable style={styles.notificationBellButton} onPress={openNotifications}>
             <Feather name="bell" size={17} color="#313951" />
             {hasUnreadNotifications ? <View style={styles.notificationBellDot} /> : null}
@@ -13237,6 +13340,7 @@ export function TopBar({
             isAdmin ? styles.avatarAdmin : null,
             isFinanceiro ? styles.avatarFinanceiro : null,
             isGestao ? styles.avatarGestao : null,
+            isAdministrativo ? styles.avatarAdministrativo : null,
           ]}
           onPress={onAvatarPress}
           disabled={!onAvatarPress}
@@ -13315,6 +13419,20 @@ function GestaoBrandLogo() {
       <View>
         <Text style={styles.gestaoBrandTitle}>Gestão</Text>
         <Text style={styles.gestaoBrandSubtitle}>VENDAS E ABASTECIMENTO</Text>
+      </View>
+    </View>
+  );
+}
+
+function AdministrativoBrandLogo() {
+  return (
+    <View style={styles.directorBrandRow}>
+      <View style={styles.administrativoBrandIconShell}>
+        <Feather name="tool" size={16} color="#FFFFFF" />
+      </View>
+      <View>
+        <Text style={styles.administrativoBrandTitle}>Administrativo</Text>
+        <Text style={styles.administrativoBrandSubtitle}>OPERAÇÃO DOS POSTOS</Text>
       </View>
     </View>
   );
@@ -14653,6 +14771,28 @@ export const styles = StyleSheet.create({
   },
   avatarGestao: {
     backgroundColor: '#7C3AED',
+  },
+  administrativoBrandIconShell: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#0F8B8D',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  administrativoBrandTitle: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  administrativoBrandSubtitle: {
+    color: '#7C8397',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  avatarAdministrativo: {
+    backgroundColor: '#0F8B8D',
   },
   panelHero: {
     borderRadius: 24,

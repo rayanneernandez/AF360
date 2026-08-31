@@ -1899,6 +1899,81 @@ function getGestaoEncerrante(params, actorId) {
   return lovableGet('/api/public/internal/gestao', { recurso: 'encerrante', ...params }, actorId);
 }
 
+// --- Administrativo (Operação física dos postos: alvarás, manutenção,
+// almoxarifado, frota) — endpoint confirmado pela Lovable em 31/08/2026:
+// /api/public/internal/administrativo (mesma auth: x-internal-secret +
+// x-actor-id). Query params comuns: postoIds (csv de empresas.id, vazio =
+// rede toda), dataInicial/dataFinal (YYYY-MM-DD), busca, status, prioridade,
+// categoria. IMPORTANTE: esse painel é diferente do "Administrador" (gestão
+// da plataforma) já existente — notificações usam modulo=adm (não 'admin').
+
+function getAdministrativoDashboard(params, actorId) {
+  return lovableGet('/api/public/internal/administrativo', { recurso: 'dashboard', ...params }, actorId);
+}
+
+// --- Alvarás e Licenças ---
+function getAdministrativoLicencas(params, actorId) {
+  return lovableGet('/api/public/internal/administrativo', { recurso: 'licencas', ...params }, actorId);
+}
+// Obrigatórios: documento, orgao, vencimento. Opcionais: numero, empresa_id, emissao, observacao.
+function postAdministrativoLicenca(body, actorId) {
+  return lovablePost('/api/public/internal/administrativo', { recurso: 'licenca' }, body, actorId);
+}
+function patchAdministrativoLicenca(id, body, actorId) {
+  return lovablePatch('/api/public/internal/administrativo', { recurso: 'licenca', id }, body, actorId);
+}
+// Inativa (não é exclusão física).
+function deleteAdministrativoLicenca(id, actorId) {
+  return lovableDelete('/api/public/internal/administrativo', { recurso: 'licenca', id }, actorId);
+}
+
+// --- Manutenções (Chamados) ---
+function getAdministrativoChamados(params, actorId) {
+  return lovableGet('/api/public/internal/administrativo', { recurso: 'chamados', ...params }, actorId);
+}
+// Obrigatório: titulo. Opcionais: descricao, local, empresa_id,
+// prioridade (alta|media|baixa), responsavel. Protocolo CH-AAAA-NNNN é
+// gerado por trigger do lado deles.
+function postAdministrativoChamado(body, actorId) {
+  return lovablePost('/api/public/internal/administrativo', { recurso: 'chamado' }, body, actorId);
+}
+// status: aberto|em_andamento|aguardando_peca|concluido|cancelado (concluido grava concluido_em).
+function patchAdministrativoChamado(id, body, actorId) {
+  return lovablePatch('/api/public/internal/administrativo', { recurso: 'chamado', id }, body, actorId);
+}
+
+// --- Almoxarifado ---
+// Status (normal|atencao|zerado) já vem calculado do lado deles a partir de
+// estoque_minimo — nunca recalcular aqui.
+function getAdministrativoInsumos(params, actorId) {
+  return lovableGet('/api/public/internal/administrativo', { recurso: 'insumos', ...params }, actorId);
+}
+function getAdministrativoSolicitacoes(params, actorId) {
+  return lovableGet('/api/public/internal/administrativo', { recurso: 'solicitacoes', ...params }, actorId);
+}
+// Body: { insumo_id, empresa_id, quantidade, observacao }.
+function postAdministrativoSolicitacao(body, actorId) {
+  return lovablePost('/api/public/internal/administrativo', { recurso: 'solicitacao' }, body, actorId);
+}
+
+// --- Frota ---
+function getAdministrativoFrota(params, actorId) {
+  return lovableGet('/api/public/internal/administrativo', { recurso: 'frota', ...params }, actorId);
+}
+function patchAdministrativoVeiculo(id, body, actorId) {
+  return lovablePatch('/api/public/internal/administrativo', { recurso: 'veiculo', id }, body, actorId);
+}
+function deleteAdministrativoVeiculo(id, actorId) {
+  return lovableDelete('/api/public/internal/administrativo', { recurso: 'veiculo', id }, actorId);
+}
+// tipo: saida|retorno|manutencao|abastecimento|sinistro — "km" atualiza o veículo.
+function postAdministrativoFrotaEvento(body, actorId) {
+  return lovablePost('/api/public/internal/administrativo', { recurso: 'frota-evento' }, body, actorId);
+}
+function getAdministrativoFrotaEventos(veiculoId, actorId) {
+  return lovableGet('/api/public/internal/administrativo', { recurso: 'frota-eventos', veiculoId }, actorId);
+}
+
 module.exports = {
   getRhUniformesCobrancas,
   postRhUniformeCobranca,
