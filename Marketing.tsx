@@ -619,17 +619,17 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
                 <MktKpiCard icon="mail" color="#C2255C" label="TOTAL" value={formatNumeroBR(data.ocorrencias.total)} subtitle="Ocorrências no mês selecionado" />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <MktKpiCard icon="alert-circle" color="#E8A33D" label="ABERTAS" value={formatNumeroBR(data.ocorrencias.abertas)} subtitle="Aguardando atendimento" />
+                <MktKpiCard icon="alert-circle" color="#C2255C" label="ABERTAS" value={formatNumeroBR(data.ocorrencias.abertas)} subtitle="Aguardando atendimento" />
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <MktKpiCard icon="clock" color="#3E92CC" label="EM ATENDIMENTO" value={formatNumeroBR(data.ocorrencias.em_atendimento)} subtitle="Em andamento" />
+                <MktKpiCard icon="clock" color="#C2255C" label="EM ATENDIMENTO" value={formatNumeroBR(data.ocorrencias.em_atendimento)} subtitle="Em andamento" />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <MktKpiCard
                   icon="check-circle"
-                  color="#2FB170"
+                  color="#C2255C"
                   label="RESOLVIDAS"
                   value={formatNumeroBR(data.ocorrencias.resolvidas)}
                   subtitle={`TMR: ${data.ocorrencias.tempo_medio_primeira_resposta_segundos != null ? `${Math.round(data.ocorrencias.tempo_medio_primeira_resposta_segundos / 60)} min` : '—'}`}
@@ -638,7 +638,7 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
             </View>
             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <MktKpiCard icon="alert-triangle" color="#E0435B" label="ATRASADAS SLA" value={formatNumeroBR(data.ocorrencias.atrasadas)} subtitle="No prazo" />
+                <MktKpiCard icon="alert-triangle" color="#C2255C" label="ATRASADAS SLA" value={formatNumeroBR(data.ocorrencias.atrasadas)} subtitle="No prazo" />
               </View>
             </View>
 
@@ -646,7 +646,7 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
               <View style={{ flex: 1, minWidth: 0 }}>
                 <MktKpiCard
                   icon="message-circle"
-                  color="#3E92CC"
+                  color="#C2255C"
                   label="WHATSAPP"
                   value={formatNumeroBR(data.whatsapp.inbound)}
                   subtitle={`recebidas · ${formatNumeroBR(data.whatsapp.novos_contatos)} novos contatos no período`}
@@ -655,7 +655,7 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
               <View style={{ flex: 1, minWidth: 0 }}>
                 <MktKpiCard
                   icon="send"
-                  color="#2FB170"
+                  color="#C2255C"
                   label="ENVIADAS"
                   value={formatNumeroBR(data.whatsapp.outbound)}
                   subtitle={`mensagens · ${formatNumeroBR(data.whatsapp.na_fila)} na fila`}
