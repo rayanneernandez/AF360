@@ -19,6 +19,12 @@ const router = express.Router();
 // (união), igual ao app web faz.
 const KNOWN_DIRETORIA_EMAILS = ['bruno.lyra@americanfuel.com.br', 'diretoria@americanfuel.com.br'];
 const KNOWN_RH_EMAILS = ['marina.costa@americanfuel.com.br', 'rh@americanfuel.com.br'];
+// Liberação do painel Gestão SÓ pra quem está testando via Expo/dev client
+// (nunca crasha em dev — erro de JS mostra redbox, não derruba o processo),
+// independente da flag GESTAO_ROLE_ENABLED (que é global e afetaria quem
+// ainda está com o build antigo publicado nas lojas). Tirar essa lista assim
+// que o build novo estiver aprovado nas duas lojas e a flag global for ligada.
+const KNOWN_GESTAO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br'];
 
 // normalizeModuleName/fetchEffectiveModules moram em ../permissions.js
 // (extraídas daqui em 27/07/2026 pra serem reaproveitadas por routes/admin.js
@@ -76,6 +82,7 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   const normalizedEmail = String(profile?.email || email || '').trim().toLowerCase();
   if (KNOWN_DIRETORIA_EMAILS.includes(normalizedEmail)) roles.add('diretoria');
   if (KNOWN_RH_EMAILS.includes(normalizedEmail)) roles.add('rh');
+  if (KNOWN_GESTAO_TEST_EMAILS.includes(normalizedEmail)) roles.add('gestao');
 
   // d) 'Colaborador' entra na lista quando existe ficha real em
   // rh_colaboradores vinculada (profile_id) OU quando o Cargo/user_modules
