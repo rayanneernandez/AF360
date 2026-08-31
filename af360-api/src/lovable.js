@@ -1974,6 +1974,76 @@ function getAdministrativoFrotaEventos(veiculoId, actorId) {
   return lovableGet('/api/public/internal/administrativo', { recurso: 'frota-eventos', veiculoId }, actorId);
 }
 
+// --- Marketing & Fidelidade — endpoint confirmado pela Lovable em
+// 31/08/2026: /api/public/internal/marketing (mesma auth: x-internal-secret
+// + x-actor-id). Cobre Dashboard e Ocorrências (atendimento omnichannel);
+// WhatsApp usa endpoint próprio (recurso wa-* no mesmo path); Google (gmb) e
+// Leva+ (leva-mais) reaproveitam os endpoints já existentes usados pelo
+// painel Administrador — ver getGmb*/getLevaMais* mais abaixo.
+
+function getMarketingDashboard(params, actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'dashboard', ...params }, actorId);
+}
+
+// --- Ocorrências (atendimento) ---
+// params: q, status, canal, prioridade, responsavel, dataInicial, dataFinal, limit, offset.
+function getMarketingOcorrencias(params, actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'ocorrencias', ...params }, actorId);
+}
+function getMarketingOcorrencia(id, actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'ocorrencia', id }, actorId);
+}
+// Obrigatório: assunto. Opcionais: canal, prioridade, cliente_nome,
+// cliente_email, cliente_telefone, responsavel_id, descricao, link. SLA é
+// calculado no servidor da Lovable.
+function postMarketingOcorrencia(body, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'ocorrencia' }, body, actorId);
+}
+// Body: { mensagem, interna }.
+function postMarketingMensagem(id, body, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'mensagem', id }, body, actorId);
+}
+// Body: { nome_arquivo, arquivo_base64, mime_type }.
+function postMarketingAnexo(id, body, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'anexo', id }, body, actorId);
+}
+// Body: { status, prioridade, responsavel_id }.
+function patchMarketingOcorrencia(id, body, actorId) {
+  return lovablePatch('/api/public/internal/marketing', { recurso: 'ocorrencia', id }, body, actorId);
+}
+
+// --- WhatsApp (inbox) — REST puro, sem websocket. ---
+// params: aba (todos|fila|ativos|finalizadas), channel, q.
+function getMarketingWaConversas(params, actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'wa-conversas', ...params }, actorId);
+}
+// params: phone, limit, before.
+function getMarketingWaMensagens(params, actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'wa-mensagens', ...params }, actorId);
+}
+function postMarketingWaEnviar(body, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'wa-enviar' }, body, actorId);
+}
+function postMarketingWaNova(body, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'wa-nova' }, body, actorId);
+}
+// Body pode ter { chat_status } (assumir/finalizar) e/ou { atendente_id }.
+function patchMarketingWaConversa(phone, body, actorId) {
+  return lovablePatch('/api/public/internal/marketing', { recurso: 'wa-conversa', phone }, body, actorId);
+}
+
+// --- Google Meu Negócio — avaliações (mesmo endpoint /gmb já usado pelo
+// painel Administrador; "reviews" foi adicionado pela Lovable em
+// 31/08/2026 especificamente pro módulo Marketing). ---
+// params: locationId, filtro (todas|sem_resposta|baixas|altas).
+function getGmbReviews(params, actorId) {
+  return lovableGet('/api/public/internal/gmb', { recurso: 'reviews', ...params }, actorId);
+}
+// Body: { reviewId, texto }.
+function postGmbResponderReview(body, actorId) {
+  return lovablePost('/api/public/internal/gmb', { acao: 'responder' }, body, actorId);
+}
+
 module.exports = {
   getRhUniformesCobrancas,
   postRhUniformeCobranca,
@@ -2268,4 +2338,18 @@ module.exports = {
   deleteAdministrativoVeiculo,
   postAdministrativoFrotaEvento,
   getAdministrativoFrotaEventos,
+  getMarketingDashboard,
+  getMarketingOcorrencias,
+  getMarketingOcorrencia,
+  postMarketingOcorrencia,
+  postMarketingMensagem,
+  postMarketingAnexo,
+  patchMarketingOcorrencia,
+  getMarketingWaConversas,
+  getMarketingWaMensagens,
+  postMarketingWaEnviar,
+  postMarketingWaNova,
+  patchMarketingWaConversa,
+  getGmbReviews,
+  postGmbResponderReview,
 };

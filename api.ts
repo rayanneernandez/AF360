@@ -1903,7 +1903,7 @@ export type AuthIdentity = {
   // 'administrador' aqui). 'role' acima é só o primeiro/principal, mantido
   // por compatibilidade; o app decide se mostra a tela de seleção de painel
   // com base neste array.
-  availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo'>;
+  availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo' | 'marketing'>;
   colaboradorId: string | null;
   empresaId: string | null;
 };
@@ -6943,4 +6943,640 @@ export async function updateAdministrativoNotifTemplate(
 
 export async function deleteAdministrativoNotifTemplate(id: string, actorId?: string | null): Promise<void> {
   await api.delete(withActorId(`/api/administrativo/notif-templates/${encodeURIComponent(id)}`, actorId));
+}
+
+// --- Marketing & Fidelidade (Ocorrências omnichannel, WhatsApp, Google,
+// Notificações, Leva+) — endpoint confirmado pela Lovable em 31/08/2026:
+// /api/public/internal/marketing (via proxy /api/marketing, mesma auth
+// x-internal-secret). WhatsApp é REST puro (sem websocket). Google e Leva+
+// reaproveitam os endpoints já usados pelo painel Administrador (gmb /
+// leva-mais). ---
+
+async function fetchMarketingRecurso<T>(
+  recurso: string,
+  params: Record<string, string | number | boolean | undefined> = {}
+): Promise<{ data: T; count?: number } & Record<string, unknown>> {
+  const search = new URLSearchParams();
+  search.set('recurso', recurso);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === '') return;
+    search.set(key, String(value));
+  });
+  const json = await api.get(`/api/marketing?${search.toString()}`);
+  return json as { data: T; count?: number } & Record<string, unknown>;
+}
+
+// --- Dashboard ---
+
+export type MarketingOcorrenciasKpis = {
+  total: number;
+  abertas: number;
+  em_atendimento: number;
+  aguardando_cliente: number;
+  resolvidas: number;
+  canceladas: number;
+  atrasadas: number;
+  tempo_medio_primeira_resposta_segundos: number | null;
+};
+
+export type MarketingWhatsappResumo = {
+  inbound: number;
+  outbound: number;
+  conversas_ativas: number;
+  na_fila: number;
+  novos_contatos: number;
+};
+
+export type MarketingGoogleResumo = {
+  conectado: boolean;
+  account_name: string | null;
+  last_sync_at: string | null;
+  reviews_api_ok: boolean;
+  status: 'ativo' | 'aguardando_liberacao' | 'desconectado' | string;
+  postos: number;
+  total_avaliacoes: number;
+  nota_media: number | null;
+};
+
+export type MarketingSerieDiariaItem = { data: string; ocorrencias: number; inbound: number; outbound: number };
+
+export type MarketingDashboardData = {
+  periodo: { dataInicial: string | null; dataFinal: string | null };
+  ocorrencias: MarketingOcorrenciasKpis;
+  whatsapp: MarketingWhatsappResumo;
+  google: MarketingGoogleResumo;
+  serie_diaria: MarketingSerieDiariaItem[];
+  por_canal: Array<Record<string, unknown>>;
+  sla_por_canal: Array<Record<string, unknown>>;
+  top_atendentes: Array<Record<string, unknown>>;
+  ocorrencias_recentes: Array<Record<string, unknown>>;
+};
+
+const MARKETING_OCORRENCIAS_KPIS_VAZIAS: MarketingOcorrenciasKpis = {
+  total: 0,
+  abertas: 0,
+  em_atendimento: 0,
+  aguardando_cliente: 0,
+  resolvidas: 0,
+  canceladas: 0,
+  atrasadas: 0,
+  tempo_medio_primeira_resposta_segundos: null,
+};
+
+export async function fetchMarketingDashboard(filtro?: {
+  dataInicial?: string;
+  dataFinal?: string;
+}): Promise<MarketingDashboardData> {
+  const { data } = await fetchMarketingRecurso<Partial<MarketingDashboardData>>('dashboard', {
+    dataInicial: filtro?.dataInicial,
+    dataFinal: filtro?.dataFinal,
+  });
+  return {
+    periodo: data.periodo ?? { dataInicial: null, dataFinal: null },
+    ocorrencias: { ...MARKETING_OCORRENCIAS_KPIS_VAZIAS, ...(data.ocorrencias ?? {}) },
+    whatsapp: {
+      inbound: data.whatsapp?.inbound ?? 0,
+      outbound: data.whatsapp?.outbound ?? 0,
+      conversas_ativas: data.whatsapp?.conversas_ativas ?? 0,
+      na_fila: data.whatsapp?.na_fila ?? 0,
+      novos_contatos: data.whatsapp?.novos_contatos ?? 0,
+    },
+    google: {
+      conectado: data.google?.conectado ?? false,
+      account_name: data.google?.account_name ?? null,
+      last_sync_at: data.google?.last_sync_at ?? null,
+      reviews_api_ok: data.google?.reviews_api_ok ?? false,
+      status: data.google?.status ?? 'desconectado',
+      postos: data.google?.postos ?? 0,
+      total_avaliacoes: data.google?.total_avaliacoes ?? 0,
+      nota_media: data.google?.nota_media ?? null,
+    },
+    serie_diaria: data.serie_diaria ?? [],
+    por_canal: data.por_canal ?? [],
+    sla_por_canal: data.sla_por_canal ?? [],
+    top_atendentes: data.top_atendentes ?? [],
+    ocorrencias_recentes: data.ocorrencias_recentes ?? [],
+  };
+}
+
+// --- Ocorrências (atendimento omnichannel) ---
+
+export type MarketingOcorrenciaCanal = 'manual' | 'whatsapp' | 'instagram' | 'facebook' | 'google' | string;
+export type MarketingOcorrenciaStatus =
+  | 'aberto'
+  | 'em_atendimento'
+  | 'aguardando_cliente'
+  | 'resolvido'
+  | 'cancelado'
+  | string;
+export type MarketingOcorrenciaPrioridade = 'alta' | 'media' | 'baixa' | string;
+
+export type MarketingOcorrenciaSla = {
+  label: string | null;
+  cor: string | null;
+  percentual: number | null;
+  critico: boolean;
+  estourado: boolean;
+  minutos_restantes: number | null;
+};
+
+export type MarketingOcorrenciaItem = {
+  id: string;
+  protocolo: string;
+  canal: MarketingOcorrenciaCanal;
+  canal_label: string | null;
+  status: MarketingOcorrenciaStatus;
+  status_label: string | null;
+  prioridade: MarketingOcorrenciaPrioridade;
+  prioridade_label: string | null;
+  cliente_nome: string | null;
+  cliente_email: string | null;
+  cliente_telefone: string | null;
+  assunto: string;
+  descricao: string | null;
+  responsavel_nome: string | null;
+  sla: MarketingOcorrenciaSla | null;
+  created_at: string;
+};
+
+export type MarketingOcorrenciaFiltro = {
+  q?: string;
+  status?: string;
+  canal?: string;
+  prioridade?: string;
+  responsavel?: string;
+  dataInicial?: string;
+  dataFinal?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type MarketingOcorrenciasResponse = {
+  itens: MarketingOcorrenciaItem[];
+  count: number;
+  porStatus: Array<{ status: string; label: string; total: number }>;
+  opcoes: { canais?: Array<{ value: string; label: string }>; status?: Array<{ value: string; label: string }>; prioridades?: Array<{ value: string; label: string }> };
+};
+
+export async function fetchMarketingOcorrencias(filtro: MarketingOcorrenciaFiltro = {}): Promise<MarketingOcorrenciasResponse> {
+  const json = await fetchMarketingRecurso<MarketingOcorrenciaItem[]>('ocorrencias', {
+    q: filtro.q,
+    status: filtro.status,
+    canal: filtro.canal,
+    prioridade: filtro.prioridade,
+    responsavel: filtro.responsavel,
+    dataInicial: filtro.dataInicial,
+    dataFinal: filtro.dataFinal,
+    limit: filtro.limit,
+    offset: filtro.offset,
+  });
+  return {
+    itens: Array.isArray(json.data) ? json.data : [],
+    count: (json.count as number | undefined) ?? 0,
+    porStatus: (json.porStatus as MarketingOcorrenciasResponse['porStatus']) ?? [],
+    opcoes: (json.opcoes as MarketingOcorrenciasResponse['opcoes']) ?? {},
+  };
+}
+
+export type MarketingOcorrenciaMensagem = {
+  autor_tipo: 'cliente' | 'atendente' | string;
+  autor_nome: string | null;
+  mensagem: string;
+  interna: boolean;
+  created_at: string;
+};
+
+export type MarketingOcorrenciaAnexo = { id: string; nome_arquivo: string; url: string | null; mime_type: string | null };
+
+export type MarketingOcorrenciaPrazos = {
+  aberto_em: string | null;
+  primeira_resposta_ate: string | null;
+  resolver_ate: string | null;
+  respondida_em: string | null;
+  resolvida_em: string | null;
+};
+
+export type MarketingOcorrenciaCliente = {
+  nome: string | null;
+  email: string | null;
+  telefone: string | null;
+  documento: string | null;
+};
+
+export type MarketingOcorrenciaDetalhe = {
+  ocorrencia: MarketingOcorrenciaItem;
+  cliente: MarketingOcorrenciaCliente;
+  prazos: MarketingOcorrenciaPrazos;
+  mensagens: MarketingOcorrenciaMensagem[];
+  anexos: MarketingOcorrenciaAnexo[];
+};
+
+export async function fetchMarketingOcorrencia(id: string): Promise<MarketingOcorrenciaDetalhe> {
+  const { data } = await fetchMarketingRecurso<Partial<MarketingOcorrenciaDetalhe>>('ocorrencia', { id });
+  return {
+    ocorrencia: data.ocorrencia as MarketingOcorrenciaItem,
+    cliente: data.cliente ?? { nome: null, email: null, telefone: null, documento: null },
+    prazos: data.prazos ?? { aberto_em: null, primeira_resposta_ate: null, resolver_ate: null, respondida_em: null, resolvida_em: null },
+    mensagens: data.mensagens ?? [],
+    anexos: data.anexos ?? [],
+  };
+}
+
+// assunto é obrigatório; SLA é calculado no servidor.
+export type MarketingOcorrenciaWriteBody = {
+  assunto: string;
+  canal?: MarketingOcorrenciaCanal;
+  prioridade?: MarketingOcorrenciaPrioridade;
+  cliente_nome?: string;
+  cliente_email?: string;
+  cliente_telefone?: string;
+  responsavel_id?: string;
+  descricao?: string;
+  link?: string;
+};
+
+export async function createMarketingOcorrencia(
+  body: MarketingOcorrenciaWriteBody,
+  actorId?: string | null
+): Promise<MarketingOcorrenciaItem> {
+  const json = await api.post(withActorId('/api/marketing/ocorrencia', actorId), body);
+  return json.data as MarketingOcorrenciaItem;
+}
+
+export async function updateMarketingOcorrencia(
+  id: string,
+  body: Partial<{ status: MarketingOcorrenciaStatus; prioridade: MarketingOcorrenciaPrioridade; responsavel_id: string }>,
+  actorId?: string | null
+): Promise<MarketingOcorrenciaItem> {
+  const json = await api.patch(withActorId(`/api/marketing/ocorrencia/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as MarketingOcorrenciaItem;
+}
+
+export async function createMarketingMensagem(
+  id: string,
+  body: { mensagem: string; interna?: boolean },
+  actorId?: string | null
+): Promise<MarketingOcorrenciaMensagem> {
+  const json = await api.post(withActorId(`/api/marketing/ocorrencia/${encodeURIComponent(id)}/mensagem`, actorId), body);
+  return json.data as MarketingOcorrenciaMensagem;
+}
+
+export async function createMarketingAnexo(
+  id: string,
+  body: { nome_arquivo: string; arquivo_base64: string; mime_type: string },
+  actorId?: string | null
+): Promise<MarketingOcorrenciaAnexo> {
+  const json = await api.post(withActorId(`/api/marketing/ocorrencia/${encodeURIComponent(id)}/anexo`, actorId), body);
+  return json.data as MarketingOcorrenciaAnexo;
+}
+
+// --- WhatsApp (inbox) ---
+
+export type MarketingWaChatStatus = 'fila' | 'em_atendimento' | 'finalizado' | string;
+export type MarketingWaChannel = 'whatsapp' | 'instagram' | 'facebook' | string;
+
+export type MarketingWaConversaItem = {
+  phone: string;
+  display_name: string | null;
+  chat_status: MarketingWaChatStatus;
+  chat_status_label: string | null;
+  atendente_nome: string | null;
+  channel: MarketingWaChannel;
+  ultima_mensagem: string | null;
+  ultima_mensagem_em: string | null;
+  ultima_direcao: 'inbound' | 'outbound' | string | null;
+};
+
+export type MarketingWaContadores = {
+  fila: number;
+  em_atendimento: number;
+  finalizadas_hoje: number;
+  tma_hoje_segundos: number | null;
+};
+
+export type MarketingWaConversasResponse = {
+  itens: MarketingWaConversaItem[];
+  total: number;
+  contadores: MarketingWaContadores;
+};
+
+export async function fetchMarketingWaConversas(filtro?: {
+  aba?: 'todos' | 'fila' | 'ativos' | 'finalizadas';
+  channel?: string;
+  q?: string;
+}): Promise<MarketingWaConversasResponse> {
+  const json = await fetchMarketingRecurso<MarketingWaConversaItem[]>('wa-conversas', {
+    aba: filtro?.aba,
+    channel: filtro?.channel,
+    q: filtro?.q,
+  });
+  const contadores = (json.contadores as Partial<MarketingWaContadores>) ?? {};
+  return {
+    itens: Array.isArray(json.data) ? json.data : [],
+    total: (json.count as number | undefined) ?? 0,
+    contadores: {
+      fila: contadores.fila ?? 0,
+      em_atendimento: contadores.em_atendimento ?? 0,
+      finalizadas_hoje: contadores.finalizadas_hoje ?? 0,
+      tma_hoje_segundos: contadores.tma_hoje_segundos ?? null,
+    },
+  };
+}
+
+// Formato exato dos campos de cada mensagem ainda NÃO foi confirmado pela
+// Lovable (só o endpoint/params foram) — por isso o tipo é genérico e a tela
+// lê os campos de forma defensiva (várias chaves candidatas), em vez de
+// assumir nomes. Ver pickMktField em Marketing.tsx.
+export type MarketingWaMensagemItem = Record<string, unknown>;
+
+export async function fetchMarketingWaMensagens(
+  phone: string,
+  params?: { limit?: number; before?: string }
+): Promise<MarketingWaMensagemItem[]> {
+  const { data } = await fetchMarketingRecurso<MarketingWaMensagemItem[]>('wa-mensagens', {
+    phone,
+    limit: params?.limit,
+    before: params?.before,
+  });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function sendMarketingWaMensagem(
+  body: { phone: string; mensagem: string },
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId('/api/marketing/wa-enviar', actorId), body);
+}
+
+export async function createMarketingWaConversa(
+  body: { phone: string; display_name?: string; mensagem?: string },
+  actorId?: string | null
+): Promise<MarketingWaConversaItem> {
+  const json = await api.post(withActorId('/api/marketing/wa-nova', actorId), body);
+  return json.data as MarketingWaConversaItem;
+}
+
+export async function updateMarketingWaConversa(
+  phone: string,
+  body: Partial<{ chat_status: MarketingWaChatStatus; atendente_id: string }>,
+  actorId?: string | null
+): Promise<MarketingWaConversaItem> {
+  const json = await api.patch(withActorId(`/api/marketing/wa-conversa/${encodeURIComponent(phone)}`, actorId), body);
+  return json.data as MarketingWaConversaItem;
+}
+
+// --- Google (Meu Negócio) ---
+
+export type MarketingGmbLocation = {
+  id: string;
+  title: string;
+  average_rating: number | null;
+  total_reviews: number;
+  unreplied: number;
+  last_synced_at: string | null;
+};
+
+export type MarketingGmbData = {
+  status: MarketingGoogleResumo | null;
+  locations: MarketingGmbLocation[];
+  locationsCount: number;
+};
+
+export async function fetchMarketingGmb(): Promise<MarketingGmbData> {
+  const { data } = await fetchMarketingRecurso<Partial<MarketingGmbData>>('gmb');
+  return {
+    status: data.status ?? null,
+    locations: data.locations ?? [],
+    locationsCount: data.locationsCount ?? (data.locations ?? []).length,
+  };
+}
+
+export type MarketingGmbReviewItem = {
+  id: string;
+  reviewer_name: string | null;
+  star_rating: number;
+  comment: string | null;
+  created_at_google: string | null;
+  reply_comment: string | null;
+  reply_updated_at: string | null;
+};
+
+export type MarketingGmbReviewsResponse = {
+  status: 'ativo' | 'aguardando_liberacao' | 'desconectado' | string;
+  total: number;
+  itens: MarketingGmbReviewItem[];
+};
+
+export async function fetchMarketingGmbReviews(filtro?: {
+  locationId?: string;
+  filtro?: 'todas' | 'sem_resposta' | 'baixas' | 'altas';
+}): Promise<MarketingGmbReviewsResponse> {
+  const json = await fetchMarketingRecurso<MarketingGmbReviewItem[]>('gmb-reviews', {
+    locationId: filtro?.locationId,
+    filtro: filtro?.filtro,
+  });
+  return {
+    status: (json.status as MarketingGmbReviewsResponse['status']) ?? 'desconectado',
+    total: (json.count as number | undefined) ?? 0,
+    itens: Array.isArray(json.data) ? json.data : [],
+  };
+}
+
+export async function responderMarketingGmbReview(
+  body: { reviewId: string; texto: string },
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId('/api/marketing/gmb-review/responder', actorId), body);
+}
+
+// --- Notificações (Rotinas + Templates) — mesmo sistema genérico do
+// Financeiro/Gestão/Administrativo, fixado no servidor em modulo=marketing,
+// confirmado pela Lovable em 31/08/2026. Reaproveita os mesmos tipos do
+// Financeiro (mesmo formato de linha). ---
+
+export type MarketingNotifPublicoTipo = FinanceiroNotifPublicoTipo;
+export type MarketingNotifRotinaItem = FinanceiroNotifRotinaItem;
+export type MarketingNotifRotinasResponse = { rotinas: MarketingNotifRotinaItem[]; count: number };
+export type MarketingNotifRotinaWriteBody = FinanceiroNotifRotinaWriteBody;
+
+export async function fetchMarketingNotifRotinas(params?: {
+  q?: string;
+  ativa?: boolean;
+}): Promise<MarketingNotifRotinasResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativa !== undefined) search.set('ativa', String(params.ativa));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/marketing/notif-rotinas${query}`);
+  return json.data as MarketingNotifRotinasResponse;
+}
+
+export async function createMarketingNotifRotina(
+  body: MarketingNotifRotinaWriteBody,
+  actorId?: string | null
+): Promise<MarketingNotifRotinaItem> {
+  const json = await api.post(withActorId('/api/marketing/notif-rotinas', actorId), body);
+  return json.data as MarketingNotifRotinaItem;
+}
+
+export async function updateMarketingNotifRotina(
+  id: string,
+  body: MarketingNotifRotinaWriteBody,
+  actorId?: string | null
+): Promise<MarketingNotifRotinaItem> {
+  const json = await api.patch(withActorId(`/api/marketing/notif-rotinas/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as MarketingNotifRotinaItem;
+}
+
+export async function deleteMarketingNotifRotina(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/marketing/notif-rotinas/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function executarMarketingNotifRotina(
+  id: string,
+  actorId?: string | null
+): Promise<MarketingNotifRotinaItem> {
+  const json = await api.post(withActorId(`/api/marketing/notif-rotinas/${encodeURIComponent(id)}/executar`, actorId));
+  return json.data as MarketingNotifRotinaItem;
+}
+
+export type MarketingNotifTemplateItem = FinanceiroNotifTemplateItem;
+export type MarketingNotifTemplatesResponse = { templates: MarketingNotifTemplateItem[]; count: number };
+export type MarketingNotifTemplateWriteBody = FinanceiroNotifTemplateWriteBody;
+
+export async function fetchMarketingNotifTemplates(params?: {
+  q?: string;
+  ativo?: boolean;
+}): Promise<MarketingNotifTemplatesResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativo !== undefined) search.set('ativo', String(params.ativo));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/marketing/notif-templates${query}`);
+  return json.data as MarketingNotifTemplatesResponse;
+}
+
+export async function createMarketingNotifTemplate(
+  body: MarketingNotifTemplateWriteBody,
+  actorId?: string | null
+): Promise<MarketingNotifTemplateItem> {
+  const json = await api.post(withActorId('/api/marketing/notif-templates', actorId), body);
+  return json.data as MarketingNotifTemplateItem;
+}
+
+export async function updateMarketingNotifTemplate(
+  id: string,
+  body: MarketingNotifTemplateWriteBody,
+  actorId?: string | null
+): Promise<MarketingNotifTemplateItem> {
+  const json = await api.patch(withActorId(`/api/marketing/notif-templates/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as MarketingNotifTemplateItem;
+}
+
+export async function deleteMarketingNotifTemplate(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/marketing/notif-templates/${encodeURIComponent(id)}`, actorId));
+}
+
+// --- Leva+ (programa de fidelidade) — reaproveita /api/public/internal/leva-mais. ---
+
+export type MarketingLevaMaisTotals = {
+  transactionCount: number;
+  totalRevenue: number;
+  avgTicket: number;
+  totalPointsGenerated: number;
+  totalPointsRedeemed: number;
+  totalRegisteredClients: number;
+  newClientsInPeriod: number;
+  activeClients: number;
+  recurringClients: number;
+  returnRatePct: number;
+  recurrenceRatePct: number;
+  avgFrequencyPerActiveClient: number;
+};
+
+export type MarketingLevaMaisByStoreItem = {
+  storeId: string;
+  storeName: string;
+  cnpj: string | null;
+  transactionCount: number;
+  revenue: number;
+  pointsGenerated: number;
+  pointsRedeemed: number;
+  uniqueClients: number;
+  avgTicket: number;
+};
+
+export type MarketingLevaMaisByDayItem = Record<string, unknown>;
+
+export type MarketingLevaMaisMetricas = {
+  totals: MarketingLevaMaisTotals;
+  byStore: MarketingLevaMaisByStoreItem[];
+  byDay: MarketingLevaMaisByDayItem[];
+};
+
+const MARKETING_LEVA_MAIS_TOTALS_VAZIOS: MarketingLevaMaisTotals = {
+  transactionCount: 0,
+  totalRevenue: 0,
+  avgTicket: 0,
+  totalPointsGenerated: 0,
+  totalPointsRedeemed: 0,
+  totalRegisteredClients: 0,
+  newClientsInPeriod: 0,
+  activeClients: 0,
+  recurringClients: 0,
+  returnRatePct: 0,
+  recurrenceRatePct: 0,
+  avgFrequencyPerActiveClient: 0,
+};
+
+export async function fetchMarketingLevaMaisMetricas(filtro: {
+  startDate: string;
+  endDate: string;
+  storeId?: string;
+}): Promise<MarketingLevaMaisMetricas> {
+  const { data } = await fetchMarketingRecurso<Partial<MarketingLevaMaisMetricas>>('leva-metricas', {
+    startDate: filtro.startDate,
+    endDate: filtro.endDate,
+    storeId: filtro.storeId,
+  });
+  return {
+    totals: { ...MARKETING_LEVA_MAIS_TOTALS_VAZIOS, ...(data.totals ?? {}) },
+    byStore: data.byStore ?? [],
+    byDay: data.byDay ?? [],
+  };
+}
+
+export type MarketingLevaMaisLoja = { storeId: string; storeName: string; cnpj?: string | null };
+
+export async function fetchMarketingLevaMaisLojas(): Promise<MarketingLevaMaisLoja[]> {
+  const { data } = await fetchMarketingRecurso<MarketingLevaMaisLoja[] | { lojas: MarketingLevaMaisLoja[] }>('leva-lojas');
+  return Array.isArray(data) ? data : (data as { lojas?: MarketingLevaMaisLoja[] })?.lojas ?? [];
+}
+
+export type MarketingLevaMaisFrentista = {
+  posicao?: number;
+  nome: string | null;
+  posto: string | null;
+  cadastros: number;
+  cashbackGerado: number;
+  pontos: number;
+};
+
+export async function fetchMarketingLevaMaisFrentistas(): Promise<MarketingLevaMaisFrentista[]> {
+  const { data } = await fetchMarketingRecurso<
+    MarketingLevaMaisFrentista[] | { frentistas: MarketingLevaMaisFrentista[] }
+  >('leva-frentistas');
+  return Array.isArray(data) ? data : (data as { frentistas?: MarketingLevaMaisFrentista[] })?.frentistas ?? [];
+}
+
+export type MarketingLevaMaisStatus = {
+  lojasCadastradas: number;
+  frentistasAtivos: number;
+  cashbackEmitido: number;
+  transacoesNoPeriodo: number;
+};
+
+export async function fetchMarketingLevaMaisStatus(): Promise<Partial<MarketingLevaMaisStatus>> {
+  const { data } = await fetchMarketingRecurso<Partial<MarketingLevaMaisStatus>>('leva-status');
+  return data ?? {};
 }

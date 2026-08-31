@@ -104,6 +104,15 @@ import {
   AdministrativoNotificationsScreen,
 } from './Administrativo';
 import {
+  MarketingDashboardScreen,
+  MarketingProfileScreen,
+  MarketingOcorrenciasScreen,
+  MarketingWhatsAppScreen,
+  MarketingGoogleScreen,
+  MarketingNotificationsScreen,
+  MarketingLevaMaisScreen,
+} from './Marketing';
+import {
   AdminDashboardScreen,
   AdminProfileScreen,
   AdminUsuariosScreen,
@@ -302,6 +311,13 @@ export type RootStackParamList = {
   AdministrativoInsumos: undefined;
   AdministrativoFrota: undefined;
   AdministrativoNotifications: undefined;
+  MarketingDashboard: undefined;
+  MarketingProfile: undefined;
+  MarketingOcorrencias: undefined;
+  MarketingWhatsApp: undefined;
+  MarketingGoogle: undefined;
+  MarketingNotifications: undefined;
+  MarketingLevaMais: undefined;
 };
 
 export type ScreenProps<RouteName extends keyof RootStackParamList> = NativeStackScreenProps<
@@ -439,7 +455,7 @@ type SideMenuRoute =
   | 'Requests'
   | 'Profile';
 
-export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo';
+export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo' | 'marketing';
 
 type DirectorSideMenuRoute =
   | 'DirectorDashboard'
@@ -547,6 +563,15 @@ export type AdministrativoSideMenuRoute =
   | 'AdministrativoFrota'
   | 'AdministrativoNotifications'
   | 'AdministrativoProfile';
+
+export type MarketingSideMenuRoute =
+  | 'MarketingDashboard'
+  | 'MarketingOcorrencias'
+  | 'MarketingWhatsApp'
+  | 'MarketingGoogle'
+  | 'MarketingNotifications'
+  | 'MarketingLevaMais'
+  | 'MarketingProfile';
 
 type SummaryCardItem = {
   id: string;
@@ -1585,6 +1610,22 @@ export const administrativoUser = {
 // (perfil "Administrador" da plataforma, que é diferente deste).
 export const administrativoUserInitials = 'OP';
 
+// Mesmo padrão do administrativoUser: front primeiro, back depois (não vem
+// de AuthIdentityContext).
+export const marketingUser = {
+  fullName: 'Marketing & Fidelidade',
+  role: 'Marketing & Fidelidade',
+  roleAndUnit: 'Marketing & Fidelidade · American Fuel',
+  area: 'Ocorrências, WhatsApp, Google e Leva+',
+  email: 'marketing@americanfuel.com.br',
+  phone: '(11) 99120-0000',
+  accessLabel: 'Atendimento omnichannel, WhatsApp e programa Leva+',
+};
+
+// "MK" fixo (Marketing) — evita confundir com outros perfis já usados
+// ("AD"/"OP"/"GT" etc).
+export const marketingUserInitials = 'MK';
+
 export const gestaoSideMenuSections: Array<{
   title: string;
   items: Array<{
@@ -1647,6 +1688,31 @@ export const administrativoSideMenuSections: Array<{
   {
     title: 'ADMINISTRAÇÃO',
     items: [{ id: 'administrativo-notifications', label: 'Notificações', icon: 'bell', route: 'AdministrativoNotifications' }],
+  },
+];
+
+export const marketingSideMenuSections: Array<{
+  title: string;
+  items: Array<{
+    id: string;
+    label: string;
+    icon: keyof typeof Feather.glyphMap;
+    route?: MarketingSideMenuRoute;
+  }>;
+}> = [
+  {
+    title: 'OPERAÇÃO',
+    items: [
+      { id: 'marketing-dashboard', label: 'Dashboard', icon: 'grid', route: 'MarketingDashboard' },
+      { id: 'marketing-ocorrencias', label: 'Ocorrências', icon: 'inbox', route: 'MarketingOcorrencias' },
+      { id: 'marketing-whatsapp', label: 'WhatsApp', icon: 'message-circle', route: 'MarketingWhatsApp' },
+      { id: 'marketing-google', label: 'Google', icon: 'star', route: 'MarketingGoogle' },
+      { id: 'marketing-notifications', label: 'Notificações', icon: 'bell', route: 'MarketingNotifications' },
+    ],
+  },
+  {
+    title: 'FIDELIDADE',
+    items: [{ id: 'marketing-leva-mais', label: 'Leva+', icon: 'heart', route: 'MarketingLevaMais' }],
   },
 ];
 
@@ -2955,6 +3021,13 @@ export default function App() {
                     <Stack.Screen name="AdministrativoInsumos" component={AdministrativoInsumosScreen} />
                     <Stack.Screen name="AdministrativoFrota" component={AdministrativoFrotaScreen} />
                     <Stack.Screen name="AdministrativoNotifications" component={AdministrativoNotificationsScreen} />
+                    <Stack.Screen name="MarketingDashboard" component={MarketingDashboardScreen} />
+                    <Stack.Screen name="MarketingProfile" component={MarketingProfileScreen} />
+                    <Stack.Screen name="MarketingOcorrencias" component={MarketingOcorrenciasScreen} />
+                    <Stack.Screen name="MarketingWhatsApp" component={MarketingWhatsAppScreen} />
+                    <Stack.Screen name="MarketingGoogle" component={MarketingGoogleScreen} />
+                    <Stack.Screen name="MarketingNotifications" component={MarketingNotificationsScreen} />
+                    <Stack.Screen name="MarketingLevaMais" component={MarketingLevaMaisScreen} />
                   </Stack.Navigator>
 
                   {isMenuOpen ? (
@@ -3047,6 +3120,8 @@ function getDashboardRouteForRole(role: UserRole): keyof RootStackParamList {
     ? 'GestaoDashboard'
     : role === 'administrativo'
     ? 'AdministrativoDashboard'
+    : role === 'marketing'
+    ? 'MarketingDashboard'
     : 'Dashboard';
 }
 
@@ -3326,6 +3401,13 @@ const PANEL_OPTION_META: Record<
     icon: 'tool',
     color: '#0F8B8D',
     tint: '#E3F4F4',
+  },
+  marketing: {
+    label: 'Marketing & Fidelidade',
+    subtitle: 'Ocorrências, WhatsApp, Google e Leva+',
+    icon: 'heart',
+    color: '#C2255C',
+    tint: '#FBE4ED',
   },
 };
 
@@ -13116,6 +13198,7 @@ export function SideMenuOverlay({
   const isFinanceiro = variant === 'financeiro';
   const isGestao = variant === 'gestao';
   const isAdministrativo = variant === 'administrativo';
+  const isMarketing = variant === 'marketing';
   const { identity } = useContext(AuthIdentityContext);
   const { perfil: colaboradorPerfil, isLoading: isLoadingColaboradorPerfil } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
@@ -13131,6 +13214,8 @@ export function SideMenuOverlay({
     ? gestaoSideMenuSections
     : isAdministrativo
     ? administrativoSideMenuSections
+    : isMarketing
+    ? marketingSideMenuSections
     : sideMenuSections;
   // Nome/cargo reais (rh_colaboradores, via ColaboradorPerfilContext) em
   // todos os painéis — nunca os mocks "Bruno Lyra"/"Marina Costa"/etc. Sem
@@ -13144,6 +13229,8 @@ export function SideMenuOverlay({
     ? 'Gestão'
     : isAdministrativo
     ? 'Administrativo'
+    : isMarketing
+    ? 'Marketing & Fidelidade'
     : (colaboradorPerfil?.cargo as string | undefined) ||
       (isLoadingColaboradorPerfil ? 'Carregando…' : identity?.colaboradorId ? '—' : 'Sem vínculo no RH');
   const headerGradientColors: [string, string] = isDirector
@@ -13158,6 +13245,8 @@ export function SideMenuOverlay({
     ? ['#7C3AED', '#9B6DF5']
     : isAdministrativo
     ? ['#0F8B8D', '#22B0B2']
+    : isMarketing
+    ? ['#9F1247', '#D6336C']
     : ['#2F4EA8', '#4C439E'];
   const insets = useSafeAreaInsets();
 
@@ -13170,6 +13259,7 @@ export function SideMenuOverlay({
       | FinanceiroSideMenuRoute
       | GestaoSideMenuRoute
       | AdministrativoSideMenuRoute
+      | MarketingSideMenuRoute
   ) => {
     onClose();
 
@@ -13293,6 +13383,7 @@ export function TopBar({
   const isFinanceiro = variant === 'financeiro';
   const isGestao = variant === 'gestao';
   const isAdministrativo = variant === 'administrativo';
+  const isMarketing = variant === 'marketing';
   const hasUnreadNotifications = colaboradorNotificationItems.some(
     (item) => item.unread && !readNotificationIds[item.id]
   );
@@ -13321,12 +13412,14 @@ export function TopBar({
         <GestaoBrandLogo />
       ) : isAdministrativo ? (
         <AdministrativoBrandLogo />
+      ) : isMarketing ? (
+        <MarketingBrandLogo />
       ) : (
         <BrandLogo compact theme={onColor ? 'light' : 'dark'} />
       )}
 
       <View style={styles.topBarRight}>
-        {isDirector || isRH || isAdmin || isFinanceiro || isGestao || isAdministrativo ? null : (
+        {isDirector || isRH || isAdmin || isFinanceiro || isGestao || isAdministrativo || isMarketing ? null : (
           <Pressable style={styles.notificationBellButton} onPress={openNotifications}>
             <Feather name="bell" size={17} color="#313951" />
             {hasUnreadNotifications ? <View style={styles.notificationBellDot} /> : null}
@@ -13341,6 +13434,7 @@ export function TopBar({
             isFinanceiro ? styles.avatarFinanceiro : null,
             isGestao ? styles.avatarGestao : null,
             isAdministrativo ? styles.avatarAdministrativo : null,
+            isMarketing ? styles.avatarMarketing : null,
           ]}
           onPress={onAvatarPress}
           disabled={!onAvatarPress}
@@ -13433,6 +13527,20 @@ function AdministrativoBrandLogo() {
       <View>
         <Text style={styles.administrativoBrandTitle}>Administrativo</Text>
         <Text style={styles.administrativoBrandSubtitle}>OPERAÇÃO DOS POSTOS</Text>
+      </View>
+    </View>
+  );
+}
+
+function MarketingBrandLogo() {
+  return (
+    <View style={styles.directorBrandRow}>
+      <View style={styles.marketingBrandIconShell}>
+        <Feather name="heart" size={16} color="#FFFFFF" />
+      </View>
+      <View>
+        <Text style={styles.marketingBrandTitle}>Marketing</Text>
+        <Text style={styles.marketingBrandSubtitle}>& FIDELIDADE</Text>
       </View>
     </View>
   );
@@ -14793,6 +14901,28 @@ export const styles = StyleSheet.create({
   },
   avatarAdministrativo: {
     backgroundColor: '#0F8B8D',
+  },
+  marketingBrandIconShell: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#C2255C',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  marketingBrandTitle: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  marketingBrandSubtitle: {
+    color: '#7C8397',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  avatarMarketing: {
+    backgroundColor: '#C2255C',
   },
   panelHero: {
     borderRadius: 24,

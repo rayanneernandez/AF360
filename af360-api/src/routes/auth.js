@@ -32,6 +32,12 @@ const KNOWN_GESTAO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'adminis
 // Tirar essa lista assim que o build novo (com o painel Administrativo) for
 // aprovado nas duas lojas e a flag global for ligada.
 const KNOWN_ADMINISTRATIVO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
+// Mesmo padrão pro painel "Marketing & Fidelidade" (Ocorrências, WhatsApp,
+// Google, Notificações, Leva+) — SÓ libera pra quem testa via Expo/dev
+// client, independente da flag global. Tirar essa lista assim que o build
+// novo (com o painel Marketing) for aprovado nas duas lojas e a flag global
+// for ligada.
+const KNOWN_MARKETING_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
 
 // normalizeModuleName/fetchEffectiveModules moram em ../permissions.js
 // (extraídas daqui em 27/07/2026 pra serem reaproveitadas por routes/admin.js
@@ -60,6 +66,11 @@ const GESTAO_ROLE_ENABLED = process.env.GESTAO_ROLE_ENABLED === 'true';
 // depois que o build novo do app (com o painel Administrativo) estiver
 // aprovado e disponível nas duas lojas.
 const ADMINISTRATIVO_ROLE_ENABLED = process.env.ADMINISTRATIVO_ROLE_ENABLED === 'true';
+// Mesmo motivo/mesmo remédio pro role "marketing" — DESLIGADO por padrão,
+// só ligar (MARKETING_ROLE_ENABLED=true nas env vars da Vercel) depois que o
+// build novo do app (com o painel Marketing & Fidelidade) estiver aprovado e
+// disponível nas duas lojas.
+const MARKETING_ROLE_ENABLED = process.env.MARKETING_ROLE_ENABLED === 'true';
 
 function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email }) {
   const roles = new Set();
@@ -75,6 +86,7 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
     roles.add('financeiro');
     if (GESTAO_ROLE_ENABLED) roles.add('gestao');
     if (ADMINISTRATIVO_ROLE_ENABLED) roles.add('administrativo');
+    if (MARKETING_ROLE_ENABLED) roles.add('marketing');
   }
 
   // b) Sinal real pro resto: módulos efetivos (Cargo ∪ user_modules).
@@ -92,6 +104,9 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   // "Administrativo" (Alvarás/Manutenções/Almoxarifado/Frota) — ver
   // ADMINISTRATIVO_ROLE_ENABLED acima.
   if (ADMINISTRATIVO_ROLE_ENABLED && effectiveModules?.has('administrativo')) roles.add('administrativo');
+  // "Marketing & Fidelidade" (Ocorrências/WhatsApp/Google/Notificações/
+  // Leva+) — ver MARKETING_ROLE_ENABLED acima.
+  if (MARKETING_ROLE_ENABLED && effectiveModules?.has('marketing')) roles.add('marketing');
 
   // c) Ponte temporária por e-mail conhecido — só pra cobrir usuários de
   // teste cujo acesso ainda não tem os módulos certos configurados.
@@ -100,6 +115,7 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   if (KNOWN_RH_EMAILS.includes(normalizedEmail)) roles.add('rh');
   if (KNOWN_GESTAO_TEST_EMAILS.includes(normalizedEmail)) roles.add('gestao');
   if (KNOWN_ADMINISTRATIVO_TEST_EMAILS.includes(normalizedEmail)) roles.add('administrativo');
+  if (KNOWN_MARKETING_TEST_EMAILS.includes(normalizedEmail)) roles.add('marketing');
 
   // d) 'Colaborador' entra na lista quando existe ficha real em
   // rh_colaboradores vinculada (profile_id) OU quando o Cargo/user_modules
@@ -109,12 +125,11 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   // não houver ficha de RH vinculada, o app mostra estado vazio honesto
   // ("Seu acesso ainda não está vinculado a um colaborador no RH...") em vez
   // de fabricar dado — nunca finge um painel pessoal com números inventados.
-  // Marketing sozinho (sem RH/Diretoria/Administrador/Colaborador/
-  // Financeiro/Gestão/Administrativo) não entra em nenhum painel de
-  // propósito — o app mobile tem 7 perfis (colaborador, rh, diretoria,
-  // administrador, financeiro, gestao, administrativo). "Financeiro" foi
-  // ligado em 21/08/2026, "Gestão" em 28/08/2026, "Administrativo" em
-  // 31/08/2026 (ambos atrás de flag, ver ADMINISTRATIVO_ROLE_ENABLED acima).
+  // O app mobile tem 8 perfis (colaborador, rh, diretoria, administrador,
+  // financeiro, gestao, administrativo, marketing). "Financeiro" foi ligado
+  // em 21/08/2026, "Gestão" em 28/08/2026, "Administrativo" e "Marketing &
+  // Fidelidade" em 31/08/2026 (todos atrás de flag, ver
+  // ADMINISTRATIVO_ROLE_ENABLED/MARKETING_ROLE_ENABLED acima).
   if (rhColaborador || effectiveModules?.has('colaborador')) roles.add('colaborador');
 
   return Array.from(roles);
