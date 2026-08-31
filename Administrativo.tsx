@@ -1010,21 +1010,15 @@ export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'Admini
         ) : items.length === 0 ? (
           <AdmEmptyState message="Nenhum chamado encontrado." />
         ) : (
-          items.map((item, idx) => {
-            const raw = item as unknown as Record<string, unknown>;
-            const protocolo = pickInsumoField(raw, ['protocolo', 'numero_protocolo', 'codigo', 'numero']) ?? '—';
-            const titulo =
-              pickInsumoField(raw, ['titulo', 'problema', 'assunto', 'titulo_problema', 'descricao_problema']) ??
-              'Chamado sem título';
-            const prioridade = pickInsumoField(raw, ['prioridade', 'nivel_prioridade', 'importancia']);
-            const postoNome = pickInsumoField(raw, ['posto_nome', 'posto']);
-            const local = pickInsumoField(raw, ['local', 'detalhe', 'local_detalhe']);
-            const descricao = pickInsumoField(raw, ['descricao', 'descricao_problema']);
-            const itemKey = pickInsumoField(raw, ['id']) ?? `chamado-${idx}`;
+          items.map((item) => {
+            const itemKey = item.id;
+            const prioridade = item.prioridade;
+            const prioridadeLabel = item.prioridade_label ?? prioridade ?? '—';
+            const subtitulo = [item.local, item.descricao].filter(Boolean).join(' - ') || item.posto_nome || '—';
             return (
             <View key={itemKey} style={adStyles.dreCard}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={adStyles.listRowMeta}>{protocolo}</Text>
+                <Text style={adStyles.listRowMeta}>{item.protocolo}</Text>
                 <View
                   style={[
                     adStyles.badge,
@@ -1045,14 +1039,19 @@ export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'Admini
                         : { color: '#5E667D' },
                     ]}
                   >
-                    {(prioridade ?? '—').toUpperCase()}
+                    {String(prioridadeLabel).toUpperCase()}
                   </Text>
                 </View>
               </View>
-              <Text style={adStyles.listRowTitle}>{titulo}</Text>
+              <Text style={adStyles.listRowTitle}>{item.titulo}</Text>
               <Text style={adStyles.listRowMeta} numberOfLines={2}>
-                {[postoNome, local, descricao].filter(Boolean).join(' · ') || '—'}
+                {subtitulo}
               </Text>
+              {item.posto_nome ? (
+                <Text style={adStyles.listRowMeta} numberOfLines={1}>
+                  {item.posto_nome}
+                </Text>
+              ) : null}
 
               <Pressable
                 style={[adStyles.statusDropdown, { marginTop: 10 }]}

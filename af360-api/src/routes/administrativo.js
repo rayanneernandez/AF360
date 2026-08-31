@@ -39,12 +39,15 @@ function writeErrorStatus(err) {
   return err.lovableStatus && err.lovableStatus >= 400 && err.lovableStatus < 500 ? 400 : 500;
 }
 
-// Alguns endpoints de lista podem não devolver o array debaixo de "data"
-// (varia por implementação) — em vez de assumir uma chave fixa e devolver
-// [] silenciosamente quando ela não bate (o que parecia "sem erro, mas sem
-// dado nenhum" no app), procura o primeiro array de verdade na resposta.
+// Confirmado com a Lovable em 31/08/2026: as listas do Administrativo
+// (licencas/chamados/insumos/frota) vêm dentro de "itens" — junto com
+// metadados extras no mesmo nível (ex: chamados também traz "total",
+// "abertos" e "por_status", que É outro array e NÃO deve ser confundido
+// com a lista real). Por isso a ordem de prioridade é: itens > data >
+// (fallback) primeiro array encontrado — nessa ordem, nunca o contrário.
 function extractArrayPayload(json) {
   if (Array.isArray(json)) return { rows: json, count: json.length };
+  if (Array.isArray(json?.itens)) return { rows: json.itens, count: json.total ?? json.count ?? json.itens.length };
   if (Array.isArray(json?.data)) return { rows: json.data, count: json.count ?? json.data.length };
   if (json && typeof json === 'object') {
     for (const key of Object.keys(json)) {

@@ -6679,6 +6679,7 @@ export type AdministrativoChamadoItem = {
   posto_id: string | null;
   posto_nome: string | null;
   prioridade: AdministrativoChamadoPrioridade;
+  prioridade_label?: string | null;
   responsavel: string | null;
   status: AdministrativoChamadoStatus;
   aberto_em: string | null;
