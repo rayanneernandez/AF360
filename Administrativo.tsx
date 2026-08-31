@@ -27,6 +27,7 @@ import type {
 } from './App';
 import {
   fetchAdministrativoDashboard,
+  fetchRhUnidades,
   fetchAdministrativoLicencas,
   createAdministrativoLicenca,
   updateAdministrativoLicenca,
@@ -63,6 +64,7 @@ import {
   type AdministrativoNotifRotinaItem,
   type AdministrativoNotifTemplateItem,
   type AdministrativoNotifPublicoTipo,
+  type RhUnidadeItem,
 } from './api';
 
 // --- Helpers genéricos (mesmo padrão do Gestao.tsx/Financeiro.tsx) ---
@@ -80,6 +82,141 @@ function formatNumeroBR(value: number | null | undefined, decimais = 0): string 
 function showAdmError(err: unknown, fallback: string) {
   const message = err instanceof Error ? err.message : fallback;
   return message || fallback;
+}
+
+function toIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+const admMesesNomes = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+function admPeriodoDatas(periodo: 'mes' | 'ano', refMes: number, refAno: number): { dataInicial: string; dataFinal: string } {
+  if (periodo === 'ano') {
+    return { dataInicial: `${refAno}-01-01`, dataFinal: `${refAno}-12-31` };
+  }
+  const inicio = new Date(refAno, refMes - 1, 1);
+  const fim = new Date(refAno, refMes, 0);
+  return { dataInicial: toIsoDate(inicio), dataFinal: toIsoDate(fim) };
+}
+
+function useAdmPeriodoNav() {
+  const now = new Date();
+  const [periodo, setPeriodo] = useState<'mes' | 'ano'>('mes');
+  const [refMes, setRefMes] = useState(now.getMonth() + 1);
+  const [refAno, setRefAno] = useState(now.getFullYear());
+
+  const handleAnterior = () => {
+    if (periodo === 'ano') {
+      setRefAno((a) => a - 1);
+      return;
+    }
+    if (refMes === 1) {
+      setRefMes(12);
+      setRefAno((a) => a - 1);
+    } else {
+      setRefMes((m) => m - 1);
+    }
+  };
+  const handleProximo = () => {
+    if (periodo === 'ano') {
+      setRefAno((a) => a + 1);
+      return;
+    }
+    if (refMes === 12) {
+      setRefMes(1);
+      setRefAno((a) => a + 1);
+    } else {
+      setRefMes((m) => m + 1);
+    }
+  };
+  const handleReset = () => {
+    const today = new Date();
+    setRefMes(today.getMonth() + 1);
+    setRefAno(today.getFullYear());
+  };
+
+  return { periodo, setPeriodo, refMes, refAno, handleAnterior, handleProximo, handleReset };
+}
+
+function AdmPeriodoFiltro({
+  periodo,
+  onChangePeriodo,
+  refMes,
+  refAno,
+  onAnterior,
+  onProximo,
+  onReset,
+}: {
+  periodo: 'mes' | 'ano';
+  onChangePeriodo: (p: 'mes' | 'ano') => void;
+  refMes: number;
+  refAno: number;
+  onAnterior: () => void;
+  onProximo: () => void;
+  onReset: () => void;
+}) {
+  const periodoLabel = periodo === 'ano' ? String(refAno) : `${admMesesNomes[refMes - 1]} / ${refAno}`;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <View style={adStyles.periodoSegmentRow}>
+        {(['mes', 'ano'] as const).map((opt) => {
+          const isActive = periodo === opt;
+          return (
+            <Pressable
+              key={opt}
+              style={[adStyles.periodoSegmentButton, isActive ? adStyles.periodoSegmentButtonActive : null]}
+              onPress={() => onChangePeriodo(opt)}
+            >
+              <Text style={[adStyles.periodoSegmentText, isActive ? adStyles.periodoSegmentTextActive : null]}>
+                {opt === 'mes' ? 'Mês' : 'Ano'}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Pressable onPress={onAnterior} style={adStyles.monthNavButton}>
+        <Feather name="chevron-left" size={16} color="#5E667D" />
+      </Pressable>
+      <Text style={adStyles.monthLabel} numberOfLines={1}>
+        {periodoLabel}
+      </Text>
+      <Pressable onPress={onProximo} style={adStyles.monthNavButton}>
+        <Feather name="chevron-right" size={16} color="#5E667D" />
+      </Pressable>
+      <Pressable onPress={onReset} style={adStyles.monthNavButton}>
+        <Feather name="rotate-ccw" size={14} color="#5E667D" />
+      </Pressable>
+    </View>
+  );
+}
+
+// Postos pro seletor "Rede toda" — reaproveita fetchRhUnidades (tabela
+// `empresas` no Supabase do Lovable), o mesmo id (`empresas.id`) que o
+// contrato do Administrativo usa em `postoIds`.
+function useAdmPostos() {
+  const [postos, setPostos] = useState<RhUnidadeItem[]>([]);
+  const [postoSelecionado, setPostoSelecionado] = useState<string | null>(null);
+  const [postoModalOpen, setPostoModalOpen] = useState(false);
+
+  useEffect(() => {
+    fetchRhUnidades()
+      .then(setPostos)
+      .catch(() => setPostos([]));
+  }, []);
+
+  const postoLabel = postoSelecionado ? postos.find((p) => p.id === postoSelecionado)?.nome ?? 'Posto' : 'Rede toda';
+  const postoOptions = useMemo(
+    () => [{ value: null as string | null, label: 'Rede toda' }, ...postos.map((p) => ({ value: p.id, label: p.nome }))],
+    [postos]
+  );
+
+  return { postos, postoSelecionado, setPostoSelecionado, postoModalOpen, setPostoModalOpen, postoLabel, postoOptions };
 }
 
 function AdmPageHeader({
@@ -245,6 +382,8 @@ function pickInsumoField(item: Record<string, unknown>, keys: string[]): string 
 }
 
 export function AdministrativoDashboardScreen({ navigation }: ScreenProps<'AdministrativoDashboard'>) {
+  const { periodo, setPeriodo, refMes, refAno, handleAnterior, handleProximo, handleReset } = useAdmPeriodoNav();
+  const { postoSelecionado, setPostoSelecionado, postoModalOpen, setPostoModalOpen, postoLabel, postoOptions } = useAdmPostos();
   const [data, setData] = useState<AdministrativoDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -253,11 +392,12 @@ export function AdministrativoDashboardScreen({ navigation }: ScreenProps<'Admin
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchAdministrativoDashboard()
+    const { dataInicial, dataFinal } = admPeriodoDatas(periodo, refMes, refAno);
+    fetchAdministrativoDashboard({ dataInicial, dataFinal, postoIds: postoSelecionado ? [postoSelecionado] : undefined })
       .then(setData)
       .catch((err) => setErrorMessage(showAdmError(err, 'Não foi possível carregar o dashboard.')))
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [periodo, refMes, refAno, postoSelecionado]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -271,6 +411,18 @@ export function AdministrativoDashboardScreen({ navigation }: ScreenProps<'Admin
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <AdmPageHeader icon="grid" title="Dashboard" subtitle="Visão consolidada de alvarás, manutenções, almoxarifado e frota." />
+
+        <AdmPeriodoFiltro
+          periodo={periodo}
+          onChangePeriodo={setPeriodo}
+          refMes={refMes}
+          refAno={refAno}
+          onAnterior={handleAnterior}
+          onProximo={handleProximo}
+          onReset={handleReset}
+        />
+        <AdmSelectButton label={postoLabel} onPress={() => setPostoModalOpen(true)} />
+        <View style={{ height: 12 }} />
 
         {isLoading ? (
           <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
@@ -444,6 +596,15 @@ export function AdministrativoDashboardScreen({ navigation }: ScreenProps<'Admin
           </>
         )}
       </ScrollView>
+
+      <AdmSelectModal
+        visible={postoModalOpen}
+        title="Posto"
+        options={postoOptions}
+        selectedValue={postoSelecionado}
+        onSelect={setPostoSelecionado}
+        onClose={() => setPostoModalOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -1772,6 +1933,47 @@ const adStyles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     color: '#0C1736',
+  },
+  periodoSegmentRow: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  periodoSegmentButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  periodoSegmentButtonActive: {
+    backgroundColor: '#0C1736',
+  },
+  periodoSegmentText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#5E667D',
+  },
+  periodoSegmentTextActive: {
+    color: '#FFFFFF',
+  },
+  monthNavButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  monthLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0C1736',
+    flexShrink: 1,
   },
   selectButton: {
     flexDirection: 'row',
