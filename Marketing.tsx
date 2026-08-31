@@ -5,6 +5,9 @@ import { useIsFocused } from '@react-navigation/native';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PieChart, LineChart } from 'react-native-gifted-charts';
+import * as Clipboard from 'expo-clipboard';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   styles,
   TopBar,
@@ -31,7 +34,9 @@ import {
   fetchMarketingOcorrencia,
   createMarketingOcorrencia,
   createMarketingMensagem,
+  createMarketingAnexo,
   updateMarketingOcorrencia,
+  fetchRhColaboradores,
   fetchMarketingWaConversas,
   fetchMarketingWaMensagens,
   sendMarketingWaMensagem,
@@ -70,6 +75,7 @@ import {
   type MarketingNotifRotinaItem,
   type MarketingNotifTemplateItem,
   type MarketingNotifPublicoTipo,
+  type RhColaboradorRaw,
 } from './api';
 
 // --- Helpers genéricos (mesmo padrão do Administrativo.tsx/Gestao.tsx) ---
@@ -357,6 +363,75 @@ function MktInlineSelect<T extends string | null>({
 
 function MktFormLabel({ children }: { children: React.ReactNode }) {
   return <Text style={mkStyles.formLabel}>{children}</Text>;
+}
+
+// Dropdown que flutua POR CIMA do restante do conteúdo (igual ao <select>
+// nativo do web), em vez de empurrar o layout pra baixo como o
+// MktInlineSelect. Não usa <Modal> (evitando o bug de dois <Modal> nativos
+// abertos ao mesmo tempo não responderem a toque) — é só um View absoluto
+// com zIndex/elevation alto, renderizado como último filho do campo.
+function MktFieldDropdown<T extends string | null>({
+  label,
+  options,
+  selectedValue,
+  isOpen,
+  onToggle,
+  onSelect,
+  searchable,
+}: {
+  label: string;
+  options: Array<{ value: T; label: string; color?: string }>;
+  selectedValue: T;
+  isOpen: boolean;
+  onToggle: () => void;
+  onSelect: (value: T) => void;
+  searchable?: boolean;
+}) {
+  const [busca, setBusca] = useState('');
+  const filtered = searchable && busca.trim() ? options.filter((o) => o.label.toLowerCase().includes(busca.trim().toLowerCase())) : options;
+  return (
+    <View style={{ position: 'relative', zIndex: isOpen ? 200 : 1 }}>
+      <Pressable style={mkStyles.selectButton} onPress={onToggle}>
+        <Text style={mkStyles.selectButtonText} numberOfLines={1}>
+          {label}
+        </Text>
+        <Feather name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#5E667D" />
+      </Pressable>
+      {isOpen ? (
+        <View style={mkStyles.overlayDropdown}>
+          {searchable ? (
+            <TextInput
+              style={mkStyles.overlayDropdownSearch}
+              value={busca}
+              onChangeText={setBusca}
+              placeholder="Buscar..."
+              placeholderTextColor="#A7AEC2"
+            />
+          ) : null}
+          <ScrollView style={{ maxHeight: 260 }} keyboardShouldPersistTaps="handled">
+            {filtered.map((opt) => {
+              const isSelected = selectedValue === opt.value;
+              return (
+                <Pressable
+                  key={opt.label}
+                  style={[mkStyles.overlayDropdownItem, isSelected ? { backgroundColor: opt.color ?? '#C2255C' } : null]}
+                  onPress={() => {
+                    onSelect(opt.value);
+                    setBusca('');
+                  }}
+                >
+                  <Text style={[mkStyles.overlayDropdownItemText, isSelected ? { color: '#FFFFFF', fontWeight: '800' } : null]} numberOfLines={1}>
+                    {opt.label}
+                  </Text>
+                  {isSelected ? <Feather name="check" size={14} color="#FFFFFF" style={{ marginLeft: 'auto' }} /> : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 function MktSelectButton({ label, onPress }: { label: string; onPress: () => void }) {
@@ -826,6 +901,23 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
   const [respostaTexto, setRespostaTexto] = useState('');
   const [respostaInterna, setRespostaInterna] = useState(false);
   const [isSendingResposta, setIsSendingResposta] = useState(false);
+  const [justCopiedProtocolo, setJustCopiedProtocolo] = useState(false);
+  const [openField, setOpenField] = useState<'status' | 'prioridade' | 'responsavel' | null>(null);
+  const [responsaveis, setResponsaveis] = useState<Array<{ id: string; nome: string }>>([]);
+  const [isUploadingAnexo, setIsUploadingAnexo] = useState(false);
+
+  useEffect(() => {
+    fetchRhColaboradores()
+      .then((rows: RhColaboradorRaw[]) =>
+        setResponsaveis(
+          rows
+            .filter((r) => r.nome_completo)
+            .map((r) => ({ id: r.id, nome: r.nome_completo as string }))
+            .sort((a, b) => a.nome.localeCompare(b.nome))
+        )
+      )
+      .catch(() => setResponsaveis([]));
+  }, []);
 
   const filtro: MarketingOcorrenciaFiltro = useMemo(
     () => ({ q: busca || undefined, status: status ?? undefined, canal: canal ?? undefined, prioridade: prioridade ?? undefined }),
@@ -851,11 +943,56 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
     setDetalhe(null);
     setRespostaTexto('');
     setRespostaInterna(false);
+    setOpenField(null);
     setIsLoadingDetalhe(true);
     fetchMarketingOcorrencia(id)
       .then(setDetalhe)
       .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível carregar a ocorrência.')))
       .finally(() => setIsLoadingDetalhe(false));
+  };
+
+  const handleCopyProtocolo = () => {
+    if (!detalhe) return;
+    Clipboard.setStringAsync(detalhe.ocorrencia.protocolo)
+      .then(() => {
+        setJustCopiedProtocolo(true);
+        setTimeout(() => setJustCopiedProtocolo(false), 1500);
+      })
+      .catch(() => Alert.alert('Não foi possível copiar', 'Tente novamente.'));
+  };
+
+  const ANEXO_MIMES_ACEITOS = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  const ANEXO_TAMANHO_MAXIMO_BYTES = 10 * 1024 * 1024;
+
+  const handleAnexarArquivo = async () => {
+    if (!detalheId) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ANEXO_MIMES_ACEITOS,
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const mimeType = asset.mimeType ?? '';
+      if (!ANEXO_MIMES_ACEITOS.includes(mimeType)) {
+        Alert.alert('Arquivo inválido', 'Envie uma imagem (JPG/PNG/WEBP) ou PDF.');
+        return;
+      }
+      if ((asset.size ?? 0) > ANEXO_TAMANHO_MAXIMO_BYTES) {
+        Alert.alert('Arquivo muito grande', 'O tamanho máximo é 10MB.');
+        return;
+      }
+      setIsUploadingAnexo(true);
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+      await createMarketingAnexo(detalheId, { nome_arquivo: asset.name ?? 'anexo', arquivo_base64: base64, mime_type: mimeType }, actorId);
+      const atualizado = await fetchMarketingOcorrencia(detalheId);
+      setDetalhe(atualizado);
+    } catch (err) {
+      Alert.alert('Erro', showMktError(err, 'Não foi possível enviar o anexo.'));
+    } finally {
+      setIsUploadingAnexo(false);
+    }
   };
 
   const handleCriar = () => {
@@ -903,9 +1040,10 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
       .finally(() => setIsSendingResposta(false));
   };
 
-  const handleSalvarPainel = (novoStatus: MarketingOcorrenciaStatus, novaPrioridade: MarketingOcorrenciaPrioridade) => {
+  const handleSalvarPainel = (patch: { status?: MarketingOcorrenciaStatus; prioridade?: MarketingOcorrenciaPrioridade; responsavel_id?: string }) => {
     if (!detalheId) return;
-    updateMarketingOcorrencia(detalheId, { status: novoStatus, prioridade: novaPrioridade }, actorId)
+    setOpenField(null);
+    updateMarketingOcorrencia(detalheId, patch, actorId)
       .then(() => fetchMarketingOcorrencia(detalheId).then(setDetalhe))
       .then(() => load())
       .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível salvar as alterações.')));
@@ -1057,13 +1195,56 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
         </Pressable>
       </MktModal>
 
-      <MktModal visible={detalheId != null} title={detalhe?.ocorrencia.protocolo ?? 'Ocorrência'} onClose={() => setDetalheId(null)}>
+      <MktModal
+        visible={detalheId != null}
+        title=""
+        onClose={() => {
+          setDetalheId(null);
+          setOpenField(null);
+        }}
+      >
         {isLoadingDetalhe ? (
           <ActivityIndicator color="#C2255C" style={{ marginTop: 12 }} />
         ) : !detalhe ? (
           <MktEmptyState message="Não foi possível carregar os detalhes." />
         ) : (
           <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+              <Text style={mkStyles.listRowTitle}>{detalhe.ocorrencia.protocolo}</Text>
+              <Pressable onPress={handleCopyProtocolo} hitSlop={8}>
+                <Feather name={justCopiedProtocolo ? 'check' : 'copy'} size={15} color={justCopiedProtocolo ? '#2FB170' : '#5E667D'} />
+              </Pressable>
+              <View style={[mkStyles.badge, { backgroundColor: '#F1F2F6' }]}>
+                <Text style={[mkStyles.badgeText, { color: '#5E667D' }]}>{detalhe.ocorrencia.status_label ?? detalhe.ocorrencia.status}</Text>
+              </View>
+              <View
+                style={[
+                  mkStyles.badge,
+                  detalhe.ocorrencia.prioridade === 'alta'
+                    ? { backgroundColor: '#FBE4E7' }
+                    : detalhe.ocorrencia.prioridade === 'media'
+                    ? { backgroundColor: '#FEF3D6' }
+                    : { backgroundColor: '#F1F2F6' },
+                ]}
+              >
+                <Text
+                  style={[
+                    mkStyles.badgeText,
+                    detalhe.ocorrencia.prioridade === 'alta'
+                      ? { color: '#C2263A' }
+                      : detalhe.ocorrencia.prioridade === 'media'
+                      ? { color: '#8A6D1D' }
+                      : { color: '#5E667D' },
+                  ]}
+                >
+                  {detalhe.ocorrencia.prioridade_label ?? detalhe.ocorrencia.prioridade}
+                </Text>
+              </View>
+              <View style={[mkStyles.badge, { backgroundColor: '#FBE4ED' }]}>
+                <Text style={[mkStyles.badgeText, { color: '#C2255C' }]}>{detalhe.ocorrencia.canal_label ?? detalhe.ocorrencia.canal}</Text>
+              </View>
+            </View>
+
             <Text style={mkStyles.listRowTitle}>{detalhe.ocorrencia.assunto}</Text>
             {detalhe.ocorrencia.descricao ? <Text style={[mkStyles.listRowMeta, { marginTop: 4 }]}>{detalhe.ocorrencia.descricao}</Text> : null}
 
@@ -1124,21 +1305,64 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
             </Pressable>
 
             <View style={{ marginTop: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <Feather name="paperclip" size={13} color="#5E667D" />
+                <Text style={[mkStyles.sectionTitle, { marginBottom: 0 }]}>Evidências</Text>
+              </View>
+              <Pressable
+                style={[mkStyles.smallButton, { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }, isUploadingAnexo ? { opacity: 0.6 } : null]}
+                onPress={handleAnexarArquivo}
+                disabled={isUploadingAnexo}
+              >
+                <Feather name="upload" size={13} color="#FFFFFF" />
+                <Text style={mkStyles.smallButtonText}>{isUploadingAnexo ? 'Enviando...' : 'Anexar arquivo'}</Text>
+              </Pressable>
+              {detalhe.anexos.length === 0 ? (
+                <Text style={[mkStyles.listRowMeta, { marginTop: 8 }]}>Nenhuma evidência anexada. Aceita imagens e PDFs (máx. 10MB).</Text>
+              ) : (
+                detalhe.anexos.map((anexo) => (
+                  <View key={anexo.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                    <Feather name="file" size={13} color="#5E667D" />
+                    <Text style={mkStyles.listRowMeta} numberOfLines={1}>{anexo.nome_arquivo}</Text>
+                  </View>
+                ))
+              )}
+            </View>
+
+            <View style={{ marginTop: 16, zIndex: 50 }}>
               <Text style={mkStyles.sectionTitle}>Atendimento</Text>
               <MktFormLabel>Status</MktFormLabel>
-              <MktInlineSelect
+              <MktFieldDropdown
                 label={OCORRENCIA_STATUS_EDIT_OPTIONS.find((o) => o.value === detalhe.ocorrencia.status)?.label ?? detalhe.ocorrencia.status}
                 options={OCORRENCIA_STATUS_EDIT_OPTIONS}
                 selectedValue={detalhe.ocorrencia.status}
-                onSelect={(novoStatus) => handleSalvarPainel(novoStatus, detalhe.ocorrencia.prioridade)}
+                isOpen={openField === 'status'}
+                onToggle={() => setOpenField((f) => (f === 'status' ? null : 'status'))}
+                onSelect={(novoStatus) => handleSalvarPainel({ status: novoStatus })}
               />
               <View style={{ height: 10 }} />
               <MktFormLabel>Prioridade</MktFormLabel>
-              <MktInlineSelect
+              <MktFieldDropdown
                 label={OCORRENCIA_PRIORIDADE_OPTIONS.find((o) => o.value === detalhe.ocorrencia.prioridade)?.label ?? detalhe.ocorrencia.prioridade}
                 options={OCORRENCIA_PRIORIDADE_OPTIONS.filter((o) => o.value != null) as Array<{ value: MarketingOcorrenciaPrioridade; label: string }>}
                 selectedValue={detalhe.ocorrencia.prioridade}
-                onSelect={(novaPrioridade) => handleSalvarPainel(detalhe.ocorrencia.status, novaPrioridade)}
+                isOpen={openField === 'prioridade'}
+                onToggle={() => setOpenField((f) => (f === 'prioridade' ? null : 'prioridade'))}
+                onSelect={(novaPrioridade) => handleSalvarPainel({ prioridade: novaPrioridade })}
+              />
+              <View style={{ height: 10 }} />
+              <MktFormLabel>Responsável</MktFormLabel>
+              <MktFieldDropdown
+                label={detalhe.ocorrencia.responsavel_nome ?? 'Sem responsável'}
+                options={[
+                  { value: null as string | null, label: 'Sem responsável' },
+                  ...responsaveis.map((r) => ({ value: r.id as string | null, label: r.nome })),
+                ]}
+                selectedValue={responsaveis.find((r) => r.nome === detalhe.ocorrencia.responsavel_nome)?.id ?? null}
+                isOpen={openField === 'responsavel'}
+                onToggle={() => setOpenField((f) => (f === 'responsavel' ? null : 'responsavel'))}
+                onSelect={(responsavelId) => handleSalvarPainel({ responsavel_id: responsavelId ?? undefined })}
+                searchable
               />
             </View>
           </>
@@ -2608,6 +2832,48 @@ const mkStyles = StyleSheet.create({
   statusMenuItemText: {
     fontSize: 12,
     color: '#0C1736',
+  },
+  overlayDropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    paddingVertical: 4,
+    shadowColor: '#0C1736',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 14,
+    zIndex: 200,
+  },
+  overlayDropdownSearch: {
+    marginHorizontal: 10,
+    marginTop: 8,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#0C1736',
+  },
+  overlayDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  overlayDropdownItemText: {
+    fontSize: 13,
+    color: '#0C1736',
+    flex: 1,
+    marginRight: 8,
   },
   profileCard: {
     backgroundColor: '#FFFFFF',
