@@ -30,6 +30,19 @@ const KNOWN_RH_EMAILS = ['marina.costa@americanfuel.com.br', 'rh@americanfuel.co
 // 2+ -> escolher" que já existe no painel web (confirmado com a Rayanne).
 // Ordem de inserção = prioridade (usada só como sugestão de "principal" pro
 // campo legado `role`, o array em si não depende de ordem pro app).
+// IMPORTANTE (31/08/2026): o app mobile em produção nas lojas (build 3,
+// iOS e Android) foi compilado ANTES do painel "Gestão" existir no código do
+// app — a tela de seleção de painel dessa versão não sabe o que fazer com o
+// role "gestao" (PANEL_OPTION_META não tem essa chave), e quebra com um
+// TypeError não tratado assim que o backend devolve esse role no login
+// (crash confirmado via .ips: exceção não tratada na
+// com.facebook.react.ExceptionsManagerQueue, RCTFatal em produção).
+// Por isso o role "gestao" fica atrás desse flag, DESLIGADO por padrão —
+// só ligar (GESTAO_ROLE_ENABLED=true nas env vars da Vercel) depois que o
+// build novo do app (com o painel Gestão) estiver aprovado e disponível nas
+// duas lojas, senão volta a crashar pra quem tiver esse módulo/for master.
+const GESTAO_ROLE_ENABLED = process.env.GESTAO_ROLE_ENABLED === 'true';
+
 function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email }) {
   const roles = new Set();
 
@@ -42,7 +55,7 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
     roles.add('diretoria');
     roles.add('rh');
     roles.add('financeiro');
-    roles.add('gestao');
+    if (GESTAO_ROLE_ENABLED) roles.add('gestao');
   }
 
   // b) Sinal real pro resto: módulos efetivos (Cargo ∪ user_modules).
@@ -53,10 +66,10 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   if (effectiveModules?.has('diretoria')) roles.add('diretoria');
   if (effectiveModules?.has('rh')) roles.add('rh');
   if (effectiveModules?.has('financeiro')) roles.add('financeiro');
-  // "Gestão" (Vendas/Abastecimento/Margem/Encerrante) ligado em 28/08/2026 —
-  // normalizeModuleName já vira "Gestão" -> "gestao", mesmo módulo que a
-  // Lovable já usa no painel web pra dar acesso a essa área.
-  if (effectiveModules?.has('gestao')) roles.add('gestao');
+  // "Gestão" (Vendas/Abastecimento/Margem/Encerrante) — ver GESTAO_ROLE_ENABLED
+  // acima. normalizeModuleName já vira "Gestão" -> "gestao", mesmo módulo que
+  // a Lovable já usa no painel web pra dar acesso a essa área.
+  if (GESTAO_ROLE_ENABLED && effectiveModules?.has('gestao')) roles.add('gestao');
 
   // c) Ponte temporária por e-mail conhecido — só pra cobrir usuários de
   // teste cujo acesso ainda não tem os módulos certos configurados.
