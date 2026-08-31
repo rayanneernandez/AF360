@@ -94,6 +94,15 @@ function showMktError(err: unknown, fallback: string) {
   return message || fallback;
 }
 
+// "2026-08-06" -> "06/08"
+function formatDiaCurto(isoDate: string | null | undefined): string {
+  if (!isoDate) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate);
+  if (!match) return isoDate;
+  const [, , month, day] = match;
+  return `${day}/${month}`;
+}
+
 function formatDateTimeBR(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -413,6 +422,61 @@ function MktSelectModal<T extends string | null>({
 
 // --- 1. Dashboard ---
 
+// Cards brancos com faixa colorida à esquerda (mesmo padrão do painel web),
+// em vez de preencher o card inteiro com a cor.
+function MktKpiCard({
+  icon,
+  color,
+  label,
+  value,
+  subtitle,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  color: string;
+  label: string;
+  value: string;
+  subtitle?: string;
+}) {
+  return (
+    <View style={[mkStyles.kpiCard, { borderLeftColor: color }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Feather name={icon} size={12} color={color} />
+        <Text style={[mkStyles.kpiLabel, { color }]}>{label}</Text>
+      </View>
+      <Text style={mkStyles.kpiValue}>{value}</Text>
+      {subtitle ? <Text style={mkStyles.kpiLabelUnidade}>{subtitle}</Text> : null}
+    </View>
+  );
+}
+
+function MktDashboardListCard({
+  title,
+  icon,
+  items,
+  children,
+}: {
+  title: string;
+  icon: keyof typeof Feather.glyphMap;
+  items: Array<Record<string, unknown>>;
+  children: (item: Record<string, unknown>, idx: number) => React.ReactNode;
+}) {
+  return (
+    <View style={[mkStyles.chartCard, { flex: 1, minWidth: 0 }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <Feather name={icon} size={13} color="#5E667D" />
+        <Text style={[mkStyles.sectionTitle, { marginBottom: 0 }]} numberOfLines={1}>
+          {title}
+        </Text>
+      </View>
+      {items.length === 0 ? (
+        <Text style={mkStyles.listRowMeta}>Sem dados.</Text>
+      ) : (
+        items.map((item, idx) => <View key={idx}>{children(item, idx)}</View>)
+      )}
+    </View>
+  );
+}
+
 const OCORRENCIA_STATUS_COLORS: Record<string, string> = {
   aberto: '#E0435B',
   em_atendimento: '#3E92CC',
@@ -426,6 +490,7 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
   const [data, setData] = useState<MarketingDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [waPointerIdx, setWaPointerIdx] = useState<number | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
@@ -475,46 +540,51 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
         ) : (
           <>
             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
-              <View style={[mkStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
-                <Text style={mkStyles.kpiLabel}>Total</Text>
-                <Text style={mkStyles.kpiValue}>{formatNumeroBR(data.ocorrencias.total)}</Text>
-                <Text style={mkStyles.kpiLabelUnidade}>Ocorrências no período</Text>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <MktKpiCard icon="mail" color="#C2255C" label="TOTAL" value={formatNumeroBR(data.ocorrencias.total)} subtitle="Ocorrências no mês selecionado" />
               </View>
-              <View style={[mkStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
-                <Text style={mkStyles.kpiLabel}>Abertas</Text>
-                <Text style={mkStyles.kpiValue}>{formatNumeroBR(data.ocorrencias.abertas)}</Text>
-                <Text style={mkStyles.kpiLabelUnidade}>Aguardando atendimento</Text>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <MktKpiCard icon="alert-circle" color="#E8A33D" label="ABERTAS" value={formatNumeroBR(data.ocorrencias.abertas)} subtitle="Aguardando atendimento" />
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
-              <View style={[mkStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
-                <Text style={mkStyles.kpiLabel}>Em atendimento</Text>
-                <Text style={mkStyles.kpiValue}>{formatNumeroBR(data.ocorrencias.em_atendimento)}</Text>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <MktKpiCard icon="clock" color="#3E92CC" label="EM ATENDIMENTO" value={formatNumeroBR(data.ocorrencias.em_atendimento)} subtitle="Em andamento" />
               </View>
-              <View style={[mkStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
-                <Text style={mkStyles.kpiLabel}>Resolvidas</Text>
-                <Text style={mkStyles.kpiValue}>{formatNumeroBR(data.ocorrencias.resolvidas)}</Text>
-                <Text style={mkStyles.kpiLabelUnidade}>TMR: {data.ocorrencias.tempo_medio_primeira_resposta_segundos != null ? `${Math.round(data.ocorrencias.tempo_medio_primeira_resposta_segundos / 60)} min` : '—'}</Text>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <MktKpiCard
+                  icon="check-circle"
+                  color="#2FB170"
+                  label="RESOLVIDAS"
+                  value={formatNumeroBR(data.ocorrencias.resolvidas)}
+                  subtitle={`TMR: ${data.ocorrencias.tempo_medio_primeira_resposta_segundos != null ? `${Math.round(data.ocorrencias.tempo_medio_primeira_resposta_segundos / 60)} min` : '—'}`}
+                />
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
-              <View style={[mkStyles.kpiCard, { flex: 1, minWidth: 0, backgroundColor: '#FDEBEF', borderColor: '#F7C7D4' }]}>
-                <Text style={[mkStyles.kpiLabel, { color: '#C2255C' }]}>Atrasadas SLA</Text>
-                <Text style={mkStyles.kpiValue}>{formatNumeroBR(data.ocorrencias.atrasadas)}</Text>
-                <Text style={mkStyles.kpiLabelUnidade}>No prazo estourado</Text>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <MktKpiCard icon="alert-triangle" color="#E0435B" label="ATRASADAS SLA" value={formatNumeroBR(data.ocorrencias.atrasadas)} subtitle="No prazo" />
               </View>
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
-              <View style={[mkStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
-                <Text style={mkStyles.kpiLabel}>WhatsApp recebidas</Text>
-                <Text style={mkStyles.kpiValue}>{formatNumeroBR(data.whatsapp.inbound)}</Text>
-                <Text style={mkStyles.kpiLabelUnidade}>{formatNumeroBR(data.whatsapp.novos_contatos)} novos contatos</Text>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <MktKpiCard
+                  icon="message-circle"
+                  color="#3E92CC"
+                  label="WHATSAPP"
+                  value={formatNumeroBR(data.whatsapp.inbound)}
+                  subtitle={`recebidas · ${formatNumeroBR(data.whatsapp.novos_contatos)} novos contatos no período`}
+                />
               </View>
-              <View style={[mkStyles.kpiCard, { flex: 1, minWidth: 0 }]}>
-                <Text style={mkStyles.kpiLabel}>WhatsApp enviadas</Text>
-                <Text style={mkStyles.kpiValue}>{formatNumeroBR(data.whatsapp.outbound)}</Text>
-                <Text style={mkStyles.kpiLabelUnidade}>{formatNumeroBR(data.whatsapp.na_fila)} na fila agora</Text>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <MktKpiCard
+                  icon="send"
+                  color="#2FB170"
+                  label="ENVIADAS"
+                  value={formatNumeroBR(data.whatsapp.outbound)}
+                  subtitle={`mensagens · ${formatNumeroBR(data.whatsapp.na_fila)} na fila`}
+                />
               </View>
             </View>
 
@@ -577,8 +647,14 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
 
             {data.serie_diaria.length > 0 ? (
               <View style={mkStyles.chartCard}>
-                <Text style={mkStyles.sectionTitle}>Volume de mensagens WhatsApp</Text>
-                <Text style={[mkStyles.listRowMeta, { marginTop: -4, marginBottom: 10 }]}>Recebidas por dia, no período selecionado</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={mkStyles.sectionTitle}>Volume de mensagens WhatsApp</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <View style={[mkStyles.legendDot, { backgroundColor: '#C2255C' }]} />
+                    <Text style={mkStyles.listRowMeta}>Mensagens</Text>
+                  </View>
+                </View>
+                <Text style={[mkStyles.listRowMeta, { marginTop: -4, marginBottom: 10 }]}>Recebidas por dia, no período selecionado — toque para ver o valor.</Text>
                 <LineChart
                   data={data.serie_diaria.map((p) => ({ value: p.inbound }))}
                   color="#C2255C"
@@ -595,9 +671,69 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
                   rulesType="solid"
                   initialSpacing={8}
                   endSpacing={8}
+                  pointerConfig={{
+                    pointerStripHeight: 120,
+                    pointerStripColor: '#E2E6F0',
+                    pointerStripWidth: 2,
+                    pointerColor: '#C2255C',
+                    radius: 5,
+                    activatePointersInstantlyOnTouch: true,
+                    persistPointer: true,
+                    pointerLabelComponent: (_items: unknown, _secondary: unknown, pointerIndex: number) => {
+                      setTimeout(() => setWaPointerIdx(pointerIndex), 0);
+                      return null;
+                    },
+                  }}
                 />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                  <View style={[mkStyles.legendDot, { backgroundColor: '#C2255C' }]} />
+                  <Text style={mkStyles.listRowMeta}>Mensagens · total no período: {formatNumeroBR(data.serie_diaria.reduce((sum, p) => sum + p.inbound, 0))}</Text>
+                </View>
+                {waPointerIdx !== null && data.serie_diaria[waPointerIdx] ? (
+                  <View style={mkStyles.chartTooltip}>
+                    <Text style={mkStyles.chartTooltipDate}>{formatDiaCurto(data.serie_diaria[waPointerIdx].data)}</Text>
+                    <Text style={[mkStyles.chartTooltipLine, { color: '#C2255C' }]}>
+                      Mensagens: {formatNumeroBR(data.serie_diaria[waPointerIdx].inbound)}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             ) : null}
+
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
+              <MktDashboardListCard title="Top atendentes (resolvidas)" icon="user-check" items={data.top_atendentes as Array<Record<string, unknown>>}>
+                {(item) => (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                    <Text style={mkStyles.listRowMeta} numberOfLines={1}>
+                      {pickMktField(item, ['nome', 'atendente_nome']) ?? '—'}
+                    </Text>
+                    <Text style={mkStyles.listRowValue}>{pickMktField(item, ['resolvidas', 'total']) ?? '0'}</Text>
+                  </View>
+                )}
+              </MktDashboardListCard>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+              <MktDashboardListCard title="Ocorrências por canal" icon="briefcase" items={data.por_canal as Array<Record<string, unknown>>}>
+                {(item) => (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                    <Text style={mkStyles.listRowMeta} numberOfLines={1}>
+                      {pickMktField(item, ['canal_label', 'canal']) ?? '—'}
+                    </Text>
+                    <Text style={mkStyles.listRowValue}>{pickMktField(item, ['total', 'quantidade']) ?? '0'}</Text>
+                  </View>
+                )}
+              </MktDashboardListCard>
+              <MktDashboardListCard title="SLA por canal" icon="clock" items={data.sla_por_canal as Array<Record<string, unknown>>}>
+                {(item) => (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                    <Text style={mkStyles.listRowMeta} numberOfLines={1}>
+                      {pickMktField(item, ['canal_label', 'canal']) ?? '—'}
+                    </Text>
+                    <Text style={mkStyles.listRowValue}>{pickMktField(item, ['percentual', 'taxa']) ?? '—'}</Text>
+                  </View>
+                )}
+              </MktDashboardListCard>
+            </View>
 
             <Text style={mkStyles.sectionTitle}>Ocorrências recentes</Text>
             {data.ocorrencias_recentes.length === 0 ? (
@@ -2239,6 +2375,25 @@ const mkStyles = StyleSheet.create({
     color: '#0C1736',
     marginBottom: 8,
   },
+  chartTooltip: {
+    backgroundColor: '#F8F9FC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 10,
+    marginTop: 8,
+  },
+  chartTooltipDate: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0C1736',
+    marginBottom: 4,
+  },
+  chartTooltipLine: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
   listRowMeta: {
     color: '#7C8397',
     fontSize: 12,
@@ -2301,14 +2456,16 @@ const mkStyles = StyleSheet.create({
     fontWeight: '800',
   },
   kpiCard: {
-    backgroundColor: '#FBEAF1',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#F4CEDF',
+    borderColor: '#E2E6F0',
+    borderLeftWidth: 3,
+    borderLeftColor: '#C2255C',
     padding: 12,
   },
   kpiLabel: {
-    color: '#A31E4C',
+    color: '#C2255C',
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.3,
