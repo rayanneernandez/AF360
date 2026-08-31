@@ -2,7 +2,19 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useIsFocused } from '@react-navigation/native';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PieChart, LineChart } from 'react-native-gifted-charts';
 import * as Clipboard from 'expo-clipboard';
@@ -93,6 +105,21 @@ function formatNumeroBR(value: number | null | undefined, decimais = 0): string 
 function formatPercentBR(value: number | null | undefined): string {
   const n = typeof value === 'number' && Number.isFinite(value) ? value : 0;
   return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
+// Máscara incremental: "11999998888" -> "(11) 99999-8888". Aceita telefone
+// fixo (10 dígitos) também: "(11) 9999-8888".
+function formatTelefoneBR(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 11);
+  if (digits.length === 0) return '';
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function isEmailValido(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
 function showMktError(err: unknown, fallback: string) {
@@ -300,17 +327,21 @@ function MktModal({
 }) {
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <Pressable style={mkStyles.modalBackdrop} onPress={onClose}>
-        <Pressable style={[mkStyles.modalCard, { maxHeight: '86%' }]} onPress={() => {}}>
-          <View style={mkStyles.modalHeader}>
-            <Text style={mkStyles.modalTitle}>{title}</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
-              <Feather name="x" size={20} color="#677089" />
-            </Pressable>
-          </View>
-          <ScrollView showsVerticalScrollIndicator={false}>{children}</ScrollView>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}>
+        <Pressable style={mkStyles.modalBackdrop} onPress={onClose}>
+          <Pressable style={[mkStyles.modalCard, { maxHeight: '86%' }]} onPress={() => {}}>
+            <View style={mkStyles.modalHeader}>
+              <Text style={mkStyles.modalTitle}>{title}</Text>
+              <Pressable onPress={onClose} hitSlop={8}>
+                <Feather name="x" size={20} color="#677089" />
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {children}
+            </ScrollView>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -904,9 +935,11 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
   const [justCopiedProtocolo, setJustCopiedProtocolo] = useState(false);
   const [openField, setOpenField] = useState<'status' | 'prioridade' | 'responsavel' | null>(null);
   const [responsaveis, setResponsaveis] = useState<Array<{ id: string; nome: string }>>([]);
+  const [responsaveisError, setResponsaveisError] = useState<string | null>(null);
   const [isUploadingAnexo, setIsUploadingAnexo] = useState(false);
 
-  useEffect(() => {
+  const loadResponsaveis = useCallback(() => {
+    setResponsaveisError(null);
     fetchRhColaboradores()
       .then((rows: RhColaboradorRaw[]) =>
         setResponsaveis(
@@ -916,8 +949,15 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
             .sort((a, b) => a.nome.localeCompare(b.nome))
         )
       )
-      .catch(() => setResponsaveis([]));
+      .catch((err) => {
+        setResponsaveis([]);
+        setResponsaveisError(showMktError(err, 'Não foi possível carregar a lista de funcionários.'));
+      });
   }, []);
+
+  useEffect(() => {
+    loadResponsaveis();
+  }, [loadResponsaveis]);
 
   const filtro: MarketingOcorrenciaFiltro = useMemo(
     () => ({ q: busca || undefined, status: status ?? undefined, canal: canal ?? undefined, prioridade: prioridade ?? undefined }),
@@ -998,6 +1038,10 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
   const handleCriar = () => {
     if (!formAssunto.trim()) {
       Alert.alert('Campo obrigatório', 'Informe o assunto da ocorrência.');
+      return;
+    }
+    if (formClienteEmail.trim() && !isEmailValido(formClienteEmail)) {
+      Alert.alert('E-mail inválido', 'Confira o e-mail do cliente (ex.: nome@dominio.com).');
       return;
     }
     setIsSaving(true);
@@ -1168,10 +1212,30 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
         <TextInput style={mkStyles.formInput} value={formClienteNome} onChangeText={setFormClienteNome} placeholder="Nome do cliente" placeholderTextColor="#A7AEC2" />
         <View style={{ height: 12 }} />
         <MktFormLabel>E-mail</MktFormLabel>
-        <TextInput style={mkStyles.formInput} value={formClienteEmail} onChangeText={setFormClienteEmail} placeholder="cliente@email.com" placeholderTextColor="#A7AEC2" keyboardType="email-address" />
+        <TextInput
+          style={[mkStyles.formInput, formClienteEmail.trim() && !isEmailValido(formClienteEmail) ? { borderColor: '#E6213D' } : null]}
+          value={formClienteEmail}
+          onChangeText={setFormClienteEmail}
+          placeholder="cliente@email.com"
+          placeholderTextColor="#A7AEC2"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {formClienteEmail.trim() && !isEmailValido(formClienteEmail) ? (
+          <Text style={[mkStyles.listRowMeta, { color: '#E6213D', marginTop: 4 }]}>E-mail inválido.</Text>
+        ) : null}
         <View style={{ height: 12 }} />
         <MktFormLabel>Telefone</MktFormLabel>
-        <TextInput style={mkStyles.formInput} value={formClienteTelefone} onChangeText={setFormClienteTelefone} placeholder="(xx) 99999-9999" placeholderTextColor="#A7AEC2" keyboardType="phone-pad" />
+        <TextInput
+          style={mkStyles.formInput}
+          value={formClienteTelefone}
+          onChangeText={(text) => setFormClienteTelefone(formatTelefoneBR(text))}
+          placeholder="(xx) 99999-9999"
+          placeholderTextColor="#A7AEC2"
+          keyboardType="phone-pad"
+          maxLength={15}
+        />
         <View style={{ height: 12 }} />
         <MktFormLabel>Prioridade</MktFormLabel>
         <MktInlineSelect
@@ -1252,7 +1316,7 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
               <Text style={mkStyles.sectionTitle}>Cliente</Text>
               <Text style={mkStyles.profileFieldText}>Nome: {detalhe.cliente.nome ?? '—'}</Text>
               <Text style={mkStyles.profileFieldText}>E-mail: {detalhe.cliente.email ?? '—'}</Text>
-              <Text style={mkStyles.profileFieldText}>Telefone: {detalhe.cliente.telefone ?? '—'}</Text>
+              <Text style={mkStyles.profileFieldText}>Telefone: {detalhe.cliente.telefone ? formatTelefoneBR(detalhe.cliente.telefone) : '—'}</Text>
             </View>
 
             <View style={{ marginTop: 14 }}>
@@ -1364,6 +1428,12 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
                 onSelect={(responsavelId) => handleSalvarPainel({ responsavel_id: responsavelId ?? undefined })}
                 searchable
               />
+              {responsaveisError ? (
+                <Pressable onPress={loadResponsaveis} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                  <Feather name="alert-circle" size={13} color="#C2263A" />
+                  <Text style={[mkStyles.listRowMeta, { color: '#C2263A' }]}>{responsaveisError} Toque para tentar de novo.</Text>
+                </Pressable>
+              ) : null}
             </View>
           </>
         )}
@@ -1562,7 +1632,15 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
 
       <MktModal visible={isNovaConversaOpen} title="Nova conversa" onClose={() => setIsNovaConversaOpen(false)}>
         <MktFormLabel>Telefone *</MktFormLabel>
-        <TextInput style={mkStyles.formInput} value={novoPhone} onChangeText={setNovoPhone} placeholder="(xx) 99999-9999" placeholderTextColor="#A7AEC2" keyboardType="phone-pad" />
+        <TextInput
+          style={mkStyles.formInput}
+          value={novoPhone}
+          onChangeText={(text) => setNovoPhone(formatTelefoneBR(text))}
+          placeholder="(xx) 99999-9999"
+          placeholderTextColor="#A7AEC2"
+          keyboardType="phone-pad"
+          maxLength={15}
+        />
         <View style={{ height: 12 }} />
         <MktFormLabel>Nome</MktFormLabel>
         <TextInput style={mkStyles.formInput} value={novoNome} onChangeText={setNovoNome} placeholder="Nome do contato" placeholderTextColor="#A7AEC2" />
