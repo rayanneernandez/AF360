@@ -40,7 +40,6 @@ import {
   createAdministrativoSolicitacao,
   fetchAdministrativoFrota,
   updateAdministrativoVeiculo,
-  deleteAdministrativoVeiculo,
   createAdministrativoFrotaEvento,
   fetchAdministrativoFrotaEventos,
   fetchAdministrativoNotifRotinas,
@@ -277,8 +276,8 @@ function AdmModal({
 }) {
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={adStyles.modalBackdrop}>
-        <View style={[adStyles.modalCard, { maxHeight: '86%' }]}>
+      <Pressable style={adStyles.modalBackdrop} onPress={onClose}>
+        <Pressable style={[adStyles.modalCard, { maxHeight: '86%' }]} onPress={() => {}}>
           <View style={adStyles.modalHeader}>
             <Text style={adStyles.modalTitle}>{title}</Text>
             <Pressable onPress={onClose} hitSlop={8}>
@@ -286,8 +285,8 @@ function AdmModal({
             </Pressable>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}>{children}</ScrollView>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -328,8 +327,8 @@ function AdmSelectModal<T extends string | null>({
 }) {
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={adStyles.modalBackdrop}>
-        <View style={[adStyles.modalCard, { maxHeight: '70%' }]}>
+      <Pressable style={adStyles.modalBackdrop} onPress={onClose}>
+        <Pressable style={[adStyles.modalCard, { maxHeight: '70%' }]} onPress={() => {}}>
           <View style={adStyles.modalHeader}>
             <Text style={adStyles.modalTitle}>{title}</Text>
             <Pressable onPress={onClose} hitSlop={8}>
@@ -356,8 +355,8 @@ function AdmSelectModal<T extends string | null>({
               </Pressable>
             ))}
           </ScrollView>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -747,8 +746,8 @@ export function AdministrativoLicencasScreen({ navigation }: ScreenProps<'Admini
               <Text style={adStyles.listRowMeta}>
                 {item.posto_nome ?? 'Rede toda'} · {item.orgao}
               </Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, alignItems: 'center' }}>
-                <Text style={adStyles.listRowMeta}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, alignItems: 'center', gap: 8 }}>
+                <Text style={[adStyles.listRowMeta, { flex: 1, minWidth: 0 }]} numberOfLines={2}>
                   Vencimento: {item.vencimento}
                   {item.status === 'vencido' && item.dias_atraso != null
                     ? ` · ${item.dias_atraso} dia(s) em atraso`
@@ -759,6 +758,7 @@ export function AdministrativoLicencasScreen({ navigation }: ScreenProps<'Admini
                 <View
                   style={[
                     adStyles.badge,
+                    { flexShrink: 0 },
                     item.status === 'vencido'
                       ? { backgroundColor: '#FBE4E7' }
                       : item.status === 'proximo'
@@ -988,7 +988,7 @@ export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'Admini
                         : { color: '#5E667D' },
                     ]}
                   >
-                    {item.prioridade.toUpperCase()}
+                    {(item.prioridade ?? '—').toUpperCase()}
                   </Text>
                 </View>
               </View>
@@ -1091,11 +1091,12 @@ export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'Adminis
   const [busca, setBusca] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
   const [categoriaModalOpen, setCategoriaModalOpen] = useState(false);
-  const [allCategorias, setAllCategorias] = useState<string[]>([]);
   const [items, setItems] = useState<AdministrativoInsumoItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [solicitarPara, setSolicitarPara] = useState<AdministrativoInsumoItem | null>(null);
+  const [isSolicitarModalOpen, setIsSolicitarModalOpen] = useState(false);
+  const [solicitarInsumoId, setSolicitarInsumoId] = useState<string | null>(null);
+  const [insumoPickerModalOpen, setInsumoPickerModalOpen] = useState(false);
   const [quantidadeInput, setQuantidadeInput] = useState('1');
   const [observacaoInput, setObservacaoInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -1113,22 +1114,36 @@ export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'Adminis
     load();
   }, [load]);
 
-  // Lista de categorias pro dropdown vem de uma busca separada sem filtro
-  // (senão, ao selecionar uma categoria, as outras desapareceriam da lista
-  // de opções na próxima abertura do dropdown).
+  // Lista completa (sem filtro) pro dropdown de categorias e pro seletor de
+  // insumo do modal "Solicitar Suprimento" — senão, filtrar a lista visível
+  // faria essas opções encolherem junto.
+  const [allItems, setAllItems] = useState<AdministrativoInsumoItem[]>([]);
   useEffect(() => {
     fetchAdministrativoInsumos({})
-      .then((all) => setAllCategorias(Array.from(new Set(all.map((i) => i.categoria))).sort()))
-      .catch(() => setAllCategorias([]));
+      .then(setAllItems)
+      .catch(() => setAllItems([]));
   }, []);
 
+  const allCategorias = useMemo(() => Array.from(new Set(allItems.map((i) => i.categoria))).sort(), [allItems]);
   const categoriaOptions = useMemo(
     () => [INSUMO_CATEGORIA_TODAS, ...allCategorias.map((cat) => ({ value: cat, label: cat }))],
     [allCategorias]
   );
+  const insumoOptions = useMemo(() => allItems.map((i) => ({ value: i.id as string | null, label: i.nome })), [allItems]);
+  const insumoSelecionado = allItems.find((i) => i.id === solicitarInsumoId) ?? null;
+
+  const handleAbrirSolicitar = () => {
+    setSolicitarInsumoId(null);
+    setQuantidadeInput('1');
+    setObservacaoInput('');
+    setIsSolicitarModalOpen(true);
+  };
 
   const handleSolicitar = () => {
-    if (!solicitarPara) return;
+    if (!solicitarInsumoId) {
+      Alert.alert('Selecione um item', 'Escolha o insumo que deseja solicitar.');
+      return;
+    }
     const quantidade = Number(quantidadeInput.replace(',', '.')) || 0;
     if (quantidade <= 0) {
       Alert.alert('Quantidade inválida', 'Informe uma quantidade maior que zero.');
@@ -1136,14 +1151,12 @@ export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'Adminis
     }
     setIsSaving(true);
     createAdministrativoSolicitacao(
-      { insumo_id: solicitarPara.id, quantidade, observacao: observacaoInput.trim() || undefined },
+      { insumo_id: solicitarInsumoId, quantidade, observacao: observacaoInput.trim() || undefined },
       actorId
     )
       .then(() => {
-        setSolicitarPara(null);
-        setQuantidadeInput('1');
-        setObservacaoInput('');
-        Alert.alert('Solicitação enviada', `Pedido de suprimento para "${solicitarPara.nome}" registrado.`);
+        setIsSolicitarModalOpen(false);
+        Alert.alert('Solicitação enviada', `Pedido de suprimento para "${insumoSelecionado?.nome ?? 'item'}" registrado.`);
       })
       .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível registrar a solicitação.')))
       .finally(() => setIsSaving(false));
@@ -1164,11 +1177,21 @@ export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'Adminis
 
         <AdmSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar item" />
 
-        <AdmSelectButton
-          label={categoriaOptions.find((o) => o.value === categoriaFiltro)?.label ?? 'Todas as categorias'}
-          onPress={() => setCategoriaModalOpen(true)}
-        />
-        <View style={{ height: 12 }} />
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <View style={{ flex: 1 }}>
+            <AdmSelectButton
+              label={categoriaOptions.find((o) => o.value === categoriaFiltro)?.label ?? 'Todas as categorias'}
+              onPress={() => setCategoriaModalOpen(true)}
+            />
+          </View>
+          <Pressable
+            style={[adStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+            onPress={handleAbrirSolicitar}
+          >
+            <Feather name="send" size={14} color="#FFFFFF" />
+            <Text style={adStyles.suggestionButtonText}>Solicitar Suprimento</Text>
+          </Pressable>
+        </View>
 
         {isLoading ? (
           <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
@@ -1208,20 +1231,18 @@ export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'Adminis
                 </View>
               </View>
               <Text style={adStyles.listRowMeta}>{item.categoria}</Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-                <Text style={adStyles.listRowMeta}>
-                  {formatNumeroBR(item.quantidade)} {item.unidade}
-                </Text>
-                <Pressable style={adStyles.smallButton} onPress={() => setSolicitarPara(item)}>
-                  <Text style={adStyles.smallButtonText}>Solicitar suprimento</Text>
-                </Pressable>
-              </View>
+              <Text style={[adStyles.listRowMeta, { marginTop: 6 }]}>
+                {formatNumeroBR(item.quantidade)} {item.unidade}
+              </Text>
             </View>
           ))
         )}
       </ScrollView>
 
-      <AdmModal visible={!!solicitarPara} title={`Solicitar: ${solicitarPara?.nome ?? ''}`} onClose={() => setSolicitarPara(null)}>
+      <AdmModal visible={isSolicitarModalOpen} title="Solicitar Suprimento" onClose={() => setIsSolicitarModalOpen(false)}>
+        <AdmFormLabel>Item *</AdmFormLabel>
+        <AdmSelectButton label={insumoSelecionado?.nome ?? 'Selecione um item'} onPress={() => setInsumoPickerModalOpen(true)} />
+        <View style={{ height: 10 }} />
         <AdmFormLabel>Quantidade</AdmFormLabel>
         <TextInput style={adStyles.formInput} value={quantidadeInput} onChangeText={setQuantidadeInput} keyboardType="numeric" />
         <View style={{ height: 10 }} />
@@ -1237,6 +1258,15 @@ export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'Adminis
       </AdmModal>
 
       <AdmSelectModal
+        visible={insumoPickerModalOpen}
+        title="Selecione o item"
+        options={insumoOptions}
+        selectedValue={solicitarInsumoId}
+        onSelect={setSolicitarInsumoId}
+        onClose={() => setInsumoPickerModalOpen(false)}
+      />
+
+      <AdmSelectModal
         visible={categoriaModalOpen}
         title="Categoria"
         options={categoriaOptions}
@@ -1250,12 +1280,17 @@ export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'Adminis
 
 // --- 5. Frota ---
 
-const FROTA_EVENTO_OPTIONS: Array<{ value: AdministrativoFrotaEventoTipo; label: string; icon: keyof typeof Feather.glyphMap }> = [
-  { value: 'saida', label: 'Registrar saída', icon: 'arrow-up-right' },
-  { value: 'retorno', label: 'Registrar retorno', icon: 'arrow-down-left' },
-  { value: 'manutencao', label: 'Enviar para manutenção', icon: 'tool' },
-  { value: 'abastecimento', label: 'Registrar abastecimento', icon: 'droplet' },
-  { value: 'sinistro', label: 'Registrar sinistro', icon: 'alert-triangle' },
+const FROTA_TIPO_REGISTRO_OPTIONS: Array<{ value: AdministrativoFrotaEventoTipo; label: string }> = [
+  { value: 'saida', label: 'Saída' },
+  { value: 'retorno', label: 'Retorno' },
+  { value: 'manutencao', label: 'Manutenção' },
+  { value: 'abastecimento', label: 'Abastecimento' },
+  { value: 'sinistro', label: 'Sinistro' },
+];
+
+const FROTA_STATUS_APOS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'ativo', label: 'Ativo' },
+  { value: 'oficina', label: 'Em Oficina' },
 ];
 
 export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'AdministrativoFrota'>) {
@@ -1267,8 +1302,12 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [eventoVeiculo, setEventoVeiculo] = useState<AdministrativoVeiculoItem | null>(null);
-  const [eventoTipo, setEventoTipo] = useState<AdministrativoFrotaEventoTipo | null>(null);
+  const [eventoTipo, setEventoTipo] = useState<AdministrativoFrotaEventoTipo>('manutencao');
+  const [tipoPickerOpen, setTipoPickerOpen] = useState(false);
+  const [statusAposInput, setStatusAposInput] = useState('oficina');
+  const [statusAposPickerOpen, setStatusAposPickerOpen] = useState(false);
   const [kmInput, setKmInput] = useState('');
+  const [custoInput, setCustoInput] = useState('');
   const [observacaoInput, setObservacaoInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [historicoVeiculo, setHistoricoVeiculo] = useState<AdministrativoVeiculoItem | null>(null);
@@ -1288,27 +1327,13 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
     load();
   }, [load]);
 
-  const handleExcluir = (item: AdministrativoVeiculoItem) => {
-    setMenuOpenId(null);
-    Alert.alert('Excluir veículo', `Tem certeza que deseja excluir "${item.veiculo}"?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Excluir',
-        style: 'destructive',
-        onPress: () => {
-          deleteAdministrativoVeiculo(item.id, actorId)
-            .then(() => load())
-            .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível excluir o veículo.')));
-        },
-      },
-    ]);
-  };
-
-  const handleAbrirEvento = (item: AdministrativoVeiculoItem, tipo: AdministrativoFrotaEventoTipo) => {
+  const handleAbrirEvento = (item: AdministrativoVeiculoItem) => {
     setMenuOpenId(null);
     setEventoVeiculo(item);
-    setEventoTipo(tipo);
+    setEventoTipo('manutencao');
+    setStatusAposInput(item.status === 'oficina' ? 'oficina' : 'ativo');
     setKmInput(item.km ? String(item.km) : '');
+    setCustoInput('');
     setObservacaoInput('');
   };
 
@@ -1323,16 +1348,17 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
   };
 
   const handleSalvarEvento = () => {
-    if (!eventoVeiculo || !eventoTipo) return;
+    if (!eventoVeiculo) return;
     const km = kmInput.trim() ? Number(kmInput.replace(',', '.')) : undefined;
+    const custo = custoInput.trim() ? Number(custoInput.replace(',', '.')) : undefined;
     setIsSaving(true);
     createAdministrativoFrotaEvento(
-      { veiculo_id: eventoVeiculo.id, tipo: eventoTipo, km, observacao: observacaoInput.trim() || undefined },
+      { veiculo_id: eventoVeiculo.id, tipo: eventoTipo, km, custo, observacao: observacaoInput.trim() || undefined },
       actorId
     )
+      .then(() => updateAdministrativoVeiculo(eventoVeiculo.id, { status: statusAposInput }, actorId).catch(() => null))
       .then(() => {
         setEventoVeiculo(null);
-        setEventoTipo(null);
         load();
       })
       .catch((err) => Alert.alert('Erro', showAdmError(err, 'Não foi possível registrar o evento.')))
@@ -1365,7 +1391,7 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
             <View key={item.id} style={adStyles.dreCard}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <Text style={[adStyles.listRowTitle, { flex: 1, minWidth: 0 }]} numberOfLines={1}>
-                  {item.veiculo} {item.ano ? `(${item.ano})` : ''}
+                  {item.veiculo || item.modelo || 'Veículo'} {item.ano ? `(${item.ano})` : ''}
                 </Text>
                 <Pressable onPress={() => setMenuOpenId(menuOpenId === item.id ? null : item.id)} hitSlop={6}>
                   <Feather name="more-vertical" size={16} color="#5E667D" />
@@ -1385,19 +1411,13 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
 
               {menuOpenId === item.id ? (
                 <View style={adStyles.statusMenu}>
-                  {FROTA_EVENTO_OPTIONS.map((opt) => (
-                    <Pressable key={opt.value} style={adStyles.statusMenuItem} onPress={() => handleAbrirEvento(item, opt.value)}>
-                      <Feather name={opt.icon} size={13} color="#5E667D" style={{ marginRight: 6 }} />
-                      <Text style={adStyles.statusMenuItemText}>{opt.label}</Text>
-                    </Pressable>
-                  ))}
                   <Pressable style={adStyles.statusMenuItem} onPress={() => handleAbrirHistorico(item)}>
                     <Feather name="clock" size={13} color="#5E667D" style={{ marginRight: 6 }} />
                     <Text style={adStyles.statusMenuItemText}>Ver histórico</Text>
                   </Pressable>
-                  <Pressable style={adStyles.statusMenuItem} onPress={() => handleExcluir(item)}>
-                    <Feather name="trash-2" size={13} color="#E6213D" style={{ marginRight: 6 }} />
-                    <Text style={[adStyles.statusMenuItemText, { color: '#E6213D' }]}>Excluir</Text>
+                  <Pressable style={adStyles.statusMenuItem} onPress={() => handleAbrirEvento(item)}>
+                    <Feather name="tool" size={13} color="#5E667D" style={{ marginRight: 6 }} />
+                    <Text style={adStyles.statusMenuItemText}>Registrar saída/manutenção</Text>
                   </Pressable>
                 </View>
               ) : null}
@@ -1407,28 +1427,50 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
       </ScrollView>
 
       <AdmModal
-        visible={!!eventoVeiculo && !!eventoTipo}
-        title={FROTA_EVENTO_OPTIONS.find((o) => o.value === eventoTipo)?.label ?? 'Registrar evento'}
-        onClose={() => {
-          setEventoVeiculo(null);
-          setEventoTipo(null);
-        }}
+        visible={!!eventoVeiculo}
+        title={`Registrar saída / manutenção${eventoVeiculo ? ` — ${eventoVeiculo.placa}` : ''}`}
+        onClose={() => setEventoVeiculo(null)}
       >
-        <AdmFormLabel>Quilometragem</AdmFormLabel>
+        <AdmFormLabel>Tipo do registro</AdmFormLabel>
+        <AdmSelectButton
+          label={FROTA_TIPO_REGISTRO_OPTIONS.find((o) => o.value === eventoTipo)?.label ?? 'Manutenção'}
+          onPress={() => setTipoPickerOpen(true)}
+        />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Quilometragem atual</AdmFormLabel>
         <TextInput style={adStyles.formInput} value={kmInput} onChangeText={setKmInput} keyboardType="numeric" placeholder="Opcional" />
         <View style={{ height: 10 }} />
-        <AdmFormLabel>Observação</AdmFormLabel>
-        <TextInput style={adStyles.formInput} value={observacaoInput} onChangeText={setObservacaoInput} placeholder="Opcional" multiline />
+        <AdmFormLabel>Custo (R$)</AdmFormLabel>
+        <TextInput style={adStyles.formInput} value={custoInput} onChangeText={setCustoInput} keyboardType="numeric" placeholder="0,00" />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Status do veículo após o registro</AdmFormLabel>
+        <AdmSelectButton
+          label={FROTA_STATUS_APOS_OPTIONS.find((o) => o.value === statusAposInput)?.label ?? 'Ativo'}
+          onPress={() => setStatusAposPickerOpen(true)}
+        />
+        <View style={{ height: 10 }} />
+        <AdmFormLabel>Descrição</AdmFormLabel>
+        <TextInput
+          style={adStyles.formInput}
+          value={observacaoInput}
+          onChangeText={setObservacaoInput}
+          placeholder="Ex.: revisão de suspensão na oficina X"
+          multiline
+        />
         <Pressable
           style={[adStyles.filterModalApplyButton, { marginTop: 18, opacity: isSaving ? 0.6 : 1 }]}
           onPress={handleSalvarEvento}
           disabled={isSaving}
         >
-          <Text style={adStyles.filterModalApplyButtonText}>{isSaving ? 'Salvando...' : 'Registrar'}</Text>
+          <Text style={adStyles.filterModalApplyButtonText}>{isSaving ? 'Salvando...' : 'Salvar registro'}</Text>
         </Pressable>
       </AdmModal>
 
-      <AdmModal visible={!!historicoVeiculo} title={`Histórico: ${historicoVeiculo?.veiculo ?? ''}`} onClose={() => setHistoricoVeiculo(null)}>
+      <AdmModal
+        visible={!!historicoVeiculo}
+        title={`Histórico: ${historicoVeiculo?.veiculo || historicoVeiculo?.modelo || ''}`}
+        onClose={() => setHistoricoVeiculo(null)}
+      >
         {isLoadingHistorico ? (
           <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
         ) : historico.length === 0 ? (
@@ -1436,12 +1478,29 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
         ) : (
           historico.map((ev) => (
             <View key={ev.id} style={adStyles.rankingRow}>
-              <Text style={adStyles.listRowTitle}>{FROTA_EVENTO_OPTIONS.find((o) => o.value === ev.tipo)?.label ?? ev.tipo}</Text>
+              <Text style={adStyles.listRowTitle}>{FROTA_TIPO_REGISTRO_OPTIONS.find((o) => o.value === ev.tipo)?.label ?? ev.tipo}</Text>
               <Text style={adStyles.listRowMeta}>{ev.km != null ? `${formatNumeroBR(ev.km)} km` : ''}</Text>
             </View>
           ))
         )}
       </AdmModal>
+
+      <AdmSelectModal
+        visible={tipoPickerOpen}
+        title="Tipo do registro"
+        options={FROTA_TIPO_REGISTRO_OPTIONS}
+        selectedValue={eventoTipo}
+        onSelect={setEventoTipo}
+        onClose={() => setTipoPickerOpen(false)}
+      />
+      <AdmSelectModal
+        visible={statusAposPickerOpen}
+        title="Status do veículo após o registro"
+        options={FROTA_STATUS_APOS_OPTIONS}
+        selectedValue={statusAposInput}
+        onSelect={setStatusAposInput}
+        onClose={() => setStatusAposPickerOpen(false)}
+      />
     </SafeAreaView>
   );
 }

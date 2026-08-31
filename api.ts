@@ -6830,11 +6830,15 @@ export type AdministrativoFrotaEventoItem = {
   criado_em: string | null;
 };
 
-// "km" atualiza a quilometragem do veículo, quando informado.
+// "km" atualiza a quilometragem do veículo, quando informado. "custo" é
+// opcional (não confirmado no contrato original, mas o backend ignora
+// campos extra sem problema — o status do veículo após o registro é
+// atualizado separadamente via updateAdministrativoVeiculo).
 export type AdministrativoFrotaEventoWriteBody = {
   veiculo_id: string;
   tipo: AdministrativoFrotaEventoTipo;
   km?: number;
+  custo?: number;
   observacao?: string;
 };
 
