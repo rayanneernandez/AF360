@@ -291,6 +291,52 @@ function AdmModal({
   );
 }
 
+// Mesma ideia do AdmSelectModal, mas sem abrir um <Modal> aninhado — usado
+// dentro de formulários que já estão dentro de um AdmModal (dois <Modal>
+// nativos abertos ao mesmo tempo não recebem toque de forma confiável).
+function AdmInlineSelect<T extends string | null>({
+  label,
+  options,
+  selectedValue,
+  onSelect,
+}: {
+  label: string;
+  options: Array<{ value: T; label: string }>;
+  selectedValue: T;
+  onSelect: (value: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View>
+      <Pressable style={adStyles.selectButton} onPress={() => setOpen((o) => !o)}>
+        <Text style={adStyles.selectButtonText} numberOfLines={1}>
+          {label}
+        </Text>
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#5E667D" />
+      </Pressable>
+      {open ? (
+        <View style={adStyles.statusMenu}>
+          {options.map((opt) => (
+            <Pressable
+              key={opt.label}
+              style={adStyles.statusMenuItem}
+              onPress={() => {
+                onSelect(opt.value);
+                setOpen(false);
+              }}
+            >
+              <Text style={[adStyles.statusMenuItemText, selectedValue === opt.value ? { color: '#0F8B8D', fontWeight: '800' } : null]}>
+                {opt.label}
+              </Text>
+              {selectedValue === opt.value ? <Feather name="check" size={14} color="#0F8B8D" style={{ marginLeft: 'auto' }} /> : null}
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function AdmFormLabel({ children }: { children: React.ReactNode }) {
   return <Text style={adStyles.formLabel}>{children}</Text>;
 }
@@ -964,16 +1010,27 @@ export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'Admini
         ) : items.length === 0 ? (
           <AdmEmptyState message="Nenhum chamado encontrado." />
         ) : (
-          items.map((item) => (
-            <View key={item.id} style={adStyles.dreCard}>
+          items.map((item, idx) => {
+            const raw = item as unknown as Record<string, unknown>;
+            const protocolo = pickInsumoField(raw, ['protocolo', 'numero_protocolo', 'codigo', 'numero']) ?? '—';
+            const titulo =
+              pickInsumoField(raw, ['titulo', 'problema', 'assunto', 'titulo_problema', 'descricao_problema']) ??
+              'Chamado sem título';
+            const prioridade = pickInsumoField(raw, ['prioridade', 'nivel_prioridade', 'importancia']);
+            const postoNome = pickInsumoField(raw, ['posto_nome', 'posto']);
+            const local = pickInsumoField(raw, ['local', 'detalhe', 'local_detalhe']);
+            const descricao = pickInsumoField(raw, ['descricao', 'descricao_problema']);
+            const itemKey = pickInsumoField(raw, ['id']) ?? `chamado-${idx}`;
+            return (
+            <View key={itemKey} style={adStyles.dreCard}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={adStyles.listRowMeta}>{item.protocolo}</Text>
+                <Text style={adStyles.listRowMeta}>{protocolo}</Text>
                 <View
                   style={[
                     adStyles.badge,
-                    item.prioridade === 'alta'
+                    prioridade === 'alta'
                       ? { backgroundColor: '#FBE4E7' }
-                      : item.prioridade === 'media'
+                      : prioridade === 'media'
                       ? { backgroundColor: '#FEF3D6' }
                       : { backgroundColor: '#F1F2F6' },
                   ]}
@@ -981,30 +1038,30 @@ export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'Admini
                   <Text
                     style={[
                       adStyles.badgeText,
-                      item.prioridade === 'alta'
+                      prioridade === 'alta'
                         ? { color: '#C2263A' }
-                        : item.prioridade === 'media'
+                        : prioridade === 'media'
                         ? { color: '#8A6D1D' }
                         : { color: '#5E667D' },
                     ]}
                   >
-                    {(item.prioridade ?? '—').toUpperCase()}
+                    {(prioridade ?? '—').toUpperCase()}
                   </Text>
                 </View>
               </View>
-              <Text style={adStyles.listRowTitle}>{item.titulo}</Text>
+              <Text style={adStyles.listRowTitle}>{titulo}</Text>
               <Text style={adStyles.listRowMeta} numberOfLines={2}>
-                {[item.posto_nome, item.local, item.descricao].filter(Boolean).join(' · ')}
+                {[postoNome, local, descricao].filter(Boolean).join(' · ') || '—'}
               </Text>
 
               <Pressable
                 style={[adStyles.statusDropdown, { marginTop: 10 }]}
-                onPress={() => setStatusMenuOpenId(statusMenuOpenId === item.id ? null : item.id)}
+                onPress={() => setStatusMenuOpenId(statusMenuOpenId === itemKey ? null : itemKey)}
               >
                 <Text style={adStyles.statusDropdownText}>{chamadoStatusLabel(item.status)}</Text>
                 <Feather name="chevron-down" size={14} color="#5E667D" />
               </Pressable>
-              {statusMenuOpenId === item.id ? (
+              {statusMenuOpenId === itemKey ? (
                 <View style={adStyles.statusMenu}>
                   {CHAMADO_STATUS_OPTIONS.map((opt) => (
                     <Pressable key={opt.value} style={adStyles.statusMenuItem} onPress={() => handleMudarStatus(item, opt.value)}>
@@ -1016,7 +1073,8 @@ export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'Admini
                 </View>
               ) : null}
             </View>
-          ))
+            );
+          })
         )}
       </ScrollView>
 
@@ -1300,12 +1358,10 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
   const [items, setItems] = useState<AdministrativoVeiculoItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ id: string; x: number; y: number } | null>(null);
   const [eventoVeiculo, setEventoVeiculo] = useState<AdministrativoVeiculoItem | null>(null);
   const [eventoTipo, setEventoTipo] = useState<AdministrativoFrotaEventoTipo>('manutencao');
-  const [tipoPickerOpen, setTipoPickerOpen] = useState(false);
   const [statusAposInput, setStatusAposInput] = useState('oficina');
-  const [statusAposPickerOpen, setStatusAposPickerOpen] = useState(false);
   const [kmInput, setKmInput] = useState('');
   const [custoInput, setCustoInput] = useState('');
   const [observacaoInput, setObservacaoInput] = useState('');
@@ -1328,7 +1384,7 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
   }, [load]);
 
   const handleAbrirEvento = (item: AdministrativoVeiculoItem) => {
-    setMenuOpenId(null);
+    setMenuAnchor(null);
     setEventoVeiculo(item);
     setEventoTipo('manutencao');
     setStatusAposInput(item.status === 'oficina' ? 'oficina' : 'ativo');
@@ -1338,7 +1394,7 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
   };
 
   const handleAbrirHistorico = (item: AdministrativoVeiculoItem) => {
-    setMenuOpenId(null);
+    setMenuAnchor(null);
     setHistoricoVeiculo(item);
     setIsLoadingHistorico(true);
     fetchAdministrativoFrotaEventos(item.id)
@@ -1393,7 +1449,13 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
                 <Text style={[adStyles.listRowTitle, { flex: 1, minWidth: 0 }]} numberOfLines={1}>
                   {item.veiculo || item.modelo || 'Veículo'} {item.ano ? `(${item.ano})` : ''}
                 </Text>
-                <Pressable onPress={() => setMenuOpenId(menuOpenId === item.id ? null : item.id)} hitSlop={6}>
+                <Pressable
+                  onPress={(e) => {
+                    const { pageX, pageY } = e.nativeEvent;
+                    setMenuAnchor({ id: item.id, x: pageX, y: pageY });
+                  }}
+                  hitSlop={8}
+                >
                   <Feather name="more-vertical" size={16} color="#5E667D" />
                 </Pressable>
               </View>
@@ -1408,23 +1470,33 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
                   </Text>
                 </View>
               </View>
-
-              {menuOpenId === item.id ? (
-                <View style={adStyles.statusMenu}>
-                  <Pressable style={adStyles.statusMenuItem} onPress={() => handleAbrirHistorico(item)}>
-                    <Feather name="clock" size={13} color="#5E667D" style={{ marginRight: 6 }} />
-                    <Text style={adStyles.statusMenuItemText}>Ver histórico</Text>
-                  </Pressable>
-                  <Pressable style={adStyles.statusMenuItem} onPress={() => handleAbrirEvento(item)}>
-                    <Feather name="tool" size={13} color="#5E667D" style={{ marginRight: 6 }} />
-                    <Text style={adStyles.statusMenuItemText}>Registrar saída/manutenção</Text>
-                  </Pressable>
-                </View>
-              ) : null}
             </View>
           ))
         )}
       </ScrollView>
+
+      <Modal visible={menuAnchor !== null} transparent animationType="fade" onRequestClose={() => setMenuAnchor(null)}>
+        <Pressable style={{ flex: 1 }} onPress={() => setMenuAnchor(null)}>
+          {menuAnchor
+            ? (() => {
+                const menuItem = items.find((entry) => entry.id === menuAnchor.id);
+                if (!menuItem) return null;
+                return (
+                  <Pressable style={[adStyles.rowActionsMenu, { top: menuAnchor.y + 8, right: 16 }]} onPress={() => {}}>
+                    <Pressable style={adStyles.rowActionsMenuItem} onPress={() => handleAbrirHistorico(menuItem)}>
+                      <Feather name="clock" size={15} color="#5E667D" />
+                      <Text style={adStyles.rowActionsMenuItemText}>Ver histórico</Text>
+                    </Pressable>
+                    <Pressable style={adStyles.rowActionsMenuItem} onPress={() => handleAbrirEvento(menuItem)}>
+                      <Feather name="tool" size={15} color="#5E667D" />
+                      <Text style={adStyles.rowActionsMenuItemText}>Registrar saída/manutenção</Text>
+                    </Pressable>
+                  </Pressable>
+                );
+              })()
+            : null}
+        </Pressable>
+      </Modal>
 
       <AdmModal
         visible={!!eventoVeiculo}
@@ -1432,21 +1504,34 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
         onClose={() => setEventoVeiculo(null)}
       >
         <AdmFormLabel>Tipo do registro</AdmFormLabel>
-        <AdmSelectButton
+        <AdmInlineSelect
           label={FROTA_TIPO_REGISTRO_OPTIONS.find((o) => o.value === eventoTipo)?.label ?? 'Manutenção'}
-          onPress={() => setTipoPickerOpen(true)}
+          options={FROTA_TIPO_REGISTRO_OPTIONS}
+          selectedValue={eventoTipo}
+          onSelect={setEventoTipo}
         />
         <View style={{ height: 10 }} />
         <AdmFormLabel>Quilometragem atual</AdmFormLabel>
         <TextInput style={adStyles.formInput} value={kmInput} onChangeText={setKmInput} keyboardType="numeric" placeholder="Opcional" />
         <View style={{ height: 10 }} />
         <AdmFormLabel>Custo (R$)</AdmFormLabel>
-        <TextInput style={adStyles.formInput} value={custoInput} onChangeText={setCustoInput} keyboardType="numeric" placeholder="0,00" />
+        <View style={adStyles.currencyInputRow}>
+          <Text style={adStyles.currencyPrefix}>R$</Text>
+          <TextInput
+            style={adStyles.currencyInput}
+            value={custoInput}
+            onChangeText={setCustoInput}
+            keyboardType="numeric"
+            placeholder="0,00"
+          />
+        </View>
         <View style={{ height: 10 }} />
         <AdmFormLabel>Status do veículo após o registro</AdmFormLabel>
-        <AdmSelectButton
+        <AdmInlineSelect
           label={FROTA_STATUS_APOS_OPTIONS.find((o) => o.value === statusAposInput)?.label ?? 'Ativo'}
-          onPress={() => setStatusAposPickerOpen(true)}
+          options={FROTA_STATUS_APOS_OPTIONS}
+          selectedValue={statusAposInput}
+          onSelect={setStatusAposInput}
         />
         <View style={{ height: 10 }} />
         <AdmFormLabel>Descrição</AdmFormLabel>
@@ -1484,23 +1569,6 @@ export function AdministrativoFrotaScreen({ navigation }: ScreenProps<'Administr
           ))
         )}
       </AdmModal>
-
-      <AdmSelectModal
-        visible={tipoPickerOpen}
-        title="Tipo do registro"
-        options={FROTA_TIPO_REGISTRO_OPTIONS}
-        selectedValue={eventoTipo}
-        onSelect={setEventoTipo}
-        onClose={() => setTipoPickerOpen(false)}
-      />
-      <AdmSelectModal
-        visible={statusAposPickerOpen}
-        title="Status do veículo após o registro"
-        options={FROTA_STATUS_APOS_OPTIONS}
-        selectedValue={statusAposInput}
-        onSelect={setStatusAposInput}
-        onClose={() => setStatusAposPickerOpen(false)}
-      />
     </SafeAreaView>
   );
 }
@@ -2074,6 +2142,51 @@ const adStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     marginLeft: 8,
+  },
+  rowActionsMenu: {
+    position: 'absolute',
+    minWidth: 210,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 6,
+    shadowColor: '#0C1736',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  rowActionsMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  rowActionsMenuItemText: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  currencyInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  currencyPrefix: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#5E667D',
+    marginRight: 6,
+  },
+  currencyInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0C1736',
+    paddingVertical: 10,
   },
   filterOptionRow: {
     flexDirection: 'row',
