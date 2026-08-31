@@ -39,6 +39,25 @@ function writeErrorStatus(err) {
   return err.lovableStatus && err.lovableStatus >= 400 && err.lovableStatus < 500 ? 400 : 500;
 }
 
+// Alguns endpoints de lista podem não devolver o array debaixo de "data"
+// (varia por implementação) — em vez de assumir uma chave fixa e devolver
+// [] silenciosamente quando ela não bate (o que parecia "sem erro, mas sem
+// dado nenhum" no app), procura o primeiro array de verdade na resposta.
+function extractArrayPayload(json) {
+  if (Array.isArray(json)) return { rows: json, count: json.length };
+  if (Array.isArray(json?.data)) return { rows: json.data, count: json.count ?? json.data.length };
+  if (json && typeof json === 'object') {
+    for (const key of Object.keys(json)) {
+      if (Array.isArray(json[key])) {
+        return { rows: json[key], count: json.count ?? json[key].length };
+      }
+    }
+  }
+  return { rows: [], count: 0 };
+}
+
+const LIST_RECURSOS = new Set(['licencas', 'chamados', 'insumos', 'solicitacoes', 'frota', 'frota-eventos']);
+
 // GET /api/administrativo?recurso=dashboard|licencas|chamados|insumos|solicitacoes|frota|frota-eventos&...
 router.get('/', async (req, res) => {
   const { recurso, actorId, veiculoId, ...params } = req.query;
@@ -68,6 +87,10 @@ router.get('/', async (req, res) => {
         break;
       default:
         return res.status(400).json({ ok: false, error: 'recurso_invalido' });
+    }
+    if (LIST_RECURSOS.has(recurso)) {
+      const { rows, count } = extractArrayPayload(json);
+      return res.json({ ok: true, count, data: rows });
     }
     const row = json?.data ?? json;
     res.json({ ok: true, count: json?.count ?? (Array.isArray(row) ? row.length : undefined), data: row });

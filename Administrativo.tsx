@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useIsFocused } from '@react-navigation/native';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { PieChart } from 'react-native-gifted-charts';
 import {
   styles,
   TopBar,
@@ -158,12 +159,96 @@ function AdmFormLabel({ children }: { children: React.ReactNode }) {
   return <Text style={adStyles.formLabel}>{children}</Text>;
 }
 
+// --- Dropdown de seleção única (status/prioridade/categoria), mesmo padrão
+// visual do "Todos os status ▾" do painel web: um botão que abre uma lista
+// com check na opção selecionada; escolher já fecha o modal. ---
+
+function AdmSelectButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable style={adStyles.selectButton} onPress={onPress}>
+      <Text style={adStyles.selectButtonText} numberOfLines={1}>
+        {label}
+      </Text>
+      <Feather name="chevron-down" size={16} color="#5E667D" />
+    </Pressable>
+  );
+}
+
+function AdmSelectModal<T extends string | null>({
+  visible,
+  title,
+  options,
+  selectedValue,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  options: Array<{ value: T; label: string }>;
+  selectedValue: T;
+  onSelect: (value: T) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={adStyles.modalBackdrop}>
+        <View style={[adStyles.modalCard, { maxHeight: '70%' }]}>
+          <View style={adStyles.modalHeader}>
+            <Text style={adStyles.modalTitle}>{title}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {options.map((opt) => (
+              <Pressable
+                key={opt.label}
+                style={adStyles.filterOptionRow}
+                onPress={() => {
+                  onSelect(opt.value);
+                  onClose();
+                }}
+              >
+                <Text
+                  style={[adStyles.filterOptionRowText, selectedValue === opt.value ? adStyles.filterOptionRowTextActive : null]}
+                  numberOfLines={1}
+                >
+                  {opt.label}
+                </Text>
+                {selectedValue === opt.value ? <Feather name="check" size={16} color="#0F8B8D" /> : null}
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // --- 1. Dashboard ---
+
+const CHAMADO_STATUS_COLORS: Record<string, string> = {
+  aberto: '#E0435B',
+  em_andamento: '#3E92CC',
+  aguardando_peca: '#E8A33D',
+  concluido: '#2FB170',
+  cancelado: '#9AA3B5',
+};
+
+function pickInsumoField(item: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = item[key];
+    if (typeof value === 'string' && value.trim()) return value;
+    if (typeof value === 'number') return String(value);
+  }
+  return null;
+}
 
 export function AdministrativoDashboardScreen({ navigation }: ScreenProps<'AdministrativoDashboard'>) {
   const [data, setData] = useState<AdministrativoDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedStatusIdx, setSelectedStatusIdx] = useState<number | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
@@ -222,17 +307,63 @@ export function AdministrativoDashboardScreen({ navigation }: ScreenProps<'Admin
 
             <View style={adStyles.chartCard}>
               <Text style={adStyles.sectionTitle}>Status dos chamados de manutenção</Text>
-              {data.chamados_por_status.length === 0 ? (
+              <Text style={[adStyles.listRowMeta, { marginTop: -4, marginBottom: 10 }]}>Distribuição dos chamados por situação</Text>
+              {data.chamados_por_status.length === 0 || data.chamados_por_status.every((s) => s.total === 0) ? (
                 <AdmEmptyState message="Nenhum chamado registrado." />
               ) : (
-                data.chamados_por_status.map((item) => (
-                  <View key={item.status} style={adStyles.rankingRow}>
-                    <Text style={adStyles.listRowTitle} numberOfLines={1}>
-                      {item.label}
-                    </Text>
-                    <Text style={adStyles.listRowValue}>{formatNumeroBR(item.total)}</Text>
+                <>
+                  <View style={{ alignItems: 'center', marginVertical: 8 }}>
+                    <PieChart
+                      data={data.chamados_por_status.map((item) => ({
+                        value: item.total,
+                        color: CHAMADO_STATUS_COLORS[item.status] ?? '#9AA3B5',
+                        text: item.label,
+                      }))}
+                      donut
+                      radius={78}
+                      innerRadius={48}
+                      focusOnPress
+                      toggleFocusOnPress
+                      onPress={(_item: unknown, index: number) => setSelectedStatusIdx((current) => (current === index ? null : index))}
+                      centerLabelComponent={() => {
+                        const selected = selectedStatusIdx != null ? data.chamados_por_status[selectedStatusIdx] : null;
+                        if (selected) {
+                          return (
+                            <View style={{ alignItems: 'center', maxWidth: 90 }}>
+                              <Text style={adStyles.pieCenterValue}>{formatNumeroBR(selected.total)}</Text>
+                              <Text style={adStyles.pieCenterLabel} numberOfLines={2}>
+                                {selected.label}
+                              </Text>
+                            </View>
+                          );
+                        }
+                        const total = data.chamados_por_status.reduce((sum, item) => sum + item.total, 0);
+                        return (
+                          <View style={{ alignItems: 'center' }}>
+                            <Text style={adStyles.pieCenterValue}>{formatNumeroBR(total)}</Text>
+                            <Text style={adStyles.pieCenterLabel}>Total</Text>
+                          </View>
+                        );
+                      }}
+                    />
                   </View>
-                ))
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14, justifyContent: 'center', marginTop: 4 }}>
+                    {data.chamados_por_status.map((item, idx) => (
+                      <Pressable
+                        key={item.status}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                        onPress={() => setSelectedStatusIdx((current) => (current === idx ? null : idx))}
+                      >
+                        <View
+                          style={[adStyles.legendDot, { backgroundColor: CHAMADO_STATUS_COLORS[item.status] ?? '#9AA3B5' }]}
+                        />
+                        <Text style={[adStyles.listRowMeta, selectedStatusIdx === idx ? { color: '#0C1736', fontWeight: '800' } : null]}>
+                          {item.label} ({formatNumeroBR(item.total)})
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
               )}
             </View>
 
@@ -276,15 +407,39 @@ export function AdministrativoDashboardScreen({ navigation }: ScreenProps<'Admin
               ))
             )}
 
-            <Text style={adStyles.sectionTitle}>Últimos pedidos de insumos pendentes</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={adStyles.sectionTitle}>Últimos pedidos de insumos pendentes</Text>
+                <Text style={[adStyles.listRowMeta, { marginTop: -6 }]}>Solicitações em aberto no período selecionado</Text>
+              </View>
+              <Text style={adStyles.countBadgeNumber}>{data.solicitacoes_pendentes.length}</Text>
+            </View>
             {data.solicitacoes_pendentes.length === 0 ? (
               <AdmEmptyState message="Nenhum pedido pendente no período." />
             ) : (
-              data.solicitacoes_pendentes.map((item, idx) => (
-                <View key={idx} style={adStyles.dreCard}>
-                  <Text style={adStyles.listRowMeta}>{JSON.stringify(item)}</Text>
-                </View>
-              ))
+              data.solicitacoes_pendentes.map((rawItem, idx) => {
+                const item = rawItem as Record<string, unknown>;
+                const insumoNome = pickInsumoField(item, ['insumo_nome', 'nome', 'item_nome', 'insumo']) ?? 'Insumo';
+                const postoNome = pickInsumoField(item, ['posto_nome', 'posto']) ?? 'Rede toda';
+                const quantidade = pickInsumoField(item, ['quantidade', 'qtde', 'qtd']);
+                const observacao = pickInsumoField(item, ['observacao']);
+                return (
+                  <View key={pickInsumoField(item, ['id']) ?? idx} style={adStyles.dreCard}>
+                    <Text style={adStyles.listRowTitle} numberOfLines={1}>
+                      {insumoNome}
+                    </Text>
+                    <Text style={adStyles.listRowMeta}>
+                      {postoNome}
+                      {quantidade ? ` · ${quantidade}` : ''}
+                    </Text>
+                    {observacao ? (
+                      <Text style={[adStyles.listRowMeta, { marginTop: 2 }]} numberOfLines={2}>
+                        {observacao}
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })
             )}
           </>
         )}
@@ -295,11 +450,19 @@ export function AdministrativoDashboardScreen({ navigation }: ScreenProps<'Admin
 
 // --- 2. Alvarás e Licenças ---
 
+const LICENCA_STATUS_OPTIONS: Array<{ value: string | null; label: string }> = [
+  { value: null, label: 'Todos os status' },
+  { value: 'vencido', label: 'Vencidos' },
+  { value: 'proximo', label: 'Próximos (30 dias)' },
+  { value: 'regular', label: 'Regulares' },
+];
+
 export function AdministrativoLicencasScreen({ navigation }: ScreenProps<'AdministrativoLicencas'>) {
   const { identity } = useContext(AuthIdentityContext);
   const actorId = identity?.profileId;
   const [busca, setBusca] = useState('');
   const [statusFiltro, setStatusFiltro] = useState<string | null>(null);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [items, setItems] = useState<AdministrativoLicencaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -387,27 +550,13 @@ export function AdministrativoLicencasScreen({ navigation }: ScreenProps<'Admini
 
         <AdmSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por documento, órgão ou posto" />
 
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          {[
-            { value: null, label: 'Todos os status' },
-            { value: 'vencido', label: 'Vencido' },
-            { value: 'proximo', label: 'Próximo' },
-            { value: 'regular', label: 'Regular' },
-          ].map((opt) => (
-            <Pressable
-              key={opt.label}
-              style={[adStyles.filterPill, statusFiltro === opt.value ? adStyles.filterPillActive : null]}
-              onPress={() => setStatusFiltro(opt.value)}
-            >
-              <Text style={[adStyles.filterPillText, statusFiltro === opt.value ? adStyles.filterPillTextActive : null]}>
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        <AdmSelectButton
+          label={LICENCA_STATUS_OPTIONS.find((o) => o.value === statusFiltro)?.label ?? 'Todos os status'}
+          onPress={() => setStatusModalOpen(true)}
+        />
 
         <Pressable
-          style={[adStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }]}
+          style={[adStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, marginTop: 12 }]}
           onPress={() => {
             resetForm();
             setIsFormOpen(true);
@@ -498,6 +647,15 @@ export function AdministrativoLicencasScreen({ navigation }: ScreenProps<'Admini
           <Text style={adStyles.filterModalApplyButtonText}>{isSaving ? 'Salvando...' : 'Salvar'}</Text>
         </Pressable>
       </AdmModal>
+
+      <AdmSelectModal
+        visible={statusModalOpen}
+        title="Status"
+        options={LICENCA_STATUS_OPTIONS}
+        selectedValue={statusFiltro}
+        onSelect={setStatusFiltro}
+        onClose={() => setStatusModalOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -516,11 +674,25 @@ function chamadoStatusLabel(status: AdministrativoChamadoStatus): string {
   return CHAMADO_STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status;
 }
 
+const CHAMADO_STATUS_FILTRO_OPTIONS: Array<{ value: AdministrativoChamadoStatus | null; label: string }> = [
+  { value: null, label: 'Todos os status' },
+  ...CHAMADO_STATUS_OPTIONS,
+];
+const CHAMADO_PRIORIDADE_OPTIONS: Array<{ value: 'alta' | 'media' | 'baixa' | null; label: string }> = [
+  { value: null, label: 'Toda prioridade' },
+  { value: 'alta', label: 'Alta' },
+  { value: 'media', label: 'Média' },
+  { value: 'baixa', label: 'Baixa' },
+];
+
 export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'AdministrativoChamados'>) {
   const { identity } = useContext(AuthIdentityContext);
   const actorId = identity?.profileId;
   const [busca, setBusca] = useState('');
   const [statusFiltro, setStatusFiltro] = useState<AdministrativoChamadoStatus | null>(null);
+  const [prioridadeFiltro, setPrioridadeFiltro] = useState<'alta' | 'media' | 'baixa' | null>(null);
+  const [statusFiltroModalOpen, setStatusFiltroModalOpen] = useState(false);
+  const [prioridadeModalOpen, setPrioridadeModalOpen] = useState(false);
   const [items, setItems] = useState<AdministrativoChamadoItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -536,11 +708,15 @@ export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'Admini
   const load = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchAdministrativoChamados({ busca: busca || undefined, status: statusFiltro ?? undefined })
+    fetchAdministrativoChamados({
+      busca: busca || undefined,
+      status: statusFiltro ?? undefined,
+      prioridade: prioridadeFiltro ?? undefined,
+    })
       .then(setItems)
       .catch((err) => setErrorMessage(showAdmError(err, 'Não foi possível carregar os chamados.')))
       .finally(() => setIsLoading(false));
-  }, [busca, statusFiltro]);
+  }, [busca, statusFiltro, prioridadeFiltro]);
 
   useEffect(() => {
     load();
@@ -597,24 +773,19 @@ export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'Admini
 
         <AdmSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por protocolo, problema ou posto" />
 
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <Pressable
-            style={[adStyles.filterPill, statusFiltro === null ? adStyles.filterPillActive : null]}
-            onPress={() => setStatusFiltro(null)}
-          >
-            <Text style={[adStyles.filterPillText, statusFiltro === null ? adStyles.filterPillTextActive : null]}>Todos</Text>
-          </Pressable>
-          {CHAMADO_STATUS_OPTIONS.map((opt) => (
-            <Pressable
-              key={opt.value}
-              style={[adStyles.filterPill, statusFiltro === opt.value ? adStyles.filterPillActive : null]}
-              onPress={() => setStatusFiltro(opt.value)}
-            >
-              <Text style={[adStyles.filterPillText, statusFiltro === opt.value ? adStyles.filterPillTextActive : null]}>
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <View style={{ flex: 1 }}>
+            <AdmSelectButton
+              label={CHAMADO_STATUS_FILTRO_OPTIONS.find((o) => o.value === statusFiltro)?.label ?? 'Todos os status'}
+              onPress={() => setStatusFiltroModalOpen(true)}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <AdmSelectButton
+              label={CHAMADO_PRIORIDADE_OPTIONS.find((o) => o.value === prioridadeFiltro)?.label ?? 'Toda prioridade'}
+              onPress={() => setPrioridadeModalOpen(true)}
+            />
+          </View>
         </View>
 
         <Pressable
@@ -728,17 +899,38 @@ export function AdministrativoChamadosScreen({ navigation }: ScreenProps<'Admini
           <Text style={adStyles.filterModalApplyButtonText}>{isSaving ? 'Enviando...' : 'Abrir chamado'}</Text>
         </Pressable>
       </AdmModal>
+
+      <AdmSelectModal
+        visible={statusFiltroModalOpen}
+        title="Status"
+        options={CHAMADO_STATUS_FILTRO_OPTIONS}
+        selectedValue={statusFiltro}
+        onSelect={setStatusFiltro}
+        onClose={() => setStatusFiltroModalOpen(false)}
+      />
+      <AdmSelectModal
+        visible={prioridadeModalOpen}
+        title="Prioridade"
+        options={CHAMADO_PRIORIDADE_OPTIONS}
+        selectedValue={prioridadeFiltro}
+        onSelect={setPrioridadeFiltro}
+        onClose={() => setPrioridadeModalOpen(false)}
+      />
     </SafeAreaView>
   );
 }
 
 // --- 4. Almoxarifado ---
 
+const INSUMO_CATEGORIA_TODAS = { value: null as string | null, label: 'Todas as categorias' };
+
 export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'AdministrativoInsumos'>) {
   const { identity } = useContext(AuthIdentityContext);
   const actorId = identity?.profileId;
   const [busca, setBusca] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
+  const [categoriaModalOpen, setCategoriaModalOpen] = useState(false);
+  const [allCategorias, setAllCategorias] = useState<string[]>([]);
   const [items, setItems] = useState<AdministrativoInsumoItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -760,7 +952,19 @@ export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'Adminis
     load();
   }, [load]);
 
-  const categorias = useMemo(() => Array.from(new Set(items.map((i) => i.categoria))).sort(), [items]);
+  // Lista de categorias pro dropdown vem de uma busca separada sem filtro
+  // (senão, ao selecionar uma categoria, as outras desapareceriam da lista
+  // de opções na próxima abertura do dropdown).
+  useEffect(() => {
+    fetchAdministrativoInsumos({})
+      .then((all) => setAllCategorias(Array.from(new Set(all.map((i) => i.categoria))).sort()))
+      .catch(() => setAllCategorias([]));
+  }, []);
+
+  const categoriaOptions = useMemo(
+    () => [INSUMO_CATEGORIA_TODAS, ...allCategorias.map((cat) => ({ value: cat, label: cat }))],
+    [allCategorias]
+  );
 
   const handleSolicitar = () => {
     if (!solicitarPara) return;
@@ -799,23 +1003,11 @@ export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'Adminis
 
         <AdmSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar item" />
 
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <Pressable
-            style={[adStyles.filterPill, categoriaFiltro === null ? adStyles.filterPillActive : null]}
-            onPress={() => setCategoriaFiltro(null)}
-          >
-            <Text style={[adStyles.filterPillText, categoriaFiltro === null ? adStyles.filterPillTextActive : null]}>Todas</Text>
-          </Pressable>
-          {categorias.map((cat) => (
-            <Pressable
-              key={cat}
-              style={[adStyles.filterPill, categoriaFiltro === cat ? adStyles.filterPillActive : null]}
-              onPress={() => setCategoriaFiltro(cat)}
-            >
-              <Text style={[adStyles.filterPillText, categoriaFiltro === cat ? adStyles.filterPillTextActive : null]}>{cat}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <AdmSelectButton
+          label={categoriaOptions.find((o) => o.value === categoriaFiltro)?.label ?? 'Todas as categorias'}
+          onPress={() => setCategoriaModalOpen(true)}
+        />
+        <View style={{ height: 12 }} />
 
         {isLoading ? (
           <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
@@ -882,6 +1074,15 @@ export function AdministrativoInsumosScreen({ navigation }: ScreenProps<'Adminis
           <Text style={adStyles.filterModalApplyButtonText}>{isSaving ? 'Enviando...' : 'Solicitar'}</Text>
         </Pressable>
       </AdmModal>
+
+      <AdmSelectModal
+        visible={categoriaModalOpen}
+        title="Categoria"
+        options={categoriaOptions}
+        selectedValue={categoriaFiltro}
+        onSelect={setCategoriaFiltro}
+        onClose={() => setCategoriaModalOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -1571,6 +1772,65 @@ const adStyles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     color: '#0C1736',
+  },
+  selectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  selectButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0C1736',
+    flex: 1,
+    marginRight: 8,
+  },
+  pieCenterValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0C1736',
+  },
+  pieCenterLabel: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#7C8397',
+    textAlign: 'center',
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  countBadgeNumber: {
+    color: '#0C1736',
+    fontSize: 14,
+    fontWeight: '800',
+    marginLeft: 8,
+  },
+  filterOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F6',
+  },
+  filterOptionRowText: {
+    fontSize: 13,
+    color: '#0C1736',
+    flex: 1,
+    marginRight: 8,
+  },
+  filterOptionRowTextActive: {
+    color: '#0F8B8D',
+    fontWeight: '800',
   },
   chartCard: {
     backgroundColor: '#FFFFFF',
