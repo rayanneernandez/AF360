@@ -143,6 +143,40 @@ function formatDateTimeBR(iso: string | null | undefined): string {
   return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function formatHoraBR(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Divisor de data no estilo WhatsApp: "HOJE" / "ONTEM" / "29 DE AGOSTO DE 2026".
+function formatDiaDivisorWA(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const hoje = new Date();
+  const ontem = new Date();
+  ontem.setDate(hoje.getDate() - 1);
+  const mesmoDia = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (mesmoDia(d, hoje)) return 'HOJE';
+  if (mesmoDia(d, ontem)) return 'ONTEM';
+  const meses = [
+    'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
+    'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO',
+  ];
+  return `${d.getDate()} DE ${meses[d.getMonth()]} DE ${d.getFullYear()}`;
+}
+
+// Chave (AAAA-MM-DD local) usada só pra agrupar mensagens por dia antes de
+// renderizar os divisores "HOJE"/"ONTEM"/data — não depende de fuso do texto.
+function diaChaveWA(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // Extrator defensivo pra campos cujo formato exato ainda não foi confirmado
 // pela Lovable (ex.: mensagens do WhatsApp, série diária do Leva+) — nunca
 // inventa valor, só tenta nomes de chave alternativos e mostra "—"/estado
@@ -896,6 +930,21 @@ const OCORRENCIA_CANAL_OPTIONS: Array<{ value: string | null; label: string }> =
   { value: 'google', label: 'Google' },
 ];
 
+// Opções de Canal ao CRIAR uma ocorrência manualmente — lista completa igual
+// ao painel web (dropdown "Canal" da tela Nova ocorrência), maior que
+// OCORRENCIA_CANAL_OPTIONS (que é só o filtro da listagem).
+const OCORRENCIA_CANAL_CREATE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'google', label: 'Google Meu Negócio' },
+  { value: 'reclame_aqui', label: 'Reclame Aqui' },
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'fidelidade', label: 'Fidelidade' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'email', label: 'E-mail' },
+  { value: 'outro', label: 'Outro' },
+];
+
 const OCORRENCIA_PRIORIDADE_OPTIONS: Array<{ value: MarketingOcorrenciaPrioridade | null; label: string }> = [
   { value: null, label: 'Todas as prioridades' },
   { value: 'alta', label: 'Alta' },
@@ -926,6 +975,10 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
   const [formClienteEmail, setFormClienteEmail] = useState('');
   const [formClienteTelefone, setFormClienteTelefone] = useState('');
   const [formPrioridade, setFormPrioridade] = useState<MarketingOcorrenciaPrioridade>('media');
+  const [formCanal, setFormCanal] = useState<string>('manual');
+  const [formResponsavelId, setFormResponsavelId] = useState<string | null>(null);
+  const [formLink, setFormLink] = useState('');
+  const [formOpenField, setFormOpenField] = useState<'canal' | 'prioridade' | 'responsavel' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const [detalheId, setDetalheId] = useState<string | null>(null);
@@ -1055,7 +1108,9 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
         cliente_email: formClienteEmail || undefined,
         cliente_telefone: formClienteTelefone || undefined,
         prioridade: formPrioridade,
-        canal: 'manual',
+        canal: formCanal,
+        responsavel_id: formResponsavelId ?? undefined,
+        link: formLink.trim() || undefined,
       },
       actorId
     )
@@ -1067,6 +1122,10 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
         setFormClienteEmail('');
         setFormClienteTelefone('');
         setFormPrioridade('media');
+        setFormCanal('manual');
+        setFormResponsavelId(null);
+        setFormLink('');
+        setFormOpenField(null);
         load();
       })
       .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível criar a ocorrência.')))
@@ -1127,7 +1186,10 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
 
         <Pressable
           style={[mkStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }]}
-          onPress={() => setIsFormOpen(true)}
+          onPress={() => {
+            setFormOpenField(null);
+            setIsFormOpen(true);
+          }}
         >
           <Feather name="plus" size={14} color="#FFFFFF" />
           <Text style={mkStyles.suggestionButtonText}>Nova ocorrência</Text>
@@ -1206,9 +1268,37 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
         onClose={() => setPrioridadeModalOpen(false)}
       />
 
-      <MktModal visible={isFormOpen} title="Nova ocorrência" onClose={() => setIsFormOpen(false)}>
-        <MktFormLabel>Assunto *</MktFormLabel>
-        <TextInput style={mkStyles.formInput} value={formAssunto} onChangeText={setFormAssunto} placeholder="Ex.: Dúvida sobre cadastro" placeholderTextColor="#A7AEC2" />
+      <MktModal
+        visible={isFormOpen}
+        title="Nova ocorrência"
+        onClose={() => {
+          setIsFormOpen(false);
+          setFormOpenField(null);
+        }}
+      >
+        <View style={{ zIndex: formOpenField === 'canal' ? 200 : 3 }}>
+          <MktFormLabel>Canal</MktFormLabel>
+          <MktFieldDropdown
+            label={OCORRENCIA_CANAL_CREATE_OPTIONS.find((o) => o.value === formCanal)?.label ?? 'Manual'}
+            options={OCORRENCIA_CANAL_CREATE_OPTIONS}
+            selectedValue={formCanal}
+            isOpen={formOpenField === 'canal'}
+            onToggle={() => setFormOpenField((f) => (f === 'canal' ? null : 'canal'))}
+            onSelect={setFormCanal}
+          />
+        </View>
+        <View style={{ height: 12 }} />
+        <View style={{ zIndex: formOpenField === 'prioridade' ? 200 : 2 }}>
+          <MktFormLabel>Prioridade</MktFormLabel>
+          <MktFieldDropdown
+            label={OCORRENCIA_PRIORIDADE_OPTIONS.find((o) => o.value === formPrioridade)?.label ?? 'Média'}
+            options={OCORRENCIA_PRIORIDADE_OPTIONS.filter((o) => o.value != null) as Array<{ value: MarketingOcorrenciaPrioridade; label: string }>}
+            selectedValue={formPrioridade}
+            isOpen={formOpenField === 'prioridade'}
+            onToggle={() => setFormOpenField((f) => (f === 'prioridade' ? null : 'prioridade'))}
+            onSelect={setFormPrioridade}
+          />
+        </View>
         <View style={{ height: 12 }} />
         <MktFormLabel>Cliente</MktFormLabel>
         <TextInput style={mkStyles.formInput} value={formClienteNome} onChangeText={setFormClienteNome} placeholder="Nome do cliente" placeholderTextColor="#A7AEC2" />
@@ -1239,13 +1329,30 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
           maxLength={15}
         />
         <View style={{ height: 12 }} />
-        <MktFormLabel>Prioridade</MktFormLabel>
-        <MktInlineSelect
-          label={OCORRENCIA_PRIORIDADE_OPTIONS.find((o) => o.value === formPrioridade)?.label ?? 'Média'}
-          options={OCORRENCIA_PRIORIDADE_OPTIONS.filter((o) => o.value != null) as Array<{ value: MarketingOcorrenciaPrioridade; label: string }>}
-          selectedValue={formPrioridade}
-          onSelect={setFormPrioridade}
-        />
+        <View style={{ zIndex: formOpenField === 'responsavel' ? 200 : 1 }}>
+          <MktFormLabel>Responsável</MktFormLabel>
+          <MktFieldDropdown
+            label={responsaveis.find((r) => r.id === formResponsavelId)?.nome ?? 'Sem responsável'}
+            options={[
+              { value: null as string | null, label: 'Sem responsável' },
+              ...responsaveis.map((r) => ({ value: r.id as string | null, label: r.nome })),
+            ]}
+            selectedValue={formResponsavelId}
+            isOpen={formOpenField === 'responsavel'}
+            onToggle={() => setFormOpenField((f) => (f === 'responsavel' ? null : 'responsavel'))}
+            onSelect={setFormResponsavelId}
+            searchable
+          />
+          {responsaveisError ? (
+            <Pressable onPress={loadResponsaveis} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+              <Feather name="alert-circle" size={13} color="#C2263A" />
+              <Text style={[mkStyles.listRowMeta, { color: '#C2263A' }]}>{responsaveisError} Toque para tentar de novo.</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <View style={{ height: 12 }} />
+        <MktFormLabel>Assunto *</MktFormLabel>
+        <TextInput style={mkStyles.formInput} value={formAssunto} onChangeText={setFormAssunto} placeholder="Ex.: Dúvida sobre cadastro" placeholderTextColor="#A7AEC2" />
         <View style={{ height: 12 }} />
         <MktFormLabel>Descrição</MktFormLabel>
         <TextInput
@@ -1256,9 +1363,22 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
           placeholderTextColor="#A7AEC2"
           multiline
         />
+        <View style={{ height: 12 }} />
+        <MktFormLabel>Link da publicação/avaliação (opcional)</MktFormLabel>
+        <TextInput
+          style={mkStyles.formInput}
+          value={formLink}
+          onChangeText={setFormLink}
+          placeholder="https://..."
+          placeholderTextColor="#A7AEC2"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <View style={{ height: 12 }} />
         <Pressable style={[mkStyles.filterModalApplyButton, isSaving ? { opacity: 0.6 } : null]} onPress={handleCriar} disabled={isSaving}>
           <Text style={mkStyles.filterModalApplyButtonText}>{isSaving ? 'Salvando...' : 'Criar protocolo'}</Text>
         </Pressable>
+        {formOpenField ? <View style={{ height: 280 }} /> : null}
       </MktModal>
 
       <MktModal
@@ -1437,6 +1557,7 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
                 </Pressable>
               ) : null}
             </View>
+            {openField ? <View style={{ height: 280 }} /> : null}
           </>
         )}
       </MktModal>
@@ -1531,6 +1652,24 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
       })
       .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível atualizar a conversa.')));
   };
+
+  // Agrupa as mensagens por dia (chave AAAA-MM-DD) pra renderizar os
+  // divisores "HOJE"/"ONTEM"/data igual ao WhatsApp real, na mesma ordem em
+  // que a API devolveu (não reordena, só agrupa consecutivamente).
+  const mensagensAgrupadas = useMemo(() => {
+    const grupos: Array<{ dia: string; label: string; itens: Record<string, unknown>[] }> = [];
+    for (const raw of mensagens) {
+      const criadoEm = pickMktField(raw, ['created_at', 'timestamp', 'data']);
+      const dia = diaChaveWA(criadoEm);
+      const ultimo = grupos[grupos.length - 1];
+      if (ultimo && ultimo.dia === dia) {
+        ultimo.itens.push(raw);
+      } else {
+        grupos.push({ dia, label: formatDiaDivisorWA(criadoEm), itens: [raw] });
+      }
+    }
+    return grupos;
+  }, [mensagens]);
 
   const handleNovaConversa = () => {
     if (!novoPhone.trim()) {
@@ -1651,56 +1790,95 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
         </Pressable>
       </MktModal>
 
-      <MktModal visible={conversaAtiva != null} title={conversaAtiva?.display_name ?? conversaAtiva?.phone ?? 'Conversa'} onClose={() => setConversaAtiva(null)}>
-        {conversaAtiva ? (
-          <>
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-              <Pressable style={mkStyles.smallButton} onPress={() => handleAssumirOuFinalizar('em_atendimento')}>
-                <Text style={mkStyles.smallButtonText}>Assumir</Text>
-              </Pressable>
-              <Pressable style={[mkStyles.smallButton, { backgroundColor: '#5E667D' }]} onPress={() => handleAssumirOuFinalizar('finalizado')}>
-                <Text style={mkStyles.smallButtonText}>Finalizar</Text>
-              </Pressable>
-            </View>
-            {isLoadingMensagens ? (
-              <ActivityIndicator color="#C2255C" />
-            ) : mensagens.length === 0 ? (
-              <MktEmptyState message="Nenhuma mensagem ainda." />
-            ) : (
-              mensagens.map((raw, idx) => {
-                const direcao = pickMktField(raw, ['direcao', 'direction', 'tipo']) ?? 'inbound';
-                const texto = pickMktField(raw, ['mensagem', 'texto', 'body', 'content']) ?? '—';
-                const criadoEm = pickMktField(raw, ['created_at', 'timestamp', 'data']);
-                const isOutbound = direcao === 'outbound' || direcao === 'saida';
-                return (
-                  <View
-                    key={idx}
-                    style={[mkStyles.dreCard, isOutbound ? { backgroundColor: '#FBE4ED', borderColor: '#F3B9CF' } : null]}
-                  >
-                    <Text style={mkStyles.profileFieldText}>{texto}</Text>
-                    <Text style={[mkStyles.listRowMeta, { marginTop: 4 }]}>{formatDateTimeBR(criadoEm)}</Text>
-                  </View>
-                );
-              })
-            )}
-            <TextInput
-              style={[mkStyles.formInput, { minHeight: 60, textAlignVertical: 'top', marginTop: 10 }]}
-              value={textoEnvio}
-              onChangeText={setTextoEnvio}
-              placeholder="Escreva uma mensagem..."
-              placeholderTextColor="#A7AEC2"
-              multiline
-            />
-            <Pressable
-              style={[mkStyles.filterModalApplyButton, isSending || !textoEnvio.trim() ? { opacity: 0.6 } : null]}
-              onPress={handleEnviar}
-              disabled={isSending || !textoEnvio.trim()}
-            >
-              <Text style={mkStyles.filterModalApplyButtonText}>{isSending ? 'Enviando...' : 'Enviar'}</Text>
-            </Pressable>
-          </>
-        ) : null}
-      </MktModal>
+      <Modal visible={conversaAtiva != null} animationType="slide" onRequestClose={() => setConversaAtiva(null)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#ECE5DD' }}>
+          <StatusBar style="light" />
+          {conversaAtiva ? (
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+              <View style={mkStyles.waChatHeader}>
+                <Pressable onPress={() => setConversaAtiva(null)} hitSlop={8}>
+                  <Feather name="arrow-left" size={20} color="#FFFFFF" />
+                </Pressable>
+                <View style={mkStyles.waChatAvatar}>
+                  <Text style={mkStyles.waChatAvatarText}>
+                    {(conversaAtiva.display_name ?? conversaAtiva.phone).trim().slice(0, 2).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={mkStyles.waChatHeaderName} numberOfLines={1}>
+                    {conversaAtiva.display_name ?? formatTelefoneBR(conversaAtiva.phone)}
+                  </Text>
+                  <Text style={mkStyles.waChatHeaderMeta} numberOfLines={1}>
+                    {formatTelefoneBR(conversaAtiva.phone)} · {conversaAtiva.chat_status_label ?? conversaAtiva.chat_status}
+                  </Text>
+                </View>
+                <Pressable style={mkStyles.waChatHeaderBtn} onPress={() => handleAssumirOuFinalizar('em_atendimento')}>
+                  <Text style={mkStyles.waChatHeaderBtnText}>Assumir</Text>
+                </Pressable>
+                <Pressable style={mkStyles.waChatHeaderBtn} onPress={() => handleAssumirOuFinalizar('finalizado')}>
+                  <Text style={mkStyles.waChatHeaderBtnText}>Finalizar</Text>
+                </Pressable>
+              </View>
+
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+                {isLoadingMensagens ? (
+                  <ActivityIndicator color="#C2255C" style={{ marginTop: 20 }} />
+                ) : mensagens.length === 0 ? (
+                  <MktEmptyState message="Nenhuma mensagem ainda." />
+                ) : (
+                  mensagensAgrupadas.map((grupo) => (
+                    <View key={grupo.dia}>
+                      <View style={mkStyles.waDateDivider}>
+                        <Text style={mkStyles.waDateDividerText}>{grupo.label}</Text>
+                      </View>
+                      {grupo.itens.map((raw, idx) => {
+                        const direcao = pickMktField(raw, ['direcao', 'direction', 'tipo']) ?? 'inbound';
+                        const isSistema = direcao === 'sistema' || direcao === 'system';
+                        const texto = pickMktField(raw, ['mensagem', 'texto', 'body', 'content']) ?? '—';
+                        const criadoEm = pickMktField(raw, ['created_at', 'timestamp', 'data']);
+                        const isOutbound = direcao === 'outbound' || direcao === 'saida';
+                        if (isSistema) {
+                          return (
+                            <View key={idx} style={mkStyles.waSystemMessage}>
+                              <Text style={mkStyles.waSystemMessageText}>{texto}</Text>
+                            </View>
+                          );
+                        }
+                        return (
+                          <View key={idx} style={[mkStyles.waBubbleRow, { justifyContent: isOutbound ? 'flex-end' : 'flex-start' }]}>
+                            <View style={[mkStyles.waBubble, isOutbound ? mkStyles.waBubbleOut : mkStyles.waBubbleIn]}>
+                              <Text style={mkStyles.waBubbleText}>{texto}</Text>
+                              <Text style={mkStyles.waBubbleTime}>{formatHoraBR(criadoEm)}</Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+
+              <View style={mkStyles.waComposerBar}>
+                <TextInput
+                  style={mkStyles.waComposerInput}
+                  value={textoEnvio}
+                  onChangeText={setTextoEnvio}
+                  placeholder="Digite uma mensagem"
+                  placeholderTextColor="#A7AEC2"
+                  multiline
+                />
+                <Pressable
+                  style={[mkStyles.waSendButton, isSending || !textoEnvio.trim() ? { opacity: 0.6 } : null]}
+                  onPress={handleEnviar}
+                  disabled={isSending || !textoEnvio.trim()}
+                >
+                  <Feather name="send" size={17} color="#FFFFFF" />
+                </Pressable>
+              </View>
+            </KeyboardAvoidingView>
+          ) : null}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2999,5 +3177,132 @@ const mkStyles = StyleSheet.create({
   profileFieldText: {
     color: '#3A415C',
     fontSize: 13,
+  },
+  waChatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#C2255C',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  waChatAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  waChatAvatarText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  waChatHeaderName: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  waChatHeaderMeta: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  waChatHeaderBtn: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  waChatHeaderBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  waDateDivider: {
+    alignSelf: 'center',
+    backgroundColor: '#E9E3DC',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginVertical: 10,
+  },
+  waDateDividerText: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  waSystemMessage: {
+    alignSelf: 'center',
+    backgroundColor: '#FFF3D6',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginVertical: 6,
+    maxWidth: '85%',
+  },
+  waSystemMessageText: {
+    color: '#8A6D1D',
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  waBubbleRow: {
+    flexDirection: 'row',
+    marginBottom: 6,
+  },
+  waBubble: {
+    maxWidth: '80%',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingTop: 7,
+    paddingBottom: 6,
+  },
+  waBubbleIn: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 2,
+  },
+  waBubbleOut: {
+    backgroundColor: '#DCF8C6',
+    borderTopRightRadius: 2,
+  },
+  waBubbleText: {
+    color: '#0C1736',
+    fontSize: 13.5,
+    lineHeight: 18,
+  },
+  waBubbleTime: {
+    color: '#8A8F99',
+    fontSize: 10,
+    marginTop: 3,
+    alignSelf: 'flex-end',
+  },
+  waComposerBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#F1F2F6',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E6F0',
+  },
+  waComposerInput: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: '#0C1736',
+    maxHeight: 100,
+  },
+  waSendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#C2255C',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
