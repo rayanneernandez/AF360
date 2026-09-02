@@ -1684,6 +1684,41 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   const [novoPhone, setNovoPhone] = useState('');
   const [novoNome, setNovoNome] = useState('');
 
+  // Painel lateral "Atendimento" (abre ao tocar no nome/avatar da conversa).
+  const [isAtendimentoOpen, setIsAtendimentoOpen] = useState(false);
+  const [atendenteAberto, setAtendenteAberto] = useState(false);
+  const [atendentes, setAtendentes] = useState<Array<{ id: string; nome: string }>>([]);
+  const [atendentesError, setAtendentesError] = useState<string | null>(null);
+
+  const loadAtendentes = useCallback(() => {
+    setAtendentesError(null);
+    fetchRhColaboradores()
+      .then((rows: RhColaboradorRaw[]) =>
+        setAtendentes(
+          rows
+            .filter((r) => r.nome_completo)
+            .map((r) => ({ id: r.id, nome: r.nome_completo as string }))
+            .sort((a, b) => a.nome.localeCompare(b.nome))
+        )
+      )
+      .catch((err) => {
+        setAtendentes([]);
+        setAtendentesError(showMktError(err, 'Não foi possível carregar a lista de atendentes.'));
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!isAtendimentoOpen) return;
+    loadAtendentes();
+  }, [isAtendimentoOpen, loadAtendentes]);
+
+  // Contadores das pills (Todos/Fila/Ativos/Final.) — a API não confirmou um
+  // campo de totais fixos por aba, então calculamos honestamente a partir da
+  // última vez que a lista completa (aba "todos", sem filtro de canal/busca)
+  // foi carregada, e mantemos esse valor entre trocas de aba (igual o
+  // comportamento visto no web, onde os números não mudam ao trocar de aba).
+  const [contadoresAba, setContadoresAba] = useState<{ todos: number; fila: number; ativos: number; finalizadas: number } | null>(null);
+
   const load = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -1691,6 +1726,14 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
       .then((res) => {
         setConversas(res.itens);
         setContadores(res.contadores);
+        if (aba === 'todos' && !channel && !busca.trim()) {
+          setContadoresAba({
+            todos: res.itens.length,
+            fila: res.itens.filter((i) => i.chat_status === 'fila').length,
+            ativos: res.itens.filter((i) => i.chat_status === 'em_atendimento').length,
+            finalizadas: res.itens.filter((i) => i.chat_status === 'finalizado').length,
+          });
+        }
       })
       .catch((err) => setErrorMessage(showMktError(err, 'Não foi possível carregar as conversas.')))
       .finally(() => setIsLoading(false));
@@ -1704,11 +1747,24 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   const abrirConversa = (conversa: MarketingWaConversaItem) => {
     setConversaAtiva(conversa);
     setMensagens([]);
+    setIsAtendimentoOpen(false);
+    setAtendenteAberto(false);
     setIsLoadingMensagens(true);
     fetchMarketingWaMensagens(conversa.phone, { limit: 50 })
       .then(setMensagens)
       .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível carregar as mensagens.')))
       .finally(() => setIsLoadingMensagens(false));
+  };
+
+  const handleSalvarAtendente = (atendenteId: string | null) => {
+    if (!conversaAtiva) return;
+    setAtendenteAberto(false);
+    updateMarketingWaConversa(conversaAtiva.phone, { atendente_id: atendenteId ?? undefined }, actorId)
+      .then((atualizada) => {
+        setConversaAtiva(atualizada);
+        load();
+      })
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível atualizar o atendente.')));
   };
 
   const handleEnviar = () => {
@@ -1809,6 +1865,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
             >
               <Text style={[mkStyles.filterChipSmallText, aba === opt.value ? mkStyles.filterPillTextActive : null]}>
                 {opt.label}
+                {contadoresAba ? ` (${contadoresAba[opt.value]})` : ''}
               </Text>
             </Pressable>
           ))}
@@ -1885,19 +1942,24 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                 <Pressable onPress={() => setConversaAtiva(null)} hitSlop={8}>
                   <Feather name="arrow-left" size={20} color="#FFFFFF" />
                 </Pressable>
-                <View style={mkStyles.waChatAvatar}>
-                  <Text style={mkStyles.waChatAvatarText}>
-                    {(conversaAtiva.display_name ?? conversaAtiva.phone).trim().slice(0, 2).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={mkStyles.waChatHeaderName} numberOfLines={1}>
-                    {conversaAtiva.display_name ?? formatTelefoneBR(conversaAtiva.phone)}
-                  </Text>
-                  <Text style={mkStyles.waChatHeaderMeta} numberOfLines={1}>
-                    {formatTelefoneBR(conversaAtiva.phone)} · {conversaAtiva.chat_status_label ?? conversaAtiva.chat_status}
-                  </Text>
-                </View>
+                <Pressable
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}
+                  onPress={() => setIsAtendimentoOpen(true)}
+                >
+                  <View style={mkStyles.waChatAvatar}>
+                    <Text style={mkStyles.waChatAvatarText}>
+                      {(conversaAtiva.display_name ?? conversaAtiva.phone).trim().slice(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={mkStyles.waChatHeaderName} numberOfLines={1}>
+                      {conversaAtiva.display_name ?? formatTelefoneBR(conversaAtiva.phone)}
+                    </Text>
+                    <Text style={mkStyles.waChatHeaderMeta} numberOfLines={1}>
+                      {formatTelefoneBR(conversaAtiva.phone)} · {conversaAtiva.chat_status_label ?? conversaAtiva.chat_status}
+                    </Text>
+                  </View>
+                </Pressable>
                 <Pressable style={mkStyles.waChatHeaderBtn} onPress={() => handleAssumirOuFinalizar('em_atendimento')}>
                   <Text style={mkStyles.waChatHeaderBtnText}>Assumir</Text>
                 </Pressable>
@@ -1961,6 +2023,69 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                   <Feather name="send" size={17} color="#FFFFFF" />
                 </Pressable>
               </View>
+
+              {isAtendimentoOpen ? (
+                <View style={mkStyles.waAtendimentoOverlay}>
+                  <Pressable style={{ flex: 1 }} onPress={() => setIsAtendimentoOpen(false)} />
+                  <View style={mkStyles.waAtendimentoPanel}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                      <Text style={mkStyles.sectionTitle}>Atendimento</Text>
+                      <Pressable onPress={() => setIsAtendimentoOpen(false)} hitSlop={8}>
+                        <Feather name="x" size={20} color="#677089" />
+                      </Pressable>
+                    </View>
+                    <View style={{ alignItems: 'center', marginBottom: 14 }}>
+                      <View style={[mkStyles.waChatAvatar, { backgroundColor: '#FBE4ED', width: 56, height: 56, borderRadius: 28 }]}>
+                        <Text style={[mkStyles.waChatAvatarText, { color: '#C2255C', fontSize: 18 }]}>
+                          {(conversaAtiva.display_name ?? conversaAtiva.phone).trim().slice(0, 2).toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text style={[mkStyles.listRowTitle, { marginTop: 8 }]}>{conversaAtiva.display_name ?? 'Sem nome de exibição'}</Text>
+                      <Text style={mkStyles.listRowMeta}>{formatTelefoneBR(conversaAtiva.phone)}</Text>
+                    </View>
+
+                    <MktFormLabel>Atendente</MktFormLabel>
+                    <MktFieldDropdown
+                      label={atendentes.find((a) => a.nome === conversaAtiva.atendente_nome)?.nome ?? conversaAtiva.atendente_nome ?? 'Sem atendente'}
+                      options={[
+                        { value: null as string | null, label: 'Sem atendente' },
+                        ...atendentes.map((a) => ({ value: a.id as string | null, label: a.nome })),
+                      ]}
+                      selectedValue={atendentes.find((a) => a.nome === conversaAtiva.atendente_nome)?.id ?? null}
+                      isOpen={atendenteAberto}
+                      onToggle={() => setAtendenteAberto((v) => !v)}
+                      onSelect={handleSalvarAtendente}
+                      searchable
+                    />
+                    {atendentesError ? (
+                      <Pressable onPress={loadAtendentes} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                        <Feather name="alert-circle" size={13} color="#C2263A" />
+                        <Text style={[mkStyles.listRowMeta, { color: '#C2263A' }]}>{atendentesError} Toque para tentar de novo.</Text>
+                      </Pressable>
+                    ) : null}
+
+                    <View style={{ marginTop: 18 }}>
+                      <MktFormLabel>Etiquetas</MktFormLabel>
+                      <Text style={mkStyles.listRowMeta}>
+                        Ainda não disponível — precisa confirmar com a Lovable o contrato de etiquetas por conversa.
+                      </Text>
+                    </View>
+                    <View style={{ marginTop: 14 }}>
+                      <MktFormLabel>Notas internas</MktFormLabel>
+                      <Text style={mkStyles.listRowMeta}>
+                        Ainda não disponível — precisa confirmar com a Lovable o contrato de notas internas.
+                      </Text>
+                    </View>
+                    <View style={{ marginTop: 14 }}>
+                      <MktFormLabel>Respostas rápidas</MktFormLabel>
+                      <Text style={mkStyles.listRowMeta}>
+                        Ainda não disponível — precisa confirmar com a Lovable o contrato de respostas rápidas.
+                      </Text>
+                    </View>
+                    {atendenteAberto ? <View style={{ height: 280 }} /> : null}
+                  </View>
+                </View>
+              ) : null}
             </KeyboardAvoidingView>
             ) : null}
           </SafeAreaView>
@@ -3396,6 +3521,28 @@ const mkStyles = StyleSheet.create({
     fontSize: 13,
     color: '#0C1736',
     maxHeight: 100,
+  },
+  waAtendimentoOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    zIndex: 300,
+  },
+  waAtendimentoPanel: {
+    width: '78%',
+    maxWidth: 320,
+    backgroundColor: '#FFFFFF',
+    height: '100%',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: -2, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 12,
   },
   waSendButton: {
     width: 40,
