@@ -5,6 +5,7 @@ import { useIsFocused } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,7 +16,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { PieChart, LineChart } from 'react-native-gifted-charts';
 import * as Clipboard from 'expo-clipboard';
 import * as DocumentPicker from 'expo-document-picker';
@@ -166,6 +167,25 @@ function formatDiaDivisorWA(iso: string | null | undefined): string {
     'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO',
   ];
   return `${d.getDate()} DE ${meses[d.getMonth()]} DE ${d.getFullYear()}`;
+}
+
+// Extrai o texto de uma mensagem do WhatsApp. O contrato exato do nome do
+// campo de texto nunca foi confirmado pela Lovable, então além das chaves
+// mais prováveis, tenta achar QUALQUER outro campo de texto não-metadado no
+// objeto — mostrar o dado bruto real é melhor do que esconder a mensagem
+// atrás de um "—" que não diz nada de verdade sobre o que veio da API.
+function extractMktWaTexto(raw: Record<string, unknown>): string {
+  const known = pickMktField(raw, [
+    'mensagem', 'texto', 'body', 'content', 'text', 'message', 'conteudo', 'caption', 'texto_mensagem', 'body_text', 'msg',
+  ]);
+  if (known) return known;
+  const ignorarChaves = new Set([
+    'id', 'created_at', 'timestamp', 'data', 'direcao', 'direction', 'tipo', 'type', 'phone', 'telefone', 'status', 'wa_id', 'message_id',
+  ]);
+  const candidato = Object.entries(raw).find(
+    ([chave, valor]) => !ignorarChaves.has(chave) && typeof valor === 'string' && valor.trim().length > 0
+  );
+  return candidato ? String(candidato[1]) : '(mensagem sem texto — contrato do campo não confirmado)';
 }
 
 // Chave (AAAA-MM-DD local) usada só pra agrupar mensagens por dia antes de
@@ -473,12 +493,23 @@ function MktFieldDropdown<T extends string | null>({
               placeholderTextColor="#A7AEC2"
             />
           ) : null}
-          <ScrollView style={{ maxHeight: 260 }} keyboardShouldPersistTaps="handled">
-            {filtered.map((opt) => {
+          {/* FlatList em vez de ScrollView+map: com listas grandes (ex.: os
+              900+ colaboradores do Responsável), montar um Pressable pra cada
+              item de uma vez trava a abertura do dropdown por alguns
+              segundos. FlatList só renderiza o que está visível na tela. */}
+          <FlatList
+            data={filtered}
+            keyExtractor={(opt, idx) => `${opt.label}-${idx}`}
+            style={{ maxHeight: 260 }}
+            keyboardShouldPersistTaps="handled"
+            initialNumToRender={16}
+            maxToRenderPerBatch={16}
+            windowSize={5}
+            removeClippedSubviews
+            renderItem={({ item: opt }) => {
               const isSelected = selectedValue === opt.value;
               return (
                 <Pressable
-                  key={opt.label}
                   style={[mkStyles.overlayDropdownItem, isSelected ? { backgroundColor: opt.color ?? '#C2255C' } : null]}
                   onPress={() => {
                     onSelect(opt.value);
@@ -491,8 +522,8 @@ function MktFieldDropdown<T extends string | null>({
                   {isSelected ? <Feather name="check" size={14} color="#FFFFFF" style={{ marginLeft: 'auto' }} /> : null}
                 </Pressable>
               );
-            })}
-          </ScrollView>
+            }}
+          />
         </View>
       ) : null}
     </View>
@@ -632,6 +663,14 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [waPointerIdx, setWaPointerIdx] = useState<number | null>(null);
 
+  // Leva+ não faz parte do contrato do endpoint /dashboard (confirmado pela
+  // Lovable só com ocorrências/whatsapp/google) — por isso é buscado à parte
+  // aqui, no mesmo período, igual o painel web faz pra montar o card
+  // "Fidelidade Leva+".
+  const [levaMais, setLevaMais] = useState<MarketingLevaMaisMetricas | null>(null);
+  const [isLoadingLevaMais, setIsLoadingLevaMais] = useState(true);
+  const [levaMaisError, setLevaMaisError] = useState<string | null>(null);
+
   useEffect(() => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -640,6 +679,13 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
       .then(setData)
       .catch((err) => setErrorMessage(showMktError(err, 'Não foi possível carregar o dashboard.')))
       .finally(() => setIsLoading(false));
+
+    setIsLoadingLevaMais(true);
+    setLevaMaisError(null);
+    fetchMarketingLevaMaisMetricas({ startDate: dataInicial, endDate: dataFinal })
+      .then(setLevaMais)
+      .catch((err) => setLevaMaisError(showMktError(err, 'Não foi possível carregar o Leva+.')))
+      .finally(() => setIsLoadingLevaMais(false));
   }, [periodo, refMes, refAno]);
 
   const ocorrenciasStatusPie = data
@@ -729,6 +775,39 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
             </View>
 
             <View style={mkStyles.chartCard}>
+              <Text style={mkStyles.sectionTitle}>Fidelidade Leva+</Text>
+              {isLoadingLevaMais ? (
+                <ActivityIndicator color="#C2255C" style={{ marginTop: 8 }} />
+              ) : levaMaisError ? (
+                <Text style={[mkStyles.listRowMeta, { color: '#C2263A' }]}>{levaMaisError}</Text>
+              ) : !levaMais ? (
+                <MktEmptyState message="Sem dados do Leva+ no período." />
+              ) : (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 6 }}>
+                  <View style={{ minWidth: '40%' }}>
+                    <Text style={mkStyles.listRowMeta}>CLIENTES</Text>
+                    <Text style={mkStyles.listRowValue}>{formatNumeroBR(levaMais.totals.totalRegisteredClients)}</Text>
+                    <Text style={mkStyles.listRowMeta}>cadastrados</Text>
+                  </View>
+                  <View style={{ minWidth: '40%' }}>
+                    <Text style={mkStyles.listRowMeta}>VENDAS</Text>
+                    <Text style={mkStyles.listRowValue}>{formatBRL(levaMais.totals.totalRevenue)}</Text>
+                    <Text style={mkStyles.listRowMeta}>no período</Text>
+                  </View>
+                  <View style={{ minWidth: '40%' }}>
+                    <Text style={mkStyles.listRowMeta}>TICKET MÉDIO</Text>
+                    <Text style={mkStyles.listRowValue}>{formatBRL(levaMais.totals.avgTicket)}</Text>
+                  </View>
+                  <View style={{ minWidth: '40%' }}>
+                    <Text style={mkStyles.listRowMeta}>POSTOS ATIVOS</Text>
+                    <Text style={mkStyles.listRowValue}>{formatNumeroBR(levaMais.byStore.filter((s) => s.transactionCount > 0).length)}</Text>
+                    <Text style={mkStyles.listRowMeta}>com venda</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            <View style={mkStyles.chartCard}>
               <Text style={mkStyles.sectionTitle}>Google Meu Negócio</Text>
               {data.google.conectado ? (
                 <>
@@ -799,10 +878,10 @@ export function MarketingDashboardScreen({ navigation }: ScreenProps<'MarketingD
                   data={data.serie_diaria.map((p) => ({ value: p.inbound }))}
                   color="#C2255C"
                   thickness={2}
-                  curved
-                  hideDataPoints
+                  dataPointsColor="#C2255C"
+                  dataPointsRadius={3}
                   height={120}
-                  noOfSections={3}
+                  noOfSections={4}
                   xAxisLabelsHeight={0}
                   yAxisTextStyle={{ color: '#8891A6', fontSize: 9 }}
                   xAxisColor="#E2E6F0"
@@ -1238,6 +1317,7 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
                   <Text style={[mkStyles.listRowMeta, item.sla.estourado ? { color: '#E6213D', fontWeight: '700' } : null]}>{item.sla.label}</Text>
                 ) : null}
               </View>
+              <Text style={[mkStyles.listRowMeta, { marginTop: 4 }]}>Aberto em: {formatDateTimeBR(item.created_at)}</Text>
             </Pressable>
           ))
         )}
@@ -1720,27 +1800,27 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
 
         <MktSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por nome, telefone ou tag..." />
 
-        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
           {WA_ABA_OPTIONS.map((opt) => (
             <Pressable
               key={opt.value}
-              style={[mkStyles.filterPill, aba === opt.value ? mkStyles.filterPillActive : null, { flex: 1 }]}
+              style={[mkStyles.filterChipSmall, aba === opt.value ? mkStyles.filterPillActive : null]}
               onPress={() => setAba(opt.value)}
             >
-              <Text style={[mkStyles.filterPillText, aba === opt.value ? mkStyles.filterPillTextActive : null, { textAlign: 'center' }]}>
+              <Text style={[mkStyles.filterChipSmallText, aba === opt.value ? mkStyles.filterPillTextActive : null]}>
                 {opt.label}
               </Text>
             </Pressable>
           ))}
         </View>
-        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
           {WA_CHANNEL_OPTIONS.map((opt) => (
             <Pressable
               key={opt.label}
-              style={[mkStyles.filterPill, channel === opt.value ? mkStyles.filterPillActive : null]}
+              style={[mkStyles.filterChipSmall, channel === opt.value ? mkStyles.filterPillActive : null]}
               onPress={() => setChannel(opt.value)}
             >
-              <Text style={[mkStyles.filterPillText, channel === opt.value ? mkStyles.filterPillTextActive : null]}>{opt.label}</Text>
+              <Text style={[mkStyles.filterChipSmallText, channel === opt.value ? mkStyles.filterPillTextActive : null]}>{opt.label}</Text>
             </Pressable>
           ))}
         </View>
@@ -1791,9 +1871,15 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
       </MktModal>
 
       <Modal visible={conversaAtiva != null} animationType="slide" onRequestClose={() => setConversaAtiva(null)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#ECE5DD' }}>
-          <StatusBar style="light" />
-          {conversaAtiva ? (
+        {/* SafeAreaProvider próprio: um <Modal> nativo abre uma nova janela e o
+            SafeAreaProvider do App.tsx (raiz) não repassa os insets pra dentro
+            dela — sem isso o cabeçalho fica embaixo do relógio/status bar do
+            iOS. Recriando o provider aqui, os insets são medidos de novo pra
+            essa janela do Modal. */}
+        <SafeAreaProvider>
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#ECE5DD' }}>
+            <StatusBar style="light" />
+            {conversaAtiva ? (
             <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
               <View style={mkStyles.waChatHeader}>
                 <Pressable onPress={() => setConversaAtiva(null)} hitSlop={8}>
@@ -1834,7 +1920,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                       {grupo.itens.map((raw, idx) => {
                         const direcao = pickMktField(raw, ['direcao', 'direction', 'tipo']) ?? 'inbound';
                         const isSistema = direcao === 'sistema' || direcao === 'system';
-                        const texto = pickMktField(raw, ['mensagem', 'texto', 'body', 'content']) ?? '—';
+                        const texto = extractMktWaTexto(raw);
                         const criadoEm = pickMktField(raw, ['created_at', 'timestamp', 'data']);
                         const isOutbound = direcao === 'outbound' || direcao === 'saida';
                         if (isSistema) {
@@ -1876,8 +1962,9 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                 </Pressable>
               </View>
             </KeyboardAvoidingView>
-          ) : null}
-        </SafeAreaView>
+            ) : null}
+          </SafeAreaView>
+        </SafeAreaProvider>
       </Modal>
     </SafeAreaView>
   );
@@ -3043,6 +3130,19 @@ const mkStyles = StyleSheet.create({
   },
   filterPillTextActive: {
     color: '#FFFFFF',
+  },
+  filterChipSmall: {
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  filterChipSmallText: {
+    color: '#5E667D',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   countLabel: {
     color: '#677089',
