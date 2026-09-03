@@ -2637,7 +2637,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                     <View style={{ height: 14 }} />
                     <MktFormLabel>Atendente</MktFormLabel>
                     <MktFieldDropdown
-                      label={atendentes.find((a) => a.nome === conversaAtiva.atendente_nome)?.nome ?? conversaAtiva.atendente_nome ?? 'Sem atendente'}
+                      label={atendentes.find((a) => a.nome === conversaAtiva.atendente_nome)?.nome ?? ''}
                       options={[
                         { value: null as string | null, label: 'Sem atendente' },
                         ...atendentes.map((a) => ({ value: a.id as string | null, label: a.nome })),
