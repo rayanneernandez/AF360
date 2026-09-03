@@ -2484,10 +2484,21 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                 <View style={[mkStyles.waJanelaAviso, { backgroundColor: '#FBE4E7' }]}>
                   <Text style={[mkStyles.waJanelaAvisoText, { color: '#C2263A' }]}>Contato bloqueado — desbloqueie no menu (⋮) pra poder enviar mensagem.</Text>
                 </View>
-              ) : sugestoes.length > 0 ? (
+              ) : null}
+
+              {/* As sugestões contextuais só aparecem se tocar no raio (⚡) —
+                  antes ficavam sempre visíveis acima do composer. */}
+              {isQuickPickOpen && sugestoes.length > 0 ? (
                 <View style={{ paddingHorizontal: 12, paddingTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                   {sugestoes.map((sugestao) => (
-                    <Pressable key={sugestao.id} style={mkStyles.waSugestaoChip} onPress={() => setTextoEnvio(sugestao.texto)}>
+                    <Pressable
+                      key={sugestao.id}
+                      style={mkStyles.waSugestaoChip}
+                      onPress={() => {
+                        setTextoEnvio(sugestao.texto);
+                        setIsQuickPickOpen(false);
+                      }}
+                    >
                       <Text style={mkStyles.waSugestaoChipText} numberOfLines={1}>{sugestao.label}</Text>
                     </Pressable>
                   ))}
@@ -2746,23 +2757,32 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                   >
                     <Pressable style={[mkStyles.modalCard, { maxHeight: '86%' }]} onPress={() => {}}>
                       <View style={mkStyles.modalHeader}>
-                        <Text style={mkStyles.modalTitle}>Respostas rápidas</Text>
+                        <Text style={mkStyles.modalTitle}>
+                          {isFormRespostaAberto ? (respostaEditandoId ? 'Editar resposta' : 'Nova resposta') : 'Respostas rápidas'}
+                        </Text>
                         <Pressable
                           onPress={() => {
+                            if (isFormRespostaAberto) {
+                              setIsFormRespostaAberto(false);
+                              setRespostaEditandoId(null);
+                              setRespostaAtalho('');
+                              setRespostaTexto('');
+                              return;
+                            }
                             setIsRespostasOpen(false);
-                            setIsFormRespostaAberto(false);
-                            setRespostaEditandoId(null);
-                            setRespostaAtalho('');
-                            setRespostaTexto('');
                           }}
                           hitSlop={8}
                         >
-                          <Feather name="x" size={20} color="#677089" />
+                          <Feather name={isFormRespostaAberto ? 'arrow-left' : 'x'} size={20} color="#677089" />
                         </Pressable>
                       </View>
                       <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                        <Text style={mkStyles.listRowMeta}>Crie atalhos para mensagens frequentes. Use digitando /atalho no chat.</Text>
-                        <View style={{ height: 10 }} />
+                        {isFormRespostaAberto ? null : (
+                          <>
+                            <Text style={mkStyles.listRowMeta}>Crie atalhos para mensagens frequentes. Use digitando /atalho no chat.</Text>
+                            <View style={{ height: 10 }} />
+                          </>
+                        )}
 
                         {isFormRespostaAberto ? (
                           <>
@@ -2818,7 +2838,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                           </Pressable>
                         )}
 
-                        {respostasError ? (
+                        {isFormRespostaAberto ? null : respostasError ? (
                           <MktEmptyState message={respostasError} />
                         ) : respostas.length === 0 ? (
                           <MktEmptyState message="Nenhuma resposta rápida cadastrada." />
