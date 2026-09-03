@@ -3048,6 +3048,7 @@ export function MarketingGoogleScreen({ navigation }: ScreenProps<'MarketingGoog
   const [isLoadingReviews, setIsLoadingReviews] = useState(true);
   const [respostaPorReview, setRespostaPorReview] = useState<Record<string, string>>({});
   const [enviandoReviewId, setEnviandoReviewId] = useState<string | null>(null);
+  const [buscaPosto, setBuscaPosto] = useState('');
 
   useEffect(() => {
     if (!isFocused) return;
@@ -3108,15 +3109,31 @@ export function MarketingGoogleScreen({ navigation }: ScreenProps<'MarketingGoog
           <MktEmptyState message="Nenhum posto conectado ao Google Meu Negócio ainda." />
         ) : (
           <>
+            <View style={mkStyles.gmbContaCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Feather name={gmb.status?.conectado ? 'check-circle' : 'alert-circle'} size={16} color={gmb.status?.conectado ? '#1B6E3A' : '#C2263A'} />
+                <Text style={mkStyles.sectionTitle}>{gmb.status?.conectado ? 'Conta conectada' : 'Nenhuma conta conectada'}</Text>
+              </View>
+              {gmb.status?.account_name ? (
+                <Text style={[mkStyles.listRowMeta, { marginTop: 4 }]} numberOfLines={1}>{gmb.status.account_name}</Text>
+              ) : null}
+              <Text style={[mkStyles.listRowMeta, { marginTop: 4 }]}>
+                Última sync: {gmb.status?.last_sync_at ? formatDateTimeBR(gmb.status.last_sync_at) : '—'}
+              </Text>
+            </View>
+
             {reviewsStatus === 'aguardando_liberacao' ? (
-              <View style={mkStyles.chartCard}>
-                <Text style={mkStyles.listRowMeta}>
-                  Aguardando liberação da Business Profile API pelo Google. Postos e informações estão sincronizados; o feed de avaliações ativa automaticamente após a aprovação.
+              <View style={mkStyles.gmbAvisoBanner}>
+                <Feather name="clock" size={16} color="#8A6D1D" />
+                <Text style={mkStyles.waJanelaAvisoText}>
+                  Aguardando liberação da Business Profile API pelo Google. Postos e informações estão sincronizados; o feed de avaliações ativa automaticamente após a aprovação (3–15 dias úteis).
                 </Text>
               </View>
             ) : null}
 
             <Text style={mkStyles.sectionTitle}>Postos ({gmb.locationsCount})</Text>
+            <MktSearchInput value={buscaPosto} onChangeText={setBuscaPosto} placeholder="Buscar posto..." />
+            <View style={{ height: 10 }} />
             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
               <Pressable
                 style={[mkStyles.filterPill, locationId === null ? mkStyles.filterPillActive : null]}
@@ -3125,14 +3142,20 @@ export function MarketingGoogleScreen({ navigation }: ScreenProps<'MarketingGoog
                 <Text style={[mkStyles.filterPillText, locationId === null ? mkStyles.filterPillTextActive : null]}>Todos os postos</Text>
               </Pressable>
             </View>
-            {gmb.locations.map((loc) => (
-              <Pressable key={loc.id} style={mkStyles.dreCard} onPress={() => setLocationId(loc.id)}>
-                <Text style={mkStyles.listRowTitle} numberOfLines={1}>{loc.title}</Text>
-                <Text style={mkStyles.listRowMeta}>
-                  {loc.average_rating != null ? loc.average_rating.toFixed(1) : '—'} ★ ({formatNumeroBR(loc.total_reviews)}) · {formatNumeroBR(loc.unreplied)} sem resposta
-                </Text>
-              </Pressable>
-            ))}
+            {gmb.locations
+              .filter((loc) => loc.title.toLowerCase().includes(buscaPosto.trim().toLowerCase()))
+              .map((loc) => (
+                <Pressable
+                  key={loc.id}
+                  style={[mkStyles.dreCard, locationId === loc.id ? mkStyles.dreCardSelecionado : null]}
+                  onPress={() => setLocationId(loc.id)}
+                >
+                  <Text style={mkStyles.listRowTitle} numberOfLines={1}>{loc.title}</Text>
+                  <Text style={mkStyles.listRowMeta}>
+                    {loc.average_rating != null ? loc.average_rating.toFixed(1) : '—'} ★ ({formatNumeroBR(loc.total_reviews)}) · {formatNumeroBR(loc.unreplied)} sem resposta
+                  </Text>
+                </Pressable>
+              ))}
 
             <View style={{ height: 8 }} />
             <Text style={mkStyles.sectionTitle}>Avaliações</Text>
@@ -4139,6 +4162,29 @@ const mkStyles = StyleSheet.create({
   dreCardPressed: {
     backgroundColor: '#FBE4ED',
     borderColor: '#F3B9CF',
+  },
+  dreCardSelecionado: {
+    borderColor: '#C2255C',
+    backgroundColor: '#FBE4ED',
+  },
+  gmbContaCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 14,
+    marginBottom: 12,
+  },
+  gmbAvisoBanner: {
+    backgroundColor: '#FFF3D6',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F0DBA0',
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
   },
   badge: {
     borderRadius: 999,
