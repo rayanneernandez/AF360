@@ -3353,26 +3353,29 @@ const PANEL_OPTION_META: Record<
   // Cores batem com o gradiente/tema já usado dentro de cada painel (hero da
   // tela de Perfil de cada um), só pra dar consistência visual na hora de
   // escolher qual abrir.
+  // Paleta alinhada com os ícones do painel web (cada papel com uma cor
+  // própria, sem repetir) — antes Diretoria/Administrador ficavam parecidos
+  // (os dois em azul) e Colaborador/Marketing também (os dois em rosa).
   diretoria: {
     label: 'Diretoria',
     subtitle: 'Painéis de negócio (vendas, margem, estoque)',
     icon: 'trending-up',
-    color: '#2F4EA8',
-    tint: '#EAEFFB',
+    color: '#C23B3B',
+    tint: '#FBEAEA',
   },
   rh: {
     label: 'RH',
     subtitle: 'Painel de recursos humanos',
     icon: 'users',
-    color: '#1B6E3A',
+    color: '#2E9E52',
     tint: '#E7F5EC',
   },
   colaborador: {
     label: 'Colaborador',
     subtitle: 'Seus dados pessoais',
     icon: 'user',
-    color: '#A11054',
-    tint: '#FBEAF1',
+    color: '#2E75D6',
+    tint: '#E7F0FC',
   },
   administrador: {
     label: 'Administrador',
@@ -3385,8 +3388,8 @@ const PANEL_OPTION_META: Record<
     label: 'Financeiro',
     subtitle: 'Gestão de caixa (contas, fluxo, conciliação)',
     icon: 'dollar-sign',
-    color: '#C05621',
-    tint: '#FCEDE1',
+    color: '#E8791E',
+    tint: '#FDECDD',
   },
   gestao: {
     label: 'Gestão',
@@ -3399,8 +3402,8 @@ const PANEL_OPTION_META: Record<
     label: 'Administrativo',
     subtitle: 'Alvarás, manutenções, almoxarifado e frota',
     icon: 'tool',
-    color: '#0F8B8D',
-    tint: '#E3F4F4',
+    color: '#6B4423',
+    tint: '#EFE7E1',
   },
   marketing: {
     label: 'Marketing & Fidelidade',

@@ -2986,9 +2986,9 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
         ) : templates.length === 0 ? (
           <MktEmptyState message="Nenhum template aprovado disponível." />
         ) : (
-          templates.map((template) => (
+          templates.map((template, idx) => (
             <Pressable
-              key={template.name}
+              key={`${template.name}-${idx}`}
               style={[mkStyles.dreCard, isSendingTemplate ? { opacity: 0.6 } : null]}
               onPress={() => handleEnviarTemplate(template)}
               disabled={isSendingTemplate}

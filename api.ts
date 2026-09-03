@@ -7432,14 +7432,20 @@ export type MarketingWaTemplate = {
 };
 
 export async function fetchMarketingWaTemplates(canal?: 'geral' | 'rs'): Promise<MarketingWaTemplate[]> {
-  const { data } = await fetchMarketingRecurso<Array<Partial<MarketingWaTemplate>>>('wa-templates', { canal });
-  return (Array.isArray(data) ? data : []).map((item) => ({
-    name: item.name ?? '',
-    corpo: item.corpo ?? '',
-    variaveis: Array.isArray(item.variaveis) ? item.variaveis : [],
-    exemplos: Array.isArray(item.exemplos) ? item.exemplos : [],
-    language: item.language ?? null,
-  }));
+  const { data } = await fetchMarketingRecurso<Array<Record<string, unknown>>>('wa-templates', { canal });
+  // Nome do campo nunca foi confirmado com certeza (só "name" no exemplo da
+  // Lovable) — tenta alternativas antes de cair num "" que duplicava key
+  // no React (warning "same key `.$`") e deixava o card sem título.
+  return (Array.isArray(data) ? data : []).map((item, idx) => {
+    const nome = item.name ?? item.template_name ?? item.nome ?? item.codigo ?? item.id;
+    return {
+      name: typeof nome === 'string' && nome ? nome : `template-${idx}`,
+      corpo: typeof item.corpo === 'string' ? item.corpo : typeof item.body === 'string' ? item.body : '',
+      variaveis: Array.isArray(item.variaveis) ? (item.variaveis as string[]) : [],
+      exemplos: Array.isArray(item.exemplos) ? (item.exemplos as string[]) : [],
+      language: typeof item.language === 'string' ? item.language : null,
+    };
+  });
 }
 
 export async function enviarMarketingWaTemplate(
