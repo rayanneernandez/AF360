@@ -3434,12 +3434,14 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
       <StatusBar style="light" />
       <LinearGradient
         colors={['#253F91', '#4C3A95']}
-        style={[styles.selectPanelHero, { paddingTop: 24 + insets.top }]}
+        style={[styles.selectPanelHero, { paddingTop: 16 + insets.top }]}
       >
-        <View style={styles.selectPanelHeroIconShell}>
-          <Feather name="grid" size={22} color="#FFFFFF" />
+        <View style={styles.selectPanelHeroTitleRow}>
+          <Text style={styles.selectPanelHeroTitle}>Entrar como...</Text>
+          <View style={styles.selectPanelHeroIconShell}>
+            <Feather name="grid" size={20} color="#FFFFFF" />
+          </View>
         </View>
-        <Text style={styles.selectPanelHeroTitle}>Entrar como...</Text>
         <Text style={styles.selectPanelHeroSubtitle}>
           Sua conta tem acesso a mais de um painel. Escolha qual quer abrir.
         </Text>
@@ -3454,12 +3456,15 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
               style={({ pressed }) => [styles.selectPanelCard, pressed && styles.selectPanelCardPressed]}
               onPress={() => handleSelect(role)}
             >
+              <View style={[styles.selectPanelIconShell, { backgroundColor: meta.tint }]}>
+                <Feather name={meta.icon} size={22} color={meta.color} />
+              </View>
               <View style={styles.selectPanelBody}>
                 <Text style={styles.selectPanelTitle}>{meta.label}</Text>
                 <Text style={styles.selectPanelSubtitle}>{meta.subtitle}</Text>
               </View>
-              <View style={[styles.selectPanelIconShell, { backgroundColor: meta.tint }]}>
-                <Feather name={meta.icon} size={20} color={meta.color} />
+              <View style={[styles.selectPanelChevronShell, { backgroundColor: meta.tint }]}>
+                <Feather name="chevron-right" size={16} color={meta.color} />
               </View>
             </Pressable>
           );
@@ -17659,25 +17664,29 @@ export const styles = StyleSheet.create({
     fontWeight: '800',
   },
   selectPanelHero: {
-    paddingBottom: 32,
+    paddingBottom: 20,
     paddingHorizontal: 24,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
   },
+  selectPanelHeroTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   selectPanelHeroIconShell: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
   },
   selectPanelHeroTitle: {
     color: '#FFFFFF',
     fontSize: 24,
     fontWeight: '800',
-    marginBottom: 8,
   },
   selectPanelHeroSubtitle: {
     color: 'rgba(255,255,255,0.82)',
