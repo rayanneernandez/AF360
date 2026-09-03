@@ -3049,6 +3049,8 @@ export function MarketingGoogleScreen({ navigation }: ScreenProps<'MarketingGoog
   const [respostaPorReview, setRespostaPorReview] = useState<Record<string, string>>({});
   const [enviandoReviewId, setEnviandoReviewId] = useState<string | null>(null);
   const [buscaPosto, setBuscaPosto] = useState('');
+  const [paginaPosto, setPaginaPosto] = useState(0);
+  const POSTOS_POR_PAGINA = 15;
 
   useEffect(() => {
     if (!isFocused) return;
@@ -3078,6 +3080,10 @@ export function MarketingGoogleScreen({ navigation }: ScreenProps<'MarketingGoog
     if (!isFocused) return;
     loadReviews();
   }, [loadReviews, isFocused]);
+
+  useEffect(() => {
+    setPaginaPosto(0);
+  }, [buscaPosto]);
 
   const handleResponder = (reviewId: string) => {
     const texto = (respostaPorReview[reviewId] ?? '').trim();
@@ -3142,20 +3148,52 @@ export function MarketingGoogleScreen({ navigation }: ScreenProps<'MarketingGoog
                 <Text style={[mkStyles.filterPillText, locationId === null ? mkStyles.filterPillTextActive : null]}>Todos os postos</Text>
               </Pressable>
             </View>
-            {gmb.locations
-              .filter((loc) => loc.title.toLowerCase().includes(buscaPosto.trim().toLowerCase()))
-              .map((loc) => (
-                <Pressable
-                  key={loc.id}
-                  style={[mkStyles.dreCard, locationId === loc.id ? mkStyles.dreCardSelecionado : null]}
-                  onPress={() => setLocationId(loc.id)}
-                >
-                  <Text style={mkStyles.listRowTitle} numberOfLines={1}>{loc.title}</Text>
-                  <Text style={mkStyles.listRowMeta}>
-                    {loc.average_rating != null ? loc.average_rating.toFixed(1) : '—'} ★ ({formatNumeroBR(loc.total_reviews)}) · {formatNumeroBR(loc.unreplied)} sem resposta
-                  </Text>
-                </Pressable>
-              ))}
+            {(() => {
+              const locationsFiltradas = gmb.locations.filter((loc) =>
+                loc.title.toLowerCase().includes(buscaPosto.trim().toLowerCase())
+              );
+              const totalPaginas = Math.max(1, Math.ceil(locationsFiltradas.length / POSTOS_POR_PAGINA));
+              const paginaAtual = Math.min(paginaPosto, totalPaginas - 1);
+              const inicio = paginaAtual * POSTOS_POR_PAGINA;
+              const pagina = locationsFiltradas.slice(inicio, inicio + POSTOS_POR_PAGINA);
+              return (
+                <>
+                  {pagina.map((loc) => (
+                    <Pressable
+                      key={loc.id}
+                      style={[mkStyles.dreCard, locationId === loc.id ? mkStyles.dreCardSelecionado : null]}
+                      onPress={() => setLocationId(loc.id)}
+                    >
+                      <Text style={mkStyles.listRowTitle} numberOfLines={1}>{loc.title}</Text>
+                      <Text style={mkStyles.listRowMeta}>
+                        {loc.average_rating != null ? loc.average_rating.toFixed(1) : '—'} ★ ({formatNumeroBR(loc.total_reviews)}) · {formatNumeroBR(loc.unreplied)} sem resposta
+                      </Text>
+                    </Pressable>
+                  ))}
+                  {totalPaginas > 1 ? (
+                    <View style={mkStyles.gmbPaginacaoRow}>
+                      <Pressable
+                        style={[mkStyles.waIconButton, paginaAtual === 0 ? { opacity: 0.4 } : null]}
+                        onPress={() => setPaginaPosto((p) => Math.max(0, p - 1))}
+                        disabled={paginaAtual === 0}
+                      >
+                        <Feather name="chevron-left" size={16} color="#5E667D" />
+                      </Pressable>
+                      <Text style={mkStyles.listRowMeta}>
+                        Página {paginaAtual + 1} de {totalPaginas}
+                      </Text>
+                      <Pressable
+                        style={[mkStyles.waIconButton, paginaAtual >= totalPaginas - 1 ? { opacity: 0.4 } : null]}
+                        onPress={() => setPaginaPosto((p) => Math.min(totalPaginas - 1, p + 1))}
+                        disabled={paginaAtual >= totalPaginas - 1}
+                      >
+                        <Feather name="chevron-right" size={16} color="#5E667D" />
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </>
+              );
+            })()}
 
             <View style={{ height: 8 }} />
             <Text style={mkStyles.sectionTitle}>Avaliações</Text>
@@ -4174,6 +4212,13 @@ const mkStyles = StyleSheet.create({
     borderColor: '#E2E6F0',
     padding: 14,
     marginBottom: 12,
+  },
+  gmbPaginacaoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    marginBottom: 16,
   },
   gmbAvisoBanner: {
     backgroundColor: '#FFF3D6',
