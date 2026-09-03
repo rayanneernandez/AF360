@@ -1993,9 +1993,18 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
         // O backend recebe o parâmetro "channel", mas nem sempre filtra de
         // volta (contrato não confirmado nesse ponto) — filtra aqui também
         // pra garantir o mesmo resultado do web mesmo se o servidor ignorar.
-        const itens = channel ? res.itens.filter((item) => item.channel === channel) : res.itens;
+        let itens = channel ? res.itens.filter((item) => item.channel === channel) : res.itens;
+        // No web, "Todos" = Fila + Ativos (não inclui Finalizadas — essas só
+        // aparecem na aba "Final."). O contador "abas.todos" que a Lovable
+        // manda, porém, veio somando tudo (18+6+19=43 em vez de 18+6=24) —
+        // por isso filtra e recalcula aqui em vez de confiar cegamente nele.
+        const contadores = { ...res.contadores, abas: { ...res.contadores.abas } };
+        contadores.abas.todos = contadores.abas.fila + contadores.abas.ativos;
+        if (aba === 'todos') {
+          itens = itens.filter((item) => item.chat_status !== 'finalizado' && item.chat_status !== 'finalizada');
+        }
         setConversas(itens);
-        setContadores(res.contadores);
+        setContadores(contadores);
       })
       .catch((err) => setErrorMessage(showMktError(err, 'Não foi possível carregar as conversas.')))
       .finally(() => setIsLoading(false));
