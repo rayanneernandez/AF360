@@ -7235,6 +7235,8 @@ export async function createMarketingAnexo(
 export type MarketingWaChatStatus = 'fila' | 'em_atendimento' | 'finalizado' | string;
 export type MarketingWaChannel = 'whatsapp' | 'instagram' | 'facebook' | string;
 
+export type MarketingWaMensagemStatus = 'sent' | 'delivered' | 'read' | 'failed' | string;
+
 export type MarketingWaConversaItem = {
   phone: string;
   display_name: string | null;
@@ -7245,6 +7247,17 @@ export type MarketingWaConversaItem = {
   ultima_mensagem: string | null;
   ultima_mensagem_em: string | null;
   ultima_direcao: 'inbound' | 'outbound' | string | null;
+  // Campos confirmados pela Lovable em 03/09/2026.
+  tags: string[];
+  nao_lidas: number;
+  nao_assumido: boolean;
+  ultima_mensagem_status: MarketingWaMensagemStatus | null;
+  ultima_mensagem_tipo: string | null;
+  janela_24h_aberta: boolean;
+  janela_expira_em: string | null;
+  muted: boolean;
+  blocked: boolean;
+  notas: string | null;
 };
 
 export type MarketingWaContadores = {
@@ -7252,6 +7265,8 @@ export type MarketingWaContadores = {
   em_atendimento: number;
   finalizadas_hoje: number;
   tma_hoje_segundos: number | null;
+  // Totais gerais (não mudam ao trocar de aba/canal) — confirmados 03/09/2026.
+  abas: { todos: number; fila: number; ativos: number; finalizadas: number; grupos: number };
 };
 
 export type MarketingWaConversasResponse = {
@@ -7264,21 +7279,51 @@ export async function fetchMarketingWaConversas(filtro?: {
   aba?: 'todos' | 'fila' | 'ativos' | 'finalizadas';
   channel?: string;
   q?: string;
+  tag?: string;
 }): Promise<MarketingWaConversasResponse> {
-  const json = await fetchMarketingRecurso<MarketingWaConversaItem[]>('wa-conversas', {
+  const json = await fetchMarketingRecurso<Array<Partial<MarketingWaConversaItem>>>('wa-conversas', {
     aba: filtro?.aba,
     channel: filtro?.channel,
     q: filtro?.q,
+    tag: filtro?.tag,
   });
   const contadores = (json.contadores as Partial<MarketingWaContadores>) ?? {};
+  const abas = (contadores.abas as Partial<MarketingWaContadores['abas']>) ?? {};
   return {
-    itens: Array.isArray(json.data) ? json.data : [],
+    itens: (Array.isArray(json.data) ? json.data : []).map((item) => ({
+      phone: item.phone ?? '',
+      display_name: item.display_name ?? null,
+      chat_status: item.chat_status ?? 'fila',
+      chat_status_label: item.chat_status_label ?? null,
+      atendente_nome: item.atendente_nome ?? null,
+      channel: item.channel ?? 'whatsapp',
+      ultima_mensagem: item.ultima_mensagem ?? null,
+      ultima_mensagem_em: item.ultima_mensagem_em ?? null,
+      ultima_direcao: item.ultima_direcao ?? null,
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      nao_lidas: item.nao_lidas ?? 0,
+      nao_assumido: item.nao_assumido ?? false,
+      ultima_mensagem_status: item.ultima_mensagem_status ?? null,
+      ultima_mensagem_tipo: item.ultima_mensagem_tipo ?? null,
+      janela_24h_aberta: item.janela_24h_aberta ?? false,
+      janela_expira_em: item.janela_expira_em ?? null,
+      muted: item.muted ?? false,
+      blocked: item.blocked ?? false,
+      notas: item.notas ?? null,
+    })),
     total: (json.count as number | undefined) ?? 0,
     contadores: {
       fila: contadores.fila ?? 0,
       em_atendimento: contadores.em_atendimento ?? 0,
       finalizadas_hoje: contadores.finalizadas_hoje ?? 0,
       tma_hoje_segundos: contadores.tma_hoje_segundos ?? null,
+      abas: {
+        todos: abas.todos ?? 0,
+        fila: abas.fila ?? 0,
+        ativos: abas.ativos ?? 0,
+        finalizadas: abas.finalizadas ?? 0,
+        grupos: abas.grupos ?? 0,
+      },
     },
   };
 }
@@ -7289,18 +7334,33 @@ export async function fetchMarketingWaConversas(filtro?: {
 // assumir nomes. Ver pickMktField em Marketing.tsx.
 export type MarketingWaMensagemItem = Record<string, unknown>;
 
+// Info da janela de 24h do contato, devolvida junto com as mensagens
+// (contrato confirmado pela Lovable em 03/09/2026).
+export type MarketingWaContatoInfo = {
+  janela_24h_aberta: boolean;
+  janela_expira_em: string | null;
+  blocked: boolean;
+} | null;
+
 export async function fetchMarketingWaMensagens(
   phone: string,
   params?: { limit?: number; before?: string }
-): Promise<MarketingWaMensagemItem[]> {
-  const { data } = await fetchMarketingRecurso<MarketingWaMensagemItem[]>('wa-mensagens', {
+): Promise<{ mensagens: MarketingWaMensagemItem[]; contato: MarketingWaContatoInfo }> {
+  const json = await fetchMarketingRecurso<MarketingWaMensagemItem[]>('wa-mensagens', {
     phone,
     limit: params?.limit,
     before: params?.before,
   });
-  return Array.isArray(data) ? data : [];
+  return {
+    mensagens: Array.isArray(json.data) ? json.data : [],
+    contato: (json.contato as MarketingWaContatoInfo) ?? null,
+  };
 }
 
+// wa-enviar pode responder 409 { error: 'janela_24h_fechada' } ou { error:
+// 'contato_bloqueado' } (contrato confirmado 03/09/2026) — a tela precisa
+// tratar esse erro específico e oferecer o fluxo de template em vez de só
+// mostrar "falha genérica".
 export async function sendMarketingWaMensagem(
   body: { phone: string; mensagem: string },
   actorId?: string | null
@@ -7318,11 +7378,99 @@ export async function createMarketingWaConversa(
 
 export async function updateMarketingWaConversa(
   phone: string,
-  body: Partial<{ chat_status: MarketingWaChatStatus; atendente_id: string }>,
+  body: Partial<{
+    chat_status: MarketingWaChatStatus;
+    atendente_id: string;
+    display_name: string;
+    tags: string[];
+    notas: string;
+    muted: boolean;
+    blocked: boolean;
+  }>,
   actorId?: string | null
 ): Promise<MarketingWaConversaItem> {
   const json = await api.patch(withActorId(`/api/marketing/wa-conversa/${encodeURIComponent(phone)}`, actorId), body);
   return json.data as MarketingWaConversaItem;
+}
+
+export async function sincronizarMarketingWaConversas(actorId?: string | null): Promise<void> {
+  await api.post(withActorId('/api/marketing/wa-sincronizar', actorId), {});
+}
+
+export async function marcarMarketingWaLido(phone: string, actorId?: string | null): Promise<void> {
+  await api.post(withActorId('/api/marketing/wa-marcar-lido', actorId), { phone });
+}
+
+export type MarketingWaAgendaContato = {
+  phone: string;
+  display_name: string | null;
+  channel: MarketingWaChannel;
+  tags: string[];
+};
+
+export async function fetchMarketingWaAgenda(q?: string): Promise<MarketingWaAgendaContato[]> {
+  const { data } = await fetchMarketingRecurso<Array<Partial<MarketingWaAgendaContato>>>('wa-agenda', { q });
+  return (Array.isArray(data) ? data : []).map((item) => ({
+    phone: item.phone ?? '',
+    display_name: item.display_name ?? null,
+    channel: item.channel ?? 'whatsapp',
+    tags: Array.isArray(item.tags) ? item.tags : [],
+  }));
+}
+
+export async function fetchMarketingWaTags(): Promise<string[]> {
+  const { data } = await fetchMarketingRecurso<string[]>('wa-tags');
+  return Array.isArray(data) ? data : [];
+}
+
+export type MarketingWaTemplate = {
+  name: string;
+  corpo: string;
+  variaveis: string[];
+  exemplos: string[];
+  language?: string | null;
+};
+
+export async function fetchMarketingWaTemplates(canal?: 'geral' | 'rs'): Promise<MarketingWaTemplate[]> {
+  const { data } = await fetchMarketingRecurso<Array<Partial<MarketingWaTemplate>>>('wa-templates', { canal });
+  return (Array.isArray(data) ? data : []).map((item) => ({
+    name: item.name ?? '',
+    corpo: item.corpo ?? '',
+    variaveis: Array.isArray(item.variaveis) ? item.variaveis : [],
+    exemplos: Array.isArray(item.exemplos) ? item.exemplos : [],
+    language: item.language ?? null,
+  }));
+}
+
+export async function enviarMarketingWaTemplate(
+  body: { phone: string; template_name: string; language?: string; variables?: Record<string, string> },
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId('/api/marketing/wa-enviar-template', actorId), body);
+}
+
+export async function fetchMarketingWaSugestoes(phone: string): Promise<string[]> {
+  const { data } = await fetchMarketingRecurso<string[]>('wa-sugestoes', { phone });
+  return Array.isArray(data) ? data : [];
+}
+
+export type MarketingWaResposta = { id: string; atalho: string; texto: string };
+
+export async function fetchMarketingWaRespostas(): Promise<MarketingWaResposta[]> {
+  const { data } = await fetchMarketingRecurso<MarketingWaResposta[]>('wa-respostas');
+  return Array.isArray(data) ? data : [];
+}
+
+export async function salvarMarketingWaResposta(
+  body: { id?: string; atalho: string; texto: string },
+  actorId?: string | null
+): Promise<MarketingWaResposta> {
+  const json = await api.post(withActorId('/api/marketing/wa-resposta', actorId), body);
+  return json.data as MarketingWaResposta;
+}
+
+export async function excluirMarketingWaResposta(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/marketing/wa-resposta?id=${encodeURIComponent(id)}`, actorId));
 }
 
 // --- Google (Meu Negócio) ---

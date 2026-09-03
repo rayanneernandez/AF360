@@ -55,6 +55,17 @@ import {
   sendMarketingWaMensagem,
   createMarketingWaConversa,
   updateMarketingWaConversa,
+  sincronizarMarketingWaConversas,
+  marcarMarketingWaLido,
+  fetchMarketingWaAgenda,
+  fetchMarketingWaTags,
+  fetchMarketingWaTemplates,
+  enviarMarketingWaTemplate,
+  fetchMarketingWaSugestoes,
+  fetchMarketingWaRespostas,
+  salvarMarketingWaResposta,
+  excluirMarketingWaResposta,
+  ApiError,
   fetchMarketingGmb,
   fetchMarketingGmbReviews,
   responderMarketingGmbReview,
@@ -79,6 +90,11 @@ import {
   type MarketingOcorrenciaPrioridade,
   type MarketingWaConversaItem,
   type MarketingWaChatStatus,
+  type MarketingWaContadores,
+  type MarketingWaContatoInfo,
+  type MarketingWaAgendaContato,
+  type MarketingWaTemplate,
+  type MarketingWaResposta,
   type MarketingGmbData,
   type MarketingGmbReviewItem,
   type MarketingLevaMaisMetricas,
@@ -1669,16 +1685,75 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   const [aba, setAba] = useState<'todos' | 'fila' | 'ativos' | 'finalizadas'>('todos');
   const [channel, setChannel] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
+  const [tagFiltro, setTagFiltro] = useState<string | null>(null);
   const [conversas, setConversas] = useState<MarketingWaConversaItem[]>([]);
-  const [contadores, setContadores] = useState({ fila: 0, em_atendimento: 0, finalizadas_hoje: 0, tma_hoje_segundos: null as number | null });
+  const [contadores, setContadores] = useState<MarketingWaContadores>({
+    fila: 0,
+    em_atendimento: 0,
+    finalizadas_hoje: 0,
+    tma_hoje_segundos: null,
+    abas: { todos: 0, fila: 0, ativos: 0, finalizadas: 0, grupos: 0 },
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSincronizando, setIsSincronizando] = useState(false);
+
+  const [tagsDisponiveis, setTagsDisponiveis] = useState<string[]>([]);
+  useEffect(() => {
+    fetchMarketingWaTags()
+      .then(setTagsDisponiveis)
+      .catch(() => setTagsDisponiveis([]));
+  }, []);
 
   const [conversaAtiva, setConversaAtiva] = useState<MarketingWaConversaItem | null>(null);
   const [mensagens, setMensagens] = useState<Record<string, unknown>[]>([]);
+  const [contatoInfo, setContatoInfo] = useState<MarketingWaContatoInfo>(null);
   const [isLoadingMensagens, setIsLoadingMensagens] = useState(false);
   const [textoEnvio, setTextoEnvio] = useState('');
   const [isSending, setIsSending] = useState(false);
+
+  // Sugestões de resposta contextual (chip acima do composer).
+  const [sugestoes, setSugestoes] = useState<string[]>([]);
+
+  // Fluxo de template (janela de 24h fechada).
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [templates, setTemplates] = useState<MarketingWaTemplate[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [isSendingTemplate, setIsSendingTemplate] = useState(false);
+
+  // Respostas rápidas (gerenciamento + uso via "/" no composer).
+  const [respostas, setRespostas] = useState<MarketingWaResposta[]>([]);
+  const [isRespostasOpen, setIsRespostasOpen] = useState(false);
+  const [respostaAtalho, setRespostaAtalho] = useState('');
+  const [respostaTexto, setRespostaTexto] = useState('');
+  const [respostaEditandoId, setRespostaEditandoId] = useState<string | null>(null);
+  const [isSalvandoResposta, setIsSalvandoResposta] = useState(false);
+
+  const loadRespostas = useCallback(() => {
+    fetchMarketingWaRespostas()
+      .then(setRespostas)
+      .catch(() => setRespostas([]));
+  }, []);
+  useEffect(() => {
+    loadRespostas();
+  }, [loadRespostas]);
+
+  const respostasSugeridas = useMemo(() => {
+    if (!textoEnvio.startsWith('/')) return [];
+    const termo = textoEnvio.slice(1).toLowerCase();
+    return respostas.filter((r) => r.atalho.toLowerCase().includes(termo));
+  }, [textoEnvio, respostas]);
+
+  // Agenda de contatos (ícone ao lado de "Nova conversa").
+  const [isAgendaOpen, setIsAgendaOpen] = useState(false);
+  const [agendaBusca, setAgendaBusca] = useState('');
+  const [agendaContatos, setAgendaContatos] = useState<MarketingWaAgendaContato[]>([]);
+  const [isLoadingAgenda, setIsLoadingAgenda] = useState(false);
+  const [agendaError, setAgendaError] = useState<string | null>(null);
+
+  // Menu de três pontinhos (Finalizar/Silenciar/Bloquear).
+  const [isMenuAberto, setIsMenuAberto] = useState(false);
 
   const [isNovaConversaOpen, setIsNovaConversaOpen] = useState(false);
   const [novoPhone, setNovoPhone] = useState('');
@@ -1689,6 +1764,10 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   const [atendenteAberto, setAtendenteAberto] = useState(false);
   const [atendentes, setAtendentes] = useState<Array<{ id: string; nome: string }>>([]);
   const [atendentesError, setAtendentesError] = useState<string | null>(null);
+  const [nomeExibicaoEdit, setNomeExibicaoEdit] = useState('');
+  const [notasEdit, setNotasEdit] = useState('');
+  const [tagsEdit, setTagsEdit] = useState<string[]>([]);
+  const [isSalvandoPainel, setIsSalvandoPainel] = useState(false);
 
   const loadAtendentes = useCallback(() => {
     setAtendentesError(null);
@@ -1712,32 +1791,40 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
     loadAtendentes();
   }, [isAtendimentoOpen, loadAtendentes]);
 
-  // Contadores das pills (Todos/Fila/Ativos/Final.) — a API não confirmou um
-  // campo de totais fixos por aba, então calculamos honestamente a partir da
-  // última vez que a lista completa (aba "todos", sem filtro de canal/busca)
-  // foi carregada, e mantemos esse valor entre trocas de aba (igual o
-  // comportamento visto no web, onde os números não mudam ao trocar de aba).
-  const [contadoresAba, setContadoresAba] = useState<{ todos: number; fila: number; ativos: number; finalizadas: number } | null>(null);
-
   const load = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchMarketingWaConversas({ aba, channel: channel ?? undefined, q: busca || undefined })
+    fetchMarketingWaConversas({ aba, channel: channel ?? undefined, q: busca || undefined, tag: tagFiltro ?? undefined })
       .then((res) => {
         setConversas(res.itens);
         setContadores(res.contadores);
-        if (aba === 'todos' && !channel && !busca.trim()) {
-          setContadoresAba({
-            todos: res.itens.length,
-            fila: res.itens.filter((i) => i.chat_status === 'fila').length,
-            ativos: res.itens.filter((i) => i.chat_status === 'em_atendimento').length,
-            finalizadas: res.itens.filter((i) => i.chat_status === 'finalizado').length,
-          });
-        }
       })
       .catch((err) => setErrorMessage(showMktError(err, 'Não foi possível carregar as conversas.')))
       .finally(() => setIsLoading(false));
-  }, [aba, channel, busca]);
+  }, [aba, channel, busca, tagFiltro]);
+
+  const handleSincronizar = () => {
+    setIsSincronizando(true);
+    sincronizarMarketingWaConversas(actorId)
+      .then(() => load())
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível sincronizar as conversas.')))
+      .finally(() => setIsSincronizando(false));
+  };
+
+  const abrirAgenda = () => {
+    setAgendaBusca('');
+    setIsAgendaOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isAgendaOpen) return;
+    setIsLoadingAgenda(true);
+    fetchMarketingWaAgenda(agendaBusca || undefined)
+      .then(setAgendaContatos)
+      .catch((err) => setAgendaError(showMktError(err, 'Não foi possível carregar a agenda de contatos.')))
+      .finally(() => setIsLoadingAgenda(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agendaBusca, isAgendaOpen]);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -1747,13 +1834,32 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   const abrirConversa = (conversa: MarketingWaConversaItem) => {
     setConversaAtiva(conversa);
     setMensagens([]);
+    setContatoInfo(null);
+    setSugestoes([]);
     setIsAtendimentoOpen(false);
     setAtendenteAberto(false);
+    setIsMenuAberto(false);
+    setNomeExibicaoEdit(conversa.display_name ?? '');
+    setNotasEdit(conversa.notas ?? '');
+    setTagsEdit(conversa.tags ?? []);
     setIsLoadingMensagens(true);
     fetchMarketingWaMensagens(conversa.phone, { limit: 50 })
-      .then(setMensagens)
+      .then(({ mensagens: msgs, contato }) => {
+        setMensagens(msgs);
+        setContatoInfo(contato);
+      })
       .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível carregar as mensagens.')))
       .finally(() => setIsLoadingMensagens(false));
+    fetchMarketingWaSugestoes(conversa.phone)
+      .then(setSugestoes)
+      .catch(() => setSugestoes([]));
+    // Marca como lida ao abrir — se falhar, não bloqueia a leitura da
+    // conversa, só não zera o badge de não lidas na lista.
+    if (conversa.nao_lidas > 0) {
+      marcarMarketingWaLido(conversa.phone, actorId)
+        .then(() => load())
+        .catch(() => {});
+    }
   };
 
   const handleSalvarAtendente = (atendenteId: string | null) => {
@@ -1767,26 +1873,121 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
       .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível atualizar o atendente.')));
   };
 
+  const handleSalvarPainelAtendimento = () => {
+    if (!conversaAtiva) return;
+    setIsSalvandoPainel(true);
+    updateMarketingWaConversa(
+      conversaAtiva.phone,
+      { display_name: nomeExibicaoEdit.trim() || undefined, notas: notasEdit, tags: tagsEdit },
+      actorId
+    )
+      .then((atualizada) => {
+        setConversaAtiva(atualizada);
+        load();
+      })
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível salvar as alterações.')))
+      .finally(() => setIsSalvandoPainel(false));
+  };
+
+  const abrirTemplates = () => {
+    setIsTemplatesOpen(true);
+    setIsLoadingTemplates(true);
+    setTemplatesError(null);
+    fetchMarketingWaTemplates('geral')
+      .then(setTemplates)
+      .catch((err) => setTemplatesError(showMktError(err, 'Não foi possível carregar os templates.')))
+      .finally(() => setIsLoadingTemplates(false));
+  };
+
+  const handleEnviarTemplate = (template: MarketingWaTemplate) => {
+    if (!conversaAtiva) return;
+    setIsSendingTemplate(true);
+    enviarMarketingWaTemplate({ phone: conversaAtiva.phone, template_name: template.name, language: template.language ?? undefined }, actorId)
+      .then(() => {
+        setIsTemplatesOpen(false);
+        return fetchMarketingWaMensagens(conversaAtiva.phone, { limit: 50 }).then(({ mensagens: msgs, contato }) => {
+          setMensagens(msgs);
+          setContatoInfo(contato);
+        });
+      })
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível enviar o template.')))
+      .finally(() => setIsSendingTemplate(false));
+  };
+
   const handleEnviar = () => {
     if (!conversaAtiva || !textoEnvio.trim()) return;
+    // Se um atalho de resposta rápida for selecionado ("/atalho"), o texto já
+    // foi substituído pelo corpo da resposta antes de chegar aqui (ver
+    // onSelect da lista de sugestões no composer).
     setIsSending(true);
     sendMarketingWaMensagem({ phone: conversaAtiva.phone, mensagem: textoEnvio.trim() }, actorId)
       .then(() => {
         setTextoEnvio('');
-        return fetchMarketingWaMensagens(conversaAtiva.phone, { limit: 50 }).then(setMensagens);
+        return fetchMarketingWaMensagens(conversaAtiva.phone, { limit: 50 }).then(({ mensagens: msgs, contato }) => {
+          setMensagens(msgs);
+          setContatoInfo(contato);
+        });
       })
-      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível enviar a mensagem.')))
+      .catch((err) => {
+        const mensagemErro = err instanceof ApiError ? err.message : '';
+        if (mensagemErro.includes('janela_24h_fechada')) {
+          Alert.alert(
+            'Janela de 24h fechada',
+            'Já se passaram mais de 24h desde a última mensagem do cliente. Envie um template aprovado pra retomar a conversa.',
+            [{ text: 'Escolher template', onPress: abrirTemplates }, { text: 'Cancelar', style: 'cancel' }]
+          );
+        } else if (mensagemErro.includes('contato_bloqueado')) {
+          Alert.alert('Contato bloqueado', 'Esse contato está bloqueado — desbloqueie no menu da conversa antes de enviar.');
+        } else {
+          Alert.alert('Erro', showMktError(err, 'Não foi possível enviar a mensagem.'));
+        }
+      })
       .finally(() => setIsSending(false));
   };
 
   const handleAssumirOuFinalizar = (chatStatus: MarketingWaChatStatus) => {
     if (!conversaAtiva) return;
+    setIsMenuAberto(false);
     updateMarketingWaConversa(conversaAtiva.phone, { chat_status: chatStatus }, actorId)
       .then((atualizada) => {
         setConversaAtiva(atualizada);
         load();
       })
       .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível atualizar a conversa.')));
+  };
+
+  const handleSilenciarOuBloquear = (campo: 'muted' | 'blocked', valor: boolean) => {
+    if (!conversaAtiva) return;
+    setIsMenuAberto(false);
+    updateMarketingWaConversa(conversaAtiva.phone, { [campo]: valor }, actorId)
+      .then((atualizada) => {
+        setConversaAtiva(atualizada);
+        load();
+      })
+      .catch((err) => Alert.alert('Erro', showMktError(err, `Não foi possível ${valor ? '' : 'des'}${campo === 'muted' ? 'silenciar' : 'bloquear'} o contato.`)));
+  };
+
+  const handleSalvarResposta = () => {
+    if (!respostaAtalho.trim() || !respostaTexto.trim()) {
+      Alert.alert('Campos obrigatórios', 'Informe o atalho e o texto da resposta rápida.');
+      return;
+    }
+    setIsSalvandoResposta(true);
+    salvarMarketingWaResposta({ id: respostaEditandoId ?? undefined, atalho: respostaAtalho.trim(), texto: respostaTexto.trim() }, actorId)
+      .then(() => {
+        setRespostaAtalho('');
+        setRespostaTexto('');
+        setRespostaEditandoId(null);
+        loadRespostas();
+      })
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível salvar a resposta rápida.')))
+      .finally(() => setIsSalvandoResposta(false));
+  };
+
+  const handleExcluirResposta = (id: string) => {
+    excluirMarketingWaResposta(id, actorId)
+      .then(() => loadRespostas())
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível excluir a resposta rápida.')));
   };
 
   // Agrupa as mensagens por dia (chave AAAA-MM-DD) pra renderizar os
@@ -1846,13 +2047,21 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
           </View>
         </View>
 
-        <Pressable
-          style={[mkStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }]}
-          onPress={() => setIsNovaConversaOpen(true)}
-        >
-          <Feather name="edit" size={14} color="#FFFFFF" />
-          <Text style={mkStyles.suggestionButtonText}>Nova conversa</Text>
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <Pressable
+            style={[mkStyles.suggestionButton, { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }]}
+            onPress={() => setIsNovaConversaOpen(true)}
+          >
+            <Feather name="edit" size={14} color="#FFFFFF" />
+            <Text style={mkStyles.suggestionButtonText}>Nova conversa</Text>
+          </Pressable>
+          <Pressable style={mkStyles.waIconButton} onPress={handleSincronizar} disabled={isSincronizando}>
+            {isSincronizando ? <ActivityIndicator color="#5E667D" size="small" /> : <Feather name="refresh-cw" size={16} color="#5E667D" />}
+          </Pressable>
+          <Pressable style={[mkStyles.waIconButton, { backgroundColor: '#C2255C' }]} onPress={abrirAgenda}>
+            <Feather name="book-open" size={16} color="#FFFFFF" />
+          </Pressable>
+        </View>
 
         <MktSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por nome, telefone ou tag..." />
 
@@ -1864,13 +2073,12 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
               onPress={() => setAba(opt.value)}
             >
               <Text style={[mkStyles.filterChipSmallText, aba === opt.value ? mkStyles.filterPillTextActive : null]}>
-                {opt.label}
-                {contadoresAba ? ` (${contadoresAba[opt.value]})` : ''}
+                {opt.label} ({contadores.abas[opt.value]})
               </Text>
             </Pressable>
           ))}
         </View>
-        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
           {WA_CHANNEL_OPTIONS.map((opt) => (
             <Pressable
               key={opt.label}
@@ -1881,6 +2089,22 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
             </Pressable>
           ))}
         </View>
+        {tagsDisponiveis.length > 0 ? (
+          <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+            <Pressable style={[mkStyles.filterChipSmall, !tagFiltro ? mkStyles.filterPillActive : null]} onPress={() => setTagFiltro(null)}>
+              <Text style={[mkStyles.filterChipSmallText, !tagFiltro ? mkStyles.filterPillTextActive : null]}>Todas as tags</Text>
+            </Pressable>
+            {tagsDisponiveis.map((tag) => (
+              <Pressable
+                key={tag}
+                style={[mkStyles.filterChipSmall, tagFiltro === tag ? mkStyles.filterPillActive : null]}
+                onPress={() => setTagFiltro(tag)}
+              >
+                <Text style={[mkStyles.filterChipSmallText, tagFiltro === tag ? mkStyles.filterPillTextActive : null]}>#{tag}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
 
         {isLoading ? (
           <ActivityIndicator color="#C2255C" style={{ marginTop: 20 }} />
@@ -1891,18 +2115,46 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
         ) : (
           conversas.map((conversa) => (
             <Pressable key={conversa.phone} style={mkStyles.dreCard} onPress={() => abrirConversa(conversa)}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={mkStyles.listRowTitle} numberOfLines={1}>
-                  {conversa.display_name ?? conversa.phone}
-                </Text>
-                <View style={[mkStyles.badge, { backgroundColor: '#FBE4ED' }]}>
-                  <Text style={[mkStyles.badgeText, { color: '#C2255C' }]}>{conversa.chat_status_label ?? conversa.chat_status}</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                  {conversa.nao_assumido ? <View style={mkStyles.waDotLaranja} /> : null}
+                  <Text style={mkStyles.listRowTitle} numberOfLines={1}>
+                    {conversa.display_name ?? conversa.phone}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {conversa.nao_lidas > 0 ? (
+                    <View style={mkStyles.waUnreadBadge}>
+                      <Text style={mkStyles.waUnreadBadgeText}>{conversa.nao_lidas}</Text>
+                    </View>
+                  ) : null}
+                  <View style={[mkStyles.badge, { backgroundColor: '#FBE4ED' }]}>
+                    <Text style={[mkStyles.badgeText, { color: '#C2255C' }]}>{conversa.chat_status_label ?? conversa.chat_status}</Text>
+                  </View>
                 </View>
               </View>
-              <Text style={mkStyles.listRowMeta} numberOfLines={1}>
-                {conversa.ultima_mensagem ?? 'Sem mensagens ainda'}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {conversa.ultima_direcao === 'outbound' && conversa.ultima_mensagem_status ? (
+                  <Feather
+                    name={conversa.ultima_mensagem_status === 'read' ? 'check-circle' : conversa.ultima_mensagem_status === 'failed' ? 'alert-circle' : 'check'}
+                    size={12}
+                    color={conversa.ultima_mensagem_status === 'read' ? '#34B7F1' : conversa.ultima_mensagem_status === 'failed' ? '#E6213D' : '#9AA3B5'}
+                  />
+                ) : null}
+                <Text style={mkStyles.listRowMeta} numberOfLines={1}>
+                  {conversa.ultima_mensagem ?? 'Sem mensagens ainda'}
+                </Text>
+              </View>
               <Text style={mkStyles.listRowMeta}>{conversa.atendente_nome ?? 'Sem atendente'} · {conversa.channel}</Text>
+              {conversa.tags.length > 0 ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                  {conversa.tags.map((tag) => (
+                    <View key={tag} style={mkStyles.waTagChip}>
+                      <Text style={mkStyles.waTagChipText}>#{tag}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </Pressable>
           ))
         )}
@@ -1925,6 +2177,51 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
         <Pressable style={mkStyles.filterModalApplyButton} onPress={handleNovaConversa}>
           <Text style={mkStyles.filterModalApplyButtonText}>Criar conversa</Text>
         </Pressable>
+      </MktModal>
+
+      <MktModal visible={isAgendaOpen} title="Agenda de contatos" onClose={() => setIsAgendaOpen(false)}>
+        <MktSearchInput value={agendaBusca} onChangeText={setAgendaBusca} placeholder="Buscar contato..." />
+        {isLoadingAgenda ? (
+          <ActivityIndicator color="#C2255C" style={{ marginTop: 12 }} />
+        ) : agendaError ? (
+          <MktEmptyState message={agendaError} />
+        ) : agendaContatos.length === 0 ? (
+          <MktEmptyState message="Nenhum contato encontrado." />
+        ) : (
+          agendaContatos.map((contato) => (
+            <Pressable
+              key={contato.phone}
+              style={mkStyles.dreCard}
+              onPress={() => {
+                setIsAgendaOpen(false);
+                abrirConversa({
+                  phone: contato.phone,
+                  display_name: contato.display_name,
+                  chat_status: 'fila',
+                  chat_status_label: null,
+                  atendente_nome: null,
+                  channel: contato.channel,
+                  ultima_mensagem: null,
+                  ultima_mensagem_em: null,
+                  ultima_direcao: null,
+                  tags: contato.tags,
+                  nao_lidas: 0,
+                  nao_assumido: false,
+                  ultima_mensagem_status: null,
+                  ultima_mensagem_tipo: null,
+                  janela_24h_aberta: false,
+                  janela_expira_em: null,
+                  muted: false,
+                  blocked: false,
+                  notas: null,
+                });
+              }}
+            >
+              <Text style={mkStyles.listRowTitle}>{contato.display_name ?? contato.phone}</Text>
+              <Text style={mkStyles.listRowMeta}>{formatTelefoneBR(contato.phone)} · {contato.channel}</Text>
+            </Pressable>
+          ))
+        )}
       </MktModal>
 
       <Modal visible={conversaAtiva != null} animationType="slide" onRequestClose={() => setConversaAtiva(null)}>
@@ -1963,10 +2260,39 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                 <Pressable style={mkStyles.waChatHeaderBtn} onPress={() => handleAssumirOuFinalizar('em_atendimento')}>
                   <Text style={mkStyles.waChatHeaderBtnText}>Assumir</Text>
                 </Pressable>
-                <Pressable style={mkStyles.waChatHeaderBtn} onPress={() => handleAssumirOuFinalizar('finalizado')}>
-                  <Text style={mkStyles.waChatHeaderBtnText}>Finalizar</Text>
+                <Pressable style={{ padding: 4 }} onPress={() => setIsMenuAberto((v) => !v)} hitSlop={8}>
+                  <Feather name="more-vertical" size={20} color="#FFFFFF" />
                 </Pressable>
               </View>
+
+              {isMenuAberto ? (
+                <>
+                  <Pressable style={mkStyles.waMenuBackdrop} onPress={() => setIsMenuAberto(false)} />
+                  <View style={mkStyles.waMenuDropdown}>
+                    <Pressable style={mkStyles.waMenuItem} onPress={() => handleAssumirOuFinalizar('finalizado')}>
+                      <Feather name="check-circle" size={15} color="#3A415C" />
+                      <Text style={mkStyles.waMenuItemText}>Finalizar conversa</Text>
+                    </Pressable>
+                    <Pressable style={mkStyles.waMenuItem} onPress={() => handleSilenciarOuBloquear('muted', !conversaAtiva.muted)}>
+                      <Feather name="bell-off" size={15} color="#3A415C" />
+                      <Text style={mkStyles.waMenuItemText}>{conversaAtiva.muted ? 'Dessilenciar' : 'Silenciar'}</Text>
+                    </Pressable>
+                    <Pressable style={mkStyles.waMenuItem} onPress={() => handleSilenciarOuBloquear('blocked', !conversaAtiva.blocked)}>
+                      <Feather name="slash" size={15} color="#C2263A" />
+                      <Text style={[mkStyles.waMenuItemText, { color: '#C2263A' }]}>{conversaAtiva.blocked ? 'Desbloquear contato' : 'Bloquear contato'}</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : null}
+
+              {contatoInfo && !contatoInfo.janela_24h_aberta ? (
+                <View style={mkStyles.waJanelaAviso}>
+                  <Text style={mkStyles.waJanelaAvisoText}>Janela 24h fechada. Para iniciar conversa, envie um template aprovado.</Text>
+                  <Pressable style={mkStyles.waJanelaAvisoBtn} onPress={abrirTemplates}>
+                    <Text style={mkStyles.waJanelaAvisoBtnText}>Escolher template</Text>
+                  </Pressable>
+                </View>
+              ) : null}
 
               <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
                 {isLoadingMensagens ? (
@@ -2006,19 +2332,49 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                 )}
               </ScrollView>
 
+              {conversaAtiva.blocked ? (
+                <View style={[mkStyles.waJanelaAviso, { backgroundColor: '#FBE4E7' }]}>
+                  <Text style={[mkStyles.waJanelaAvisoText, { color: '#C2263A' }]}>Contato bloqueado — desbloqueie no menu (⋮) pra poder enviar mensagem.</Text>
+                </View>
+              ) : sugestoes.length > 0 ? (
+                <View style={{ paddingHorizontal: 12, paddingTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {sugestoes.map((sugestao, idx) => (
+                    <Pressable key={idx} style={mkStyles.waSugestaoChip} onPress={() => setTextoEnvio(sugestao)}>
+                      <Text style={mkStyles.waSugestaoChipText} numberOfLines={1}>{sugestao}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+
+              {respostasSugeridas.length > 0 ? (
+                <View style={mkStyles.waRespostasSugeridasBox}>
+                  {respostasSugeridas.map((r) => (
+                    <Pressable
+                      key={r.id}
+                      style={mkStyles.waRespostaSugeridaItem}
+                      onPress={() => setTextoEnvio(r.texto)}
+                    >
+                      <Text style={mkStyles.waRespostaSugeridaAtalho}>/{r.atalho}</Text>
+                      <Text style={mkStyles.waRespostaSugeridaTexto} numberOfLines={1}>{r.texto}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+
               <View style={mkStyles.waComposerBar}>
                 <TextInput
                   style={mkStyles.waComposerInput}
                   value={textoEnvio}
                   onChangeText={setTextoEnvio}
-                  placeholder="Digite uma mensagem"
+                  placeholder="Digite uma mensagem ou / para respostas rápidas"
                   placeholderTextColor="#A7AEC2"
                   multiline
+                  editable={!conversaAtiva.blocked}
                 />
                 <Pressable
-                  style={[mkStyles.waSendButton, isSending || !textoEnvio.trim() ? { opacity: 0.6 } : null]}
+                  style={[mkStyles.waSendButton, isSending || !textoEnvio.trim() || conversaAtiva.blocked ? { opacity: 0.6 } : null]}
                   onPress={handleEnviar}
-                  disabled={isSending || !textoEnvio.trim()}
+                  disabled={isSending || !textoEnvio.trim() || conversaAtiva.blocked}
                 >
                   <Feather name="send" size={17} color="#FFFFFF" />
                 </Pressable>
@@ -2034,6 +2390,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                         <Feather name="x" size={20} color="#677089" />
                       </Pressable>
                     </View>
+                    <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                     <View style={{ alignItems: 'center', marginBottom: 14 }}>
                       <View style={[mkStyles.waChatAvatar, { backgroundColor: '#FBE4ED', width: 56, height: 56, borderRadius: 28 }]}>
                         <Text style={[mkStyles.waChatAvatarText, { color: '#C2255C', fontSize: 18 }]}>
@@ -2044,6 +2401,16 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                       <Text style={mkStyles.listRowMeta}>{formatTelefoneBR(conversaAtiva.phone)}</Text>
                     </View>
 
+                    <MktFormLabel>Nome de exibição</MktFormLabel>
+                    <TextInput
+                      style={mkStyles.formInput}
+                      value={nomeExibicaoEdit}
+                      onChangeText={setNomeExibicaoEdit}
+                      placeholder="Nome do contato"
+                      placeholderTextColor="#A7AEC2"
+                    />
+
+                    <View style={{ height: 14 }} />
                     <MktFormLabel>Atendente</MktFormLabel>
                     <MktFieldDropdown
                       label={atendentes.find((a) => a.nome === conversaAtiva.atendente_nome)?.nome ?? conversaAtiva.atendente_nome ?? 'Sem atendente'}
@@ -2066,23 +2433,56 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
 
                     <View style={{ marginTop: 18 }}>
                       <MktFormLabel>Etiquetas</MktFormLabel>
-                      <Text style={mkStyles.listRowMeta}>
-                        Ainda não disponível — precisa confirmar com a Lovable o contrato de etiquetas por conversa.
-                      </Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                        {tagsDisponiveis.map((tag) => {
+                          const selecionada = tagsEdit.includes(tag);
+                          return (
+                            <Pressable
+                              key={tag}
+                              style={[mkStyles.filterChipSmall, selecionada ? mkStyles.filterPillActive : null]}
+                              onPress={() => setTagsEdit((atual) => (selecionada ? atual.filter((t) => t !== tag) : [...atual, tag]))}
+                            >
+                              <Text style={[mkStyles.filterChipSmallText, selecionada ? mkStyles.filterPillTextActive : null]}>#{tag}</Text>
+                            </Pressable>
+                          );
+                        })}
+                        {tagsDisponiveis.length === 0 ? <Text style={mkStyles.listRowMeta}>Nenhuma tag cadastrada ainda.</Text> : null}
+                      </View>
                     </View>
+
                     <View style={{ marginTop: 14 }}>
                       <MktFormLabel>Notas internas</MktFormLabel>
-                      <Text style={mkStyles.listRowMeta}>
-                        Ainda não disponível — precisa confirmar com a Lovable o contrato de notas internas.
-                      </Text>
+                      <TextInput
+                        style={[mkStyles.formInput, { minHeight: 70, textAlignVertical: 'top' }]}
+                        value={notasEdit}
+                        onChangeText={setNotasEdit}
+                        placeholder="Observações sobre o contato (só você vê)..."
+                        placeholderTextColor="#A7AEC2"
+                        multiline
+                      />
                     </View>
-                    <View style={{ marginTop: 14 }}>
+
+                    <Pressable
+                      style={[mkStyles.filterModalApplyButton, { marginTop: 12 }, isSalvandoPainel ? { opacity: 0.6 } : null]}
+                      onPress={handleSalvarPainelAtendimento}
+                      disabled={isSalvandoPainel}
+                    >
+                      <Text style={mkStyles.filterModalApplyButtonText}>{isSalvandoPainel ? 'Salvando...' : 'Salvar'}</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}
+                      onPress={() => setIsRespostasOpen(true)}
+                    >
                       <MktFormLabel>Respostas rápidas</MktFormLabel>
-                      <Text style={mkStyles.listRowMeta}>
-                        Ainda não disponível — precisa confirmar com a Lovable o contrato de respostas rápidas.
-                      </Text>
-                    </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Text style={mkStyles.listRowMeta}>{respostas.length}</Text>
+                        <Feather name="chevron-right" size={14} color="#677089" />
+                      </View>
+                    </Pressable>
+
                     {atendenteAberto ? <View style={{ height: 280 }} /> : null}
+                    </ScrollView>
                   </View>
                 </View>
               ) : null}
@@ -2091,6 +2491,95 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
           </SafeAreaView>
         </SafeAreaProvider>
       </Modal>
+
+      <MktModal visible={isTemplatesOpen} title="Escolher template" onClose={() => setIsTemplatesOpen(false)}>
+        {isLoadingTemplates ? (
+          <ActivityIndicator color="#C2255C" style={{ marginTop: 12 }} />
+        ) : templatesError ? (
+          <MktEmptyState message={templatesError} />
+        ) : templates.length === 0 ? (
+          <MktEmptyState message="Nenhum template aprovado disponível." />
+        ) : (
+          templates.map((template) => (
+            <Pressable
+              key={template.name}
+              style={[mkStyles.dreCard, isSendingTemplate ? { opacity: 0.6 } : null]}
+              onPress={() => handleEnviarTemplate(template)}
+              disabled={isSendingTemplate}
+            >
+              <Text style={mkStyles.listRowTitle}>{template.name}</Text>
+              <Text style={mkStyles.listRowMeta}>{template.corpo}</Text>
+              {template.variaveis.length > 0 ? (
+                <Text style={[mkStyles.listRowMeta, { marginTop: 4 }]}>Variáveis: {template.variaveis.join(', ')}</Text>
+              ) : null}
+            </Pressable>
+          ))
+        )}
+      </MktModal>
+
+      <MktModal
+        visible={isRespostasOpen}
+        title="Respostas rápidas"
+        onClose={() => {
+          setIsRespostasOpen(false);
+          setRespostaEditandoId(null);
+          setRespostaAtalho('');
+          setRespostaTexto('');
+        }}
+      >
+        <MktFormLabel>Atalho</MktFormLabel>
+        <TextInput
+          style={mkStyles.formInput}
+          value={respostaAtalho}
+          onChangeText={setRespostaAtalho}
+          placeholder="Ex.: saudacao"
+          placeholderTextColor="#A7AEC2"
+          autoCapitalize="none"
+        />
+        <View style={{ height: 10 }} />
+        <MktFormLabel>Texto</MktFormLabel>
+        <TextInput
+          style={[mkStyles.formInput, { minHeight: 70, textAlignVertical: 'top' }]}
+          value={respostaTexto}
+          onChangeText={setRespostaTexto}
+          placeholder="Texto da resposta rápida"
+          placeholderTextColor="#A7AEC2"
+          multiline
+        />
+        <Pressable
+          style={[mkStyles.filterModalApplyButton, { marginTop: 10 }, isSalvandoResposta ? { opacity: 0.6 } : null]}
+          onPress={handleSalvarResposta}
+          disabled={isSalvandoResposta}
+        >
+          <Text style={mkStyles.filterModalApplyButtonText}>
+            {isSalvandoResposta ? 'Salvando...' : respostaEditandoId ? 'Salvar edição' : 'Adicionar resposta'}
+          </Text>
+        </Pressable>
+
+        <View style={{ height: 16 }} />
+        {respostas.length === 0 ? (
+          <MktEmptyState message="Nenhuma resposta rápida cadastrada." />
+        ) : (
+          respostas.map((r) => (
+            <View key={r.id} style={[mkStyles.dreCard, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+              <Pressable
+                style={{ flex: 1, minWidth: 0 }}
+                onPress={() => {
+                  setRespostaEditandoId(r.id);
+                  setRespostaAtalho(r.atalho);
+                  setRespostaTexto(r.texto);
+                }}
+              >
+                <Text style={mkStyles.listRowTitle}>/{r.atalho}</Text>
+                <Text style={mkStyles.listRowMeta} numberOfLines={2}>{r.texto}</Text>
+              </Pressable>
+              <Pressable onPress={() => handleExcluirResposta(r.id)} hitSlop={8} style={{ marginLeft: 10 }}>
+                <Feather name="trash-2" size={16} color="#C2263A" />
+              </Pressable>
+            </View>
+          ))
+        )}
+      </MktModal>
     </SafeAreaView>
   );
 }
@@ -3255,6 +3744,150 @@ const mkStyles = StyleSheet.create({
   },
   filterPillTextActive: {
     color: '#FFFFFF',
+  },
+  waSugestaoChip: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#F3B9CF',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: '100%',
+  },
+  waSugestaoChipText: {
+    color: '#C2255C',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  waRespostasSugeridasBox: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 12,
+    marginTop: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    maxHeight: 160,
+    overflow: 'hidden',
+  },
+  waRespostaSugeridaItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F6',
+  },
+  waRespostaSugeridaAtalho: {
+    color: '#C2255C',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  waRespostaSugeridaTexto: {
+    color: '#5E667D',
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  waMenuBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 250,
+  },
+  waMenuDropdown: {
+    position: 'absolute',
+    top: 64,
+    right: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    paddingVertical: 6,
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 12,
+    zIndex: 260,
+  },
+  waMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  waMenuItemText: {
+    color: '#3A415C',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  waJanelaAviso: {
+    backgroundColor: '#FFF3D6',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0DBA0',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  waJanelaAvisoText: {
+    color: '#8A6D1D',
+    fontSize: 12,
+    flex: 1,
+    minWidth: 140,
+  },
+  waJanelaAvisoBtn: {
+    backgroundColor: '#8A6D1D',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  waJanelaAvisoBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  waDotLaranja: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#F5A623',
+  },
+  waUnreadBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#25D366',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  waUnreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  waTagChip: {
+    backgroundColor: '#F1F2F6',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  waTagChipText: {
+    color: '#5E667D',
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  waIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterChipSmall: {
     borderRadius: 7,
