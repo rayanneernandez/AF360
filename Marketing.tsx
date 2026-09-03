@@ -2205,14 +2205,14 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
 
         <MktSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar por nome, telefone ou tag..." />
 
-        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
           {WA_ABA_OPTIONS.map((opt) => (
             <Pressable
               key={opt.value}
-              style={[mkStyles.filterChipSmall, aba === opt.value ? mkStyles.filterPillActive : null]}
+              style={[mkStyles.waAbaPill, { flex: 1 }, aba === opt.value ? mkStyles.waAbaPillActive : null]}
               onPress={() => setAba(opt.value)}
             >
-              <Text style={[mkStyles.filterChipSmallText, aba === opt.value ? mkStyles.filterPillTextActive : null]}>
+              <Text style={[mkStyles.waAbaPillText, aba === opt.value ? mkStyles.waAbaPillTextActive : null]} numberOfLines={1}>
                 {opt.label} ({contadores.abas[opt.value]})
               </Text>
             </Pressable>
@@ -2331,7 +2331,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
           agendaContatos.map((contato) => (
             <Pressable
               key={contato.phone}
-              style={mkStyles.dreCard}
+              style={({ pressed }) => [mkStyles.dreCard, pressed ? mkStyles.dreCardPressed : null]}
               onPress={() => {
                 setIsAgendaOpen(false);
                 abrirConversa({
@@ -2549,35 +2549,40 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                   multiline
                   editable={!conversaAtiva.blocked}
                 />
-                {textoEnvio.trim() ? null : audioRecorderState.isRecording ? (
+                {audioRecorderState.isRecording ? (
                   <Pressable
-                    style={[mkStyles.waComposerIconBtn, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+                    style={[mkStyles.waSendButton, { flexDirection: 'row', paddingHorizontal: 10, width: undefined, gap: 4 }]}
                     onPress={handlePararEEnviarGravacao}
                     disabled={isEnviandoAudio}
                   >
                     {isEnviandoAudio ? (
-                      <ActivityIndicator size="small" color="#C2263A" />
+                      <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                       <>
                         <View style={mkStyles.waRecDot} />
-                        <Text style={{ color: '#C2263A', fontSize: 12, fontWeight: '700' }}>
+                        <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
                           {Math.floor(audioRecorderState.durationMillis / 1000)}s
                         </Text>
                       </>
                     )}
                   </Pressable>
+                ) : textoEnvio.trim() ? (
+                  <Pressable
+                    style={[mkStyles.waSendButton, isSending || conversaAtiva.blocked ? { opacity: 0.6 } : null]}
+                    onPress={handleEnviar}
+                    disabled={isSending || conversaAtiva.blocked}
+                  >
+                    <Feather name="send" size={17} color="#FFFFFF" />
+                  </Pressable>
                 ) : (
-                  <Pressable style={mkStyles.waComposerIconBtn} onPress={handleIniciarGravacao}>
-                    <Feather name="mic" size={19} color="#5E667D" />
+                  <Pressable
+                    style={[mkStyles.waSendButton, conversaAtiva.blocked ? { opacity: 0.6 } : null]}
+                    onPress={handleIniciarGravacao}
+                    disabled={conversaAtiva.blocked}
+                  >
+                    <Feather name="mic" size={18} color="#FFFFFF" />
                   </Pressable>
                 )}
-                <Pressable
-                  style={[mkStyles.waSendButton, isSending || !textoEnvio.trim() || conversaAtiva.blocked ? { opacity: 0.6 } : null]}
-                  onPress={handleEnviar}
-                  disabled={isSending || !textoEnvio.trim() || conversaAtiva.blocked}
-                >
-                  <Feather name="send" size={17} color="#FFFFFF" />
-                </Pressable>
               </View>
 
               {isAtendimentoOpen ? (
@@ -2714,6 +2719,130 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                   </View>
                 </View>
               ) : null}
+
+              {/* Renderizada como overlay dentro deste mesmo <Modal> do chat,
+                  não como um segundo <Modal> nativo — dois Modals abertos ao
+                  mesmo tempo no iOS deixam o toque lento/instável (mesma
+                  lição do MktInlineSelect). */}
+              {isRespostasOpen ? (
+                <View style={mkStyles.waRespostasOverlay}>
+                  <Pressable
+                    style={mkStyles.modalBackdrop}
+                    onPress={() => {
+                      setIsRespostasOpen(false);
+                      setIsFormRespostaAberto(false);
+                      setRespostaEditandoId(null);
+                      setRespostaAtalho('');
+                      setRespostaTexto('');
+                    }}
+                  >
+                    <Pressable style={[mkStyles.modalCard, { maxHeight: '86%' }]} onPress={() => {}}>
+                      <View style={mkStyles.modalHeader}>
+                        <Text style={mkStyles.modalTitle}>Respostas rápidas</Text>
+                        <Pressable
+                          onPress={() => {
+                            setIsRespostasOpen(false);
+                            setIsFormRespostaAberto(false);
+                            setRespostaEditandoId(null);
+                            setRespostaAtalho('');
+                            setRespostaTexto('');
+                          }}
+                          hitSlop={8}
+                        >
+                          <Feather name="x" size={20} color="#677089" />
+                        </Pressable>
+                      </View>
+                      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                        <Text style={mkStyles.listRowMeta}>Crie atalhos para mensagens frequentes. Use digitando /atalho no chat.</Text>
+                        <View style={{ height: 10 }} />
+
+                        {isFormRespostaAberto ? (
+                          <>
+                            <MktFormLabel>Atalho</MktFormLabel>
+                            <TextInput
+                              style={mkStyles.formInput}
+                              value={respostaAtalho}
+                              onChangeText={setRespostaAtalho}
+                              placeholder="ex: saudacao"
+                              placeholderTextColor="#A7AEC2"
+                              autoCapitalize="none"
+                            />
+                            <Text style={[mkStyles.listRowMeta, { marginTop: 3 }]}>Apenas letras minúsculas, sem espaços. Será chamado por /atalho.</Text>
+                            <View style={{ height: 10 }} />
+                            <MktFormLabel>Texto</MktFormLabel>
+                            <TextInput
+                              style={[mkStyles.formInput, { minHeight: 70, textAlignVertical: 'top' }]}
+                              value={respostaTexto}
+                              onChangeText={setRespostaTexto}
+                              placeholder="Texto da resposta rápida"
+                              placeholderTextColor="#A7AEC2"
+                              multiline
+                            />
+                            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                              <Pressable
+                                style={[mkStyles.smallButton, { flex: 1, backgroundColor: '#F1F2F6' }]}
+                                onPress={() => {
+                                  setIsFormRespostaAberto(false);
+                                  setRespostaEditandoId(null);
+                                  setRespostaAtalho('');
+                                  setRespostaTexto('');
+                                }}
+                              >
+                                <Text style={[mkStyles.smallButtonText, { color: '#5E667D' }]}>Cancelar</Text>
+                              </Pressable>
+                              <Pressable
+                                style={[mkStyles.filterModalApplyButton, { flex: 1 }, isSalvandoResposta ? { opacity: 0.6 } : null]}
+                                onPress={handleSalvarResposta}
+                                disabled={isSalvandoResposta}
+                              >
+                                <Text style={mkStyles.filterModalApplyButtonText}>{isSalvandoResposta ? 'Salvando...' : 'Salvar'}</Text>
+                              </Pressable>
+                            </View>
+                            <View style={{ height: 16 }} />
+                          </>
+                        ) : (
+                          <Pressable
+                            style={[mkStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14 }]}
+                            onPress={() => setIsFormRespostaAberto(true)}
+                          >
+                            <Feather name="plus" size={14} color="#FFFFFF" />
+                            <Text style={mkStyles.suggestionButtonText}>Nova resposta</Text>
+                          </Pressable>
+                        )}
+
+                        {respostas.length === 0 ? (
+                          <MktEmptyState message="Nenhuma resposta rápida cadastrada." />
+                        ) : (
+                          respostas.map((r) => (
+                            <View key={r.id} style={[mkStyles.dreCard, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                              <View style={{ flex: 1, minWidth: 0 }}>
+                                <Text style={mkStyles.listRowTitle}>/{r.atalho}</Text>
+                                <Text style={mkStyles.listRowMeta} numberOfLines={2}>{r.texto}</Text>
+                              </View>
+                              <View style={{ flexDirection: 'row', gap: 14, marginLeft: 10 }}>
+                                <Pressable
+                                  onPress={() => {
+                                    setRespostaEditandoId(r.id);
+                                    setRespostaAtalho(r.atalho);
+                                    setRespostaTexto(r.texto);
+                                    setIsFormRespostaAberto(true);
+                                  }}
+                                  hitSlop={8}
+                                >
+                                  <Feather name="edit-2" size={15} color="#5E667D" />
+                                </Pressable>
+                                <Pressable onPress={() => handleExcluirResposta(r.id)} hitSlop={8}>
+                                  <Feather name="trash-2" size={16} color="#C2263A" />
+                                </Pressable>
+                              </View>
+                            </View>
+                          ))
+                        )}
+                      </ScrollView>
+                    </Pressable>
+                  </Pressable>
+                </View>
+              ) : null}
             </KeyboardAvoidingView>
             ) : null}
           </SafeAreaView>
@@ -2745,103 +2874,6 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
         )}
       </MktModal>
 
-      <MktModal
-        visible={isRespostasOpen}
-        title="Respostas rápidas"
-        onClose={() => {
-          setIsRespostasOpen(false);
-          setIsFormRespostaAberto(false);
-          setRespostaEditandoId(null);
-          setRespostaAtalho('');
-          setRespostaTexto('');
-        }}
-      >
-        <Text style={mkStyles.listRowMeta}>Crie atalhos para mensagens frequentes. Use digitando /atalho no chat.</Text>
-        <View style={{ height: 10 }} />
-
-        {isFormRespostaAberto ? (
-          <>
-            <MktFormLabel>Atalho</MktFormLabel>
-            <TextInput
-              style={mkStyles.formInput}
-              value={respostaAtalho}
-              onChangeText={setRespostaAtalho}
-              placeholder="ex: saudacao"
-              placeholderTextColor="#A7AEC2"
-              autoCapitalize="none"
-            />
-            <Text style={[mkStyles.listRowMeta, { marginTop: 3 }]}>Apenas letras minúsculas, sem espaços. Será chamado por /atalho.</Text>
-            <View style={{ height: 10 }} />
-            <MktFormLabel>Texto</MktFormLabel>
-            <TextInput
-              style={[mkStyles.formInput, { minHeight: 70, textAlignVertical: 'top' }]}
-              value={respostaTexto}
-              onChangeText={setRespostaTexto}
-              placeholder="Texto da resposta rápida"
-              placeholderTextColor="#A7AEC2"
-              multiline
-            />
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-              <Pressable
-                style={[mkStyles.smallButton, { flex: 1, backgroundColor: '#F1F2F6' }]}
-                onPress={() => {
-                  setIsFormRespostaAberto(false);
-                  setRespostaEditandoId(null);
-                  setRespostaAtalho('');
-                  setRespostaTexto('');
-                }}
-              >
-                <Text style={[mkStyles.smallButtonText, { color: '#5E667D' }]}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                style={[mkStyles.filterModalApplyButton, { flex: 1 }, isSalvandoResposta ? { opacity: 0.6 } : null]}
-                onPress={handleSalvarResposta}
-                disabled={isSalvandoResposta}
-              >
-                <Text style={mkStyles.filterModalApplyButtonText}>{isSalvandoResposta ? 'Salvando...' : 'Salvar'}</Text>
-              </Pressable>
-            </View>
-            <View style={{ height: 16 }} />
-          </>
-        ) : (
-          <Pressable
-            style={[mkStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14 }]}
-            onPress={() => setIsFormRespostaAberto(true)}
-          >
-            <Feather name="plus" size={14} color="#FFFFFF" />
-            <Text style={mkStyles.suggestionButtonText}>Nova resposta</Text>
-          </Pressable>
-        )}
-
-        {respostas.length === 0 ? (
-          <MktEmptyState message="Nenhuma resposta rápida cadastrada." />
-        ) : (
-          respostas.map((r) => (
-            <View key={r.id} style={[mkStyles.dreCard, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={mkStyles.listRowTitle}>/{r.atalho}</Text>
-                <Text style={mkStyles.listRowMeta} numberOfLines={2}>{r.texto}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 14, marginLeft: 10 }}>
-                <Pressable
-                  onPress={() => {
-                    setRespostaEditandoId(r.id);
-                    setRespostaAtalho(r.atalho);
-                    setRespostaTexto(r.texto);
-                    setIsFormRespostaAberto(true);
-                  }}
-                  hitSlop={8}
-                >
-                  <Feather name="edit-2" size={15} color="#5E667D" />
-                </Pressable>
-                <Pressable onPress={() => handleExcluirResposta(r.id)} hitSlop={8}>
-                  <Feather name="trash-2" size={16} color="#C2263A" />
-                </Pressable>
-              </View>
-            </View>
-          ))
-        )}
-      </MktModal>
     </SafeAreaView>
   );
 }
@@ -3959,6 +3991,10 @@ const mkStyles = StyleSheet.create({
     padding: 14,
     marginBottom: 12,
   },
+  dreCardPressed: {
+    backgroundColor: '#FBE4ED',
+    borderColor: '#F3B9CF',
+  },
   badge: {
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -4158,6 +4194,28 @@ const mkStyles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 10,
     paddingVertical: 5,
+  },
+  waAbaPill: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  waAbaPillActive: {
+    backgroundColor: '#C2255C',
+    borderColor: '#C2255C',
+  },
+  waAbaPillText: {
+    color: '#5E667D',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  waAbaPillTextActive: {
+    color: '#FFFFFF',
   },
   filterChipSmallText: {
     color: '#5E667D',
@@ -4455,6 +4513,14 @@ const mkStyles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 12,
+  },
+  waRespostasOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 400,
   },
   waSendButton: {
     width: 40,
