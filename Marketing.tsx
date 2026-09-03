@@ -5,7 +5,9 @@ import { useIsFocused } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -20,7 +22,15 @@ import { PieChart, LineChart } from 'react-native-gifted-charts';
 import * as Clipboard from 'expo-clipboard';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useAudioRecorder, useAudioRecorderState, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
+import {
+  useAudioRecorder,
+  useAudioRecorderState,
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+} from 'expo-audio';
 import {
   styles,
   TopBar,
@@ -207,6 +217,78 @@ function extractMktWaTexto(raw: Record<string, unknown>): string {
     ([chave, valor]) => !ignorarChaves.has(chave) && typeof valor === 'string' && valor.trim().length > 0
   );
   return candidato ? String(candidato[1]) : '(mensagem sem texto — contrato do campo não confirmado)';
+}
+
+// O contrato de campo pra mídia recebida (tipo/URL) nunca foi confirmado
+// pela Lovable — mas o texto extraído acima às vezes É a própria URL do
+// arquivo (visto em produção: link .jpg/.m4a aparecendo como "mensagem").
+// Em vez de inventar nome de campo, detecta isso pelo formato real da
+// própria URL e renderiza a mídia de verdade em vez do link cru.
+type MktWaMidiaDetectada = { tipo: 'imagem' | 'audio' | 'video' | 'documento'; url: string } | null;
+
+function detectarMktWaMidia(texto: string): MktWaMidiaDetectada {
+  const url = texto.trim();
+  if (!/^https?:\/\/\S+$/i.test(url)) return null;
+  const semQuery = url.split('?')[0].toLowerCase();
+  if (/\.(jpe?g|png|gif|webp)$/.test(semQuery)) return { tipo: 'imagem', url };
+  if (/\.(mp3|ogg|oga|m4a|aac|amr|wav|opus)$/.test(semQuery)) return { tipo: 'audio', url };
+  if (/\.(mp4|mov|3gp|webm)$/.test(semQuery)) return { tipo: 'video', url };
+  if (/\.(pdf|docx?|xlsx?|pptx?|txt)$/.test(semQuery)) return { tipo: 'documento', url };
+  return null;
+}
+
+// Player de áudio real (expo-audio) pra bolha de mensagem — cada bolha tem
+// sua própria instância porque o hook precisa da URL na criação.
+function WaAudioBubblePlayer({ url, outbound }: { url: string; outbound: boolean }) {
+  const player = useAudioPlayer(url);
+  const status = useAudioPlayerStatus(player);
+  const corIcone = outbound ? '#0C1736' : '#0C1736';
+  const duracao = status.duration && Number.isFinite(status.duration) ? status.duration : 0;
+  const posicao = status.currentTime && Number.isFinite(status.currentTime) ? status.currentTime : 0;
+  const formatar = (s: number) => {
+    const total = Math.max(0, Math.floor(s));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  };
+  const handlePress = () => {
+    if (status.playing) {
+      player.pause();
+      return;
+    }
+    if (status.didJustFinish || (duracao > 0 && posicao >= duracao)) {
+      player.seekTo(0);
+    }
+    player.play();
+  };
+  return (
+    <Pressable style={mkStyles.waAudioBubbleRow} onPress={handlePress}>
+      <View style={mkStyles.waAudioPlayBtn}>
+        <Feather name={status.playing ? 'pause' : 'play'} size={16} color={corIcone} />
+      </View>
+      <View style={mkStyles.waAudioTrack} />
+      <Text style={mkStyles.waAudioTime}>{status.isLoaded ? formatar(duracao > 0 ? posicao : duracao) : '...'}</Text>
+    </Pressable>
+  );
+}
+
+function WaMensagemMidia({ midia, outbound }: { midia: NonNullable<MktWaMidiaDetectada>; outbound: boolean }) {
+  if (midia.tipo === 'imagem') {
+    return (
+      <Pressable onPress={() => Linking.openURL(midia.url)}>
+        <Image source={{ uri: midia.url }} style={mkStyles.waImagemBubble} resizeMode="cover" />
+      </Pressable>
+    );
+  }
+  if (midia.tipo === 'audio') {
+    return <WaAudioBubblePlayer url={midia.url} outbound={outbound} />;
+  }
+  return (
+    <Pressable style={mkStyles.waDocBubbleRow} onPress={() => Linking.openURL(midia.url)}>
+      <Feather name={midia.tipo === 'video' ? 'play-circle' : 'file-text'} size={18} color="#5E667D" />
+      <Text style={mkStyles.waDocBubbleText} numberOfLines={1}>
+        {midia.url.split('/').pop() ?? midia.url}
+      </Text>
+    </Pressable>
+  );
 }
 
 // Chave (AAAA-MM-DD local) usada só pra agrupar mensagens por dia antes de
@@ -2204,8 +2286,11 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
           <Pressable style={mkStyles.waIconButton} onPress={handleSincronizar} disabled={isSincronizando}>
             {isSincronizando ? <ActivityIndicator color="#5E667D" size="small" /> : <Feather name="refresh-cw" size={16} color="#5E667D" />}
           </Pressable>
-          <Pressable style={[mkStyles.waIconButton, { backgroundColor: '#C2255C' }]} onPress={abrirAgenda}>
-            <Feather name="book-open" size={16} color="#FFFFFF" />
+          <Pressable
+            style={({ pressed }) => [mkStyles.waIconButton, pressed || isAgendaOpen ? mkStyles.waIconButtonActive : null]}
+            onPress={abrirAgenda}
+          >
+            <Feather name="book-open" size={16} color={isAgendaOpen ? '#FFFFFF' : '#5E667D'} />
           </Pressable>
         </View>
 
@@ -2270,14 +2355,17 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                     {conversa.display_name ?? conversa.phone}
                   </Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  {conversa.nao_lidas > 0 ? (
-                    <View style={mkStyles.waUnreadBadge}>
-                      <Text style={mkStyles.waUnreadBadgeText}>{conversa.nao_lidas}</Text>
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  <Text style={mkStyles.listRowMeta}>{formatDiaCurto(conversa.ultima_mensagem_em)}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {conversa.nao_lidas > 0 ? (
+                      <View style={mkStyles.waUnreadBadge}>
+                        <Text style={mkStyles.waUnreadBadgeText}>{conversa.nao_lidas}</Text>
+                      </View>
+                    ) : null}
+                    <View style={[mkStyles.badge, { backgroundColor: '#FBE4ED' }]}>
+                      <Text style={[mkStyles.badgeText, { color: '#C2255C' }]}>{conversa.chat_status_label ?? conversa.chat_status}</Text>
                     </View>
-                  ) : null}
-                  <View style={[mkStyles.badge, { backgroundColor: '#FBE4ED' }]}>
-                    <Text style={[mkStyles.badgeText, { color: '#C2255C' }]}>{conversa.chat_status_label ?? conversa.chat_status}</Text>
                   </View>
                 </View>
               </View>
@@ -2466,11 +2554,18 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                             </View>
                           );
                         }
+                        const midia = detectarMktWaMidia(texto);
                         return (
                           <View key={idx} style={[mkStyles.waBubbleRow, { justifyContent: isOutbound ? 'flex-end' : 'flex-start' }]}>
-                            <View style={[mkStyles.waBubble, isOutbound ? mkStyles.waBubbleOut : mkStyles.waBubbleIn]}>
-                              <Text style={mkStyles.waBubbleText}>{texto}</Text>
-                              <Text style={mkStyles.waBubbleTime}>{formatHoraBR(criadoEm)}</Text>
+                            <View style={[mkStyles.waBubble, isOutbound ? mkStyles.waBubbleOut : mkStyles.waBubbleIn, midia?.tipo === 'imagem' ? { padding: 4 } : null]}>
+                              {midia ? (
+                                <WaMensagemMidia midia={midia} outbound={isOutbound} />
+                              ) : (
+                                <Text style={mkStyles.waBubbleText}>{texto}</Text>
+                              )}
+                              <Text style={[mkStyles.waBubbleTime, midia?.tipo === 'imagem' ? { paddingHorizontal: 6, paddingBottom: 2 } : null]}>
+                                {formatHoraBR(criadoEm)}
+                              </Text>
                             </View>
                           </View>
                         );
@@ -4207,6 +4302,10 @@ const mkStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  waIconButtonActive: {
+    backgroundColor: '#C2255C',
+    borderColor: '#C2255C',
+  },
   filterChipSmall: {
     borderRadius: 7,
     borderWidth: 1,
@@ -4474,6 +4573,50 @@ const mkStyles = StyleSheet.create({
     fontSize: 10,
     marginTop: 3,
     alignSelf: 'flex-end',
+  },
+  waAudioBubbleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 160,
+    paddingVertical: 2,
+  },
+  waAudioPlayBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(12,23,54,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  waAudioTrack: {
+    flex: 1,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(12,23,54,0.15)',
+  },
+  waAudioTime: {
+    color: '#5E667D',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  waImagemBubble: {
+    width: 220,
+    height: 220,
+    borderRadius: 8,
+    backgroundColor: '#E2E6F0',
+  },
+  waDocBubbleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    maxWidth: 220,
+  },
+  waDocBubbleText: {
+    color: '#0C1736',
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
   },
   waRecDot: {
     width: 8,
