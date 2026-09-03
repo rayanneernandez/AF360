@@ -7473,6 +7473,63 @@ export async function excluirMarketingWaResposta(id: string, actorId?: string | 
   await api.delete(withActorId(`/api/marketing/wa-resposta?id=${encodeURIComponent(id)}`, actorId));
 }
 
+// --- Atendentes e mídia (contrato confirmado pela Lovable em 03/09/2026) ---
+
+export type MarketingWaAtendente = { id: string; nome: string; email: string | null; avatar_url: string | null };
+
+export async function fetchMarketingWaAtendentes(): Promise<MarketingWaAtendente[]> {
+  const { data } = await fetchMarketingRecurso<Array<Partial<MarketingWaAtendente>>>('wa-atendentes');
+  return (Array.isArray(data) ? data : []).map((item) => ({
+    id: item.id ?? '',
+    nome: item.nome ?? '—',
+    email: item.email ?? null,
+    avatar_url: item.avatar_url ?? null,
+  }));
+}
+
+export type MarketingWaMidiaTipo = 'image' | 'video' | 'audio' | 'voice' | 'document';
+
+export type MarketingWaMidiaLimite = { maxBytes: number; mimesAceitos: string[] };
+
+export async function fetchMarketingWaMidiaLimites(): Promise<Partial<Record<MarketingWaMidiaTipo, MarketingWaMidiaLimite>>> {
+  const { data } = await fetchMarketingRecurso<Partial<Record<MarketingWaMidiaTipo, MarketingWaMidiaLimite>>>('wa-midia-limites');
+  return data ?? {};
+}
+
+export type MarketingWaMidiaUploadResult = {
+  media_url: string;
+  path: string;
+  mime_type: string;
+  file_name: string | null;
+  tamanho_bytes: number;
+  tipo: MarketingWaMidiaTipo;
+  expira_em: string | null;
+};
+
+export async function uploadMarketingWaMidia(
+  body: { tipo: MarketingWaMidiaTipo; mime_type: string; file_name?: string; media_base64: string },
+  actorId?: string | null
+): Promise<MarketingWaMidiaUploadResult> {
+  const json = await api.post(withActorId('/api/marketing/wa-upload-midia', actorId), body);
+  return json.data as MarketingWaMidiaUploadResult;
+}
+
+// Envia mídia já enviando o base64 direto (o proxy faz o upload e dispara em
+// uma chamada só, conforme confirmado pela Lovable).
+export async function sendMarketingWaMidia(
+  body: {
+    phone: string;
+    type: MarketingWaMidiaTipo;
+    media_base64: string;
+    media_mime: string;
+    file_name?: string;
+    message?: string;
+  },
+  actorId?: string | null
+): Promise<void> {
+  await api.post(withActorId('/api/marketing/wa-enviar', actorId), body);
+}
+
 // --- Google (Meu Negócio) ---
 
 export type MarketingGmbLocation = {

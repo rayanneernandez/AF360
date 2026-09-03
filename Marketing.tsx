@@ -20,6 +20,7 @@ import { PieChart, LineChart } from 'react-native-gifted-charts';
 import * as Clipboard from 'expo-clipboard';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { useAudioRecorder, useAudioRecorderState, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 import {
   styles,
   TopBar,
@@ -64,6 +65,9 @@ import {
   fetchMarketingWaRespostas,
   salvarMarketingWaResposta,
   excluirMarketingWaResposta,
+  fetchMarketingWaAtendentes,
+  fetchMarketingWaMidiaLimites,
+  sendMarketingWaMidia,
   ApiError,
   fetchMarketingGmb,
   fetchMarketingGmbReviews,
@@ -94,6 +98,7 @@ import {
   type MarketingWaAgendaContato,
   type MarketingWaTemplate,
   type MarketingWaResposta,
+  type MarketingWaMidiaTipo,
   type MarketingGmbData,
   type MarketingGmbReviewItem,
   type MarketingLevaMaisMetricas,
@@ -1720,6 +1725,76 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   // Sugestões de resposta contextual (chip acima do composer).
   const [sugestoes, setSugestoes] = useState<string[]>([]);
 
+  // Anexo/mídia (contrato confirmado 03/09/2026: wa-upload-midia + wa-enviar
+  // com media_base64/media_mime, limites em wa-midia-limites).
+  const [midiaLimites, setMidiaLimites] = useState<Partial<Record<MarketingWaMidiaTipo, { maxBytes: number; mimesAceitos: string[] }>>>({});
+  const [isUploadingMidia, setIsUploadingMidia] = useState(false);
+  useEffect(() => {
+    fetchMarketingWaMidiaLimites()
+      .then(setMidiaLimites)
+      .catch(() => setMidiaLimites({}));
+  }, []);
+
+  // Gravação de nota de voz (expo-audio) — formato HIGH_QUALITY gera .m4a
+  // (audio/mp4), que está na lista de mimes aceitos pra tipo "voice".
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioRecorderState = useAudioRecorderState(audioRecorder, 200);
+  const [isEnviandoAudio, setIsEnviandoAudio] = useState(false);
+
+  const handleIniciarGravacao = async () => {
+    try {
+      const permissao = await requestRecordingPermissionsAsync();
+      if (!permissao.granted) {
+        Alert.alert('Permissão necessária', 'Preciso de acesso ao microfone pra gravar uma nota de voz.');
+        return;
+      }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+    } catch (err) {
+      Alert.alert('Erro', showMktError(err, 'Não foi possível iniciar a gravação.'));
+    }
+  };
+
+  const handlePararEEnviarGravacao = async () => {
+    if (!conversaAtiva) return;
+    try {
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
+      if (!uri) return;
+      const limite = midiaLimites.voice;
+      const info = await FileSystem.getInfoAsync(uri);
+      const tamanho = info.exists && 'size' in info ? info.size : 0;
+      if (limite && tamanho > limite.maxBytes) {
+        Alert.alert('Áudio muito grande', `O limite pra nota de voz é ${Math.round(limite.maxBytes / (1024 * 1024))}MB.`);
+        return;
+      }
+      setIsEnviandoAudio(true);
+      const media_base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      await sendMarketingWaMidia(
+        { phone: conversaAtiva.phone, type: 'voice', media_base64, media_mime: 'audio/mp4', file_name: 'audio.m4a' },
+        actorId
+      );
+      const { mensagens: msgs, contato } = await fetchMarketingWaMensagens(conversaAtiva.phone, { limit: 50 });
+      setMensagens(msgs);
+      setContatoInfo(contato);
+    } catch (err) {
+      const mensagemErro = err instanceof ApiError ? err.message : '';
+      if (mensagemErro.includes('janela_24h_fechada')) {
+        Alert.alert('Janela de 24h fechada', 'Envie um template aprovado antes de mandar áudio.', [
+          { text: 'Escolher template', onPress: abrirTemplates },
+          { text: 'Cancelar', style: 'cancel' },
+        ]);
+      } else if (mensagemErro.includes('contato_bloqueado')) {
+        Alert.alert('Contato bloqueado', 'Desbloqueie o contato antes de enviar áudio.');
+      } else {
+        Alert.alert('Erro', showMktError(err, 'Não foi possível enviar o áudio.'));
+      }
+    } finally {
+      setIsEnviandoAudio(false);
+    }
+  };
+
   // Fluxo de template (janela de 24h fechada).
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [templates, setTemplates] = useState<MarketingWaTemplate[]>([]);
@@ -1787,15 +1862,24 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   };
 
   // Atendente aqui NÃO é a mesma coisa que "Responsável" da tela de
-  // Ocorrências: lá são colaboradores do RH (confirmado); aqui a Lovable não
-  // confirmou nenhum endpoint de listagem de atendentes — e o próprio painel
-  // web mostra a lista vazia de verdade ("nenhum atendente cadastrado
-  // ainda"). Por isso NÃO reaproveitamos fetchRhColaboradores aqui: seria
-  // fabricar uma lista que não corresponde ao que a Lovable de fato expõe.
+  // Ocorrências (colaboradores do RH). Confirmado pela Lovable em
+  // 03/09/2026: atendente = profiles com chat_atendente=true — hoje ninguém
+  // tem essa flag ligada, então a lista real vem vazia (mesmo estado do
+  // painel web), até alguém marcar "Atendente de chat" em Admin › Usuários.
   const loadAtendentes = useCallback(() => {
     setAtendentesError(null);
-    setAtendentes([]);
+    fetchMarketingWaAtendentes()
+      .then((rows) => setAtendentes(rows.map((r) => ({ id: r.id, nome: r.nome }))))
+      .catch((err) => {
+        setAtendentes([]);
+        setAtendentesError(showMktError(err, 'Não foi possível carregar a lista de atendentes.'));
+      });
   }, []);
+
+  useEffect(() => {
+    if (!isAtendimentoOpen) return;
+    loadAtendentes();
+  }, [isAtendimentoOpen, loadAtendentes]);
 
   const load = useCallback(() => {
     setIsLoading(true);
@@ -1949,6 +2033,55 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
         }
       })
       .finally(() => setIsSending(false));
+  };
+
+  function tipoMidiaPorMime(mime: string): MarketingWaMidiaTipo {
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('video/')) return 'video';
+    if (mime.startsWith('audio/')) return 'audio';
+    return 'document';
+  }
+
+  const handleAnexarMidia = async () => {
+    if (!conversaAtiva) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, multiple: false });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const mime = asset.mimeType ?? 'application/octet-stream';
+      const tipo = tipoMidiaPorMime(mime);
+      const limite = midiaLimites[tipo];
+      if (limite) {
+        if (!limite.mimesAceitos.includes(mime)) {
+          Alert.alert('Formato não aceito', `${mime} não é um formato aceito pra ${tipo}. Aceitos: ${limite.mimesAceitos.join(', ')}.`);
+          return;
+        }
+        if ((asset.size ?? 0) > limite.maxBytes) {
+          Alert.alert('Arquivo muito grande', `O limite pra ${tipo} é ${Math.round(limite.maxBytes / (1024 * 1024))}MB.`);
+          return;
+        }
+      }
+      setIsUploadingMidia(true);
+      const media_base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+      await sendMarketingWaMidia({ phone: conversaAtiva.phone, type: tipo, media_base64, media_mime: mime, file_name: asset.name }, actorId);
+      const { mensagens: msgs, contato } = await fetchMarketingWaMensagens(conversaAtiva.phone, { limit: 50 });
+      setMensagens(msgs);
+      setContatoInfo(contato);
+    } catch (err) {
+      const mensagemErro = err instanceof ApiError ? err.message : '';
+      if (mensagemErro.includes('janela_24h_fechada')) {
+        Alert.alert('Janela de 24h fechada', 'Envie um template aprovado antes de mandar anexo.', [
+          { text: 'Escolher template', onPress: abrirTemplates },
+          { text: 'Cancelar', style: 'cancel' },
+        ]);
+      } else if (mensagemErro.includes('contato_bloqueado')) {
+        Alert.alert('Contato bloqueado', 'Desbloqueie o contato antes de enviar anexo.');
+      } else {
+        Alert.alert('Erro', showMktError(err, 'Não foi possível enviar o anexo.'));
+      }
+    } finally {
+      setIsUploadingMidia(false);
+    }
   };
 
   const handleAssumirOuFinalizar = (chatStatus: MarketingWaChatStatus) => {
@@ -2404,16 +2537,8 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                 >
                   <Feather name="zap" size={19} color="#5E667D" />
                 </Pressable>
-                <Pressable
-                  style={mkStyles.waComposerIconBtn}
-                  onPress={() =>
-                    Alert.alert(
-                      'Ainda não disponível',
-                      'Envio de anexo pelo WhatsApp ainda não tem contrato confirmado com a Lovable (formato de upload/mídia). Peço a confirmação antes de implementar.'
-                    )
-                  }
-                >
-                  <Feather name="paperclip" size={19} color="#5E667D" />
+                <Pressable style={mkStyles.waComposerIconBtn} onPress={handleAnexarMidia} disabled={isUploadingMidia}>
+                  {isUploadingMidia ? <ActivityIndicator size="small" color="#5E667D" /> : <Feather name="paperclip" size={19} color="#5E667D" />}
                 </Pressable>
                 <TextInput
                   style={mkStyles.waComposerInput}
@@ -2424,16 +2549,25 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                   multiline
                   editable={!conversaAtiva.blocked}
                 />
-                {textoEnvio.trim() ? null : (
+                {textoEnvio.trim() ? null : audioRecorderState.isRecording ? (
                   <Pressable
-                    style={mkStyles.waComposerIconBtn}
-                    onPress={() =>
-                      Alert.alert(
-                        'Ainda não disponível',
-                        'Gravação e envio de áudio pelo WhatsApp ainda não tem contrato confirmado com a Lovable. Peço a confirmação antes de implementar.'
-                      )
-                    }
+                    style={[mkStyles.waComposerIconBtn, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+                    onPress={handlePararEEnviarGravacao}
+                    disabled={isEnviandoAudio}
                   >
+                    {isEnviandoAudio ? (
+                      <ActivityIndicator size="small" color="#C2263A" />
+                    ) : (
+                      <>
+                        <View style={mkStyles.waRecDot} />
+                        <Text style={{ color: '#C2263A', fontSize: 12, fontWeight: '700' }}>
+                          {Math.floor(audioRecorderState.durationMillis / 1000)}s
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+                ) : (
+                  <Pressable style={mkStyles.waComposerIconBtn} onPress={handleIniciarGravacao}>
                     <Feather name="mic" size={19} color="#5E667D" />
                   </Pressable>
                 )}
@@ -2490,10 +2624,16 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                       onSelect={handleSalvarAtendente}
                       searchable
                     />
-                    <Text style={[mkStyles.listRowMeta, { marginTop: 6 }]}>
-                      Nenhum atendente cadastrado ainda (mesmo estado do painel web — a Lovable ainda não confirmou um
-                      endpoint de listagem de atendentes).
-                    </Text>
+                    {atendentesError ? (
+                      <Pressable onPress={loadAtendentes} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                        <Feather name="alert-circle" size={13} color="#C2263A" />
+                        <Text style={[mkStyles.listRowMeta, { color: '#C2263A' }]}>{atendentesError} Toque para tentar de novo.</Text>
+                      </Pressable>
+                    ) : atendentes.length === 0 ? (
+                      <Text style={[mkStyles.listRowMeta, { marginTop: 6 }]}>
+                        Nenhum atendente cadastrado ainda — marque "Atendente de chat" em Admin › Usuários pra alguém aparecer aqui.
+                      </Text>
+                    ) : null}
 
                     <View style={{ marginTop: 18 }}>
                       <MktFormLabel>Etiquetas</MktFormLabel>
@@ -4256,6 +4396,12 @@ const mkStyles = StyleSheet.create({
     fontSize: 10,
     marginTop: 3,
     alignSelf: 'flex-end',
+  },
+  waRecDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#C2263A',
   },
   waComposerIconBtn: {
     padding: 8,

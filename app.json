@@ -36,6 +36,12 @@
           "photosPermission": "Permita o acesso às suas fotos para anexar arquivos às solicitações."
         }
       ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Permita o acesso ao microfone para gravar notas de voz no WhatsApp."
+        }
+      ],
       "./plugins/withBlockMediaPermissions.js"
     ],
     "extra": {
