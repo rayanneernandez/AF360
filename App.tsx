@@ -3432,22 +3432,26 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
   return (
     <SafeAreaView style={styles.screen} edges={[]}>
       <StatusBar style="light" />
-      <LinearGradient
-        colors={['#253F91', '#4C3A95']}
-        style={[styles.selectPanelHero, { paddingTop: 16 + insets.top }]}
-      >
-        <View style={styles.selectPanelHeroTitleRow}>
-          <Text style={styles.selectPanelHeroTitle}>Entrar como...</Text>
-          <View style={styles.selectPanelHeroIconShell}>
-            <Feather name="grid" size={20} color="#FFFFFF" />
+      {/* O azul agora vive dentro do próprio ScrollView (não mais fixo em
+          cima) — assim ele sobe junto com a lista ao rolar, em vez de ficar
+          parado enquanto só os cards se movem. */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.selectPanelScrollContent}>
+        <LinearGradient
+          colors={['#253F91', '#4C3A95']}
+          style={[styles.selectPanelHero, { paddingTop: 16 + insets.top }]}
+        >
+          <View style={styles.selectPanelHeroTitleRow}>
+            <Text style={styles.selectPanelHeroTitle}>Entrar como...</Text>
+            <View style={styles.selectPanelHeroIconShell}>
+              <Feather name="grid" size={20} color="#FFFFFF" />
+            </View>
           </View>
-        </View>
-        <Text style={styles.selectPanelHeroSubtitle}>
-          Sua conta tem acesso a mais de um painel. Escolha qual quer abrir.
-        </Text>
-      </LinearGradient>
+          <Text style={styles.selectPanelHeroSubtitle}>
+            Sua conta tem acesso a mais de um painel. Escolha qual quer abrir.
+          </Text>
+        </LinearGradient>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.selectPanelList}>
+        <View style={styles.selectPanelList}>
         {roles.map((role) => {
           const meta = PANEL_OPTION_META[role];
           return (
@@ -3469,6 +3473,7 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
             </Pressable>
           );
         })}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -17663,8 +17668,11 @@ export const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
+  selectPanelScrollContent: {
+    flexGrow: 1,
+  },
   selectPanelHero: {
-    paddingBottom: 30,
+    paddingBottom: 44,
     paddingHorizontal: 24,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
