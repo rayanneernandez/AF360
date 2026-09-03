@@ -159,6 +159,23 @@ function showMktError(err: unknown, fallback: string) {
   return message || fallback;
 }
 
+// O proxy embrulha o erro de negócio em { error: 'write_failed', message:
+// '<texto humano da Lovable>' } — então err.code vem sempre 'write_failed'
+// e err.message vem como frase ("Janela 24h fechada...", sem underscore),
+// não como o código ("janela_24h_fechada"). Checar só `.includes('janela_24h_fechada')`
+// nunca dava match nisso — daqui usamos palavras-chave em minúsculo pra
+// cobrir os dois formatos.
+function mktErrJanela24hFechada(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  const texto = `${err.code ?? ''} ${err.message ?? ''}`.toLowerCase();
+  return texto.includes('janela_24h_fechada') || (texto.includes('24h') && texto.includes('fechad'));
+}
+function mktErrContatoBloqueado(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  const texto = `${err.code ?? ''} ${err.message ?? ''}`.toLowerCase();
+  return texto.includes('contato_bloqueado') || texto.includes('bloqueado');
+}
+
 // "2026-08-06" -> "06/08"
 function formatDiaCurto(isoDate: string | null | undefined): string {
   if (!isoDate) return '—';
@@ -1862,13 +1879,12 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
       setMensagens(msgs);
       setContatoInfo(contato);
     } catch (err) {
-      const mensagemErro = err instanceof ApiError ? err.message : '';
-      if (mensagemErro.includes('janela_24h_fechada')) {
+      if (mktErrJanela24hFechada(err)) {
         Alert.alert('Janela de 24h fechada', 'Envie um template aprovado antes de mandar áudio.', [
           { text: 'Escolher template', onPress: abrirTemplates },
           { text: 'Cancelar', style: 'cancel' },
         ]);
-      } else if (mensagemErro.includes('contato_bloqueado')) {
+      } else if (mktErrContatoBloqueado(err)) {
         Alert.alert('Contato bloqueado', 'Desbloqueie o contato antes de enviar áudio.');
       } else {
         Alert.alert('Erro', showMktError(err, 'Não foi possível enviar o áudio.'));
@@ -2107,14 +2123,13 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
         });
       })
       .catch((err) => {
-        const mensagemErro = err instanceof ApiError ? err.message : '';
-        if (mensagemErro.includes('janela_24h_fechada')) {
+        if (mktErrJanela24hFechada(err)) {
           Alert.alert(
             'Janela de 24h fechada',
             'Já se passaram mais de 24h desde a última mensagem do cliente. Envie um template aprovado pra retomar a conversa.',
             [{ text: 'Escolher template', onPress: abrirTemplates }, { text: 'Cancelar', style: 'cancel' }]
           );
-        } else if (mensagemErro.includes('contato_bloqueado')) {
+        } else if (mktErrContatoBloqueado(err)) {
           Alert.alert('Contato bloqueado', 'Esse contato está bloqueado — desbloqueie no menu da conversa antes de enviar.');
         } else {
           Alert.alert('Erro', showMktError(err, 'Não foi possível enviar a mensagem.'));
@@ -2156,13 +2171,12 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
       setMensagens(msgs);
       setContatoInfo(contato);
     } catch (err) {
-      const mensagemErro = err instanceof ApiError ? err.message : '';
-      if (mensagemErro.includes('janela_24h_fechada')) {
+      if (mktErrJanela24hFechada(err)) {
         Alert.alert('Janela de 24h fechada', 'Envie um template aprovado antes de mandar anexo.', [
           { text: 'Escolher template', onPress: abrirTemplates },
           { text: 'Cancelar', style: 'cancel' },
         ]);
-      } else if (mensagemErro.includes('contato_bloqueado')) {
+      } else if (mktErrContatoBloqueado(err)) {
         Alert.alert('Contato bloqueado', 'Desbloqueie o contato antes de enviar anexo.');
       } else {
         Alert.alert('Erro', showMktError(err, 'Não foi possível enviar o anexo.'));
