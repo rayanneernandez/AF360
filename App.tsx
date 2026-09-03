@@ -3432,26 +3432,24 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
   return (
     <SafeAreaView style={styles.screen} edges={[]}>
       <StatusBar style="light" />
-      {/* O azul agora vive dentro do próprio ScrollView (não mais fixo em
-          cima) — assim ele sobe junto com a lista ao rolar, em vez de ficar
-          parado enquanto só os cards se movem. */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.selectPanelScrollContent}>
-        <LinearGradient
-          colors={['#253F91', '#4C3A95']}
-          style={[styles.selectPanelHero, { paddingTop: 16 + insets.top }]}
-        >
-          <View style={styles.selectPanelHeroTitleRow}>
-            <Text style={styles.selectPanelHeroTitle}>Entrar como...</Text>
-            <View style={styles.selectPanelHeroIconShell}>
-              <Feather name="grid" size={20} color="#FFFFFF" />
-            </View>
+      {/* Fixo de novo (fora do ScrollView) — só a lista de cards rola por
+          baixo, o azul fica parado no topo, mesmo tamanho/respiro de antes. */}
+      <LinearGradient
+        colors={['#253F91', '#4C3A95']}
+        style={[styles.selectPanelHero, { paddingTop: 16 + insets.top }]}
+      >
+        <View style={styles.selectPanelHeroTitleRow}>
+          <Text style={styles.selectPanelHeroTitle}>Entrar como...</Text>
+          <View style={styles.selectPanelHeroIconShell}>
+            <Feather name="grid" size={20} color="#FFFFFF" />
           </View>
-          <Text style={styles.selectPanelHeroSubtitle}>
-            Sua conta tem acesso a mais de um painel. Escolha qual quer abrir.
-          </Text>
-        </LinearGradient>
+        </View>
+        <Text style={styles.selectPanelHeroSubtitle}>
+          Sua conta tem acesso a mais de um painel. Escolha qual quer abrir.
+        </Text>
+      </LinearGradient>
 
-        <View style={styles.selectPanelList}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.selectPanelList}>
         {roles.map((role) => {
           const meta = PANEL_OPTION_META[role];
           return (
@@ -3473,7 +3471,6 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
             </Pressable>
           );
         })}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
