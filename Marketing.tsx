@@ -5,7 +5,6 @@ import { useIsFocused } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -490,6 +489,15 @@ function MktFieldDropdown<T extends string | null>({
 }) {
   const [busca, setBusca] = useState('');
   const filtered = searchable && busca.trim() ? options.filter((o) => o.label.toLowerCase().includes(busca.trim().toLowerCase())) : options;
+  // Corta a lista renderizada em vez de usar FlatList: uma VirtualizedList
+  // (FlatList) aninhada dentro do ScrollView do modal quebra de verdade em
+  // produção ("VirtualizedLists should never be nested inside plain
+  // ScrollViews..."), então em vez de virtualizar, só limitamos quantos
+  // Pressables são montados de uma vez — rápido de abrir mesmo com centenas
+  // de opções (ex.: os 900+ colaboradores), e a busca estreita o restante.
+  const LIMITE_RENDERIZADO = 60;
+  const cortada = filtered.length > LIMITE_RENDERIZADO;
+  const paraRenderizar = cortada ? filtered.slice(0, LIMITE_RENDERIZADO) : filtered;
   return (
     <View style={{ position: 'relative', zIndex: isOpen ? 200 : 1 }}>
       <Pressable style={mkStyles.selectButton} onPress={onToggle}>
@@ -509,23 +517,12 @@ function MktFieldDropdown<T extends string | null>({
               placeholderTextColor="#A7AEC2"
             />
           ) : null}
-          {/* FlatList em vez de ScrollView+map: com listas grandes (ex.: os
-              900+ colaboradores do Responsável), montar um Pressable pra cada
-              item de uma vez trava a abertura do dropdown por alguns
-              segundos. FlatList só renderiza o que está visível na tela. */}
-          <FlatList
-            data={filtered}
-            keyExtractor={(opt, idx) => `${opt.label}-${idx}`}
-            style={{ maxHeight: 260 }}
-            keyboardShouldPersistTaps="handled"
-            initialNumToRender={16}
-            maxToRenderPerBatch={16}
-            windowSize={5}
-            removeClippedSubviews
-            renderItem={({ item: opt }) => {
+          <ScrollView style={{ maxHeight: 260 }} keyboardShouldPersistTaps="handled">
+            {paraRenderizar.map((opt, idx) => {
               const isSelected = selectedValue === opt.value;
               return (
                 <Pressable
+                  key={`${opt.label}-${idx}`}
                   style={[mkStyles.overlayDropdownItem, isSelected ? { backgroundColor: opt.color ?? '#C2255C' } : null]}
                   onPress={() => {
                     onSelect(opt.value);
@@ -538,8 +535,13 @@ function MktFieldDropdown<T extends string | null>({
                   {isSelected ? <Feather name="check" size={14} color="#FFFFFF" style={{ marginLeft: 'auto' }} /> : null}
                 </Pressable>
               );
-            }}
-          />
+            })}
+            {cortada ? (
+              <Text style={[mkStyles.listRowMeta, { textAlign: 'center', paddingVertical: 8 }]}>
+                Mostrando {LIMITE_RENDERIZADO} de {filtered.length} — digite pra refinar a busca.
+              </Text>
+            ) : null}
+          </ScrollView>
         </View>
       ) : null}
     </View>
@@ -1663,6 +1665,9 @@ export function MarketingOcorrenciasScreen({ navigation }: ScreenProps<'Marketin
 
 // --- 3. WhatsApp ---
 
+// Picker de emoji simples (client-side, sem dependência de biblioteca nova).
+const WA_EMOJIS = ['😀', '😂', '🙏', '👍', '❤️', '🎉', '😉', '😢', '🤝', '📅', '✅', '⚠️', '📌', '💰', '🚗'];
+
 const WA_ABA_OPTIONS: Array<{ value: 'todos' | 'fila' | 'ativos' | 'finalizadas'; label: string }> = [
   { value: 'todos', label: 'Todos' },
   { value: 'fila', label: 'Fila' },
@@ -1725,6 +1730,9 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   // Respostas rápidas (gerenciamento + uso via "/" no composer).
   const [respostas, setRespostas] = useState<MarketingWaResposta[]>([]);
   const [isRespostasOpen, setIsRespostasOpen] = useState(false);
+  const [isFormRespostaAberto, setIsFormRespostaAberto] = useState(false);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [isQuickPickOpen, setIsQuickPickOpen] = useState(false);
   const [respostaAtalho, setRespostaAtalho] = useState('');
   const [respostaTexto, setRespostaTexto] = useState('');
   const [respostaEditandoId, setRespostaEditandoId] = useState<string | null>(null);
@@ -1767,29 +1775,27 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   const [nomeExibicaoEdit, setNomeExibicaoEdit] = useState('');
   const [notasEdit, setNotasEdit] = useState('');
   const [tagsEdit, setTagsEdit] = useState<string[]>([]);
+  const [novaTagTexto, setNovaTagTexto] = useState('');
   const [isSalvandoPainel, setIsSalvandoPainel] = useState(false);
 
+  const handleAdicionarNovaTag = () => {
+    const tag = novaTagTexto.trim().toLowerCase().replace(/\s+/g, '-');
+    if (!tag) return;
+    setTagsEdit((atual) => (atual.includes(tag) ? atual : [...atual, tag]));
+    setTagsDisponiveis((atual) => (atual.includes(tag) ? atual : [...atual, tag]));
+    setNovaTagTexto('');
+  };
+
+  // Atendente aqui NÃO é a mesma coisa que "Responsável" da tela de
+  // Ocorrências: lá são colaboradores do RH (confirmado); aqui a Lovable não
+  // confirmou nenhum endpoint de listagem de atendentes — e o próprio painel
+  // web mostra a lista vazia de verdade ("nenhum atendente cadastrado
+  // ainda"). Por isso NÃO reaproveitamos fetchRhColaboradores aqui: seria
+  // fabricar uma lista que não corresponde ao que a Lovable de fato expõe.
   const loadAtendentes = useCallback(() => {
     setAtendentesError(null);
-    fetchRhColaboradores()
-      .then((rows: RhColaboradorRaw[]) =>
-        setAtendentes(
-          rows
-            .filter((r) => r.nome_completo)
-            .map((r) => ({ id: r.id, nome: r.nome_completo as string }))
-            .sort((a, b) => a.nome.localeCompare(b.nome))
-        )
-      )
-      .catch((err) => {
-        setAtendentes([]);
-        setAtendentesError(showMktError(err, 'Não foi possível carregar a lista de atendentes.'));
-      });
+    setAtendentes([]);
   }, []);
-
-  useEffect(() => {
-    if (!isAtendimentoOpen) return;
-    loadAtendentes();
-  }, [isAtendimentoOpen, loadAtendentes]);
 
   const load = useCallback(() => {
     setIsLoading(true);
@@ -1978,6 +1984,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
         setRespostaAtalho('');
         setRespostaTexto('');
         setRespostaEditandoId(null);
+        setIsFormRespostaAberto(false);
         loadRespostas();
       })
       .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível salvar a resposta rápida.')))
@@ -2346,22 +2353,68 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                 </View>
               ) : null}
 
-              {respostasSugeridas.length > 0 ? (
+              {(respostasSugeridas.length > 0 || isQuickPickOpen) ? (
                 <View style={mkStyles.waRespostasSugeridasBox}>
-                  {respostasSugeridas.map((r) => (
-                    <Pressable
-                      key={r.id}
-                      style={mkStyles.waRespostaSugeridaItem}
-                      onPress={() => setTextoEnvio(r.texto)}
-                    >
-                      <Text style={mkStyles.waRespostaSugeridaAtalho}>/{r.atalho}</Text>
-                      <Text style={mkStyles.waRespostaSugeridaTexto} numberOfLines={1}>{r.texto}</Text>
+                  {(isQuickPickOpen ? respostas : respostasSugeridas).length === 0 ? (
+                    <Text style={[mkStyles.listRowMeta, { padding: 10 }]}>Nenhuma resposta rápida cadastrada.</Text>
+                  ) : (
+                    (isQuickPickOpen ? respostas : respostasSugeridas).map((r) => (
+                      <Pressable
+                        key={r.id}
+                        style={mkStyles.waRespostaSugeridaItem}
+                        onPress={() => {
+                          setTextoEnvio(r.texto);
+                          setIsQuickPickOpen(false);
+                        }}
+                      >
+                        <Text style={mkStyles.waRespostaSugeridaAtalho}>/{r.atalho}</Text>
+                        <Text style={mkStyles.waRespostaSugeridaTexto} numberOfLines={1}>{r.texto}</Text>
+                      </Pressable>
+                    ))
+                  )}
+                </View>
+              ) : null}
+
+              {isEmojiPickerOpen ? (
+                <View style={mkStyles.waEmojiRow}>
+                  {WA_EMOJIS.map((emoji) => (
+                    <Pressable key={emoji} onPress={() => setTextoEnvio((atual) => atual + emoji)} style={{ padding: 4 }}>
+                      <Text style={{ fontSize: 22 }}>{emoji}</Text>
                     </Pressable>
                   ))}
                 </View>
               ) : null}
 
               <View style={mkStyles.waComposerBar}>
+                <Pressable
+                  style={mkStyles.waComposerIconBtn}
+                  onPress={() => {
+                    setIsEmojiPickerOpen((v) => !v);
+                    setIsQuickPickOpen(false);
+                  }}
+                >
+                  <Feather name="smile" size={19} color="#5E667D" />
+                </Pressable>
+                <Pressable
+                  style={mkStyles.waComposerIconBtn}
+                  onPress={() => {
+                    setIsQuickPickOpen((v) => !v);
+                    setIsEmojiPickerOpen(false);
+                  }}
+                >
+                  <Feather name="zap" size={19} color="#5E667D" />
+                </Pressable>
+                <Pressable
+                  style={mkStyles.waComposerIconBtn}
+                  onPress={() =>
+                    Alert.alert(
+                      'Ainda não disponível',
+                      'Envio de anexo pelo WhatsApp ainda não tem contrato confirmado com a Lovable (formato de upload/mídia). Peço a confirmação antes de implementar.'
+                    )
+                  }
+                >
+                  <Feather name="paperclip" size={19} color="#5E667D" />
+                </Pressable>
                 <TextInput
                   style={mkStyles.waComposerInput}
                   value={textoEnvio}
@@ -2371,6 +2424,19 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                   multiline
                   editable={!conversaAtiva.blocked}
                 />
+                {textoEnvio.trim() ? null : (
+                  <Pressable
+                    style={mkStyles.waComposerIconBtn}
+                    onPress={() =>
+                      Alert.alert(
+                        'Ainda não disponível',
+                        'Gravação e envio de áudio pelo WhatsApp ainda não tem contrato confirmado com a Lovable. Peço a confirmação antes de implementar.'
+                      )
+                    }
+                  >
+                    <Feather name="mic" size={19} color="#5E667D" />
+                  </Pressable>
+                )}
                 <Pressable
                   style={[mkStyles.waSendButton, isSending || !textoEnvio.trim() || conversaAtiva.blocked ? { opacity: 0.6 } : null]}
                   onPress={handleEnviar}
@@ -2424,30 +2490,52 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                       onSelect={handleSalvarAtendente}
                       searchable
                     />
-                    {atendentesError ? (
-                      <Pressable onPress={loadAtendentes} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-                        <Feather name="alert-circle" size={13} color="#C2263A" />
-                        <Text style={[mkStyles.listRowMeta, { color: '#C2263A' }]}>{atendentesError} Toque para tentar de novo.</Text>
-                      </Pressable>
-                    ) : null}
+                    <Text style={[mkStyles.listRowMeta, { marginTop: 6 }]}>
+                      Nenhum atendente cadastrado ainda (mesmo estado do painel web — a Lovable ainda não confirmou um
+                      endpoint de listagem de atendentes).
+                    </Text>
 
                     <View style={{ marginTop: 18 }}>
                       <MktFormLabel>Etiquetas</MktFormLabel>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                        {tagsDisponiveis.map((tag) => {
-                          const selecionada = tagsEdit.includes(tag);
-                          return (
-                            <Pressable
-                              key={tag}
-                              style={[mkStyles.filterChipSmall, selecionada ? mkStyles.filterPillActive : null]}
-                              onPress={() => setTagsEdit((atual) => (selecionada ? atual.filter((t) => t !== tag) : [...atual, tag]))}
-                            >
-                              <Text style={[mkStyles.filterChipSmallText, selecionada ? mkStyles.filterPillTextActive : null]}>#{tag}</Text>
-                            </Pressable>
-                          );
-                        })}
-                        {tagsDisponiveis.length === 0 ? <Text style={mkStyles.listRowMeta}>Nenhuma tag cadastrada ainda.</Text> : null}
+                      {tagsEdit.length === 0 ? (
+                        <Text style={[mkStyles.listRowMeta, { marginTop: 4, fontStyle: 'italic' }]}>Nenhuma etiqueta</Text>
+                      ) : (
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                          {tagsEdit.map((tag) => (
+                            <View key={tag} style={[mkStyles.filterChipSmall, mkStyles.filterPillActive, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+                              <Text style={[mkStyles.filterChipSmallText, mkStyles.filterPillTextActive]}>#{tag}</Text>
+                              <Pressable onPress={() => setTagsEdit((atual) => atual.filter((t) => t !== tag))} hitSlop={6}>
+                                <Feather name="x" size={11} color="#FFFFFF" />
+                              </Pressable>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                        <TextInput
+                          style={[mkStyles.formInput, { flex: 1 }]}
+                          value={novaTagTexto}
+                          onChangeText={setNovaTagTexto}
+                          placeholder="Nova etiqueta"
+                          placeholderTextColor="#A7AEC2"
+                          autoCapitalize="none"
+                          onSubmitEditing={handleAdicionarNovaTag}
+                        />
+                        <Pressable style={mkStyles.waIconButton} onPress={handleAdicionarNovaTag}>
+                          <Feather name="plus" size={18} color="#5E667D" />
+                        </Pressable>
                       </View>
+                      {tagsDisponiveis.filter((t) => !tagsEdit.includes(t)).length > 0 ? (
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                          {tagsDisponiveis
+                            .filter((t) => !tagsEdit.includes(t))
+                            .map((tag) => (
+                              <Pressable key={tag} style={mkStyles.filterChipSmall} onPress={() => setTagsEdit((atual) => [...atual, tag])}>
+                                <Text style={mkStyles.filterChipSmallText}>+ #{tag}</Text>
+                              </Pressable>
+                            ))}
+                        </View>
+                      ) : null}
                     </View>
 
                     <View style={{ marginTop: 14 }}>
@@ -2522,60 +2610,94 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
         title="Respostas rápidas"
         onClose={() => {
           setIsRespostasOpen(false);
+          setIsFormRespostaAberto(false);
           setRespostaEditandoId(null);
           setRespostaAtalho('');
           setRespostaTexto('');
         }}
       >
-        <MktFormLabel>Atalho</MktFormLabel>
-        <TextInput
-          style={mkStyles.formInput}
-          value={respostaAtalho}
-          onChangeText={setRespostaAtalho}
-          placeholder="Ex.: saudacao"
-          placeholderTextColor="#A7AEC2"
-          autoCapitalize="none"
-        />
+        <Text style={mkStyles.listRowMeta}>Crie atalhos para mensagens frequentes. Use digitando /atalho no chat.</Text>
         <View style={{ height: 10 }} />
-        <MktFormLabel>Texto</MktFormLabel>
-        <TextInput
-          style={[mkStyles.formInput, { minHeight: 70, textAlignVertical: 'top' }]}
-          value={respostaTexto}
-          onChangeText={setRespostaTexto}
-          placeholder="Texto da resposta rápida"
-          placeholderTextColor="#A7AEC2"
-          multiline
-        />
-        <Pressable
-          style={[mkStyles.filterModalApplyButton, { marginTop: 10 }, isSalvandoResposta ? { opacity: 0.6 } : null]}
-          onPress={handleSalvarResposta}
-          disabled={isSalvandoResposta}
-        >
-          <Text style={mkStyles.filterModalApplyButtonText}>
-            {isSalvandoResposta ? 'Salvando...' : respostaEditandoId ? 'Salvar edição' : 'Adicionar resposta'}
-          </Text>
-        </Pressable>
 
-        <View style={{ height: 16 }} />
+        {isFormRespostaAberto ? (
+          <>
+            <MktFormLabel>Atalho</MktFormLabel>
+            <TextInput
+              style={mkStyles.formInput}
+              value={respostaAtalho}
+              onChangeText={setRespostaAtalho}
+              placeholder="ex: saudacao"
+              placeholderTextColor="#A7AEC2"
+              autoCapitalize="none"
+            />
+            <Text style={[mkStyles.listRowMeta, { marginTop: 3 }]}>Apenas letras minúsculas, sem espaços. Será chamado por /atalho.</Text>
+            <View style={{ height: 10 }} />
+            <MktFormLabel>Texto</MktFormLabel>
+            <TextInput
+              style={[mkStyles.formInput, { minHeight: 70, textAlignVertical: 'top' }]}
+              value={respostaTexto}
+              onChangeText={setRespostaTexto}
+              placeholder="Texto da resposta rápida"
+              placeholderTextColor="#A7AEC2"
+              multiline
+            />
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+              <Pressable
+                style={[mkStyles.smallButton, { flex: 1, backgroundColor: '#F1F2F6' }]}
+                onPress={() => {
+                  setIsFormRespostaAberto(false);
+                  setRespostaEditandoId(null);
+                  setRespostaAtalho('');
+                  setRespostaTexto('');
+                }}
+              >
+                <Text style={[mkStyles.smallButtonText, { color: '#5E667D' }]}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={[mkStyles.filterModalApplyButton, { flex: 1 }, isSalvandoResposta ? { opacity: 0.6 } : null]}
+                onPress={handleSalvarResposta}
+                disabled={isSalvandoResposta}
+              >
+                <Text style={mkStyles.filterModalApplyButtonText}>{isSalvandoResposta ? 'Salvando...' : 'Salvar'}</Text>
+              </Pressable>
+            </View>
+            <View style={{ height: 16 }} />
+          </>
+        ) : (
+          <Pressable
+            style={[mkStyles.suggestionButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14 }]}
+            onPress={() => setIsFormRespostaAberto(true)}
+          >
+            <Feather name="plus" size={14} color="#FFFFFF" />
+            <Text style={mkStyles.suggestionButtonText}>Nova resposta</Text>
+          </Pressable>
+        )}
+
         {respostas.length === 0 ? (
           <MktEmptyState message="Nenhuma resposta rápida cadastrada." />
         ) : (
           respostas.map((r) => (
             <View key={r.id} style={[mkStyles.dreCard, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-              <Pressable
-                style={{ flex: 1, minWidth: 0 }}
-                onPress={() => {
-                  setRespostaEditandoId(r.id);
-                  setRespostaAtalho(r.atalho);
-                  setRespostaTexto(r.texto);
-                }}
-              >
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={mkStyles.listRowTitle}>/{r.atalho}</Text>
                 <Text style={mkStyles.listRowMeta} numberOfLines={2}>{r.texto}</Text>
-              </Pressable>
-              <Pressable onPress={() => handleExcluirResposta(r.id)} hitSlop={8} style={{ marginLeft: 10 }}>
-                <Feather name="trash-2" size={16} color="#C2263A" />
-              </Pressable>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 14, marginLeft: 10 }}>
+                <Pressable
+                  onPress={() => {
+                    setRespostaEditandoId(r.id);
+                    setRespostaAtalho(r.atalho);
+                    setRespostaTexto(r.texto);
+                    setIsFormRespostaAberto(true);
+                  }}
+                  hitSlop={8}
+                >
+                  <Feather name="edit-2" size={15} color="#5E667D" />
+                </Pressable>
+                <Pressable onPress={() => handleExcluirResposta(r.id)} hitSlop={8}>
+                  <Feather name="trash-2" size={16} color="#C2263A" />
+                </Pressable>
+              </View>
             </View>
           ))
         )}
@@ -4134,6 +4256,17 @@ const mkStyles = StyleSheet.create({
     fontSize: 10,
     marginTop: 3,
     alignSelf: 'flex-end',
+  },
+  waComposerIconBtn: {
+    padding: 8,
+  },
+  waEmojiRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#F1F2F6',
   },
   waComposerBar: {
     flexDirection: 'row',
