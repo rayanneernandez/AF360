@@ -3454,15 +3454,12 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
               style={({ pressed }) => [styles.selectPanelCard, pressed && styles.selectPanelCardPressed]}
               onPress={() => handleSelect(role)}
             >
-              <View style={[styles.selectPanelIconShell, { backgroundColor: meta.tint }]}>
-                <Feather name={meta.icon} size={22} color={meta.color} />
-              </View>
               <View style={styles.selectPanelBody}>
                 <Text style={styles.selectPanelTitle}>{meta.label}</Text>
                 <Text style={styles.selectPanelSubtitle}>{meta.subtitle}</Text>
               </View>
-              <View style={[styles.selectPanelChevronShell, { backgroundColor: meta.tint }]}>
-                <Feather name="chevron-right" size={16} color={meta.color} />
+              <View style={[styles.selectPanelIconShell, { backgroundColor: meta.tint }]}>
+                <Feather name={meta.icon} size={20} color={meta.color} />
               </View>
             </Pressable>
           );
