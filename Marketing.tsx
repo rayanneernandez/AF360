@@ -2648,16 +2648,6 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                       onSelect={handleSalvarAtendente}
                       searchable
                     />
-                    {atendentesError ? (
-                      <Pressable onPress={loadAtendentes} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-                        <Feather name="alert-circle" size={13} color="#C2263A" />
-                        <Text style={[mkStyles.listRowMeta, { color: '#C2263A' }]}>{atendentesError} Toque para tentar de novo.</Text>
-                      </Pressable>
-                    ) : atendentes.length === 0 ? (
-                      <Text style={[mkStyles.listRowMeta, { marginTop: 6 }]}>
-                        Nenhum atendente cadastrado ainda — marque "Atendente de chat" em Admin › Usuários pra alguém aparecer aqui.
-                      </Text>
-                    ) : null}
 
                     <View style={{ marginTop: 18 }}>
                       <MktFormLabel>Etiquetas</MktFormLabel>
