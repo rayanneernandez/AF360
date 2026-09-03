@@ -1990,7 +1990,11 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
     setErrorMessage(null);
     fetchMarketingWaConversas({ aba, channel: channel ?? undefined, q: busca || undefined, tag: tagFiltro ?? undefined })
       .then((res) => {
-        setConversas(res.itens);
+        // O backend recebe o parâmetro "channel", mas nem sempre filtra de
+        // volta (contrato não confirmado nesse ponto) — filtra aqui também
+        // pra garantir o mesmo resultado do web mesmo se o servidor ignorar.
+        const itens = channel ? res.itens.filter((item) => item.channel === channel) : res.itens;
+        setConversas(itens);
         setContadores(res.contadores);
       })
       .catch((err) => setErrorMessage(showMktError(err, 'Não foi possível carregar as conversas.')))
@@ -2327,7 +2331,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
           {WA_CHANNEL_OPTIONS.map((opt) => (
             <Pressable
               key={opt.label}
-              style={[mkStyles.waAbaPill, { flex: 1 }, channel === opt.value ? mkStyles.waAbaPillActive : null]}
+              style={[mkStyles.waAbaPill, { flex: 1 }, channel === opt.value ? mkStyles.waAbaPillActiveCinza : null]}
               onPress={() => setChannel(opt.value)}
             >
               <Text style={[mkStyles.waAbaPillText, channel === opt.value ? mkStyles.waAbaPillTextActive : null]} numberOfLines={1}>
@@ -4341,6 +4345,10 @@ const mkStyles = StyleSheet.create({
   waAbaPillActive: {
     backgroundColor: '#C2255C',
     borderColor: '#C2255C',
+  },
+  waAbaPillActiveCinza: {
+    backgroundColor: '#5E667D',
+    borderColor: '#5E667D',
   },
   waAbaPillText: {
     color: '#5E667D',
