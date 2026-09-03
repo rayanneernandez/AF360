@@ -2079,6 +2079,23 @@ function deleteMarketingWaResposta(id, actorId) {
   return lovableDelete('/api/public/internal/marketing', { recurso: 'wa-resposta', id }, actorId);
 }
 
+// --- Atendentes e mídia — contrato confirmado pela Lovable em 03/09/2026.
+// Atendente = profiles com chat_atendente=true (não é RH, nem tabela própria
+// — hoje está vazio de verdade, igual o painel web mostra). ---
+function getMarketingWaAtendentes(actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'wa-atendentes' }, actorId);
+}
+// Limites de tamanho/formato aceitos por tipo de mídia (pra validar no
+// client antes de subir o arquivo).
+function getMarketingWaMidiaLimites(actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'wa-midia-limites' }, actorId);
+}
+// Body: { tipo: 'image'|'video'|'audio'|'voice'|'document', mime_type,
+// file_name?, media_base64 }. Devolve media_url assinada (7 dias).
+function postMarketingWaUploadMidia(body, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'wa-upload-midia' }, body, actorId);
+}
+
 // --- Google Meu Negócio — avaliações (mesmo endpoint /gmb já usado pelo
 // painel Administrador; "reviews" foi adicionado pela Lovable em
 // 31/08/2026 especificamente pro módulo Marketing). ---
@@ -2407,6 +2424,9 @@ module.exports = {
   getMarketingWaRespostas,
   postMarketingWaResposta,
   deleteMarketingWaResposta,
+  getMarketingWaAtendentes,
+  getMarketingWaMidiaLimites,
+  postMarketingWaUploadMidia,
   getGmbReviews,
   postGmbResponderReview,
 };

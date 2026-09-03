@@ -22,6 +22,9 @@ const {
   getMarketingWaRespostas,
   postMarketingWaResposta,
   deleteMarketingWaResposta,
+  getMarketingWaAtendentes,
+  getMarketingWaMidiaLimites,
+  postMarketingWaUploadMidia,
   getGmb,
   getGmbReviews,
   postGmbResponderReview,
@@ -127,6 +130,15 @@ router.get('/', async (req, res) => {
         const json = await getMarketingWaRespostas(actorId);
         const { rows } = extractArrayPayload(json);
         return res.json({ ok: true, data: rows });
+      }
+      case 'wa-atendentes': {
+        const json = await getMarketingWaAtendentes(actorId);
+        const { rows, count } = extractArrayPayload(json);
+        return res.json({ ok: true, count, data: rows });
+      }
+      case 'wa-midia-limites': {
+        const json = await getMarketingWaMidiaLimites(actorId);
+        return res.json({ ok: true, data: json?.data ?? json ?? {} });
       }
       case 'gmb': {
         const json = await getGmb({ limit: params.limit, offset: params.offset, runs: 10, actorId });
@@ -286,6 +298,19 @@ router.post('/wa-enviar-template', async (req, res) => {
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[marketing/wa-enviar-template POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/marketing/wa-upload-midia?actorId= — body: { tipo, mime_type,
+// file_name?, media_base64 }. Devolve { media_url, path, mime_type,
+// file_name, tamanho_bytes, tipo, expira_em }.
+router.post('/wa-upload-midia', async (req, res) => {
+  try {
+    const json = await postMarketingWaUploadMidia(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/wa-upload-midia POST] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
