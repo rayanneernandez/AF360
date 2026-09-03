@@ -7449,9 +7449,26 @@ export async function enviarMarketingWaTemplate(
   await api.post(withActorId('/api/marketing/wa-enviar-template', actorId), body);
 }
 
-export async function fetchMarketingWaSugestoes(phone: string): Promise<string[]> {
-  const { data } = await fetchMarketingRecurso<string[]>('wa-sugestoes', { phone });
-  return Array.isArray(data) ? data : [];
+// Confirmado em uso real: o item vem como objeto ({ id, label, descricao,
+// texto }), não como string simples — corrigido depois de um crash real
+// ("Objects are not valid as a React child") mostrando essas 4 chaves.
+export type MarketingWaSugestao = { id: string; label: string; descricao: string | null; texto: string };
+
+export async function fetchMarketingWaSugestoes(phone: string): Promise<MarketingWaSugestao[]> {
+  const { data } = await fetchMarketingRecurso<Array<Partial<MarketingWaSugestao>> | string[]>('wa-sugestoes', { phone });
+  if (!Array.isArray(data)) return [];
+  return data.map((item, idx) => {
+    if (typeof item === 'string') {
+      return { id: String(idx), label: item, descricao: null, texto: item };
+    }
+    const texto = item.texto ?? item.label ?? item.descricao ?? '';
+    return {
+      id: item.id ?? String(idx),
+      label: item.label ?? item.descricao ?? texto,
+      descricao: item.descricao ?? null,
+      texto,
+    };
+  });
 }
 
 export type MarketingWaResposta = { id: string; atalho: string; texto: string };

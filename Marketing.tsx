@@ -62,6 +62,7 @@ import {
   fetchMarketingWaTemplates,
   enviarMarketingWaTemplate,
   fetchMarketingWaSugestoes,
+  type MarketingWaSugestao,
   fetchMarketingWaRespostas,
   salvarMarketingWaResposta,
   excluirMarketingWaResposta,
@@ -1723,7 +1724,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   const [isSending, setIsSending] = useState(false);
 
   // Sugestões de resposta contextual (chip acima do composer).
-  const [sugestoes, setSugestoes] = useState<string[]>([]);
+  const [sugestoes, setSugestoes] = useState<MarketingWaSugestao[]>([]);
 
   // Anexo/mídia (contrato confirmado 03/09/2026: wa-upload-midia + wa-enviar
   // com media_base64/media_mime, limites em wa-midia-limites).
@@ -1813,10 +1814,15 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
   const [respostaEditandoId, setRespostaEditandoId] = useState<string | null>(null);
   const [isSalvandoResposta, setIsSalvandoResposta] = useState(false);
 
+  const [respostasError, setRespostasError] = useState<string | null>(null);
   const loadRespostas = useCallback(() => {
+    setRespostasError(null);
     fetchMarketingWaRespostas()
       .then(setRespostas)
-      .catch(() => setRespostas([]));
+      .catch((err) => {
+        setRespostas([]);
+        setRespostasError(showMktError(err, 'Não foi possível carregar as respostas rápidas.'));
+      });
   }, []);
   useEffect(() => {
     loadRespostas();
@@ -2218,14 +2224,16 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
             </Pressable>
           ))}
         </View>
-        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
           {WA_CHANNEL_OPTIONS.map((opt) => (
             <Pressable
               key={opt.label}
-              style={[mkStyles.filterChipSmall, channel === opt.value ? mkStyles.filterPillActive : null]}
+              style={[mkStyles.waAbaPill, { flex: 1 }, channel === opt.value ? mkStyles.waAbaPillActive : null]}
               onPress={() => setChannel(opt.value)}
             >
-              <Text style={[mkStyles.filterChipSmallText, channel === opt.value ? mkStyles.filterPillTextActive : null]}>{opt.label}</Text>
+              <Text style={[mkStyles.waAbaPillText, channel === opt.value ? mkStyles.waAbaPillTextActive : null]} numberOfLines={1}>
+                {opt.label}
+              </Text>
             </Pressable>
           ))}
         </View>
@@ -2478,9 +2486,9 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                 </View>
               ) : sugestoes.length > 0 ? (
                 <View style={{ paddingHorizontal: 12, paddingTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  {sugestoes.map((sugestao, idx) => (
-                    <Pressable key={idx} style={mkStyles.waSugestaoChip} onPress={() => setTextoEnvio(sugestao)}>
-                      <Text style={mkStyles.waSugestaoChipText} numberOfLines={1}>{sugestao}</Text>
+                  {sugestoes.map((sugestao) => (
+                    <Pressable key={sugestao.id} style={mkStyles.waSugestaoChip} onPress={() => setTextoEnvio(sugestao.texto)}>
+                      <Text style={mkStyles.waSugestaoChipText} numberOfLines={1}>{sugestao.label}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -2810,7 +2818,9 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                           </Pressable>
                         )}
 
-                        {respostas.length === 0 ? (
+                        {respostasError ? (
+                          <MktEmptyState message={respostasError} />
+                        ) : respostas.length === 0 ? (
                           <MktEmptyState message="Nenhuma resposta rápida cadastrada." />
                         ) : (
                           respostas.map((r) => (
