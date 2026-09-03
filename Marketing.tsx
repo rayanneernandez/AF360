@@ -1780,11 +1780,14 @@ const WA_ABA_OPTIONS: Array<{ value: 'todos' | 'fila' | 'ativos' | 'finalizadas'
   { value: 'finalizadas', label: 'Final.' },
 ];
 
+// FB usa 'messenger', não 'facebook' — confirmado pelo próprio erro do
+// Postgres ("invalid input value for enum wa_channel 'facebook'"), que
+// mostrou que esse valor não existe no enum do banco.
 const WA_CHANNEL_OPTIONS: Array<{ value: string | null; label: string }> = [
   { value: null, label: 'Todos' },
   { value: 'whatsapp', label: 'WA' },
   { value: 'instagram', label: 'IG' },
-  { value: 'facebook', label: 'FB' },
+  { value: 'messenger', label: 'FB' },
 ];
 
 export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWhatsApp'>) {
