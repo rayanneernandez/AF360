@@ -12,6 +12,16 @@ const {
   postMarketingWaEnviar,
   postMarketingWaNova,
   patchMarketingWaConversa,
+  postMarketingWaSincronizar,
+  getMarketingWaAgenda,
+  getMarketingWaTags,
+  postMarketingWaMarcarLido,
+  getMarketingWaTemplates,
+  postMarketingWaEnviarTemplate,
+  getMarketingWaSugestoes,
+  getMarketingWaRespostas,
+  postMarketingWaResposta,
+  deleteMarketingWaResposta,
   getGmb,
   getGmbReviews,
   postGmbResponderReview,
@@ -90,7 +100,33 @@ router.get('/', async (req, res) => {
         if (!params.phone) return res.status(400).json({ ok: false, error: 'phone_obrigatorio' });
         const json = await getMarketingWaMensagens(params, actorId);
         const { rows, count } = extractArrayPayload(json);
+        return res.json({ ok: true, count, data: rows, contato: json?.contato ?? null });
+      }
+      case 'wa-agenda': {
+        const json = await getMarketingWaAgenda(params, actorId);
+        const { rows, count } = extractArrayPayload(json);
         return res.json({ ok: true, count, data: rows });
+      }
+      case 'wa-tags': {
+        const json = await getMarketingWaTags(actorId);
+        const { rows } = extractArrayPayload(json);
+        return res.json({ ok: true, data: rows });
+      }
+      case 'wa-templates': {
+        const json = await getMarketingWaTemplates(params, actorId);
+        const { rows } = extractArrayPayload(json);
+        return res.json({ ok: true, data: rows });
+      }
+      case 'wa-sugestoes': {
+        if (!params.phone) return res.status(400).json({ ok: false, error: 'phone_obrigatorio' });
+        const json = await getMarketingWaSugestoes(params, actorId);
+        const { rows } = extractArrayPayload(json);
+        return res.json({ ok: true, data: rows });
+      }
+      case 'wa-respostas': {
+        const json = await getMarketingWaRespostas(actorId);
+        const { rows } = extractArrayPayload(json);
+        return res.json({ ok: true, data: rows });
       }
       case 'gmb': {
         const json = await getGmb({ limit: params.limit, offset: params.offset, runs: 10, actorId });
@@ -209,13 +245,70 @@ router.post('/wa-nova', async (req, res) => {
   }
 });
 
-// PATCH /api/marketing/wa-conversa/:phone?actorId= — body: { chat_status, atendente_id }.
+// PATCH /api/marketing/wa-conversa/:phone?actorId= — body: { chat_status,
+// atendente_id, display_name, tags: [], notas, muted, blocked }.
 router.patch('/wa-conversa/:phone', async (req, res) => {
   try {
     const json = await patchMarketingWaConversa(req.params.phone, req.body ?? {}, req.query.actorId);
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[marketing/wa-conversa/:phone PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/marketing/wa-sincronizar?actorId= — botão de refresh da lista.
+router.post('/wa-sincronizar', async (req, res) => {
+  try {
+    const json = await postMarketingWaSincronizar(req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/wa-sincronizar POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/marketing/wa-marcar-lido?actorId= — body: { phone }.
+router.post('/wa-marcar-lido', async (req, res) => {
+  try {
+    const json = await postMarketingWaMarcarLido(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/wa-marcar-lido POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/marketing/wa-enviar-template?actorId= — body: { phone, template_name, language?, variables }.
+router.post('/wa-enviar-template', async (req, res) => {
+  try {
+    const json = await postMarketingWaEnviarTemplate(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/wa-enviar-template POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/marketing/wa-resposta?actorId= — body: { id?, atalho, texto }.
+router.post('/wa-resposta', async (req, res) => {
+  try {
+    const json = await postMarketingWaResposta(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/wa-resposta POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/marketing/wa-resposta?actorId=&id=
+router.delete('/wa-resposta', async (req, res) => {
+  try {
+    if (!req.query.id) return res.status(400).json({ ok: false, error: 'id_obrigatorio' });
+    await deleteMarketingWaResposta(req.query.id, req.query.actorId);
+    res.json({ ok: true, data: null });
+  } catch (err) {
+    console.error('[marketing/wa-resposta DELETE] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });

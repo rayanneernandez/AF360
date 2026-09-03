@@ -2027,9 +2027,56 @@ function postMarketingWaEnviar(body, actorId) {
 function postMarketingWaNova(body, actorId) {
   return lovablePost('/api/public/internal/marketing', { recurso: 'wa-nova' }, body, actorId);
 }
-// Body pode ter { chat_status } (assumir/finalizar) e/ou { atendente_id }.
+// Body pode ter { chat_status, atendente_id, display_name, tags: [], notas,
+// muted, blocked } — contrato ampliado confirmado pela Lovable em 03/09/2026.
 function patchMarketingWaConversa(phone, body, actorId) {
   return lovablePatch('/api/public/internal/marketing', { recurso: 'wa-conversa', phone }, body, actorId);
+}
+
+// --- WhatsApp — contrato ampliado confirmado pela Lovable em 03/09/2026
+// (documentação completa no cabeçalho da rota /api/public/internal/marketing
+// no código da Lovable). ---
+
+// Ressincroniza as conversas com o provedor do WhatsApp (botão de refresh).
+function postMarketingWaSincronizar(actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'wa-sincronizar' }, {}, actorId);
+}
+// Agenda de contatos já conversados. params: q.
+function getMarketingWaAgenda(params, actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'wa-agenda', ...params }, actorId);
+}
+// Lista de tags existentes (pra montar filtro/seleção).
+function getMarketingWaTags(actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'wa-tags' }, actorId);
+}
+// Marca a conversa como lida. Body: { phone }.
+function postMarketingWaMarcarLido(body, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'wa-marcar-lido' }, body, actorId);
+}
+// Templates aprovados pra iniciar/retomar conversa com a janela de 24h
+// fechada. params: canal (geral|rs).
+function getMarketingWaTemplates(params, actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'wa-templates', ...params }, actorId);
+}
+// Envia um template aprovado. Body: { phone, template_name, language?, variables }.
+function postMarketingWaEnviarTemplate(body, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'wa-enviar-template' }, body, actorId);
+}
+// Sugestões de resposta contextual (saudação + link etc.) já resolvidas pro
+// número informado. params: phone.
+function getMarketingWaSugestoes(params, actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'wa-sugestoes', ...params }, actorId);
+}
+// Respostas rápidas cadastradas (atalho + texto).
+function getMarketingWaRespostas(actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'wa-respostas' }, actorId);
+}
+// Cria ou edita (se enviar id) uma resposta rápida. Body: { id?, atalho, texto }.
+function postMarketingWaResposta(body, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'wa-resposta' }, body, actorId);
+}
+function deleteMarketingWaResposta(id, actorId) {
+  return lovableDelete('/api/public/internal/marketing', { recurso: 'wa-resposta', id }, actorId);
 }
 
 // --- Google Meu Negócio — avaliações (mesmo endpoint /gmb já usado pelo
@@ -2350,6 +2397,16 @@ module.exports = {
   postMarketingWaEnviar,
   postMarketingWaNova,
   patchMarketingWaConversa,
+  postMarketingWaSincronizar,
+  getMarketingWaAgenda,
+  getMarketingWaTags,
+  postMarketingWaMarcarLido,
+  getMarketingWaTemplates,
+  postMarketingWaEnviarTemplate,
+  getMarketingWaSugestoes,
+  getMarketingWaRespostas,
+  postMarketingWaResposta,
+  deleteMarketingWaResposta,
   getGmbReviews,
   postGmbResponderReview,
 };
