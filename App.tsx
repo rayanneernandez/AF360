@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useEventListener } from 'expo';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -2660,6 +2660,54 @@ const notificationTemplateOptions = [
   ...notificationTemplates.map((template) => template.title),
 ];
 
+// Sem isso, qualquer erro de render não tratado (ex.: acessar campo de um
+// objeto undefined) derrubava o app inteiro sem NENHUM aviso em build de
+// produção/TestFlight — em dev o Metro mostra a tela vermelha, mas fora
+// disso o processo simplesmente fecha. Com o boundary, mostra uma tela
+// com botão de "Tentar novamente" em vez de fechar sem explicação.
+class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; message: string }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error: unknown) {
+    return { hasError: true, message: error instanceof Error ? error.message : 'Erro desconhecido' };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error('[AppErrorBoundary] erro não tratado:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <SafeAreaProvider>
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#F4F5F9', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+            <Feather name="alert-triangle" size={40} color="#C2263A" />
+            <Text style={{ marginTop: 16, fontSize: 18, fontWeight: '800', color: '#202944', textAlign: 'center' }}>
+              Algo deu errado
+            </Text>
+            <Text style={{ marginTop: 8, fontSize: 13, color: '#767E96', textAlign: 'center' }}>
+              {this.state.message}
+            </Text>
+            <Pressable
+              style={{ marginTop: 20, backgroundColor: '#29448D', borderRadius: 10, paddingHorizontal: 20, paddingVertical: 12 }}
+              onPress={() => this.setState({ hasError: false, message: '' })}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>Tentar novamente</Text>
+            </Pressable>
+          </SafeAreaView>
+        </SafeAreaProvider>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentRoute, setCurrentRoute] = useState<keyof RootStackParamList | undefined>('Splash');
@@ -2859,6 +2907,7 @@ export default function App() {
   }, [identity?.colaboradorId]);
 
   return (
+    <AppErrorBoundary>
     <SafeAreaProvider>
       <AuthIdentityContext.Provider value={{ identity, setIdentity }}>
       <ColaboradorPerfilContext.Provider
@@ -3066,6 +3115,7 @@ export default function App() {
       </ColaboradorPerfilContext.Provider>
       </AuthIdentityContext.Provider>
     </SafeAreaProvider>
+    </AppErrorBoundary>
   );
 }
 
@@ -3423,7 +3473,11 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
   const { setActiveRole } = useContext(UserRoleContext);
   const { isBiometricLoginEnabled, isTwoFactorEnabled } = useContext(SecurityPreferencesContext);
   const insets = useSafeAreaInsets();
-  const roles = identity?.availableRoles ?? [];
+  // Filtra qualquer papel que o backend mande e que a gente ainda não
+  // conhece em PANEL_OPTION_META — sem isso, `meta` vinha undefined e
+  // `meta.tint` derrubava o app inteiro sem nenhum aviso (crash silencioso
+  // em build de produção, sem tela vermelha de erro pra avisar).
+  const roles = (identity?.availableRoles ?? []).filter((role) => role in PANEL_OPTION_META);
 
   const handleSelect = (role: UserRole) => {
     proceedAfterRoleChosen(role, navigation, setActiveRole, isBiometricLoginEnabled, isTwoFactorEnabled, identity);
