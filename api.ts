@@ -21,6 +21,12 @@ export class ApiError extends Error {
 
 async function request(path: string, options: { method?: string; body?: unknown } = {}) {
   let response: Response;
+  // Sem timeout, um backend que trava (cold start, função presa, deploy
+  // fora do ar sem devolver resposta) deixava o fetch pendurado pra sempre
+  // — a tela ficava girando sem NUNCA cair no catch/Alert de erro. Com o
+  // AbortController, depois de 20s a gente desiste e mostra erro de verdade.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method: options.method ?? 'GET',
@@ -29,11 +35,21 @@ async function request(path: string, options: { method?: string; body?: unknown 
         'Content-Type': 'application/json',
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
     });
-  } catch {
+  } catch (err) {
     // fetch em si falhou (sem internet, DNS, timeout, etc.) — nem chegou a ter
     // resposta do servidor, então não tem "código de erro" de negócio nenhum.
-    throw new ApiError('Não foi possível conectar ao servidor. Verifique sua internet.', 'network_error', 0);
+    const foiTimeout = err instanceof Error && err.name === 'AbortError';
+    throw new ApiError(
+      foiTimeout
+        ? 'O servidor demorou demais para responder. Tente novamente em instantes.'
+        : 'Não foi possível conectar ao servidor. Verifique sua internet.',
+      'network_error',
+      0
+    );
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const json = await response.json().catch(() => null);
