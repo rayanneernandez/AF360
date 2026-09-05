@@ -1,0 +1,528 @@
+[
+  {
+    "id": "49217fc7-500d-458b-ad04-9e215f447ba1",
+    "status": "ERRORED",
+    "platform": "ANDROID",
+    "app": {
+      "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+      "name": "AF 360",
+      "slug": "af-360",
+      "ownerAccount": {
+        "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+        "name": "rayannemernandez"
+      }
+    },
+    "androidConfig": {
+      "track": "internal",
+      "releaseStatus": "COMPLETED"
+    },
+    "error": {
+      "errorCode": "SUBMISSION_SERVICE_ANDROID_SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS",
+      "message": "The service account is missing the necessary permissions to submit the app to Google Play Store. Make sure the service account has the necessary app permissions.\nLearn more at https://expo.fyi/creating-google-service-account and https://github.com/fastlane/fastlane/issues/16164"
+    },
+    "logFiles": [
+      "https://storage.googleapis.com/submission-service-logs/production/70b5f7e8-baa5-4762-84c1-b74fa090a4f6/submission_49217fc7-500d-458b-ad04-9e215f447ba1/1787943766097-205049ea-0b58-4e5b-b678-e06c8476fb92.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=87c03a32b8225247edd1a09f51bd67a681d61a5d6f01656a56713085e8ad53f685c2e5d4524a325cadc7e81cdb6d53e769eca147da9ddb40f61c32d2342beed330785ee336385e3fc7b640534795363b3340858b584f57ac596eb3d0f95827ca2cdb250acdad38375161f2a0f303e2a69cb8dedc0c930c1c59f3452389f53fecfd467e7959fffb817d7858aab2ac2c38dbb849dc1eeea28f1270274c98743bb72cee090104b377d23c03f50113ec9c1800bb0d3c3a7617b0de430de9f862b5bed0116810669c1d0fb7e17aea2bb300d3d7d17d94f2ab78708f7122d1a67582ef0d47556cb512c16878d3a703717cdded847b10f6f7f35abf883435350f516599",
+      "https://storage.googleapis.com/submission-service-logs/production/70b5f7e8-baa5-4762-84c1-b74fa090a4f6/submission_49217fc7-500d-458b-ad04-9e215f447ba1/1787943766203-ff9ccc59-a693-47c2-ab8b-2e36d82529fb.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=3d80690525d4ee25d2df346a7377b084d050a0cc6f18e4c8ffab223b9f2d336b59bb3b97e053adf5148fb53f98b8c0d86066b708d078624e8448ed5dd4786177706552506cb9fd42ef922dfa506ca1f7b3744c1077c9a1599ec3e35a2fb0e92bf73e2f4b9a70a678b2e6c7cc095bfc1d225f9e3ef6a03fa3aaef01b67913e790be51e7f1e79f43bc355f754a0d11b247c005b75e06a31a3b2b2d7974a23ae97f1f3c716800f81f308a43cbfd2a9c1ff06a8a8ececaeac0a105747dbedc95f875b92562f619aadf67e5638004cdad3c68e7225d4bac300a41ae348490dead3dbca99e766ba4867d6eea9862191888858ca62821a982c9d902b35b9003ce261a73"
+    ],
+    "createdAt": "2026-08-28T19:02:45.834Z",
+    "completedAt": "2026-08-28T19:04:05.253Z",
+    "canRetry": false,
+    "maxRetryTimeMinutes": 1440,
+    "submittedBuild": {
+      "id": "d631000e-5737-467f-bcef-d2d4d9a0f9ef",
+      "status": "FINISHED",
+      "platform": "ANDROID",
+      "artifacts": {
+        "buildUrl": "https://expo.dev/artifacts/eas/cn1W1WCbrILvXbqULZKVb8ld9WQUnO5SeV7FORdXiUs.aab",
+        "applicationArchiveUrl": "https://expo.dev/artifacts/eas/cn1W1WCbrILvXbqULZKVb8ld9WQUnO5SeV7FORdXiUs.aab"
+      },
+      "fingerprint": {
+        "id": "01a049b5-a155-71f0-8774-d84297dbcf09",
+        "hash": "5cbc85d35ca28c80e1d3a484565dbe1939c00f81"
+      },
+      "initiatingActor": {
+        "id": "c960be46-b8e3-471a-b6d3-598499a39a29",
+        "displayName": "rayannemernandez"
+      },
+      "logFiles": [
+        "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/d631000e-5737-467f-bcef-d2d4d9a0f9ef/2026-08-28T18%3A50%3A39Z-bec618d9-f45a-444c-9100-a877add37d26.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=15920675bb2d6e66380a3c577f96f666534dc283a20b06386b9114fc0bcd00a6da9ec4fa1f935f9aa42f89b049a6786eba6b6cc594deb77e0272f2cef08187da3f39a716e2856ba4f84fb59d58abf81820d36d7df14b6e93cf9921b4a128e79b71eb913315633a7690cfa24545d41d5e7ba9f459c3e7f3f15b206a9f4a8c2bd90ad540748b2e3bd96818e212bbee9e4c7957169a38f6896aa0915b23f2f47b9aac0b508880293556d22f824fd64c5603c4ed95063dde9d4327be6b286e6e4669770848f24380a336ba5bce68ddbab98ef54c2ecfff0fa34711c2871997ff3c4fdb1854aae5edbda13768fb5a650ef8144d0805b91b83188d71db625cf7efd1b2"
+      ],
+      "project": {
+        "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+        "name": "AF 360",
+        "slug": "af-360",
+        "ownerAccount": {
+          "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+          "name": "rayannemernandez"
+        }
+      },
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "sdkVersion": "54.0.0",
+      "appVersion": "1.0.0",
+      "appBuildVersion": "4",
+      "gitCommitHash": "e71bac5c5bae4c7512d2089e6d3311da9355ca95",
+      "gitCommitMessage": "Adiciona módulo Gestão (Vendas, Abastecimento, Margem, Encerrante) — novo painel/perfil\n\n- Backend (af360-api): rota /api/gestao (proxy /api/public/internal/gestao,\n  contrato confirmado pela Lovable em 28/08/2026), notificações modulo=gst,\n  e novo role 'gestao' ligado ao módulo Lovable já existente (is_master +\n  effectiveModules.has('gestao')).\n- api.ts: fetchGestaoPostos/Dashboard/Vendas/Abastecimentos/Margem/Encerrante\n  + CRUD de notificações (rotinas/templates).\n- Gestao.tsx: 8 telas mobile-responsivas (Dashboard, Vendas Pista/Loja,\n  Abastecimento, Encerrante, Margem Loja, Notificações, Configurações) +\n  Perfil, seguindo o mesmo padrão arquitetural do Financeiro.tsx.\n- App.tsx: novo UserRole 'gestao', rotas, menu lateral, tela de seleção de\n  painel, TopBar/SideMenu com marca e cores próprias (roxo #7C3AED).\n- Encerrante e Configurações mostram avisos honestos (backend/web ainda não\n  prontos) em vez de dados simulados.",
+      "priority": "NORMAL",
+      "createdAt": "2026-08-28T18:50:35.171Z",
+      "updatedAt": "2026-08-28T18:57:19.010Z",
+      "completedAt": "2026-08-28T18:57:18.836Z",
+      "expirationDate": "2026-09-27T18:50:35.210Z",
+      "isForIosSimulator": false,
+      "metrics": {
+        "buildWaitTime": 3037,
+        "buildQueueTime": 6175,
+        "buildDuration": 394453
+      }
+    }
+  },
+  {
+    "id": "3b38f6d1-b966-4087-9db8-c311b2967e7f",
+    "status": "ERRORED",
+    "platform": "ANDROID",
+    "app": {
+      "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+      "name": "AF 360",
+      "slug": "af-360",
+      "ownerAccount": {
+        "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+        "name": "rayannemernandez"
+      }
+    },
+    "androidConfig": {
+      "track": "internal",
+      "releaseStatus": "COMPLETED"
+    },
+    "error": {
+      "errorCode": "SUBMISSION_SERVICE_ANDROID_SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS",
+      "message": "The service account is missing the necessary permissions to submit the app to Google Play Store. Make sure the service account has the necessary app permissions.\nLearn more at https://expo.fyi/creating-google-service-account and https://github.com/fastlane/fastlane/issues/16164"
+    },
+    "logFiles": [
+      "https://storage.googleapis.com/submission-service-logs/production/25fff21f-5674-46ab-b2dc-71395ff87b60/submission_3b38f6d1-b966-4087-9db8-c311b2967e7f/1787943439058-063d103a-7151-4b55-80d9-20ad592fc7d0.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=83582344855ad19e988e380a75e7605ab8fe636c1c3bae4cee34414e8fdca8309b719f20bf6f5dcf88aeb90e8e67470ae9d053d5e9144b20b79b7dd4117dfcf215522a9575977fdfa51347fa20822272491ad50c36349bd0d4d1d08387c7eef02c687eb212f92ae28b984613493e86d28b0d4124aade3f37bd12492d2bf69a44596369b89b3021ddd952e1a0df25bc5e51cf639289cec52a23de230279f3dae86579c1d96e8680649a4c09d60f6771a31383071980f5badaeed4665b46c6fcff515e985be0da5916899cd9766d5f25283223764a01aa1129043ee7c995e2f5e7072de845870108d5d1ab08c31ae6e23c91824b6fc75e60cb16e366892ef551d5",
+      "https://storage.googleapis.com/submission-service-logs/production/25fff21f-5674-46ab-b2dc-71395ff87b60/submission_3b38f6d1-b966-4087-9db8-c311b2967e7f/1787943439084-55e0a61a-7f63-439f-9f9f-df884dc4cee3.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=28159f72331420d671fc8f4f34018cdba77c02e3db331f9225e1d4a5176c8213be469ee39732cdf56b5f61a060303a685a9345bc52cf47f33e595583a3538fb8637871e1f59f26b92e7fb01ba3c91c94982a61e8470202cab66edaeadc0bb43fb56bd2c248a95c0b354a33521b3421726a3e0199ebbc0a42115a1684c13e0a41b52be16b4bd58f7b418e596c9eaafd70dbc612867bd9d960bd2cabaad61e1d3c874cf6ee6c5f826cd214be1843448ce1a34bf6dce1cd05073169a0b782b20e22015f6fbd4c5cf9e0d8af1cc872aa289ae4f4f774a3828853e259471267ff8200c3e1162f996d4e33e70eeb450aa7b9ddcb8f0819ec673e5108c7255c62f73793"
+    ],
+    "createdAt": "2026-08-28T18:50:37.690Z",
+    "completedAt": "2026-08-28T18:58:39.270Z",
+    "canRetry": false,
+    "maxRetryTimeMinutes": 1440,
+    "submittedBuild": {
+      "id": "d631000e-5737-467f-bcef-d2d4d9a0f9ef",
+      "status": "FINISHED",
+      "platform": "ANDROID",
+      "artifacts": {
+        "buildUrl": "https://expo.dev/artifacts/eas/cn1W1WCbrILvXbqULZKVb8ld9WQUnO5SeV7FORdXiUs.aab",
+        "applicationArchiveUrl": "https://expo.dev/artifacts/eas/cn1W1WCbrILvXbqULZKVb8ld9WQUnO5SeV7FORdXiUs.aab"
+      },
+      "fingerprint": {
+        "id": "01a049b5-a155-71f0-8774-d84297dbcf09",
+        "hash": "5cbc85d35ca28c80e1d3a484565dbe1939c00f81"
+      },
+      "initiatingActor": {
+        "id": "c960be46-b8e3-471a-b6d3-598499a39a29",
+        "displayName": "rayannemernandez"
+      },
+      "logFiles": [
+        "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/d631000e-5737-467f-bcef-d2d4d9a0f9ef/2026-08-28T18%3A50%3A39Z-bec618d9-f45a-444c-9100-a877add37d26.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=15920675bb2d6e66380a3c577f96f666534dc283a20b06386b9114fc0bcd00a6da9ec4fa1f935f9aa42f89b049a6786eba6b6cc594deb77e0272f2cef08187da3f39a716e2856ba4f84fb59d58abf81820d36d7df14b6e93cf9921b4a128e79b71eb913315633a7690cfa24545d41d5e7ba9f459c3e7f3f15b206a9f4a8c2bd90ad540748b2e3bd96818e212bbee9e4c7957169a38f6896aa0915b23f2f47b9aac0b508880293556d22f824fd64c5603c4ed95063dde9d4327be6b286e6e4669770848f24380a336ba5bce68ddbab98ef54c2ecfff0fa34711c2871997ff3c4fdb1854aae5edbda13768fb5a650ef8144d0805b91b83188d71db625cf7efd1b2"
+      ],
+      "project": {
+        "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+        "name": "AF 360",
+        "slug": "af-360",
+        "ownerAccount": {
+          "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+          "name": "rayannemernandez"
+        }
+      },
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "sdkVersion": "54.0.0",
+      "appVersion": "1.0.0",
+      "appBuildVersion": "4",
+      "gitCommitHash": "e71bac5c5bae4c7512d2089e6d3311da9355ca95",
+      "gitCommitMessage": "Adiciona módulo Gestão (Vendas, Abastecimento, Margem, Encerrante) — novo painel/perfil\n\n- Backend (af360-api): rota /api/gestao (proxy /api/public/internal/gestao,\n  contrato confirmado pela Lovable em 28/08/2026), notificações modulo=gst,\n  e novo role 'gestao' ligado ao módulo Lovable já existente (is_master +\n  effectiveModules.has('gestao')).\n- api.ts: fetchGestaoPostos/Dashboard/Vendas/Abastecimentos/Margem/Encerrante\n  + CRUD de notificações (rotinas/templates).\n- Gestao.tsx: 8 telas mobile-responsivas (Dashboard, Vendas Pista/Loja,\n  Abastecimento, Encerrante, Margem Loja, Notificações, Configurações) +\n  Perfil, seguindo o mesmo padrão arquitetural do Financeiro.tsx.\n- App.tsx: novo UserRole 'gestao', rotas, menu lateral, tela de seleção de\n  painel, TopBar/SideMenu com marca e cores próprias (roxo #7C3AED).\n- Encerrante e Configurações mostram avisos honestos (backend/web ainda não\n  prontos) em vez de dados simulados.",
+      "priority": "NORMAL",
+      "createdAt": "2026-08-28T18:50:35.171Z",
+      "updatedAt": "2026-08-28T18:57:19.010Z",
+      "completedAt": "2026-08-28T18:57:18.836Z",
+      "expirationDate": "2026-09-27T18:50:35.210Z",
+      "isForIosSimulator": false,
+      "metrics": {
+        "buildWaitTime": 3037,
+        "buildQueueTime": 6175,
+        "buildDuration": 394453
+      }
+    }
+  },
+  {
+    "id": "7b2fdf55-06b5-49ac-85d3-11686f838111",
+    "status": "ERRORED",
+    "platform": "ANDROID",
+    "app": {
+      "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+      "name": "AF 360",
+      "slug": "af-360",
+      "ownerAccount": {
+        "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+        "name": "rayannemernandez"
+      }
+    },
+    "androidConfig": {
+      "track": "internal",
+      "releaseStatus": "COMPLETED"
+    },
+    "error": {
+      "errorCode": "SUBMISSION_SERVICE_ANDROID_OLD_VERSION_CODE_ERROR",
+      "message": "You've already submitted this version of the app.\nVersions are identified by Android version code (expo.android.versionCode in app.json).\nIf you're submitting a managed Expo project, increment the version code in app.json and build the project with eas build.\nLearn more: https://expo.fyi/bumping-android-version-code"
+    },
+    "logFiles": [
+      "https://storage.googleapis.com/submission-service-logs/production/4da6b2f9-3924-4eb9-9d01-e081dd7da25d/submission_7b2fdf55-06b5-49ac-85d3-11686f838111/1787860524102-af7629e6-9d54-4b22-a340-a7567737d6cb.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=1cfc85e5e06317d45a1cdbd42f5fb456ad5b9aab00c45c708dcfef49e3185cd8f5cc6e411540ec648dc76b1f99045349df1d4df41516a3be1a3636344291ef6991446202e5c9325b1eb01304cd1df7efb1215ddb10c15b8311984dddd23cd18299d297bd81d9488aefc881d0829677d8293b94eb46190e8cb96644cbf07c400d84655dcbc3718df50b88e055fefa8409ec12e5a13c49a1cced8736815bcb1b3854462294003e9ee6ceaa9373aaaf7f6cc804dd77389ebbb56465b7290f993b53137ed3e4fb742fb189785a9299c63737680d9311c952d0ce08c47942b3fc93a8b28fbacb8a4359e2b577a71cb0dd619fccae67f7da38cee4ac6fde040d3c124f",
+      "https://storage.googleapis.com/submission-service-logs/production/4da6b2f9-3924-4eb9-9d01-e081dd7da25d/submission_7b2fdf55-06b5-49ac-85d3-11686f838111/1787860524156-c4760af1-3071-44b4-8477-a9a19ad43483.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=674c3e612a03d95dff19462ac0efb808c693d82b5bb27b54445be1f2d7ae96985eac22bbbfe9d088a5586e5c48d7270903f78b0a58e7115b8e3621ccd26f8b2cf1d56e8e5be654be99b9e6db4df1b79c2211238f5e0e8795857e680d70806d0309ec9271ba440055553c4c77c5f9fafcf0475acc43226da9f089c71d99de1dbce9923bbd67d2c76aadddd7a10106911accdaddc7dac680f5221ace87e676c868456419adae9b087923fec96c9ec3dfbb22ba8176d6df631e3522dbb8072c308f35ce7922fc22096bab1ce7d225f722120c34616d8ca59e272f8fcc2c16b59a1c995bfd6283ced2446ba686a5faa738e808dde6b552c749391976ceb6fab2c552"
+    ],
+    "createdAt": "2026-08-27T19:55:23.672Z",
+    "completedAt": "2026-08-27T19:56:39.749Z",
+    "canRetry": false,
+    "maxRetryTimeMinutes": 1440,
+    "submittedBuild": {
+      "id": "2d033a3d-1da2-4671-a6c6-c32625075707",
+      "status": "FINISHED",
+      "platform": "ANDROID",
+      "artifacts": {
+        "buildUrl": "https://expo.dev/artifacts/eas/OWRSQXy59Xo1F75dBska39bgk-MgCUQPihke17W0wfg.aab",
+        "applicationArchiveUrl": "https://expo.dev/artifacts/eas/OWRSQXy59Xo1F75dBska39bgk-MgCUQPihke17W0wfg.aab"
+      },
+      "fingerprint": {
+        "id": "019fec42-9300-718f-9ebb-884951365ad9",
+        "hash": "84fefc7f6cc49209192252477ed632d29b91eea2"
+      },
+      "initiatingActor": {
+        "id": "c960be46-b8e3-471a-b6d3-598499a39a29",
+        "displayName": "rayannemernandez"
+      },
+      "logFiles": [
+        "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/2d033a3d-1da2-4671-a6c6-c32625075707/2026-08-10T16%3A35%3A14Z-bc8df002-6e43-43a2-89cd-74e9c0ff4e91.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=6c6e23b8e323aff92536cd80d5405d5b7f63e1996bc18eaa1e44993b89e84993876ca47d9c6582d883397c60aa6a655868c683d99e4dea884f38cc3a737591a9ec6697ceacd9a70e80dd810fdf8c438c0825921979c599a97a404285a5b2dd2f00adcae174a3616451f24b05278c6e1c7d31512d6549390008c2e73e8ef32691e1ec3f15abe95442adce113b85dc2ed2787188f8093f7ec88aac362b6f23888f355189516776b3c747292355ff583c58c2c104f3aa6f6876dbbcffe5c108d1d4b3089d932b27eac1d5dc77990476eb3acd86101313fa3902406b3be54d5ea935949b6a6c1ad270a3728550986b34b68b98a12cdecc6dac724e0d20de1e083db6"
+      ],
+      "project": {
+        "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+        "name": "AF 360",
+        "slug": "af-360",
+        "ownerAccount": {
+          "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+          "name": "rayannemernandez"
+        }
+      },
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "sdkVersion": "54.0.0",
+      "appVersion": "1.0.0",
+      "appBuildVersion": "3",
+      "gitCommitHash": "c7f561bfe797441fd9253ec8612deb4c257433b2",
+      "gitCommitMessage": "android: bloquear permissões READ_MEDIA_IMAGES/VIDEO e READ_EXTERNAL/WRITE_EXTERNAL_STORAGE\n\nO Google Play sinalizou que o app precisa usar o seletor de fotos do sistema\nem vez de solicitar permissões amplas de armazenamento (política de\npermissões de acesso a fotos/vídeos, API 33+). O app já usa o seletor de\nfotos do sistema via expo-image-picker (launchImageLibraryAsync sem a opção\nlegacy), que não precisa de nenhuma permissão a partir do Android 13. As\npermissões READ_EXTERNAL_STORAGE/WRITE_EXTERNAL_STORAGE eram declaradas pelo\npróprio expo-image-picker como fallback para Android antigo, e o Play as\nmapeia para o equivalente READ_MEDIA_IMAGES/VIDEO. Adicionado um config\nplugin (plugins/withBlockMediaPermissions.js) para bloquear essas permissões\ndo manifesto final.",
+      "priority": "NORMAL",
+      "createdAt": "2026-08-10T15:20:13.733Z",
+      "updatedAt": "2026-08-10T16:42:32.425Z",
+      "completedAt": "2026-08-10T16:42:32.261Z",
+      "expirationDate": "2026-09-09T15:20:13.808Z",
+      "isForIosSimulator": false,
+      "metrics": {
+        "buildWaitTime": 3573,
+        "buildQueueTime": 4501886,
+        "buildDuration": 433069
+      }
+    }
+  },
+  {
+    "id": "9369fdf1-43f9-4b6b-8a67-13065557b5bc",
+    "status": "ERRORED",
+    "platform": "ANDROID",
+    "app": {
+      "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+      "name": "AF 360",
+      "slug": "af-360",
+      "ownerAccount": {
+        "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+        "name": "rayannemernandez"
+      }
+    },
+    "androidConfig": {
+      "track": "internal",
+      "releaseStatus": "COMPLETED"
+    },
+    "error": {
+      "errorCode": "SUBMISSION_SERVICE_ANDROID_SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS",
+      "message": "The service account is missing the necessary permissions to submit the app to Google Play Store. Make sure the service account has the necessary app permissions.\nLearn more at https://expo.fyi/creating-google-service-account and https://github.com/fastlane/fastlane/issues/16164"
+    },
+    "logFiles": [
+      "https://storage.googleapis.com/submission-service-logs/production/b033eeaf-00b5-4e8b-96db-1d34056c0f58/submission_9369fdf1-43f9-4b6b-8a67-13065557b5bc/1787860047579-a5b7b9b6-7949-42d9-b13e-736dba10a9d4.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=905309b25f2bc0247eac69493625b5ff022e84ba106d2f327eee5df5cb48ab67aecbe47f5a4c33bbb2c92d2a23fd48e6f2053a143b83d11058375efa535af18a1b1cb903094328d4f582ca761b1e2c25e4ee3c1b3428c7f024cd6756aef9144b2da47333b61e82e5cc33252bbab593406d726525cf5c9713cfa03c608d019261ed21c0f621a85002c5280f1f28f9a6ade1d8be2865722de7bb3c1f2f34fe2815597c274207c82d7f1b3b689ff4793cf705709501f55bfaa3d1e6030992069d5ccce89ae21fa53d37b6ffbe706e4ada8ddbfdcc73d5c27360d1407768164c687273f88dad4b6d05a871215bf80bf7517ded502bdc29c9ed576e7725c25a4ac25b",
+      "https://storage.googleapis.com/submission-service-logs/production/b033eeaf-00b5-4e8b-96db-1d34056c0f58/submission_9369fdf1-43f9-4b6b-8a67-13065557b5bc/1787860047643-877abb27-fce6-40eb-8e8e-ea81ed579ac6.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=98f7132419f94dec1fe729ec966317c092d987c2bb1d44cf2684ae87c3c2788ebbb32dd253139ae95e2745686390a877c2cd1513a5d3addd310e9d202a5cb7b917a36e6655046fdd6f41e429fd242cf5c48cb4cd5380ffc6be9c8cf96496da0fc3fd0a08b67fe9608b48d3606c4db38eb619ba4b5611d71e2cf7d0ff0dbe4413fa165a985a9dad925a175f155138b88b9ba909a5995916c6814cb371a6e4f94e2f3bfedccfc553516b879012be8d04471cc5ad5e4c4fa060decfb59b7d008d2fad07cf57e68959598d1b8471a159eed1502f9034867e517e2fe143f72bcdd9488a2a682275889b2025cb8492c991f98ec6db8bc5837083bdb1eebd501fc395d9"
+    ],
+    "createdAt": "2026-08-27T19:47:27.244Z",
+    "completedAt": "2026-08-27T19:49:40.220Z",
+    "canRetry": false,
+    "maxRetryTimeMinutes": 1440,
+    "submittedBuild": {
+      "id": "2d033a3d-1da2-4671-a6c6-c32625075707",
+      "status": "FINISHED",
+      "platform": "ANDROID",
+      "artifacts": {
+        "buildUrl": "https://expo.dev/artifacts/eas/OWRSQXy59Xo1F75dBska39bgk-MgCUQPihke17W0wfg.aab",
+        "applicationArchiveUrl": "https://expo.dev/artifacts/eas/OWRSQXy59Xo1F75dBska39bgk-MgCUQPihke17W0wfg.aab"
+      },
+      "fingerprint": {
+        "id": "019fec42-9300-718f-9ebb-884951365ad9",
+        "hash": "84fefc7f6cc49209192252477ed632d29b91eea2"
+      },
+      "initiatingActor": {
+        "id": "c960be46-b8e3-471a-b6d3-598499a39a29",
+        "displayName": "rayannemernandez"
+      },
+      "logFiles": [
+        "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/2d033a3d-1da2-4671-a6c6-c32625075707/2026-08-10T16%3A35%3A14Z-bc8df002-6e43-43a2-89cd-74e9c0ff4e91.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=6c6e23b8e323aff92536cd80d5405d5b7f63e1996bc18eaa1e44993b89e84993876ca47d9c6582d883397c60aa6a655868c683d99e4dea884f38cc3a737591a9ec6697ceacd9a70e80dd810fdf8c438c0825921979c599a97a404285a5b2dd2f00adcae174a3616451f24b05278c6e1c7d31512d6549390008c2e73e8ef32691e1ec3f15abe95442adce113b85dc2ed2787188f8093f7ec88aac362b6f23888f355189516776b3c747292355ff583c58c2c104f3aa6f6876dbbcffe5c108d1d4b3089d932b27eac1d5dc77990476eb3acd86101313fa3902406b3be54d5ea935949b6a6c1ad270a3728550986b34b68b98a12cdecc6dac724e0d20de1e083db6"
+      ],
+      "project": {
+        "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+        "name": "AF 360",
+        "slug": "af-360",
+        "ownerAccount": {
+          "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+          "name": "rayannemernandez"
+        }
+      },
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "sdkVersion": "54.0.0",
+      "appVersion": "1.0.0",
+      "appBuildVersion": "3",
+      "gitCommitHash": "c7f561bfe797441fd9253ec8612deb4c257433b2",
+      "gitCommitMessage": "android: bloquear permissões READ_MEDIA_IMAGES/VIDEO e READ_EXTERNAL/WRITE_EXTERNAL_STORAGE\n\nO Google Play sinalizou que o app precisa usar o seletor de fotos do sistema\nem vez de solicitar permissões amplas de armazenamento (política de\npermissões de acesso a fotos/vídeos, API 33+). O app já usa o seletor de\nfotos do sistema via expo-image-picker (launchImageLibraryAsync sem a opção\nlegacy), que não precisa de nenhuma permissão a partir do Android 13. As\npermissões READ_EXTERNAL_STORAGE/WRITE_EXTERNAL_STORAGE eram declaradas pelo\npróprio expo-image-picker como fallback para Android antigo, e o Play as\nmapeia para o equivalente READ_MEDIA_IMAGES/VIDEO. Adicionado um config\nplugin (plugins/withBlockMediaPermissions.js) para bloquear essas permissões\ndo manifesto final.",
+      "priority": "NORMAL",
+      "createdAt": "2026-08-10T15:20:13.733Z",
+      "updatedAt": "2026-08-10T16:42:32.425Z",
+      "completedAt": "2026-08-10T16:42:32.261Z",
+      "expirationDate": "2026-09-09T15:20:13.808Z",
+      "isForIosSimulator": false,
+      "metrics": {
+        "buildWaitTime": 3573,
+        "buildQueueTime": 4501886,
+        "buildDuration": 433069
+      }
+    }
+  },
+  {
+    "id": "a2dcb156-eb1d-4217-b173-cd2db4a531fb",
+    "status": "ERRORED",
+    "platform": "ANDROID",
+    "app": {
+      "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+      "name": "AF 360",
+      "slug": "af-360",
+      "ownerAccount": {
+        "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+        "name": "rayannemernandez"
+      }
+    },
+    "androidConfig": {
+      "track": "internal",
+      "releaseStatus": "COMPLETED"
+    },
+    "error": {
+      "errorCode": "SUBMISSION_SERVICE_ANDROID_UNKNOWN_ERROR",
+      "message": "Fastlane supply failed\nWe couldn't figure out what went wrong. See logs to learn more."
+    },
+    "logFiles": [
+      "https://storage.googleapis.com/submission-service-logs/production/fab88b87-7d37-48d3-aa98-b6751ff64f70/submission_a2dcb156-eb1d-4217-b173-cd2db4a531fb/1787859759199-b2881931-8ba5-4962-937b-d70b73b6ab8b.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=4c1c300a59d0c83f8ba56ee45366bcbe4f2a292f5d5555bd5ad413fde42895d816f08d7755c9aae8298b4d23bd1aa08143f2ebf424df4d7d6839580db771d7499d255815b9a00340e2bdb576989e40e0ffe5d65dced51f7512dc55532416c2137ade94155573a3b7e8836bb6bd1e5091c3f227d931c736c6015f8ae78bda7c39e48669f0ab3cd404ce8516693f28e644f6d29aaad2439d071ced9e0fec28a345e335c22431c1f54f5b66cf5a08472aab3c776c0b56f20b771dccec9585149b9a6d2168f1aa3e1fbc03112df30ae869109eb48e4df7c4025df4e8cc8f8e3939a24de2a70f6c4410354fa4b0b0b0a7b85b0e4756b5253b49087aae30a15f76028f",
+      "https://storage.googleapis.com/submission-service-logs/production/fab88b87-7d37-48d3-aa98-b6751ff64f70/submission_a2dcb156-eb1d-4217-b173-cd2db4a531fb/1787859759320-069e13b5-d290-4765-bc97-8ed01f0a2acb.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=4871f17f19e8e3e35d6e5cfd891723f9d008f8ac87082f23051528c6b90dd43b11970881dbffa0b4f72b8a29c9eedf7547f1196bda4e9e0d83aab723369bf7d514987028af20165c9801de523a1d12a489ebd3180fb9d33480ffad2dcb5a5bad7163978649df0ee025191a852310a65917a7c75f9ada0a2e256bad43e576029e124d3aab0593b45f1891bca41a19b6eb9fc091b8221f491901bd72df05fd458f03154e3c1342db8228cfe06d1c22292796af71c507a05c6a38bc9a527270848a01dc083b7582b09a39404b8ad62cd33638500df2c889a2b148f5da5ff94ba5a1b8563f163da41c195745585de5218efd9449dacec8294e833f85d2fee18c23a7"
+    ],
+    "createdAt": "2026-08-27T19:42:38.920Z",
+    "completedAt": "2026-08-27T19:43:51.770Z",
+    "canRetry": false,
+    "maxRetryTimeMinutes": 1440,
+    "submittedBuild": {
+      "id": "2d033a3d-1da2-4671-a6c6-c32625075707",
+      "status": "FINISHED",
+      "platform": "ANDROID",
+      "artifacts": {
+        "buildUrl": "https://expo.dev/artifacts/eas/OWRSQXy59Xo1F75dBska39bgk-MgCUQPihke17W0wfg.aab",
+        "applicationArchiveUrl": "https://expo.dev/artifacts/eas/OWRSQXy59Xo1F75dBska39bgk-MgCUQPihke17W0wfg.aab"
+      },
+      "fingerprint": {
+        "id": "019fec42-9300-718f-9ebb-884951365ad9",
+        "hash": "84fefc7f6cc49209192252477ed632d29b91eea2"
+      },
+      "initiatingActor": {
+        "id": "c960be46-b8e3-471a-b6d3-598499a39a29",
+        "displayName": "rayannemernandez"
+      },
+      "logFiles": [
+        "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/2d033a3d-1da2-4671-a6c6-c32625075707/2026-08-10T16%3A35%3A14Z-bc8df002-6e43-43a2-89cd-74e9c0ff4e91.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=6c6e23b8e323aff92536cd80d5405d5b7f63e1996bc18eaa1e44993b89e84993876ca47d9c6582d883397c60aa6a655868c683d99e4dea884f38cc3a737591a9ec6697ceacd9a70e80dd810fdf8c438c0825921979c599a97a404285a5b2dd2f00adcae174a3616451f24b05278c6e1c7d31512d6549390008c2e73e8ef32691e1ec3f15abe95442adce113b85dc2ed2787188f8093f7ec88aac362b6f23888f355189516776b3c747292355ff583c58c2c104f3aa6f6876dbbcffe5c108d1d4b3089d932b27eac1d5dc77990476eb3acd86101313fa3902406b3be54d5ea935949b6a6c1ad270a3728550986b34b68b98a12cdecc6dac724e0d20de1e083db6"
+      ],
+      "project": {
+        "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+        "name": "AF 360",
+        "slug": "af-360",
+        "ownerAccount": {
+          "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+          "name": "rayannemernandez"
+        }
+      },
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "sdkVersion": "54.0.0",
+      "appVersion": "1.0.0",
+      "appBuildVersion": "3",
+      "gitCommitHash": "c7f561bfe797441fd9253ec8612deb4c257433b2",
+      "gitCommitMessage": "android: bloquear permissões READ_MEDIA_IMAGES/VIDEO e READ_EXTERNAL/WRITE_EXTERNAL_STORAGE\n\nO Google Play sinalizou que o app precisa usar o seletor de fotos do sistema\nem vez de solicitar permissões amplas de armazenamento (política de\npermissões de acesso a fotos/vídeos, API 33+). O app já usa o seletor de\nfotos do sistema via expo-image-picker (launchImageLibraryAsync sem a opção\nlegacy), que não precisa de nenhuma permissão a partir do Android 13. As\npermissões READ_EXTERNAL_STORAGE/WRITE_EXTERNAL_STORAGE eram declaradas pelo\npróprio expo-image-picker como fallback para Android antigo, e o Play as\nmapeia para o equivalente READ_MEDIA_IMAGES/VIDEO. Adicionado um config\nplugin (plugins/withBlockMediaPermissions.js) para bloquear essas permissões\ndo manifesto final.",
+      "priority": "NORMAL",
+      "createdAt": "2026-08-10T15:20:13.733Z",
+      "updatedAt": "2026-08-10T16:42:32.425Z",
+      "completedAt": "2026-08-10T16:42:32.261Z",
+      "expirationDate": "2026-09-09T15:20:13.808Z",
+      "isForIosSimulator": false,
+      "metrics": {
+        "buildWaitTime": 3573,
+        "buildQueueTime": 4501886,
+        "buildDuration": 433069
+      }
+    }
+  },
+  {
+    "id": "ee376096-4dde-454d-aa79-5d7b717d3e8d",
+    "status": "FINISHED",
+    "platform": "IOS",
+    "app": {
+      "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+      "name": "AF 360",
+      "slug": "af-360",
+      "ownerAccount": {
+        "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+        "name": "rayannemernandez"
+      }
+    },
+    "iosConfig": {
+      "ascAppIdentifier": "6793116966"
+    },
+    "logFiles": [],
+    "createdAt": "2026-08-27T18:05:23.331Z",
+    "completedAt": "2026-08-27T18:32:38.839Z",
+    "canRetry": false,
+    "maxRetryTimeMinutes": 1440,
+    "submittedBuild": {
+      "id": "0fbd6d4b-d2bd-4cc2-afdb-92009053edb7",
+      "status": "FINISHED",
+      "platform": "IOS",
+      "artifacts": {
+        "buildUrl": "https://expo.dev/artifacts/eas/jFXTr9R5svYk3qRiuShFEeDEVsP6Fwki8Fl5nDEsvtU.ipa",
+        "xcodeBuildLogsUrl": "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/0fbd6d4b-d2bd-4cc2-afdb-92009053edb7/2026-08-27T17%3A47%3A28Z-0fbd6d4b-d2bd-4cc2-afdb-92009053edb7-xcode.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=61555a9b46f629e884357be6fb109be3332112e4a05445d5e02ccd0f70c621bf148f1e85f1dd5a6c5f0bd32cd395f287e536c914fe0da3aa33388503be6ec5bef646bf774077813827605e9158dcf2c09d74da967af50e7356f46c6886efce78d444381da3a0bae3786d21e254a2d2fdcb20d4a8ff4b45c1177b22a45d12cbf914d6db077d5f204588bffdbb81286dcae134c823cbb2da6cb967cf9662f20e55eee6577bddf367bf7664bc57dd95b96683cc7e417ab8a4c503037d216f6453ed324150fa349d3f8588cdac6897c369f80d85c65386ffc4303a23e9e49516fe99f4b6632d535d596a6b514a7cbae0723cabc9a95411feadd7f1fe0d38cee2b4b1",
+        "applicationArchiveUrl": "https://expo.dev/artifacts/eas/jFXTr9R5svYk3qRiuShFEeDEVsP6Fwki8Fl5nDEsvtU.ipa"
+      },
+      "fingerprint": {
+        "id": "01a04455-69f4-799a-902b-c7ceed8d4647",
+        "hash": "0d4f655792f619094400489ccd3839ab65e2d87e"
+      },
+      "initiatingActor": {
+        "id": "c960be46-b8e3-471a-b6d3-598499a39a29",
+        "displayName": "rayannemernandez"
+      },
+      "logFiles": [
+        "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/0fbd6d4b-d2bd-4cc2-afdb-92009053edb7/2026-08-27T17%3A47%3A28Z-0fbd6d4b-d2bd-4cc2-afdb-92009053edb7-xcode.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=61555a9b46f629e884357be6fb109be3332112e4a05445d5e02ccd0f70c621bf148f1e85f1dd5a6c5f0bd32cd395f287e536c914fe0da3aa33388503be6ec5bef646bf774077813827605e9158dcf2c09d74da967af50e7356f46c6886efce78d444381da3a0bae3786d21e254a2d2fdcb20d4a8ff4b45c1177b22a45d12cbf914d6db077d5f204588bffdbb81286dcae134c823cbb2da6cb967cf9662f20e55eee6577bddf367bf7664bc57dd95b96683cc7e417ab8a4c503037d216f6453ed324150fa349d3f8588cdac6897c369f80d85c65386ffc4303a23e9e49516fe99f4b6632d535d596a6b514a7cbae0723cabc9a95411feadd7f1fe0d38cee2b4b1",
+        "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/0fbd6d4b-d2bd-4cc2-afdb-92009053edb7/2026-08-27T17%3A47%3A28Z-f455df81-7cdd-4a0d-b10e-de845d47e6d0.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=1f23163f0feda7873fda2b987890989db65cf7d1652a0f919c4a784227f2a29542519e2a731345dc2da4af7b90964745c0be36647562cf7b9551f39774dd05ed8887ba3d0ec74df1e4c57a27dbef69735a2ad1bc233e2cf871f873321318f1f04417e51ce4c75cc3e078e8870756a4cbbc2e71a27e88e2e58c850237ad151ffb5091050b0f4fe987b2fd2144cd7b70b947cb94420ec48c4e7e75164c7e28c220fe8152ad2be6c9a74dee12e03926b4eab55f1917061b031580655d4ae5e03d56413214b6c7ee4f33c16dbbd8d2b17d252c221073a693f03bb2bd09e079f41349ce6b2bf61bce6f38dc6cac09a1202bcdc20e77db8ca0f9b5c202bcc9267d7d3e"
+      ],
+      "project": {
+        "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+        "name": "AF 360",
+        "slug": "af-360",
+        "ownerAccount": {
+          "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+          "name": "rayannemernandez"
+        }
+      },
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "sdkVersion": "54.0.0",
+      "appVersion": "1.0.0",
+      "appBuildVersion": "3",
+      "gitCommitHash": "43cdf7597c4b0c0aab3bf79f041f56129872a5e7",
+      "gitCommitMessage": "Balancete/DRE: barras do grafico calculadas dinamicamente pra caber sempre no card (antes vazava com 6+ meses e cortava ago/26 fora da tela); tira texto de dica padrao (so mostra ao tocar) e mantem fixado no ultimo mes tocado",
+      "priority": "NORMAL",
+      "createdAt": "2026-08-27T17:47:23.441Z",
+      "updatedAt": "2026-08-27T17:53:02.515Z",
+      "completedAt": "2026-08-27T17:53:02.187Z",
+      "expirationDate": "2026-09-26T17:47:23.494Z",
+      "isForIosSimulator": false,
+      "metrics": {
+        "buildWaitTime": 3745,
+        "buildQueueTime": 22050,
+        "buildDuration": 312951
+      }
+    }
+  },
+  {
+    "id": "1fd5a665-0981-43ac-a2e0-4214f4e030b6",
+    "status": "FINISHED",
+    "platform": "IOS",
+    "app": {
+      "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+      "name": "AF 360",
+      "slug": "af-360",
+      "ownerAccount": {
+        "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+        "name": "rayannemernandez"
+      }
+    },
+    "iosConfig": {
+      "ascAppIdentifier": "6793116966"
+    },
+    "logFiles": [],
+    "createdAt": "2026-08-10T12:00:24.807Z",
+    "canRetry": false,
+    "maxRetryTimeMinutes": 1440,
+    "submittedBuild": {
+      "id": "9edebc18-ebf8-43ea-b30f-b413ea9f812e",
+      "status": "FINISHED",
+      "platform": "IOS",
+      "artifacts": {
+        "buildUrl": "https://expo.dev/artifacts/eas/xpCfhEFldNJLjMyj3AO01a5sRlmLecmN5AZusUxEGCE.ipa",
+        "xcodeBuildLogsUrl": "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/9edebc18-ebf8-43ea-b30f-b413ea9f812e/2026-08-07T18%3A00%3A52Z-9edebc18-ebf8-43ea-b30f-b413ea9f812e-xcode.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=1020659d1ac360795f80c52a4c66917b1a2d89df0af1f69596f307a238c473f436af98dd45148121bc83bec2b3a4b9b51b242a86f5c3ad3d0da8d929fd26b6986a19bd76d6f3e6c844f67d7b348b7cd33f2c5fa5972932da86c96fdf9192f6a82b5895a92c1b5eeec2ac10a62dbc6f9f02c8270ebfb17f8322a2e39dfb56f6142a2ce14993ff170baf6b8102afdd9663988f46de3d06855632aef1047fe80ad42e2ecf134e60660a51512c03e50aaceba9c5e180371b78ab72da8f16427b6a230bb6c75d60afce050f586934cdc24b566c4e00d095a020c23468d636db5087c2e34ab3b603076eb68c00c5a987acb3831731d7923680fe82a88a6fdc1ec0cd4f",
+        "applicationArchiveUrl": "https://expo.dev/artifacts/eas/xpCfhEFldNJLjMyj3AO01a5sRlmLecmN5AZusUxEGCE.ipa"
+      },
+      "fingerprint": {
+        "id": "019fdd62-873a-7d28-9d97-58bb8f83ff3f",
+        "hash": "ea5cf391348f27d4790b30df5fe76728e422b35c"
+      },
+      "initiatingActor": {
+        "id": "c960be46-b8e3-471a-b6d3-598499a39a29",
+        "displayName": "rayannemernandez"
+      },
+      "logFiles": [
+        "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/9edebc18-ebf8-43ea-b30f-b413ea9f812e/2026-08-07T18%3A00%3A52Z-4fb70acc-bf9e-4b94-a03c-3849c72ecb20.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=30c2db9aed907c0f5728691633e24ad22f6a9cb1366645225f84ee39a716e7b519762ad8b2072fe9559e234ed12a28e6d7d4f4f36eeb9b53d2c8cb85fdbc535685a3a34bb6d4833f66247877698cdc6b8ff40846d8810f103581e74c68ce84b4697e5d65c9cb464d759be07b4a241ee30c86d194c8ae5e6dc1060191ed7d5b2ea6d16bb287cf7665b3b84035a33470f75c750eed198733bde608a82e9cefb79841784486b24a92f42d8f7b63bcee22d899626fcabd992d34a75d7dfb2d21dd43a01dd0594bd2a98f194fe14c06e95257e41f4d577afdf9e48054f892bb5eebf20fb7623a2e6b70d5478eec8a5dbdc644ba162dc125a77bbbc0197aa7fa9336fc",
+        "https://storage.googleapis.com/eas-workflows-production/logs/48d41531-1aae-49dc-bfa0-b540a394ecfe/9edebc18-ebf8-43ea-b30f-b413ea9f812e/2026-08-07T18%3A00%3A52Z-9edebc18-ebf8-43ea-b30f-b413ea9f812e-xcode.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260904%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260904T195025Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=1020659d1ac360795f80c52a4c66917b1a2d89df0af1f69596f307a238c473f436af98dd45148121bc83bec2b3a4b9b51b242a86f5c3ad3d0da8d929fd26b6986a19bd76d6f3e6c844f67d7b348b7cd33f2c5fa5972932da86c96fdf9192f6a82b5895a92c1b5eeec2ac10a62dbc6f9f02c8270ebfb17f8322a2e39dfb56f6142a2ce14993ff170baf6b8102afdd9663988f46de3d06855632aef1047fe80ad42e2ecf134e60660a51512c03e50aaceba9c5e180371b78ab72da8f16427b6a230bb6c75d60afce050f586934cdc24b566c4e00d095a020c23468d636db5087c2e34ab3b603076eb68c00c5a987acb3831731d7923680fe82a88a6fdc1ec0cd4f"
+      ],
+      "project": {
+        "id": "48d41531-1aae-49dc-bfa0-b540a394ecfe",
+        "name": "AF 360",
+        "slug": "af-360",
+        "ownerAccount": {
+          "id": "1a3ac211-785a-471a-a4a5-f4aeb126d8d0",
+          "name": "rayannemernandez"
+        }
+      },
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "sdkVersion": "54.0.0",
+      "appVersion": "1.0.0",
+      "appBuildVersion": "1",
+      "gitCommitHash": "a7c031daf0d443b657345451f3849019de8ac2cc",
+      "gitCommitMessage": "app.json: corrigir slug pra bater com o projeto EAS ja vinculado\n\nO eas build falhava com 'Slug for project identified by extra.eas.projectId\n(af-360) does not match the slug field (AF360)'. O projectId em extra.eas\nja aponta pra um projeto real no EAS cujo slug e af-360 (minusculo, com\nhifen) - so o app.json local estava com AF360 (maiusculo, sem hifen).\nCorrigido pra bater.",
+      "priority": "NORMAL",
+      "createdAt": "2026-08-07T18:00:49.664Z",
+      "updatedAt": "2026-08-07T18:04:48.354Z",
+      "completedAt": "2026-08-07T18:04:48.040Z",
+      "expirationDate": "2026-09-06T18:00:49.713Z",
+      "isForIosSimulator": false,
+      "metrics": {
+        "buildWaitTime": 2624,
+        "buildQueueTime": 9848,
+        "buildDuration": 225904
+      }
+    }
+  }
+]
