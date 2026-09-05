@@ -52,6 +52,15 @@ async function request(path: string, options: { method?: string; body?: unknown 
     clearTimeout(timeoutId);
   }
 
+  // 304 (Not Modified) é resposta válida de cache, não erro — mas
+  // response.ok é false pra ela e o corpo vem vazio. Sem esse desvio,
+  // o .json() falhava, caía em null e a gente lançava ApiError("Erro 304")
+  // no meio do carregamento de tela, derrubando o app sem aviso nenhum
+  // (foi o que travava o login de contas com ficha de colaborador vinculada).
+  if (response.status === 304) {
+    return { ok: true };
+  }
+
   const json = await response.json().catch(() => null);
 
   if (!response.ok || !json || json.ok === false) {

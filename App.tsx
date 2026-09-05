@@ -3492,6 +3492,11 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
         colors={['#253F91', '#4C3A95']}
         style={[styles.selectPanelHero, { paddingTop: 16 + insets.top }]}
       >
+        <Pressable style={styles.selectPanelBackRow} onPress={() => navigation.replace('Login')}>
+          <Feather name="chevron-left" size={18} color="#FFFFFF" />
+          <Text style={styles.selectPanelBackText}>Voltar ao login</Text>
+        </Pressable>
+
         <View style={styles.selectPanelHeroTitleRow}>
           <Text style={styles.selectPanelHeroTitle}>Entrar como...</Text>
           <View style={styles.selectPanelHeroIconShell}>
@@ -17727,6 +17732,18 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
+  },
+  selectPanelBackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginBottom: 16,
+  },
+  selectPanelBackText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 2,
   },
   selectPanelHeroTitleRow: {
     flexDirection: 'row',
