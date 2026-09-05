@@ -169,7 +169,14 @@ router.get('/', async (req, res) => {
         return res.json({ ok: true, data: json?.data ?? json ?? {} });
       }
       case 'leva-frentistas': {
-        const json = await getLevaMais({ recurso: 'frentistas' }, actorId);
+        // Mesmo ajuste que a Lovable aplicou no painel web em 05/09: o
+        // ranking só vem com atribuição de verdade quando manda o mesmo
+        // periodo/loja usados no restante da tela (antes pedia sem filtro
+        // nenhum e a API devolvia tudo zerado/sem nome).
+        const json = await getLevaMais(
+          { recurso: 'frentistas', startDate: params.startDate, endDate: params.endDate, storeId: params.storeId },
+          actorId
+        );
         return res.json({ ok: true, data: json?.data ?? json ?? {} });
       }
       case 'leva-status': {

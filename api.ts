@@ -7809,17 +7809,39 @@ export async function fetchMarketingLevaMaisLojas(): Promise<MarketingLevaMaisLo
 export type MarketingLevaMaisFrentista = {
   posicao?: number;
   nome: string | null;
+  // Código do frentista (ex.: "11_REDEAMERICANFUEL") — a Lovable confirmou
+  // em 05/09 que a API da Leva+ ainda não atribui vendas a um frentista de
+  // verdade (nome/posto/pontos vêm nulos/zerados pra todo mundo), só o
+  // código cadastrado na integração. Usamos como identificador de fallback
+  // pra pelo menos diferenciar as linhas, em vez de mostrar tudo "—".
+  codigo: string | null;
   posto: string | null;
   cadastros: number;
   cashbackGerado: number;
   pontos: number;
 };
 
-export async function fetchMarketingLevaMaisFrentistas(): Promise<MarketingLevaMaisFrentista[]> {
+function mapMarketingLevaMaisFrentista(raw: Record<string, unknown>): MarketingLevaMaisFrentista {
+  return {
+    nome: (raw.nome as string) ?? (raw.name as string) ?? null,
+    codigo: (raw.codigo as string) ?? (raw.attendantCode as string) ?? null,
+    posto: (raw.posto as string) ?? (raw.storeName as string) ?? null,
+    cadastros: Number(raw.cadastros ?? raw.clientsRegistered ?? 0) || 0,
+    cashbackGerado: Number(raw.cashbackGerado ?? raw.pointsGeneratedByClients ?? 0) || 0,
+    pontos: Number(raw.pontos ?? raw.attendantPoints ?? 0) || 0,
+  };
+}
+
+export async function fetchMarketingLevaMaisFrentistas(filtro: {
+  startDate: string;
+  endDate: string;
+  storeId?: string;
+}): Promise<MarketingLevaMaisFrentista[]> {
   const { data } = await fetchMarketingRecurso<
-    MarketingLevaMaisFrentista[] | { frentistas: MarketingLevaMaisFrentista[] }
-  >('leva-frentistas');
-  return Array.isArray(data) ? data : (data as { frentistas?: MarketingLevaMaisFrentista[] })?.frentistas ?? [];
+    Record<string, unknown>[] | { frentistas: Record<string, unknown>[] }
+  >('leva-frentistas', { startDate: filtro.startDate, endDate: filtro.endDate, storeId: filtro.storeId });
+  const rows = Array.isArray(data) ? data : (data as { frentistas?: Record<string, unknown>[] })?.frentistas ?? [];
+  return rows.map(mapMarketingLevaMaisFrentista);
 }
 
 export type MarketingLevaMaisStatus = {

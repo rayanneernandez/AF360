@@ -3274,9 +3274,6 @@ export function MarketingLevaMaisScreen({ navigation }: ScreenProps<'MarketingLe
     fetchMarketingLevaMaisLojas()
       .then(setLojas)
       .catch(() => setLojas([]));
-    fetchMarketingLevaMaisFrentistas()
-      .then(setFrentistas)
-      .catch(() => setFrentistas([]));
     fetchMarketingLevaMaisStatus()
       .then(setStatusGeral)
       .catch(() => setStatusGeral({}));
@@ -3286,11 +3283,27 @@ export function MarketingLevaMaisScreen({ navigation }: ScreenProps<'MarketingLe
     setIsLoading(true);
     setErrorMessage(null);
     const { dataInicial, dataFinal } = mktPeriodoDatas(periodo, refMes, refAno);
-    fetchMarketingLevaMaisMetricas({ startDate: dataInicial, endDate: dataFinal, storeId: lojaSelecionada ?? undefined })
+    const filtro = { startDate: dataInicial, endDate: dataFinal, storeId: lojaSelecionada ?? undefined };
+    fetchMarketingLevaMaisMetricas(filtro)
       .then(setMetricas)
       .catch((err) => setErrorMessage(showMktError(err, 'Não foi possível carregar as métricas do Leva+.')))
       .finally(() => setIsLoading(false));
+    // O ranking de frentistas só vem com atribuição de verdade quando manda
+    // o mesmo período/loja da tela (confirmado pela Lovable em 05/09) — por
+    // isso recarrega junto, e não só uma vez no mount.
+    fetchMarketingLevaMaisFrentistas(filtro)
+      .then(setFrentistas)
+      .catch(() => setFrentistas([]));
   }, [periodo, refMes, refAno, lojaSelecionada]);
+
+  // A API da Leva+ ainda não atribui as vendas a um frentista (nome/posto/
+  // pontos vêm nulos e zerados pra todo mundo, só o código da integração vem
+  // preenchido) — nesse caso mostramos um aviso explicando o motivo em vez
+  // de 15 linhas em branco.
+  const frentistasComAtividade = frentistas.filter(
+    (f) => f.cadastros > 0 || f.cashbackGerado > 0 || f.pontos > 0
+  );
+  const frentistasSemAtribuicao = frentistas.length > 0 && frentistasComAtividade.length === 0;
 
   const lojaLabel = lojaSelecionada ? lojas.find((l) => l.storeId === lojaSelecionada)?.storeName ?? 'Loja' : `Todas as Lojas (${lojas.length})`;
   const lojaOptions = useMemo(
@@ -3440,12 +3453,14 @@ export function MarketingLevaMaisScreen({ navigation }: ScreenProps<'MarketingLe
 
             <View style={{ height: 8 }} />
             <Text style={mkStyles.sectionTitle}>Ranking de frentistas</Text>
-            {frentistas.length === 0 ? (
+            {frentistasSemAtribuicao ? (
+              <MktEmptyState message="A Leva+ ainda não atribuiu essas vendas a um frentista (falta o cadastro código → nome/loja do lado da integração)." />
+            ) : frentistasComAtividade.length === 0 ? (
               <MktEmptyState message="Nenhum frentista com movimento ainda." />
             ) : (
-              frentistas.slice(0, 15).map((f, idx) => (
+              frentistasComAtividade.slice(0, 15).map((f, idx) => (
                 <View key={idx} style={mkStyles.rankingRow}>
-                  <Text style={mkStyles.listRowMeta}>{idx + 1}. {f.nome ?? '—'}</Text>
+                  <Text style={mkStyles.listRowMeta}>{idx + 1}. {f.nome ?? f.codigo ?? '—'}</Text>
                   <Text style={mkStyles.listRowValue}>{formatBRL(f.cashbackGerado)}</Text>
                 </View>
               ))
