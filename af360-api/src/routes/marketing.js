@@ -1,6 +1,18 @@
 const express = require('express');
 const {
   getMarketingDashboard,
+  getMarketingConfig,
+  getMarketingSla,
+  patchMarketingSla,
+  getMarketingHorario,
+  patchMarketingHorario,
+  getMarketingFeriados,
+  postMarketingFeriado,
+  patchMarketingFeriado,
+  deleteMarketingFeriado,
+  postMarketingFeriadosNacionais,
+  getMarketingIntegracoes,
+  patchMarketingIntegracao,
   getMarketingOcorrencias,
   getMarketingOcorrencia,
   postMarketingOcorrencia,
@@ -183,6 +195,28 @@ router.get('/', async (req, res) => {
         const json = await getLevaMais({ recurso: 'status' }, actorId);
         return res.json({ ok: true, data: json?.data ?? json ?? {} });
       }
+      case 'config': {
+        const json = await getMarketingConfig(actorId);
+        return res.json({ ok: true, data: json?.data ?? json ?? {} });
+      }
+      case 'sla': {
+        const json = await getMarketingSla(actorId);
+        return res.json({ ok: true, data: json?.data ?? json ?? {} });
+      }
+      case 'horario': {
+        const json = await getMarketingHorario(actorId);
+        return res.json({ ok: true, data: json?.data ?? json ?? {} });
+      }
+      case 'feriados': {
+        const json = await getMarketingFeriados(actorId);
+        const { rows, count } = extractArrayPayload(json);
+        return res.json({ ok: true, count, data: rows });
+      }
+      case 'integracoes': {
+        const json = await getMarketingIntegracoes(actorId);
+        const { rows, count } = extractArrayPayload(json);
+        return res.json({ ok: true, count, data: rows });
+      }
       default:
         return res.status(400).json({ ok: false, error: 'recurso_invalido' });
     }
@@ -341,6 +375,90 @@ router.delete('/wa-resposta', async (req, res) => {
     res.json({ ok: true, data: null });
   } catch (err) {
     console.error('[marketing/wa-resposta DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// --- Configurações (SLA, horário de atendimento, feriados, integrações) ---
+
+// PATCH /api/marketing/sla?actorId= — body parcial, ex.: { alta: { resposta, resolucao } }.
+router.patch('/sla', async (req, res) => {
+  try {
+    const json = await patchMarketingSla(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/sla PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/marketing/horario?actorId= — body parcial, ex.: { "1": { ativo, inicio, fim } }.
+router.patch('/horario', async (req, res) => {
+  try {
+    const json = await patchMarketingHorario(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/horario PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/marketing/feriado?actorId= — body: { data*, nome*, sem_expediente?, inicio?, fim? }.
+router.post('/feriado', async (req, res) => {
+  try {
+    const json = await postMarketingFeriado(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/feriado POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/marketing/feriado?actorId=&data=2026-09-07 — body: { nome?, sem_expediente?, inicio?, fim?, data? }.
+router.patch('/feriado', async (req, res) => {
+  try {
+    if (!req.query.data) return res.status(400).json({ ok: false, error: 'data_obrigatoria' });
+    const json = await patchMarketingFeriado(req.query.data, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/feriado PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/marketing/feriado?actorId=&data=2026-09-07
+router.delete('/feriado', async (req, res) => {
+  try {
+    if (!req.query.data) return res.status(400).json({ ok: false, error: 'data_obrigatoria' });
+    await deleteMarketingFeriado(req.query.data, req.query.actorId);
+    res.json({ ok: true, data: null });
+  } catch (err) {
+    console.error('[marketing/feriado DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/marketing/feriados-nacionais?actorId= — body: { ano }.
+router.post('/feriados-nacionais', async (req, res) => {
+  try {
+    const ano = req.body?.ano;
+    if (!ano) return res.status(400).json({ ok: false, error: 'ano_obrigatorio' });
+    const json = await postMarketingFeriadosNacionais(ano, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/feriados-nacionais POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// PATCH /api/marketing/integracao?actorId=&plataforma=google_meu_negocio — body: { ativo?, config?: {...} }.
+router.patch('/integracao', async (req, res) => {
+  try {
+    if (!req.query.plataforma) return res.status(400).json({ ok: false, error: 'plataforma_obrigatoria' });
+    const json = await patchMarketingIntegracao(req.query.plataforma, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[marketing/integracao PATCH] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });

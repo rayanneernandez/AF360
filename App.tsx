@@ -111,6 +111,7 @@ import {
   MarketingGoogleScreen,
   MarketingNotificationsScreen,
   MarketingLevaMaisScreen,
+  MarketingConfiguracoesScreen,
 } from './Marketing';
 import {
   AdminDashboardScreen,
@@ -318,6 +319,7 @@ export type RootStackParamList = {
   MarketingGoogle: undefined;
   MarketingNotifications: undefined;
   MarketingLevaMais: undefined;
+  MarketingConfiguracoes: undefined;
 };
 
 export type ScreenProps<RouteName extends keyof RootStackParamList> = NativeStackScreenProps<
@@ -571,6 +573,7 @@ export type MarketingSideMenuRoute =
   | 'MarketingGoogle'
   | 'MarketingNotifications'
   | 'MarketingLevaMais'
+  | 'MarketingConfiguracoes'
   | 'MarketingProfile';
 
 type SummaryCardItem = {
@@ -1713,6 +1716,10 @@ export const marketingSideMenuSections: Array<{
   {
     title: 'FIDELIDADE',
     items: [{ id: 'marketing-leva-mais', label: 'Leva+', icon: 'heart', route: 'MarketingLevaMais' }],
+  },
+  {
+    title: 'ADMINISTRAÇÃO',
+    items: [{ id: 'marketing-configuracoes', label: 'Configurações', icon: 'settings', route: 'MarketingConfiguracoes' }],
   },
 ];
 
@@ -3077,6 +3084,7 @@ export default function App() {
                     <Stack.Screen name="MarketingGoogle" component={MarketingGoogleScreen} />
                     <Stack.Screen name="MarketingNotifications" component={MarketingNotificationsScreen} />
                     <Stack.Screen name="MarketingLevaMais" component={MarketingLevaMaisScreen} />
+                    <Stack.Screen name="MarketingConfiguracoes" component={MarketingConfiguracoesScreen} />
                   </Stack.Navigator>
 
                   {isMenuOpen ? (

@@ -7855,3 +7855,107 @@ export async function fetchMarketingLevaMaisStatus(): Promise<Partial<MarketingL
   const { data } = await fetchMarketingRecurso<Partial<MarketingLevaMaisStatus>>('leva-status');
   return data ?? {};
 }
+
+// --- Configurações (SLA, horário de atendimento, feriados, integrações) —
+// endpoints confirmados pela Lovable em 06/09/2026, todos novos no proxy
+// interno (a tela web gravava direto no banco antes disso). ---
+
+export type MarketingSlaPrioridade = { resposta: number; resolucao: number };
+export type MarketingSla = {
+  baixa: MarketingSlaPrioridade;
+  media: MarketingSlaPrioridade;
+  alta: MarketingSlaPrioridade;
+  urgente: MarketingSlaPrioridade;
+};
+
+export async function fetchMarketingSla(): Promise<MarketingSla> {
+  const { data } = await fetchMarketingRecurso<MarketingSla>('sla');
+  return data;
+}
+
+export async function updateMarketingSla(patch: Partial<Record<keyof MarketingSla, Partial<MarketingSlaPrioridade>>>): Promise<MarketingSla> {
+  const json = await api.patch('/api/marketing/sla', patch);
+  return json.data as MarketingSla;
+}
+
+// Chave "0" (domingo) a "6" (sábado).
+export type MarketingHorarioDia = { ativo: boolean; inicio: string; fim: string };
+export type MarketingHorario = Record<string, MarketingHorarioDia>;
+
+export async function fetchMarketingHorario(): Promise<MarketingHorario> {
+  const { data } = await fetchMarketingRecurso<MarketingHorario>('horario');
+  return data ?? {};
+}
+
+export async function updateMarketingHorario(patch: Record<string, Partial<MarketingHorarioDia>>): Promise<MarketingHorario> {
+  const json = await api.patch('/api/marketing/horario', patch);
+  return json.data as MarketingHorario;
+}
+
+export type MarketingFeriado = {
+  data: string;
+  nome: string;
+  sem_expediente: boolean;
+  expediente?: boolean;
+  inicio?: string | null;
+  fim?: string | null;
+};
+
+export async function fetchMarketingFeriados(): Promise<MarketingFeriado[]> {
+  const { data } = await fetchMarketingRecurso<MarketingFeriado[] | { itens: MarketingFeriado[] }>('feriados');
+  return Array.isArray(data) ? data : (data as { itens?: MarketingFeriado[] })?.itens ?? [];
+}
+
+export async function createMarketingFeriado(body: {
+  data: string;
+  nome: string;
+  sem_expediente?: boolean;
+  inicio?: string;
+  fim?: string;
+}): Promise<MarketingFeriado> {
+  const json = await api.post('/api/marketing/feriado', body);
+  return json.data as MarketingFeriado;
+}
+
+export async function updateMarketingFeriado(
+  data: string,
+  body: { nome?: string; sem_expediente?: boolean; inicio?: string; fim?: string; data?: string }
+): Promise<MarketingFeriado> {
+  const json = await api.patch(`/api/marketing/feriado?data=${encodeURIComponent(data)}`, body);
+  return json.data as MarketingFeriado;
+}
+
+export async function deleteMarketingFeriado(data: string): Promise<void> {
+  await api.delete(`/api/marketing/feriado?data=${encodeURIComponent(data)}`);
+}
+
+export async function createMarketingFeriadosNacionais(ano: number): Promise<{ adicionados: number; total: number }> {
+  const json = await api.post('/api/marketing/feriados-nacionais', { ano });
+  return { adicionados: json.data?.adicionados ?? 0, total: json.data?.total ?? 0 };
+}
+
+export type MarketingIntegracaoCampo = { key: string; label: string; placeholder?: string };
+export type MarketingIntegracao = {
+  id: string;
+  plataforma: string;
+  nome: string;
+  descricao: string | null;
+  ativo: boolean;
+  config: Record<string, string | null>;
+  campos: MarketingIntegracaoCampo[];
+  status: string | null;
+  ultima_sincronizacao: string | null;
+};
+
+export async function fetchMarketingIntegracoes(): Promise<MarketingIntegracao[]> {
+  const { data } = await fetchMarketingRecurso<MarketingIntegracao[] | { itens: MarketingIntegracao[] }>('integracoes');
+  return Array.isArray(data) ? data : (data as { itens?: MarketingIntegracao[] })?.itens ?? [];
+}
+
+export async function updateMarketingIntegracao(
+  plataforma: string,
+  body: { ativo?: boolean; config?: Record<string, string | null> }
+): Promise<MarketingIntegracao> {
+  const json = await api.patch(`/api/marketing/integracao?plataforma=${encodeURIComponent(plataforma)}`, body);
+  return json.data as MarketingIntegracao;
+}

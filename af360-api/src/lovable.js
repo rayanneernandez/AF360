@@ -1985,6 +1985,46 @@ function getMarketingDashboard(params, actorId) {
   return lovableGet('/api/public/internal/marketing', { recurso: 'dashboard', ...params }, actorId);
 }
 
+// --- Configurações (SLA, horário de atendimento, feriados, integrações) ---
+// Endpoints confirmados pela Lovable em 06/09/2026 — antes a tela web
+// gravava direto no banco, esses recursos são novos no proxy interno.
+function getMarketingConfig(actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'config' }, actorId);
+}
+function getMarketingSla(actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'sla' }, actorId);
+}
+function patchMarketingSla(body, actorId) {
+  return lovablePatch('/api/public/internal/marketing', { recurso: 'sla' }, body, actorId);
+}
+function getMarketingHorario(actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'horario' }, actorId);
+}
+function patchMarketingHorario(body, actorId) {
+  return lovablePatch('/api/public/internal/marketing', { recurso: 'horario' }, body, actorId);
+}
+function getMarketingFeriados(actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'feriados' }, actorId);
+}
+function postMarketingFeriado(body, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'feriado' }, body, actorId);
+}
+function patchMarketingFeriado(data, body, actorId) {
+  return lovablePatch('/api/public/internal/marketing', { recurso: 'feriado', data }, body, actorId);
+}
+function deleteMarketingFeriado(data, actorId) {
+  return lovableDelete('/api/public/internal/marketing', { recurso: 'feriado', data }, actorId);
+}
+function postMarketingFeriadosNacionais(ano, actorId) {
+  return lovablePost('/api/public/internal/marketing', { recurso: 'feriados-nacionais' }, { ano }, actorId);
+}
+function getMarketingIntegracoes(actorId) {
+  return lovableGet('/api/public/internal/marketing', { recurso: 'integracoes' }, actorId);
+}
+function patchMarketingIntegracao(plataforma, body, actorId) {
+  return lovablePatch('/api/public/internal/marketing', { recurso: 'integracao', plataforma }, body, actorId);
+}
+
 // --- Ocorrências (atendimento) ---
 // params: q, status, canal, prioridade, responsavel, dataInicial, dataFinal, limit, offset.
 function getMarketingOcorrencias(params, actorId) {
@@ -2403,6 +2443,18 @@ module.exports = {
   postAdministrativoFrotaEvento,
   getAdministrativoFrotaEventos,
   getMarketingDashboard,
+  getMarketingConfig,
+  getMarketingSla,
+  patchMarketingSla,
+  getMarketingHorario,
+  patchMarketingHorario,
+  getMarketingFeriados,
+  postMarketingFeriado,
+  patchMarketingFeriado,
+  deleteMarketingFeriado,
+  postMarketingFeriadosNacionais,
+  getMarketingIntegracoes,
+  patchMarketingIntegracao,
   getMarketingOcorrencias,
   getMarketingOcorrencia,
   postMarketingOcorrencia,

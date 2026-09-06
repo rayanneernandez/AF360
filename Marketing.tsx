@@ -96,6 +96,21 @@ import {
   createMarketingNotifTemplate,
   updateMarketingNotifTemplate,
   deleteMarketingNotifTemplate,
+  fetchMarketingSla,
+  updateMarketingSla,
+  fetchMarketingHorario,
+  updateMarketingHorario,
+  fetchMarketingFeriados,
+  createMarketingFeriado,
+  updateMarketingFeriado,
+  deleteMarketingFeriado,
+  createMarketingFeriadosNacionais,
+  fetchMarketingIntegracoes,
+  updateMarketingIntegracao,
+  type MarketingSla,
+  type MarketingHorario,
+  type MarketingFeriado,
+  type MarketingIntegracao,
   type MarketingDashboardData,
   type MarketingOcorrenciaItem,
   type MarketingOcorrenciaFiltro,
@@ -3933,6 +3948,391 @@ export function MarketingProfileScreen({ navigation }: ScreenProps<'MarketingPro
   );
 }
 
+// --- 8. Configurações (SLA, horário de atendimento, feriados, integrações) ---
+
+const MKT_DIAS_SEMANA: Array<{ key: string; label: string }> = [
+  { key: '1', label: 'Segunda' },
+  { key: '2', label: 'Terça' },
+  { key: '3', label: 'Quarta' },
+  { key: '4', label: 'Quinta' },
+  { key: '5', label: 'Sexta' },
+  { key: '6', label: 'Sábado' },
+  { key: '0', label: 'Domingo' },
+];
+
+const MKT_SLA_PRIORIDADES: Array<{ key: keyof MarketingSla; label: string }> = [
+  { key: 'baixa', label: 'Baixa' },
+  { key: 'media', label: 'Média' },
+  { key: 'alta', label: 'Alta' },
+  { key: 'urgente', label: 'Urgente' },
+];
+
+const MKT_INTEGRACAO_LABEL: Record<string, string> = {
+  google_meu_negocio: 'Google Meu Negócio',
+  reclame_aqui: 'Reclame Aqui',
+  facebook: 'Meta — Facebook',
+  instagram: 'Meta — Instagram',
+  whatsapp: 'Meta — WhatsApp',
+  fidelidade: 'Fidelidade',
+};
+
+export function MarketingConfiguracoesScreen({ navigation }: ScreenProps<'MarketingConfiguracoes'>) {
+  const [aba, setAba] = useState<'geral' | 'integracoes'>('geral');
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [sla, setSla] = useState<MarketingSla | null>(null);
+  const [horario, setHorario] = useState<MarketingHorario>({});
+  const [feriados, setFeriados] = useState<MarketingFeriado[]>([]);
+  const [integracoes, setIntegracoes] = useState<MarketingIntegracao[]>([]);
+
+  const [isSavingSla, setIsSavingSla] = useState(false);
+  const [isSavingHorario, setIsSavingHorario] = useState(false);
+  const [novoFeriadoData, setNovoFeriadoData] = useState('');
+  const [novoFeriadoNome, setNovoFeriadoNome] = useState('');
+  const [isAddingFeriado, setIsAddingFeriado] = useState(false);
+  const [isAddingNacionais, setIsAddingNacionais] = useState(false);
+  const [integracaoEdits, setIntegracaoEdits] = useState<Record<string, Record<string, string>>>({});
+  const [salvandoIntegracao, setSalvandoIntegracao] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    Promise.all([fetchMarketingSla(), fetchMarketingHorario(), fetchMarketingFeriados(), fetchMarketingIntegracoes()])
+      .then(([slaData, horarioData, feriadosData, integracoesData]) => {
+        setSla(slaData);
+        setHorario(horarioData);
+        setFeriados(feriadosData);
+        setIntegracoes(integracoesData);
+        const edits: Record<string, Record<string, string>> = {};
+        integracoesData.forEach((item) => {
+          edits[item.plataforma] = { ...item.config } as Record<string, string>;
+        });
+        setIntegracaoEdits(edits);
+      })
+      .catch((err) => setErrorMessage(showMktError(err, 'Não foi possível carregar as configurações.')))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleChangeSla = (prioridade: keyof MarketingSla, campo: 'resposta' | 'resolucao', valor: string) => {
+    setSla((prev) => {
+      if (!prev) return prev;
+      const numero = Number(valor.replace(/[^0-9]/g, '')) || 0;
+      return { ...prev, [prioridade]: { ...prev[prioridade], [campo]: numero } };
+    });
+  };
+
+  const handleSalvarSla = () => {
+    if (!sla) return;
+    setIsSavingSla(true);
+    updateMarketingSla(sla)
+      .then((data) => {
+        setSla(data);
+        Alert.alert('Pronto', 'SLA de atendimento atualizado.');
+      })
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível salvar o SLA.')))
+      .finally(() => setIsSavingSla(false));
+  };
+
+  const handleChangeHorario = (dia: string, campo: 'ativo' | 'inicio' | 'fim', valor: string | boolean) => {
+    setHorario((prev) => ({
+      ...prev,
+      [dia]: { ...(prev[dia] ?? { ativo: false, inicio: '08:00', fim: '18:00' }), [campo]: valor } as MarketingHorario[string],
+    }));
+  };
+
+  const handleSalvarHorario = () => {
+    setIsSavingHorario(true);
+    updateMarketingHorario(horario)
+      .then((data) => {
+        setHorario(data);
+        Alert.alert('Pronto', 'Horário de atendimento atualizado.');
+      })
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível salvar o horário.')))
+      .finally(() => setIsSavingHorario(false));
+  };
+
+  const handleToggleFeriadoExpediente = (data: string, semExpedienteAtual: boolean) => {
+    setFeriados((prev) => prev.map((f) => (f.data === data ? { ...f, sem_expediente: !semExpedienteAtual } : f)));
+    updateMarketingFeriado(data, { sem_expediente: !semExpedienteAtual }).catch((err) => {
+      setFeriados((prev) => prev.map((f) => (f.data === data ? { ...f, sem_expediente: semExpedienteAtual } : f)));
+      Alert.alert('Erro', showMktError(err, 'Não foi possível atualizar o feriado.'));
+    });
+  };
+
+  const handleExcluirFeriado = (data: string, nome: string) => {
+    Alert.alert('Excluir feriado', `Remover "${nome}" da lista?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteMarketingFeriado(data)
+            .then(() => setFeriados((prev) => prev.filter((f) => f.data !== data)))
+            .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível excluir o feriado.')));
+        },
+      },
+    ]);
+  };
+
+  const handleAdicionarFeriado = () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(novoFeriadoData.trim())) {
+      Alert.alert('Data inválida', 'Use o formato AAAA-MM-DD, ex.: 2026-12-25.');
+      return;
+    }
+    if (!novoFeriadoNome.trim()) {
+      Alert.alert('Nome obrigatório', 'Informe o nome do feriado.');
+      return;
+    }
+    setIsAddingFeriado(true);
+    createMarketingFeriado({ data: novoFeriadoData.trim(), nome: novoFeriadoNome.trim() })
+      .then((novo) => {
+        setFeriados((prev) => [...prev, novo].sort((a, b) => a.data.localeCompare(b.data)));
+        setNovoFeriadoData('');
+        setNovoFeriadoNome('');
+      })
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível adicionar o feriado.')))
+      .finally(() => setIsAddingFeriado(false));
+  };
+
+  const handleAdicionarFeriadosNacionais = () => {
+    const ano = new Date().getFullYear();
+    setIsAddingNacionais(true);
+    createMarketingFeriadosNacionais(ano)
+      .then((resultado) => {
+        Alert.alert('Pronto', `${resultado.adicionados} feriado(s) nacional(is) de ${ano} adicionado(s).`);
+        load();
+      })
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível adicionar os feriados nacionais.')))
+      .finally(() => setIsAddingNacionais(false));
+  };
+
+  const handleChangeIntegracaoCampo = (plataforma: string, campo: string, valor: string) => {
+    setIntegracaoEdits((prev) => ({ ...prev, [plataforma]: { ...prev[plataforma], [campo]: valor } }));
+  };
+
+  const handleToggleIntegracaoAtivo = (item: MarketingIntegracao) => {
+    setIntegracoes((prev) => prev.map((i) => (i.plataforma === item.plataforma ? { ...i, ativo: !i.ativo } : i)));
+    updateMarketingIntegracao(item.plataforma, { ativo: !item.ativo }).catch((err) => {
+      setIntegracoes((prev) => prev.map((i) => (i.plataforma === item.plataforma ? { ...i, ativo: item.ativo } : i)));
+      Alert.alert('Erro', showMktError(err, 'Não foi possível atualizar a integração.'));
+    });
+  };
+
+  const handleSalvarIntegracao = (item: MarketingIntegracao) => {
+    setSalvandoIntegracao(item.plataforma);
+    updateMarketingIntegracao(item.plataforma, { config: integracaoEdits[item.plataforma] ?? {} })
+      .then((data) => {
+        setIntegracoes((prev) => prev.map((i) => (i.plataforma === item.plataforma ? data : i)));
+        Alert.alert('Pronto', `${item.nome} atualizado.`);
+      })
+      .catch((err) => Alert.alert('Erro', showMktError(err, 'Não foi possível salvar a integração.')))
+      .finally(() => setSalvandoIntegracao(null));
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={marketingUserInitials} variant="marketing" onAvatarPress={() => navigation.navigate('MarketingProfile')} />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <MktPageHeader icon="settings" title="Configurações" subtitle="Parâmetros do módulo, SLA e conexões com plataformas externas." />
+
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+          <Pressable
+            style={[mkStyles.waAbaPill, { flex: 1 }, aba === 'geral' ? mkStyles.waAbaPillActive : null]}
+            onPress={() => setAba('geral')}
+          >
+            <Text style={[mkStyles.waAbaPillText, aba === 'geral' ? mkStyles.waAbaPillTextActive : null]}>Geral</Text>
+          </Pressable>
+          <Pressable
+            style={[mkStyles.waAbaPill, { flex: 1 }, aba === 'integracoes' ? mkStyles.waAbaPillActive : null]}
+            onPress={() => setAba('integracoes')}
+          >
+            <Text style={[mkStyles.waAbaPillText, aba === 'integracoes' ? mkStyles.waAbaPillTextActive : null]}>Integrações</Text>
+          </Pressable>
+        </View>
+
+        {isLoading ? (
+          <ActivityIndicator color="#C2255C" style={{ marginTop: 20 }} />
+        ) : errorMessage ? (
+          <MktEmptyState message={errorMessage} />
+        ) : aba === 'geral' ? (
+          <>
+            <View style={mkStyles.chartCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <Text style={mkStyles.sectionTitle}>SLA de atendimento</Text>
+                <Pressable style={mkStyles.cfgSaveBtn} onPress={handleSalvarSla} disabled={isSavingSla}>
+                  {isSavingSla ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={mkStyles.cfgSaveBtnText}>Salvar SLA</Text>}
+                </Pressable>
+              </View>
+              <Text style={[mkStyles.listRowMeta, { marginBottom: 10 }]}>Tempo (em horas úteis) para 1ª resposta e resolução, por prioridade.</Text>
+              {sla
+                ? MKT_SLA_PRIORIDADES.map((p) => (
+                    <View key={p.key} style={mkStyles.cfgSlaRow}>
+                      <Text style={mkStyles.cfgSlaLabel}>{p.label}</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, flex: 1 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={mkStyles.formLabel}>1ª resposta (h)</Text>
+                          <TextInput
+                            style={mkStyles.formInput}
+                            keyboardType="numeric"
+                            value={String(sla[p.key]?.resposta ?? 0)}
+                            onChangeText={(v) => handleChangeSla(p.key, 'resposta', v)}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={mkStyles.formLabel}>Resolução (h)</Text>
+                          <TextInput
+                            style={mkStyles.formInput}
+                            keyboardType="numeric"
+                            value={String(sla[p.key]?.resolucao ?? 0)}
+                            onChangeText={(v) => handleChangeSla(p.key, 'resolucao', v)}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  ))
+                : null}
+            </View>
+
+            <View style={mkStyles.chartCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <Text style={mkStyles.sectionTitle}>Horário de atendimento</Text>
+                <Pressable style={mkStyles.cfgSaveBtn} onPress={handleSalvarHorario} disabled={isSavingHorario}>
+                  {isSavingHorario ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={mkStyles.cfgSaveBtnText}>Salvar horário</Text>}
+                </Pressable>
+              </View>
+              <Text style={[mkStyles.listRowMeta, { marginBottom: 10 }]}>O SLA só corre dentro do expediente — fora dele, o relógio congela.</Text>
+              {MKT_DIAS_SEMANA.map((dia) => {
+                const dados = horario[dia.key] ?? { ativo: false, inicio: '08:00', fim: '18:00' };
+                return (
+                  <View key={dia.key} style={mkStyles.cfgDayRow}>
+                    <ToggleSwitch value={dados.ativo} onValueChange={() => handleChangeHorario(dia.key, 'ativo', !dados.ativo)} />
+                    <Text style={mkStyles.cfgDayLabel}>{dia.label}</Text>
+                    <Text style={mkStyles.cfgDayStatus}>{dados.ativo ? 'Aberto' : 'Fechado'}</Text>
+                    {dados.ativo ? (
+                      <>
+                        <TextInput
+                          style={mkStyles.cfgTimeInput}
+                          value={dados.inicio}
+                          onChangeText={(v) => handleChangeHorario(dia.key, 'inicio', v)}
+                          placeholder="08:00"
+                        />
+                        <TextInput
+                          style={mkStyles.cfgTimeInput}
+                          value={dados.fim}
+                          onChangeText={(v) => handleChangeHorario(dia.key, 'fim', v)}
+                          placeholder="18:00"
+                        />
+                      </>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+
+            <View style={mkStyles.chartCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <Text style={mkStyles.sectionTitle}>Feriados</Text>
+                <Pressable style={mkStyles.cfgSaveBtn} onPress={handleAdicionarFeriadosNacionais} disabled={isAddingNacionais}>
+                  {isAddingNacionais ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={mkStyles.cfgSaveBtnText}>Adicionar nacionais {new Date().getFullYear()}</Text>
+                  )}
+                </Pressable>
+              </View>
+              <Text style={[mkStyles.listRowMeta, { marginBottom: 10 }]}>Marque se há expediente no feriado; quando não houver, o SLA não corre nesse dia.</Text>
+
+              {feriados.length === 0 ? (
+                <MktEmptyState message="Nenhum feriado cadastrado ainda." />
+              ) : (
+                feriados.map((f) => (
+                  <View key={f.data} style={mkStyles.cfgFeriadoRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={mkStyles.cfgFeriadoNome}>{f.nome}</Text>
+                      <Text style={mkStyles.listRowMeta}>{formatDiaCurto(f.data)}/{f.data.slice(0, 4)}</Text>
+                    </View>
+                    <ToggleSwitch value={f.sem_expediente} onValueChange={() => handleToggleFeriadoExpediente(f.data, f.sem_expediente)} />
+                    <Pressable onPress={() => handleExcluirFeriado(f.data, f.nome)} hitSlop={8} style={{ marginLeft: 10 }}>
+                      <Feather name="trash-2" size={16} color="#C2263A" />
+                    </Pressable>
+                  </View>
+                ))
+              )}
+
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                <TextInput
+                  style={[mkStyles.formInput, { flex: 1 }]}
+                  value={novoFeriadoData}
+                  onChangeText={setNovoFeriadoData}
+                  placeholder="AAAA-MM-DD"
+                  placeholderTextColor="#A7AEC2"
+                />
+                <TextInput
+                  style={[mkStyles.formInput, { flex: 2 }]}
+                  value={novoFeriadoNome}
+                  onChangeText={setNovoFeriadoNome}
+                  placeholder="Nome do feriado"
+                  placeholderTextColor="#A7AEC2"
+                />
+                <Pressable style={mkStyles.cfgAddBtn} onPress={handleAdicionarFeriado} disabled={isAddingFeriado}>
+                  {isAddingFeriado ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Feather name="plus" size={18} color="#FFFFFF" />}
+                </Pressable>
+              </View>
+            </View>
+          </>
+        ) : (
+          integracoes.map((item) => (
+            <View key={item.plataforma} style={mkStyles.chartCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <View>
+                  <Text style={mkStyles.sectionTitle}>{MKT_INTEGRACAO_LABEL[item.plataforma] ?? item.nome}</Text>
+                  {item.descricao ? <Text style={mkStyles.listRowMeta}>{item.descricao}</Text> : null}
+                </View>
+                <ToggleSwitch value={item.ativo} onValueChange={() => handleToggleIntegracaoAtivo(item)} />
+              </View>
+
+              {item.campos.map((campo) => (
+                <View key={campo.key} style={{ marginTop: 8 }}>
+                  <Text style={mkStyles.formLabel}>{campo.label}</Text>
+                  <TextInput
+                    style={mkStyles.formInput}
+                    value={integracaoEdits[item.plataforma]?.[campo.key] ?? ''}
+                    onChangeText={(v) => handleChangeIntegracaoCampo(item.plataforma, campo.key, v)}
+                    placeholder={campo.placeholder}
+                    placeholderTextColor="#A7AEC2"
+                    autoCapitalize="none"
+                  />
+                </View>
+              ))}
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                <Text style={mkStyles.listRowMeta}>
+                  {item.ultima_sincronizacao ? `Última sincronização: ${formatDateTimeBR(item.ultima_sincronizacao)}` : 'Nunca sincronizado.'}
+                </Text>
+                <Pressable style={mkStyles.cfgSaveBtn} onPress={() => handleSalvarIntegracao(item)} disabled={salvandoIntegracao === item.plataforma}>
+                  {salvandoIntegracao === item.plataforma ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={mkStyles.cfgSaveBtnText}>Salvar</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
 const mkStyles = StyleSheet.create({
   emptyCard: {
     backgroundColor: '#FFFFFF',
@@ -4257,6 +4657,84 @@ const mkStyles = StyleSheet.create({
     color: '#C2255C',
     fontSize: 11,
     fontWeight: '700',
+  },
+  cfgSaveBtn: {
+    backgroundColor: '#C2255C',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minWidth: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cfgSaveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  cfgSlaRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F2F6',
+  },
+  cfgSlaLabel: {
+    width: 64,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0C1736',
+  },
+  cfgDayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F2F6',
+  },
+  cfgDayLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0C1736',
+  },
+  cfgDayStatus: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#8891A6',
+    marginRight: 4,
+  },
+  cfgTimeInput: {
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 12,
+    color: '#0C1736',
+    width: 56,
+    textAlign: 'center',
+  },
+  cfgFeriadoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F2F6',
+  },
+  cfgFeriadoNome: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0C1736',
+  },
+  cfgAddBtn: {
+    backgroundColor: '#C2255C',
+    borderRadius: 10,
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   formLabel: {
     color: '#5E667D',
