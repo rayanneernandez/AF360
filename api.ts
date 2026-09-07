@@ -7959,3 +7959,463 @@ export async function updateMarketingIntegracao(
   const json = await api.patch(`/api/marketing/integracao?plataforma=${encodeURIComponent(plataforma)}`, body);
   return json.data as MarketingIntegracao;
 }
+
+// ============================================================
+// --- Recrutamento (R&S) — contrato confirmado pela Lovable em 07/09/2026.
+// Base do proxy: /api/recrutamento?recurso=... (mesmo padrão do Marketing).
+// ============================================================
+
+async function fetchRecrutamentoRecurso<T>(
+  recurso: string,
+  params: Record<string, string | number | boolean | undefined> = {}
+): Promise<{ data: T; count?: number } & Record<string, unknown>> {
+  const search = new URLSearchParams();
+  search.set('recurso', recurso);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === '') return;
+    search.set(key, String(value));
+  });
+  const json = await api.get(`/api/recrutamento?${search.toString()}`);
+  return json as { data: T; count?: number } & Record<string, unknown>;
+}
+
+// --- Dashboard ---
+
+export type RecrutamentoDashboard = {
+  snapshot: Record<string, unknown>;
+  periodo_atual: Record<string, unknown>;
+  funil: Record<string, unknown>;
+  serie: Array<Record<string, unknown>>;
+  top_vagas: Array<Record<string, unknown>>;
+  origem: Array<Record<string, unknown>>;
+  top_cidades: Array<Record<string, unknown>>;
+  distrib_genero: Array<Record<string, unknown>>;
+};
+
+export async function fetchRecrutamentoDashboard(filtro: {
+  mes?: number;
+  ano?: number;
+  modo?: 'mes' | 'ano';
+}): Promise<RecrutamentoDashboard> {
+  const { data } = await fetchRecrutamentoRecurso<Partial<RecrutamentoDashboard>>('dashboard', filtro);
+  return {
+    snapshot: data.snapshot ?? {},
+    periodo_atual: data.periodo_atual ?? {},
+    funil: data.funil ?? {},
+    serie: data.serie ?? [],
+    top_vagas: data.top_vagas ?? [],
+    origem: data.origem ?? [],
+    top_cidades: data.top_cidades ?? [],
+    distrib_genero: data.distrib_genero ?? [],
+  };
+}
+
+// --- Vagas ---
+
+export type RecrutamentoVaga = {
+  id: string;
+  titulo: string;
+  empresa_id: string | null;
+  empresa_nome?: string | null;
+  cidade: string | null;
+  uf: string | null;
+  modalidade: string | null;
+  senioridade: string | null;
+  status: string;
+  publicada_lp: boolean;
+  num_vagas?: number;
+  [key: string]: unknown;
+};
+
+export async function fetchRecrutamentoVagas(filtro: {
+  q?: string;
+  status?: string;
+  empresa_id?: string;
+  naLp?: boolean;
+} = {}): Promise<RecrutamentoVaga[]> {
+  const { data } = await fetchRecrutamentoRecurso<RecrutamentoVaga[] | { itens: RecrutamentoVaga[] }>('vagas', filtro);
+  return Array.isArray(data) ? data : (data as { itens?: RecrutamentoVaga[] })?.itens ?? [];
+}
+
+export async function fetchRecrutamentoVaga(id: string): Promise<RecrutamentoVaga> {
+  const { data } = await fetchRecrutamentoRecurso<RecrutamentoVaga>('vaga', { id });
+  return data;
+}
+
+export async function createRecrutamentoVaga(body: Record<string, unknown>): Promise<RecrutamentoVaga> {
+  const json = await api.post('/api/recrutamento/vaga', body);
+  return json.data as RecrutamentoVaga;
+}
+
+export async function updateRecrutamentoVaga(
+  id: string,
+  body: Record<string, unknown>,
+  acao?: 'pausar' | 'reabrir' | 'encerrar' | 'rascunho'
+): Promise<RecrutamentoVaga> {
+  const qs = new URLSearchParams({ id, ...(acao ? { acao } : {}) });
+  const json = await api.patch(`/api/recrutamento/vaga?${qs.toString()}`, body);
+  return json.data as RecrutamentoVaga;
+}
+
+export async function deleteRecrutamentoVaga(id: string): Promise<void> {
+  await api.delete(`/api/recrutamento/vaga?id=${encodeURIComponent(id)}`);
+}
+
+// --- Candidatos ---
+
+export type RecrutamentoCandidatoItem = {
+  id: string;
+  codigo: string;
+  nome: string;
+  tipo_vaga: string | null;
+  email: string | null;
+  whatsapp: string | null;
+  cidade: string | null;
+  bairro: string | null;
+  uf: string | null;
+  etapa: string | null;
+  alocado: boolean;
+  documentos: { aprovados: number; total: number };
+  [key: string]: unknown;
+};
+
+export type RecrutamentoCandidatoFiltro = {
+  q?: string;
+  profissao?: string;
+  cidade?: string;
+  bairro?: string;
+  uf?: string;
+  disponibilidade?: string;
+  origem?: string;
+  curriculo?: string;
+  ia?: string;
+  alocado?: boolean;
+  etapa?: string;
+  documentos?: string;
+  dataDe?: string;
+  dataAte?: string;
+};
+
+export async function fetchRecrutamentoCandidatos(filtro: RecrutamentoCandidatoFiltro = {}): Promise<RecrutamentoCandidatoItem[]> {
+  const { data } = await fetchRecrutamentoRecurso<
+    RecrutamentoCandidatoItem[] | { itens: RecrutamentoCandidatoItem[] }
+  >('candidatos', filtro);
+  return Array.isArray(data) ? data : (data as { itens?: RecrutamentoCandidatoItem[] })?.itens ?? [];
+}
+
+export type RecrutamentoCandidatoDetalhe = RecrutamentoCandidatoItem & {
+  etapas?: Array<Record<string, unknown>>;
+  historico?: Array<Record<string, unknown>>;
+  admissoes?: Array<Record<string, unknown>>;
+  avaliacoes?: Array<Record<string, unknown>>;
+};
+
+export async function fetchRecrutamentoCandidato(id: string): Promise<RecrutamentoCandidatoDetalhe> {
+  const { data } = await fetchRecrutamentoRecurso<RecrutamentoCandidatoDetalhe>('candidato', { id });
+  return data;
+}
+
+export async function createRecrutamentoCandidato(body: Record<string, unknown>): Promise<RecrutamentoCandidatoDetalhe> {
+  const json = await api.post('/api/recrutamento/candidato', body);
+  return json.data as RecrutamentoCandidatoDetalhe;
+}
+
+export async function updateRecrutamentoCandidato(id: string, body: Record<string, unknown>): Promise<RecrutamentoCandidatoDetalhe> {
+  const json = await api.patch(`/api/recrutamento/candidato?id=${encodeURIComponent(id)}`, body);
+  return json.data as RecrutamentoCandidatoDetalhe;
+}
+
+export async function deleteRecrutamentoCandidato(id: string): Promise<void> {
+  await api.delete(`/api/recrutamento/candidato?id=${encodeURIComponent(id)}`);
+}
+
+export async function moverRecrutamentoCandidatoEtapa(body: {
+  candidato_id: string;
+  vaga_id?: string;
+  etapa: string;
+}): Promise<void> {
+  await api.post('/api/recrutamento/mover-etapa', body);
+}
+
+export async function fetchRecrutamentoSugestaoIa(vagaId: string, limite = 10): Promise<RecrutamentoCandidatoItem[]> {
+  const json = await api.post('/api/recrutamento/sugestao-ia', { vaga_id: vagaId, limite });
+  return (json.data as RecrutamentoCandidatoItem[]) ?? [];
+}
+
+// --- Importar Currículo ---
+
+export type RecrutamentoImportacao = {
+  id: string;
+  nome_detectado: string | null;
+  email: string | null;
+  telefone: string | null;
+  status: string;
+  enviado_em: string | null;
+  [key: string]: unknown;
+};
+
+export async function importarRecrutamentoCurriculo(body: {
+  file_name: string;
+  file_base64: string;
+}): Promise<{ candidato_id: string | null; extraido: Record<string, unknown> }> {
+  const json = await api.post('/api/recrutamento/importar-curriculo', body);
+  return json.data as { candidato_id: string | null; extraido: Record<string, unknown> };
+}
+
+export async function fetchRecrutamentoImportacoes(): Promise<RecrutamentoImportacao[]> {
+  const { data } = await fetchRecrutamentoRecurso<
+    RecrutamentoImportacao[] | { itens: RecrutamentoImportacao[] }
+  >('importacoes');
+  return Array.isArray(data) ? data : (data as { itens?: RecrutamentoImportacao[] })?.itens ?? [];
+}
+
+export async function reprocessarRecrutamentoImportacao(id: string): Promise<void> {
+  await api.post(`/api/recrutamento/processar-importacao?id=${encodeURIComponent(id)}`);
+}
+
+// --- Pendências ---
+
+export type RecrutamentoPendencia = {
+  id: string;
+  candidato_nome?: string | null;
+  tipo?: string | null;
+  status: string;
+  criado_em?: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRecrutamentoPendencias(status?: string): Promise<RecrutamentoPendencia[]> {
+  const { data } = await fetchRecrutamentoRecurso<
+    RecrutamentoPendencia[] | { itens: RecrutamentoPendencia[] }
+  >('pendencias', { status });
+  return Array.isArray(data) ? data : (data as { itens?: RecrutamentoPendencia[] })?.itens ?? [];
+}
+
+export async function aprovarRecrutamentoPendencia(id: string, dias = 7): Promise<{ link: string; expira_em: string }> {
+  const json = await api.post(`/api/recrutamento/pendencia?id=${encodeURIComponent(id)}&acao=aprovar`, { dias });
+  return json.data as { link: string; expira_em: string };
+}
+
+export async function recusarRecrutamentoPendencia(id: string, motivo: string): Promise<void> {
+  await api.post(`/api/recrutamento/pendencia?id=${encodeURIComponent(id)}&acao=recusar`, { motivo });
+}
+
+export async function cobrarRecrutamentoPendencia(id: string): Promise<void> {
+  await api.post(`/api/recrutamento/pendencia?id=${encodeURIComponent(id)}&acao=cobrar`);
+}
+
+// --- Configurações: Modelos de Triagem (WhatsApp) ---
+
+export type RecrutamentoTriagemModelo = {
+  id: string;
+  nome: string;
+  perguntas: string[];
+  [key: string]: unknown;
+};
+
+export async function fetchRecrutamentoTriagemModelos(): Promise<RecrutamentoTriagemModelo[]> {
+  const { data } = await fetchRecrutamentoRecurso<
+    RecrutamentoTriagemModelo[] | { itens: RecrutamentoTriagemModelo[] }
+  >('triagem-modelos');
+  return Array.isArray(data) ? data : (data as { itens?: RecrutamentoTriagemModelo[] })?.itens ?? [];
+}
+
+export async function createRecrutamentoTriagemModelo(body: { nome: string; perguntas: string[] }): Promise<RecrutamentoTriagemModelo> {
+  const json = await api.post('/api/recrutamento/triagem-modelo', body);
+  return json.data as RecrutamentoTriagemModelo;
+}
+
+export async function updateRecrutamentoTriagemModelo(
+  id: string,
+  body: { nome?: string; perguntas?: string[] }
+): Promise<RecrutamentoTriagemModelo> {
+  const json = await api.patch(`/api/recrutamento/triagem-modelo?id=${encodeURIComponent(id)}`, body);
+  return json.data as RecrutamentoTriagemModelo;
+}
+
+export async function deleteRecrutamentoTriagemModelo(id: string): Promise<void> {
+  await api.delete(`/api/recrutamento/triagem-modelo?id=${encodeURIComponent(id)}`);
+}
+
+export async function vincularRecrutamentoTriagemVaga(vagaId: string, modeloId: string | null): Promise<void> {
+  await api.patch(`/api/recrutamento/triagem-vaga?vaga_id=${encodeURIComponent(vagaId)}`, { modelo_id: modeloId });
+}
+
+// --- Configurações: Provas e DISC ---
+
+export type RecrutamentoAvaliacao = {
+  id: string;
+  nome: string;
+  tipo: string;
+  duracao_min?: number | null;
+  validade_dias?: number | null;
+  descricao?: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRecrutamentoAvaliacoes(): Promise<RecrutamentoAvaliacao[]> {
+  const { data } = await fetchRecrutamentoRecurso<
+    RecrutamentoAvaliacao[] | { itens: RecrutamentoAvaliacao[] }
+  >('avaliacoes');
+  return Array.isArray(data) ? data : (data as { itens?: RecrutamentoAvaliacao[] })?.itens ?? [];
+}
+
+export async function createRecrutamentoAvaliacao(body: Record<string, unknown>): Promise<RecrutamentoAvaliacao> {
+  const json = await api.post('/api/recrutamento/avaliacao', body);
+  return json.data as RecrutamentoAvaliacao;
+}
+
+export async function updateRecrutamentoAvaliacao(id: string, body: Record<string, unknown>): Promise<RecrutamentoAvaliacao> {
+  const json = await api.patch(`/api/recrutamento/avaliacao?id=${encodeURIComponent(id)}`, body);
+  return json.data as RecrutamentoAvaliacao;
+}
+
+export async function deleteRecrutamentoAvaliacao(id: string): Promise<void> {
+  await api.delete(`/api/recrutamento/avaliacao?id=${encodeURIComponent(id)}`);
+}
+
+export type RecrutamentoQuestao = {
+  id: string;
+  avaliacao_id: string;
+  enunciado: string;
+  tipo: string;
+  opcoes?: string[];
+  gabarito?: string | null;
+  [key: string]: unknown;
+};
+
+export async function fetchRecrutamentoQuestoes(avaliacaoId: string): Promise<RecrutamentoQuestao[]> {
+  const { data } = await fetchRecrutamentoRecurso<
+    RecrutamentoQuestao[] | { itens: RecrutamentoQuestao[] }
+  >('questoes', { avaliacao_id: avaliacaoId });
+  return Array.isArray(data) ? data : (data as { itens?: RecrutamentoQuestao[] })?.itens ?? [];
+}
+
+export async function createRecrutamentoQuestao(body: Record<string, unknown>): Promise<RecrutamentoQuestao> {
+  const json = await api.post('/api/recrutamento/questao', body);
+  return json.data as RecrutamentoQuestao;
+}
+
+export async function updateRecrutamentoQuestao(id: string, body: Record<string, unknown>): Promise<RecrutamentoQuestao> {
+  const json = await api.patch(`/api/recrutamento/questao?id=${encodeURIComponent(id)}`, body);
+  return json.data as RecrutamentoQuestao;
+}
+
+export async function deleteRecrutamentoQuestao(id: string): Promise<void> {
+  await api.delete(`/api/recrutamento/questao?id=${encodeURIComponent(id)}`);
+}
+
+// --- Configurações: Catálogo de documentos de Admissão ---
+
+export type RecrutamentoDocAdmissao = {
+  id: string;
+  nome: string;
+  descricao?: string | null;
+  obrigatorio: boolean;
+  ativo: boolean;
+  [key: string]: unknown;
+};
+
+export async function fetchRecrutamentoDocAdmissao(): Promise<RecrutamentoDocAdmissao[]> {
+  const { data } = await fetchRecrutamentoRecurso<
+    RecrutamentoDocAdmissao[] | { itens: RecrutamentoDocAdmissao[] }
+  >('doc-admissao');
+  return Array.isArray(data) ? data : (data as { itens?: RecrutamentoDocAdmissao[] })?.itens ?? [];
+}
+
+export async function createRecrutamentoDocAdmissao(body: { nome: string; descricao?: string; obrigatorio?: boolean }): Promise<RecrutamentoDocAdmissao> {
+  const json = await api.post('/api/recrutamento/doc-admissao', body);
+  return json.data as RecrutamentoDocAdmissao;
+}
+
+export async function updateRecrutamentoDocAdmissao(
+  id: string,
+  body: { nome?: string; descricao?: string; obrigatorio?: boolean; ativo?: boolean }
+): Promise<RecrutamentoDocAdmissao> {
+  const json = await api.patch(`/api/recrutamento/doc-admissao?id=${encodeURIComponent(id)}`, body);
+  return json.data as RecrutamentoDocAdmissao;
+}
+
+export async function deleteRecrutamentoDocAdmissao(id: string): Promise<void> {
+  await api.delete(`/api/recrutamento/doc-admissao?id=${encodeURIComponent(id)}`);
+}
+
+// --- Configurações: Alertas de IA (análise de currículo) ---
+
+export type RecrutamentoAlertaIa = {
+  id: string;
+  nome: string;
+  descricao: string;
+  ativo: boolean;
+  [key: string]: unknown;
+};
+
+export async function fetchRecrutamentoAlertasIa(): Promise<{ itens: RecrutamentoAlertaIa[]; limiteAtivos: number }> {
+  const { data } = await fetchRecrutamentoRecurso<{ itens?: RecrutamentoAlertaIa[]; limite_ativos?: number } | RecrutamentoAlertaIa[]>(
+    'alertas-ia'
+  );
+  const itens = Array.isArray(data) ? data : data.itens ?? [];
+  const limiteAtivos = Array.isArray(data) ? 8 : data.limite_ativos ?? 8;
+  return { itens, limiteAtivos };
+}
+
+export async function createRecrutamentoAlertaIa(body: { nome: string; descricao: string }): Promise<RecrutamentoAlertaIa> {
+  const json = await api.post('/api/recrutamento/alerta-ia', body);
+  return json.data as RecrutamentoAlertaIa;
+}
+
+export async function updateRecrutamentoAlertaIa(id: string, body: { nome?: string; descricao?: string; ativo?: boolean }): Promise<RecrutamentoAlertaIa> {
+  const json = await api.patch(`/api/recrutamento/alerta-ia?id=${encodeURIComponent(id)}`, body);
+  return json.data as RecrutamentoAlertaIa;
+}
+
+export async function deleteRecrutamentoAlertaIa(id: string): Promise<void> {
+  await api.delete(`/api/recrutamento/alerta-ia?id=${encodeURIComponent(id)}`);
+}
+
+// --- Configurações: Alertas no Telegram ---
+
+export type RecrutamentoTelegramDestino = {
+  id: string;
+  nome: string;
+  ativo: boolean;
+  ultimo_aviso?: string | null;
+  [key: string]: unknown;
+};
+
+export type RecrutamentoTelegramConfig = {
+  ativo: boolean;
+  bot_username?: string | null;
+  conversa_nova: boolean;
+  candidato_novo: boolean;
+  destinos: RecrutamentoTelegramDestino[];
+  [key: string]: unknown;
+};
+
+export async function fetchRecrutamentoTelegram(): Promise<RecrutamentoTelegramConfig> {
+  const { data } = await fetchRecrutamentoRecurso<Partial<RecrutamentoTelegramConfig>>('telegram');
+  return {
+    ativo: data.ativo ?? false,
+    bot_username: data.bot_username ?? null,
+    conversa_nova: data.conversa_nova ?? false,
+    candidato_novo: data.candidato_novo ?? false,
+    destinos: data.destinos ?? [],
+  };
+}
+
+export async function updateRecrutamentoTelegram(body: { ativo?: boolean; conversa_nova?: boolean; candidato_novo?: boolean }): Promise<RecrutamentoTelegramConfig> {
+  const json = await api.patch('/api/recrutamento/telegram', body);
+  return json.data as RecrutamentoTelegramConfig;
+}
+
+export async function updateRecrutamentoTelegramDestino(id: string, body: { ativo?: boolean }): Promise<void> {
+  await api.patch(`/api/recrutamento/telegram-destino?id=${encodeURIComponent(id)}`, body);
+}
+
+export async function deleteRecrutamentoTelegramDestino(id: string): Promise<void> {
+  await api.delete(`/api/recrutamento/telegram-destino?id=${encodeURIComponent(id)}`);
+}
+
+export async function enviarRecrutamentoTelegramTeste(): Promise<void> {
+  await api.post('/api/recrutamento/telegram-teste');
+}

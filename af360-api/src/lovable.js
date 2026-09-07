@@ -2148,7 +2148,211 @@ function postGmbResponderReview(body, actorId) {
   return lovablePost('/api/public/internal/gmb', { acao: 'responder' }, body, actorId);
 }
 
+// --- Recrutamento (R&S) — contrato confirmado pela Lovable em 07/09/2026.
+// Base /api/public/internal/recrutamento, mesmos cabeçalhos dos outros
+// módulos (x-internal-secret + X-Actor-Id opcional). ---
+
+function getRecrutamentoDashboard(params, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'dashboard', ...params }, actorId);
+}
+
+// --- Vagas ---
+function getRecrutamentoVagas(params, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'vagas', ...params }, actorId);
+}
+function getRecrutamentoVaga(id, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'vaga', id }, actorId);
+}
+function postRecrutamentoVaga(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'vaga' }, body, actorId);
+}
+// acao opcional: pausar | reabrir | encerrar | rascunho.
+function patchRecrutamentoVaga(id, body, acao, actorId) {
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'vaga', id, acao }, body, actorId);
+}
+function deleteRecrutamentoVaga(id, actorId) {
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'vaga', id }, actorId);
+}
+
+// --- Candidatos ---
+function getRecrutamentoCandidatos(params, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'candidatos', ...params }, actorId);
+}
+function getRecrutamentoCandidato(id, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'candidato', id }, actorId);
+}
+function postRecrutamentoCandidato(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'candidato' }, body, actorId);
+}
+function patchRecrutamentoCandidato(id, body, actorId) {
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'candidato', id }, body, actorId);
+}
+function deleteRecrutamentoCandidato(id, actorId) {
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'candidato', id }, actorId);
+}
+// Body: { candidato_id, vaga_id?, etapa }.
+function postRecrutamentoMoverEtapa(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'mover-etapa' }, body, actorId);
+}
+// Body: { vaga_id, limite }.
+function postRecrutamentoSugestaoIa(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'sugestao-ia' }, body, actorId);
+}
+
+// --- Importar Currículo ---
+// Body: { file_name, file_base64 }.
+function postRecrutamentoImportarCurriculo(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'importar-curriculo' }, body, actorId);
+}
+function getRecrutamentoImportacoes(params, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'importacoes', ...params }, actorId);
+}
+function postRecrutamentoProcessarImportacao(id, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'processar-importacao', id }, {}, actorId);
+}
+
+// --- Pendências de documentos ---
+function getRecrutamentoPendencias(params, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'pendencias', ...params }, actorId);
+}
+// acao: aprovar (body { dias }) | recusar (body { motivo }) | cobrar.
+function postRecrutamentoPendenciaAcao(id, acao, body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'pendencia', id, acao }, body ?? {}, actorId);
+}
+
+// --- Configurações: Modelos de triagem ---
+function getRecrutamentoTriagemModelos(actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'triagem-modelos' }, actorId);
+}
+function postRecrutamentoTriagemModelo(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'triagem-modelo' }, body, actorId);
+}
+function patchRecrutamentoTriagemModelo(id, body, actorId) {
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'triagem-modelo', id }, body, actorId);
+}
+function deleteRecrutamentoTriagemModelo(id, actorId) {
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'triagem-modelo', id }, actorId);
+}
+function patchRecrutamentoTriagemVaga(vagaId, body, actorId) {
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'triagem-vaga', vaga_id: vagaId }, body, actorId);
+}
+
+// --- Configurações: Provas e DISC ---
+function getRecrutamentoAvaliacoes(actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'avaliacoes' }, actorId);
+}
+function postRecrutamentoAvaliacao(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'avaliacao' }, body, actorId);
+}
+function patchRecrutamentoAvaliacao(id, body, actorId) {
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'avaliacao', id }, body, actorId);
+}
+function deleteRecrutamentoAvaliacao(id, actorId) {
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'avaliacao', id }, actorId);
+}
+function getRecrutamentoQuestoes(avaliacaoId, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'questoes', avaliacao_id: avaliacaoId }, actorId);
+}
+function postRecrutamentoQuestao(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'questao' }, body, actorId);
+}
+function patchRecrutamentoQuestao(id, body, actorId) {
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'questao', id }, body, actorId);
+}
+function deleteRecrutamentoQuestao(id, actorId) {
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'questao', id }, actorId);
+}
+
+// --- Configurações: catálogo de documentos de Admissão ---
+function getRecrutamentoDocAdmissao(actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'doc-admissao' }, actorId);
+}
+function postRecrutamentoDocAdmissao(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'doc-admissao' }, body, actorId);
+}
+function patchRecrutamentoDocAdmissao(id, body, actorId) {
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'doc-admissao', id }, body, actorId);
+}
+function deleteRecrutamentoDocAdmissao(id, actorId) {
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'doc-admissao', id }, actorId);
+}
+
+// --- Configurações: Alertas de IA (análise de currículo) ---
+function getRecrutamentoAlertasIa(actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'alertas-ia' }, actorId);
+}
+function postRecrutamentoAlertaIa(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'alertas-ia' }, body, actorId);
+}
+function patchRecrutamentoAlertaIa(id, body, actorId) {
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'alertas-ia', id }, body, actorId);
+}
+function deleteRecrutamentoAlertaIa(id, actorId) {
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'alertas-ia', id }, actorId);
+}
+
+// --- Configurações: Alertas no Telegram ---
+function getRecrutamentoTelegram(actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'telegram' }, actorId);
+}
+function patchRecrutamentoTelegram(body, actorId) {
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'telegram' }, body, actorId);
+}
+function patchRecrutamentoTelegramDestino(id, body, actorId) {
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'telegram-destino', id }, body, actorId);
+}
+function deleteRecrutamentoTelegramDestino(id, actorId) {
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'telegram-destino', id }, actorId);
+}
+function postRecrutamentoTelegramTeste(actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'telegram-teste' }, {}, actorId);
+}
+
 module.exports = {
+  getRecrutamentoDashboard,
+  getRecrutamentoVagas,
+  getRecrutamentoVaga,
+  postRecrutamentoVaga,
+  patchRecrutamentoVaga,
+  deleteRecrutamentoVaga,
+  getRecrutamentoCandidatos,
+  getRecrutamentoCandidato,
+  postRecrutamentoCandidato,
+  patchRecrutamentoCandidato,
+  deleteRecrutamentoCandidato,
+  postRecrutamentoMoverEtapa,
+  postRecrutamentoSugestaoIa,
+  postRecrutamentoImportarCurriculo,
+  getRecrutamentoImportacoes,
+  postRecrutamentoProcessarImportacao,
+  getRecrutamentoPendencias,
+  postRecrutamentoPendenciaAcao,
+  getRecrutamentoTriagemModelos,
+  postRecrutamentoTriagemModelo,
+  patchRecrutamentoTriagemModelo,
+  deleteRecrutamentoTriagemModelo,
+  patchRecrutamentoTriagemVaga,
+  getRecrutamentoAvaliacoes,
+  postRecrutamentoAvaliacao,
+  patchRecrutamentoAvaliacao,
+  deleteRecrutamentoAvaliacao,
+  getRecrutamentoQuestoes,
+  postRecrutamentoQuestao,
+  patchRecrutamentoQuestao,
+  deleteRecrutamentoQuestao,
+  getRecrutamentoDocAdmissao,
+  postRecrutamentoDocAdmissao,
+  patchRecrutamentoDocAdmissao,
+  deleteRecrutamentoDocAdmissao,
+  getRecrutamentoAlertasIa,
+  postRecrutamentoAlertaIa,
+  patchRecrutamentoAlertaIa,
+  deleteRecrutamentoAlertaIa,
+  getRecrutamentoTelegram,
+  patchRecrutamentoTelegram,
+  patchRecrutamentoTelegramDestino,
+  deleteRecrutamentoTelegramDestino,
+  postRecrutamentoTelegramTeste,
   getRhUniformesCobrancas,
   postRhUniformeCobranca,
   patchRhUniformeCobranca,
