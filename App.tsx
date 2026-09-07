@@ -114,6 +114,18 @@ import {
   MarketingConfiguracoesScreen,
 } from './Marketing';
 import {
+  RecrutamentoDashboardScreen,
+  RecrutamentoProfileScreen,
+  RecrutamentoVagasScreen,
+  RecrutamentoCandidatosScreen,
+  RecrutamentoCandidatoDetalheScreen,
+  RecrutamentoImportarCurriculoScreen,
+  RecrutamentoPendenciasScreen,
+  RecrutamentoWhatsAppScreen,
+  RecrutamentoNotificationsScreen,
+  RecrutamentoConfiguracoesScreen,
+} from './Recrutamento';
+import {
   AdminDashboardScreen,
   AdminProfileScreen,
   AdminUsuariosScreen,
@@ -320,6 +332,16 @@ export type RootStackParamList = {
   MarketingNotifications: undefined;
   MarketingLevaMais: undefined;
   MarketingConfiguracoes: undefined;
+  RecrutamentoDashboard: undefined;
+  RecrutamentoProfile: undefined;
+  RecrutamentoVagas: undefined;
+  RecrutamentoCandidatos: undefined;
+  RecrutamentoCandidatoDetalhe: { id: string };
+  RecrutamentoImportarCurriculo: undefined;
+  RecrutamentoPendencias: undefined;
+  RecrutamentoWhatsApp: undefined;
+  RecrutamentoNotifications: undefined;
+  RecrutamentoConfiguracoes: undefined;
 };
 
 export type ScreenProps<RouteName extends keyof RootStackParamList> = NativeStackScreenProps<
@@ -457,7 +479,7 @@ type SideMenuRoute =
   | 'Requests'
   | 'Profile';
 
-export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo' | 'marketing';
+export type UserRole = 'colaborador' | 'diretoria' | 'rh' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo' | 'marketing' | 'recrutamento';
 
 type DirectorSideMenuRoute =
   | 'DirectorDashboard'
@@ -575,6 +597,17 @@ export type MarketingSideMenuRoute =
   | 'MarketingLevaMais'
   | 'MarketingConfiguracoes'
   | 'MarketingProfile';
+
+export type RecrutamentoSideMenuRoute =
+  | 'RecrutamentoDashboard'
+  | 'RecrutamentoVagas'
+  | 'RecrutamentoCandidatos'
+  | 'RecrutamentoImportarCurriculo'
+  | 'RecrutamentoPendencias'
+  | 'RecrutamentoWhatsApp'
+  | 'RecrutamentoNotifications'
+  | 'RecrutamentoConfiguracoes'
+  | 'RecrutamentoProfile';
 
 type SummaryCardItem = {
   id: string;
@@ -1629,6 +1662,18 @@ export const marketingUser = {
 // ("AD"/"OP"/"GT" etc).
 export const marketingUserInitials = 'MK';
 
+export const recrutamentoUser = {
+  fullName: 'Recrutamento & Seleção',
+  role: 'Recrutamento & Seleção',
+  roleAndUnit: 'Recrutamento & Seleção · American Fuel',
+  area: 'Vagas, candidatos e processo seletivo',
+  email: 'rs@americanfuel.com.br',
+  phone: '(11) 99120-0000',
+  accessLabel: 'Vagas, candidatos, triagem e admissão',
+};
+
+export const recrutamentoUserInitials = 'RS';
+
 export const gestaoSideMenuSections: Array<{
   title: string;
   items: Array<{
@@ -1720,6 +1765,33 @@ export const marketingSideMenuSections: Array<{
   {
     title: 'ADMINISTRAÇÃO',
     items: [{ id: 'marketing-configuracoes', label: 'Configurações', icon: 'settings', route: 'MarketingConfiguracoes' }],
+  },
+];
+
+export const recrutamentoSideMenuSections: Array<{
+  title: string;
+  items: Array<{
+    id: string;
+    label: string;
+    icon: keyof typeof Feather.glyphMap;
+    route?: RecrutamentoSideMenuRoute;
+  }>;
+}> = [
+  {
+    title: 'OPERAÇÃO',
+    items: [
+      { id: 'recrutamento-dashboard', label: 'Dashboard', icon: 'grid', route: 'RecrutamentoDashboard' },
+      { id: 'recrutamento-vagas', label: 'Vagas', icon: 'briefcase', route: 'RecrutamentoVagas' },
+      { id: 'recrutamento-candidatos', label: 'Candidatos', icon: 'users', route: 'RecrutamentoCandidatos' },
+      { id: 'recrutamento-importar-curriculo', label: 'Importar Currículo', icon: 'upload', route: 'RecrutamentoImportarCurriculo' },
+      { id: 'recrutamento-pendencias', label: 'Pendências', icon: 'clock', route: 'RecrutamentoPendencias' },
+      { id: 'recrutamento-whatsapp', label: 'WhatsApp', icon: 'message-circle', route: 'RecrutamentoWhatsApp' },
+      { id: 'recrutamento-notifications', label: 'Notificações', icon: 'bell', route: 'RecrutamentoNotifications' },
+    ],
+  },
+  {
+    title: 'ADMINISTRAÇÃO',
+    items: [{ id: 'recrutamento-configuracoes', label: 'Configurações', icon: 'settings', route: 'RecrutamentoConfiguracoes' }],
   },
 ];
 
@@ -3085,6 +3157,16 @@ export default function App() {
                     <Stack.Screen name="MarketingNotifications" component={MarketingNotificationsScreen} />
                     <Stack.Screen name="MarketingLevaMais" component={MarketingLevaMaisScreen} />
                     <Stack.Screen name="MarketingConfiguracoes" component={MarketingConfiguracoesScreen} />
+                    <Stack.Screen name="RecrutamentoDashboard" component={RecrutamentoDashboardScreen} />
+                    <Stack.Screen name="RecrutamentoProfile" component={RecrutamentoProfileScreen} />
+                    <Stack.Screen name="RecrutamentoVagas" component={RecrutamentoVagasScreen} />
+                    <Stack.Screen name="RecrutamentoCandidatos" component={RecrutamentoCandidatosScreen} />
+                    <Stack.Screen name="RecrutamentoCandidatoDetalhe" component={RecrutamentoCandidatoDetalheScreen} />
+                    <Stack.Screen name="RecrutamentoImportarCurriculo" component={RecrutamentoImportarCurriculoScreen} />
+                    <Stack.Screen name="RecrutamentoPendencias" component={RecrutamentoPendenciasScreen} />
+                    <Stack.Screen name="RecrutamentoWhatsApp" component={RecrutamentoWhatsAppScreen} />
+                    <Stack.Screen name="RecrutamentoNotifications" component={RecrutamentoNotificationsScreen} />
+                    <Stack.Screen name="RecrutamentoConfiguracoes" component={RecrutamentoConfiguracoesScreen} />
                   </Stack.Navigator>
 
                   {isMenuOpen ? (
@@ -3180,6 +3262,8 @@ function getDashboardRouteForRole(role: UserRole): keyof RootStackParamList {
     ? 'AdministrativoDashboard'
     : role === 'marketing'
     ? 'MarketingDashboard'
+    : role === 'recrutamento'
+    ? 'RecrutamentoDashboard'
     : 'Dashboard';
 }
 
@@ -3469,6 +3553,13 @@ const PANEL_OPTION_META: Record<
     icon: 'heart',
     color: '#C2255C',
     tint: '#FBE4ED',
+  },
+  recrutamento: {
+    label: 'Recrutamento',
+    subtitle: 'Vagas, candidatos e processo seletivo (R&S)',
+    icon: 'briefcase',
+    color: '#1F3A5F',
+    tint: '#E8EEF6',
   },
 };
 
@@ -13273,6 +13364,7 @@ export function SideMenuOverlay({
   const isGestao = variant === 'gestao';
   const isAdministrativo = variant === 'administrativo';
   const isMarketing = variant === 'marketing';
+  const isRecrutamento = variant === 'recrutamento';
   const { identity } = useContext(AuthIdentityContext);
   const { perfil: colaboradorPerfil, isLoading: isLoadingColaboradorPerfil } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
@@ -13290,6 +13382,8 @@ export function SideMenuOverlay({
     ? administrativoSideMenuSections
     : isMarketing
     ? marketingSideMenuSections
+    : isRecrutamento
+    ? recrutamentoSideMenuSections
     : sideMenuSections;
   // Nome/cargo reais (rh_colaboradores, via ColaboradorPerfilContext) em
   // todos os painéis — nunca os mocks "Bruno Lyra"/"Marina Costa"/etc. Sem
@@ -13305,6 +13399,8 @@ export function SideMenuOverlay({
     ? 'Administrativo'
     : isMarketing
     ? 'Marketing & Fidelidade'
+    : isRecrutamento
+    ? 'Recrutamento'
     : (colaboradorPerfil?.cargo as string | undefined) ||
       (isLoadingColaboradorPerfil ? 'Carregando…' : identity?.colaboradorId ? '—' : 'Sem vínculo no RH');
   const headerGradientColors: [string, string] = isDirector
@@ -13321,6 +13417,8 @@ export function SideMenuOverlay({
     ? ['#0F8B8D', '#22B0B2']
     : isMarketing
     ? ['#9F1247', '#D6336C']
+    : isRecrutamento
+    ? ['#1F3A5F', '#3D5A80']
     : ['#2F4EA8', '#4C439E'];
   const insets = useSafeAreaInsets();
 
@@ -13334,6 +13432,7 @@ export function SideMenuOverlay({
       | GestaoSideMenuRoute
       | AdministrativoSideMenuRoute
       | MarketingSideMenuRoute
+      | RecrutamentoSideMenuRoute
   ) => {
     onClose();
 
@@ -13458,6 +13557,7 @@ export function TopBar({
   const isGestao = variant === 'gestao';
   const isAdministrativo = variant === 'administrativo';
   const isMarketing = variant === 'marketing';
+  const isRecrutamento = variant === 'recrutamento';
   const hasUnreadNotifications = colaboradorNotificationItems.some(
     (item) => item.unread && !readNotificationIds[item.id]
   );
@@ -13488,12 +13588,14 @@ export function TopBar({
         <AdministrativoBrandLogo />
       ) : isMarketing ? (
         <MarketingBrandLogo />
+      ) : isRecrutamento ? (
+        <RecrutamentoBrandLogo />
       ) : (
         <BrandLogo compact theme={onColor ? 'light' : 'dark'} />
       )}
 
       <View style={styles.topBarRight}>
-        {isDirector || isRH || isAdmin || isFinanceiro || isGestao || isAdministrativo || isMarketing ? null : (
+        {isDirector || isRH || isAdmin || isFinanceiro || isGestao || isAdministrativo || isMarketing || isRecrutamento ? null : (
           <Pressable style={styles.notificationBellButton} onPress={openNotifications}>
             <Feather name="bell" size={17} color="#313951" />
             {hasUnreadNotifications ? <View style={styles.notificationBellDot} /> : null}
@@ -13509,6 +13611,7 @@ export function TopBar({
             isGestao ? styles.avatarGestao : null,
             isAdministrativo ? styles.avatarAdministrativo : null,
             isMarketing ? styles.avatarMarketing : null,
+            isRecrutamento ? styles.avatarRecrutamento : null,
           ]}
           onPress={onAvatarPress}
           disabled={!onAvatarPress}
@@ -13615,6 +13718,20 @@ function MarketingBrandLogo() {
       <View>
         <Text style={styles.marketingBrandTitle}>Marketing</Text>
         <Text style={styles.marketingBrandSubtitle}>& FIDELIDADE</Text>
+      </View>
+    </View>
+  );
+}
+
+function RecrutamentoBrandLogo() {
+  return (
+    <View style={styles.directorBrandRow}>
+      <View style={styles.recrutamentoBrandIconShell}>
+        <Feather name="briefcase" size={16} color="#FFFFFF" />
+      </View>
+      <View>
+        <Text style={styles.recrutamentoBrandTitle}>Recrutamento</Text>
+        <Text style={styles.recrutamentoBrandSubtitle}>VAGAS E SELEÇÃO</Text>
       </View>
     </View>
   );
@@ -14997,6 +15114,28 @@ export const styles = StyleSheet.create({
   },
   avatarMarketing: {
     backgroundColor: '#C2255C',
+  },
+  recrutamentoBrandIconShell: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#1F3A5F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recrutamentoBrandTitle: {
+    color: '#15203E',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  recrutamentoBrandSubtitle: {
+    color: '#7C8397',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  avatarRecrutamento: {
+    backgroundColor: '#1F3A5F',
   },
   panelHero: {
     borderRadius: 24,
