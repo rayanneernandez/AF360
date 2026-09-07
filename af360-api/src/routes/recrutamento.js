@@ -44,7 +44,28 @@ const {
   patchRecrutamentoTelegramDestino,
   deleteRecrutamentoTelegramDestino,
   postRecrutamentoTelegramTeste,
+  getMarketingWaConversas,
+  getMarketingWaMensagens,
+  postMarketingWaEnviar,
+  postMarketingWaNova,
+  patchMarketingWaConversa,
+  getAdminNotifRotinas,
+  postAdminNotifRotina,
+  patchAdminNotifRotina,
+  deleteAdminNotifRotina,
+  postAdminNotifRotinaExecutar,
+  getAdminNotifTemplates,
+  postAdminNotifTemplate,
+  patchAdminNotifTemplate,
+  deleteAdminNotifTemplate,
 } = require('../lovable');
+
+// WhatsApp/Notificações reaproveitam o MESMO motor do Marketing (confirmado
+// pela Lovable em 07/09/2026) — WhatsApp por canal='rs' (mesma tabela
+// wa_conversas do Marketing, só filtrada), Notificações pelo sistema
+// genérico modulo='recrutamento' (mesma infra do Financeiro/Gestão/Admin).
+const RS_CANAL = 'rs';
+const RS_NOTIF_MODULO = 'recrutamento';
 
 const router = express.Router();
 
@@ -137,6 +158,17 @@ router.get('/', async (req, res) => {
       case 'telegram': {
         const json = await getRecrutamentoTelegram(actorId);
         return res.json({ ok: true, data: json?.data ?? json ?? {} });
+      }
+      case 'wa-conversas': {
+        const json = await getMarketingWaConversas({ ...params, canal: RS_CANAL }, actorId);
+        const { rows, count } = extractArrayPayload(json);
+        return res.json({ ok: true, count, data: rows, contadores: json?.contadores ?? {} });
+      }
+      case 'wa-mensagens': {
+        if (!params.phone) return res.status(400).json({ ok: false, error: 'phone_obrigatorio' });
+        const json = await getMarketingWaMensagens({ ...params, canal: RS_CANAL }, actorId);
+        const { rows, count } = extractArrayPayload(json);
+        return res.json({ ok: true, count, data: rows, contato: json?.contato ?? null });
       }
       default:
         return res.status(400).json({ ok: false, error: 'recurso_invalido' });
@@ -461,6 +493,167 @@ router.post('/telegram-teste', async (req, res) => {
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[recrutamento/telegram-teste POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// --- WhatsApp (canal=rs) ---
+router.post('/wa-enviar', async (req, res) => {
+  try {
+    const json = await postMarketingWaEnviar({ ...(req.body ?? {}), canal: RS_CANAL }, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[recrutamento/wa-enviar POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+router.post('/wa-nova', async (req, res) => {
+  try {
+    const json = await postMarketingWaNova({ ...(req.body ?? {}), canal: RS_CANAL }, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[recrutamento/wa-nova POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+router.patch('/wa-conversa/:phone', async (req, res) => {
+  try {
+    const json = await patchMarketingWaConversa(req.params.phone, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[recrutamento/wa-conversa PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// --- Notificações (Rotinas + Templates) — mesmo sistema genérico do
+// Marketing/Financeiro/Gestão/Administrativo, aqui fixado em
+// modulo=recrutamento. ---
+
+function mapNotifRotinaRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    nome: row.nome ?? null,
+    titulo: row.titulo ?? null,
+    mensagem: row.mensagem ?? null,
+    templateId: row.template_id ?? null,
+    isActive: Boolean(row.ativa),
+    tipoGatilho: row.tipo_gatilho ?? 'manual',
+    cronExpressao: row.cron_expressao ?? null,
+    eventoCodigo: row.evento_codigo ?? null,
+    canais: Array.isArray(row.canais) ? row.canais : [],
+    publicoTipo: row.publico_tipo ?? 'todos',
+    publicoIds: Array.isArray(row.publico_ids) ? row.publico_ids : [],
+    ultimaExecucao: row.ultima_execucao ?? null,
+    proximaExecucao: row.proxima_execucao ?? null,
+    totalDestinos: row.total_destinos ?? 0,
+    totalEnviados: row.total_enviados ?? 0,
+    status: row.status ?? null,
+    agendadaPara: row.agendada_para ?? null,
+  };
+}
+
+function mapNotifTemplateRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    modulo: row.modulo ?? null,
+    codigo: row.codigo ?? null,
+    nome: row.nome ?? null,
+    titulo: row.titulo ?? null,
+    mensagem: row.mensagem ?? null,
+    variaveis: Array.isArray(row.variaveis) ? row.variaveis : [],
+    isPadrao: Boolean(row.padrao),
+    isActive: Boolean(row.ativo),
+  };
+}
+
+router.get('/notif-rotinas', async (req, res) => {
+  try {
+    const json = await getAdminNotifRotinas(RS_NOTIF_MODULO, {
+      q: req.query.q,
+      ativa: req.query.ativa,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    const rotinas = (json?.data ?? []).map(mapNotifRotinaRow);
+    res.json({ ok: true, data: { rotinas, count: json?.count ?? rotinas.length } });
+  } catch (err) {
+    console.error('[recrutamento/notif-rotinas] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+router.post('/notif-rotinas', async (req, res) => {
+  try {
+    const json = await postAdminNotifRotina(RS_NOTIF_MODULO, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapNotifRotinaRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[recrutamento/notif-rotinas POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+router.patch('/notif-rotinas/:id', async (req, res) => {
+  try {
+    const json = await patchAdminNotifRotina(RS_NOTIF_MODULO, req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapNotifRotinaRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[recrutamento/notif-rotinas/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+router.delete('/notif-rotinas/:id', async (req, res) => {
+  try {
+    await deleteAdminNotifRotina(RS_NOTIF_MODULO, req.params.id, req.query.actorId);
+    res.json({ ok: true, data: null });
+  } catch (err) {
+    console.error('[recrutamento/notif-rotinas/:id DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+router.post('/notif-rotinas/:id/executar', async (req, res) => {
+  try {
+    const json = await postAdminNotifRotinaExecutar(RS_NOTIF_MODULO, req.params.id, req.query.actorId);
+    res.json({ ok: true, data: mapNotifRotinaRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[recrutamento/notif-rotinas/:id/executar POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+router.get('/notif-templates', async (req, res) => {
+  try {
+    const json = await getAdminNotifTemplates({ modulo: RS_NOTIF_MODULO, q: req.query.q, ativo: req.query.ativo });
+    const templates = (json?.data ?? []).map(mapNotifTemplateRow);
+    res.json({ ok: true, data: { templates, count: json?.count ?? templates.length } });
+  } catch (err) {
+    console.error('[recrutamento/notif-templates] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+router.post('/notif-templates', async (req, res) => {
+  try {
+    const json = await postAdminNotifTemplate({ ...(req.body ?? {}), modulo: RS_NOTIF_MODULO }, req.query.actorId);
+    res.json({ ok: true, data: mapNotifTemplateRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[recrutamento/notif-templates POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+router.patch('/notif-templates/:id', async (req, res) => {
+  try {
+    const json = await patchAdminNotifTemplate(req.params.id, req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: mapNotifTemplateRow(json?.data ?? json) });
+  } catch (err) {
+    console.error('[recrutamento/notif-templates/:id PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+router.delete('/notif-templates/:id', async (req, res) => {
+  try {
+    await deleteAdminNotifTemplate(req.params.id, req.query.actorId);
+    res.json({ ok: true, data: null });
+  } catch (err) {
+    console.error('[recrutamento/notif-templates/:id DELETE] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });

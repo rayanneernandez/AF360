@@ -8419,3 +8419,106 @@ export async function deleteRecrutamentoTelegramDestino(id: string): Promise<voi
 export async function enviarRecrutamentoTelegramTeste(): Promise<void> {
   await api.post('/api/recrutamento/telegram-teste');
 }
+
+// --- WhatsApp (R&S) — mesmo motor do Marketing, canal='rs' já aplicado no
+// proxy backend, então os tipos de resposta são idênticos aos do Marketing. ---
+
+export async function fetchRecrutamentoWaConversas(filtro?: {
+  aba?: 'todos' | 'fila' | 'ativos' | 'finalizadas';
+  q?: string;
+}): Promise<MarketingWaConversasResponse> {
+  const search = new URLSearchParams({ recurso: 'wa-conversas' });
+  if (filtro?.aba) search.set('aba', filtro.aba);
+  if (filtro?.q) search.set('q', filtro.q);
+  const json = await api.get(`/api/recrutamento?${search.toString()}`);
+  const itens = (json.data as Array<Partial<MarketingWaConversaItem>>) ?? [];
+  return {
+    itens: itens as MarketingWaConversaItem[],
+    total: json.count ?? itens.length,
+    contadores: (json.contadores as MarketingWaContadores) ?? { todos: 0, fila: 0, ativos: 0, finalizadas: 0 },
+  };
+}
+
+export async function fetchRecrutamentoWaMensagens(
+  phone: string,
+  params?: { limit?: number; before?: string }
+): Promise<{ mensagens: MarketingWaMensagemItem[]; contato: MarketingWaContatoInfo }> {
+  const search = new URLSearchParams({ recurso: 'wa-mensagens', phone });
+  if (params?.limit) search.set('limit', String(params.limit));
+  if (params?.before) search.set('before', params.before);
+  const json = await api.get(`/api/recrutamento?${search.toString()}`);
+  return {
+    mensagens: (json.data as MarketingWaMensagemItem[]) ?? [],
+    contato: json.contato as MarketingWaContatoInfo,
+  };
+}
+
+export async function enviarRecrutamentoWaMensagem(body: { phone: string; texto: string }): Promise<void> {
+  await api.post('/api/recrutamento/wa-enviar', body);
+}
+
+export async function criarRecrutamentoWaConversa(body: { phone: string; nome?: string; texto: string }): Promise<void> {
+  await api.post('/api/recrutamento/wa-nova', body);
+}
+
+// --- Notificações (R&S) — mesmo sistema genérico do Marketing, modulo já
+// fixado em 'recrutamento' no proxy backend. ---
+
+export async function fetchRecrutamentoNotifRotinas(params?: { q?: string; ativa?: boolean }): Promise<MarketingNotifRotinasResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativa !== undefined) search.set('ativa', String(params.ativa));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/recrutamento/notif-rotinas${query}`);
+  return json.data as MarketingNotifRotinasResponse;
+}
+
+export async function createRecrutamentoNotifRotina(body: MarketingNotifRotinaWriteBody, actorId?: string | null): Promise<MarketingNotifRotinaItem> {
+  const json = await api.post(withActorId('/api/recrutamento/notif-rotinas', actorId), body);
+  return json.data as MarketingNotifRotinaItem;
+}
+
+export async function updateRecrutamentoNotifRotina(
+  id: string,
+  body: Partial<MarketingNotifRotinaWriteBody>,
+  actorId?: string | null
+): Promise<MarketingNotifRotinaItem> {
+  const json = await api.patch(withActorId(`/api/recrutamento/notif-rotinas/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as MarketingNotifRotinaItem;
+}
+
+export async function deleteRecrutamentoNotifRotina(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/recrutamento/notif-rotinas/${encodeURIComponent(id)}`, actorId));
+}
+
+export async function executarRecrutamentoNotifRotina(id: string, actorId?: string | null): Promise<MarketingNotifRotinaItem> {
+  const json = await api.post(withActorId(`/api/recrutamento/notif-rotinas/${encodeURIComponent(id)}/executar`, actorId));
+  return json.data as MarketingNotifRotinaItem;
+}
+
+export async function fetchRecrutamentoNotifTemplates(params?: { q?: string; ativo?: boolean }): Promise<MarketingNotifTemplatesResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set('q', params.q);
+  if (params?.ativo !== undefined) search.set('ativo', String(params.ativo));
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const json = await api.get(`/api/recrutamento/notif-templates${query}`);
+  return json.data as MarketingNotifTemplatesResponse;
+}
+
+export async function createRecrutamentoNotifTemplate(body: MarketingNotifTemplateWriteBody, actorId?: string | null): Promise<MarketingNotifTemplateItem> {
+  const json = await api.post(withActorId('/api/recrutamento/notif-templates', actorId), body);
+  return json.data as MarketingNotifTemplateItem;
+}
+
+export async function updateRecrutamentoNotifTemplate(
+  id: string,
+  body: Partial<MarketingNotifTemplateWriteBody>,
+  actorId?: string | null
+): Promise<MarketingNotifTemplateItem> {
+  const json = await api.patch(withActorId(`/api/recrutamento/notif-templates/${encodeURIComponent(id)}`, actorId), body);
+  return json.data as MarketingNotifTemplateItem;
+}
+
+export async function deleteRecrutamentoNotifTemplate(id: string, actorId?: string | null): Promise<void> {
+  await api.delete(withActorId(`/api/recrutamento/notif-templates/${encodeURIComponent(id)}`, actorId));
+}
