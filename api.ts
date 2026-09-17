@@ -1928,7 +1928,7 @@ export type AuthIdentity = {
   // 'administrador' aqui). 'role' acima é só o primeiro/principal, mantido
   // por compatibilidade; o app decide se mostra a tela de seleção de painel
   // com base neste array.
-  availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo' | 'marketing'>;
+  availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo' | 'marketing' | 'recrutamento'>;
   colaboradorId: string | null;
   empresaId: string | null;
   // Senha temporária criada pelo administrador (painel Usuários) — guardada
