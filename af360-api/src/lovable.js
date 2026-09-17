@@ -2236,14 +2236,6 @@ function deleteRecrutamentoTriagemModelo(id, actorId) {
 function patchRecrutamentoTriagemVaga(vagaId, body, actorId) {
   return lovablePatch('/api/public/internal/recrutamento', { recurso: 'triagem-vaga', vaga_id: vagaId }, body, actorId);
 }
-// GET simétrico ao PATCH acima (mesmo "recurso") — não existia nenhuma
-// leitura de roteiro de triagem por vaga no nosso backend até agora
-// (17/09/2026); o app só lia vaga.triagem_perguntas, que não é onde o
-// roteiro de verdade fica salvo (confirmado: sempre veio vazio mesmo em
-// vaga que já tem roteiro configurado no painel web).
-function getRecrutamentoTriagemVaga(vagaId, actorId) {
-  return lovableGet('/api/public/internal/recrutamento', { recurso: 'triagem-vaga', vaga_id: vagaId }, actorId);
-}
 
 // --- Configurações: Provas e DISC ---
 function getRecrutamentoAvaliacoes(actorId) {
@@ -2340,7 +2332,6 @@ module.exports = {
   patchRecrutamentoTriagemModelo,
   deleteRecrutamentoTriagemModelo,
   patchRecrutamentoTriagemVaga,
-  getRecrutamentoTriagemVaga,
   getRecrutamentoAvaliacoes,
   postRecrutamentoAvaliacao,
   patchRecrutamentoAvaliacao,
