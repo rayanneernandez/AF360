@@ -23,6 +23,7 @@ const {
   patchRecrutamentoTriagemModelo,
   deleteRecrutamentoTriagemModelo,
   patchRecrutamentoTriagemVaga,
+  getRecrutamentoTriagemVaga,
   getRecrutamentoAvaliacoes,
   postRecrutamentoAvaliacao,
   patchRecrutamentoAvaliacao,
@@ -129,6 +130,11 @@ router.get('/', async (req, res) => {
         const json = await getRecrutamentoPendencias(params, actorId);
         const { rows, count } = extractArrayPayload(json);
         return res.json({ ok: true, count, data: rows });
+      }
+      case 'triagem-vaga': {
+        if (!params.vaga_id) return res.status(400).json({ ok: false, error: 'vaga_id_obrigatorio' });
+        const json = await getRecrutamentoTriagemVaga(params.vaga_id, actorId);
+        return res.json({ ok: true, data: json?.data ?? json ?? {} });
       }
       case 'triagem-modelos': {
         const json = await getRecrutamentoTriagemModelos(actorId);
