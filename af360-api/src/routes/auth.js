@@ -38,6 +38,11 @@ const KNOWN_ADMINISTRATIVO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 
 // novo (com o painel Marketing) for aprovado nas duas lojas e a flag global
 // for ligada.
 const KNOWN_MARKETING_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
+// Mesmo padrão pro painel "Recrutamento (R&S)" — SÓ libera pra quem testa via
+// Expo/dev client, independente da flag global. Tirar essa lista assim que o
+// build novo (com o painel Recrutamento) for aprovado nas duas lojas e a
+// flag global for ligada.
+const KNOWN_RECRUTAMENTO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
 
 // normalizeModuleName/fetchEffectiveModules moram em ../permissions.js
 // (extraídas daqui em 27/07/2026 pra serem reaproveitadas por routes/admin.js
@@ -71,6 +76,11 @@ const ADMINISTRATIVO_ROLE_ENABLED = process.env.ADMINISTRATIVO_ROLE_ENABLED === 
 // build novo do app (com o painel Marketing & Fidelidade) estiver aprovado e
 // disponível nas duas lojas.
 const MARKETING_ROLE_ENABLED = process.env.MARKETING_ROLE_ENABLED === 'true';
+// Mesmo motivo/mesmo remédio pro role "recrutamento" — DESLIGADO por padrão,
+// só ligar (RECRUTAMENTO_ROLE_ENABLED=true nas env vars da Vercel) depois que
+// o build novo do app (com o painel Recrutamento) estiver aprovado e
+// disponível nas duas lojas.
+const RECRUTAMENTO_ROLE_ENABLED = process.env.RECRUTAMENTO_ROLE_ENABLED === 'true';
 
 function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email }) {
   const roles = new Set();
@@ -87,6 +97,7 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
     if (GESTAO_ROLE_ENABLED) roles.add('gestao');
     if (ADMINISTRATIVO_ROLE_ENABLED) roles.add('administrativo');
     if (MARKETING_ROLE_ENABLED) roles.add('marketing');
+    if (RECRUTAMENTO_ROLE_ENABLED) roles.add('recrutamento');
   }
 
   // b) Sinal real pro resto: módulos efetivos (Cargo ∪ user_modules).
@@ -107,6 +118,9 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   // "Marketing & Fidelidade" (Ocorrências/WhatsApp/Google/Notificações/
   // Leva+) — ver MARKETING_ROLE_ENABLED acima.
   if (MARKETING_ROLE_ENABLED && effectiveModules?.has('marketing')) roles.add('marketing');
+  // "Recrutamento" (R&S: vagas, candidatos, importar currículo) — ver
+  // RECRUTAMENTO_ROLE_ENABLED acima.
+  if (RECRUTAMENTO_ROLE_ENABLED && effectiveModules?.has('recrutamento')) roles.add('recrutamento');
 
   // c) Ponte temporária por e-mail conhecido — só pra cobrir usuários de
   // teste cujo acesso ainda não tem os módulos certos configurados.
@@ -116,6 +130,7 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   if (KNOWN_GESTAO_TEST_EMAILS.includes(normalizedEmail)) roles.add('gestao');
   if (KNOWN_ADMINISTRATIVO_TEST_EMAILS.includes(normalizedEmail)) roles.add('administrativo');
   if (KNOWN_MARKETING_TEST_EMAILS.includes(normalizedEmail)) roles.add('marketing');
+  if (KNOWN_RECRUTAMENTO_TEST_EMAILS.includes(normalizedEmail)) roles.add('recrutamento');
 
   // d) 'Colaborador' entra na lista quando existe ficha real em
   // rh_colaboradores vinculada (profile_id) OU quando o Cargo/user_modules
