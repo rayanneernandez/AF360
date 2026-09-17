@@ -1931,11 +1931,24 @@ export type AuthIdentity = {
   availableRoles: Array<'colaborador' | 'rh' | 'diretoria' | 'administrador' | 'financeiro' | 'gestao' | 'administrativo' | 'marketing'>;
   colaboradorId: string | null;
   empresaId: string | null;
+  // Senha temporária criada pelo administrador (painel Usuários) — guardada
+  // como user_metadata no Supabase Auth, não numa coluna de profiles. Se
+  // true, o app obriga a trocar a senha (ChangePasswordScreen) antes de
+  // liberar qualquer painel.
+  mustChangePassword: boolean;
 };
 
 export async function login(email: string, password: string): Promise<AuthIdentity> {
   const json = await api.post('/api/auth/login', { email, password });
   return json.data as AuthIdentity;
+}
+
+export async function changePassword(
+  email: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  await api.post('/api/auth/change-password', { email, currentPassword, newPassword });
 }
 
 // --- Verificação em duas etapas (2FA) por e-mail — endpoints confirmados

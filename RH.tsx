@@ -34,6 +34,7 @@ import {
   rhUser,
   rhUserInitials,
   AuthIdentityContext,
+  performLogout,
   ColaboradorPerfilContext,
   buildColaboradorProfileSummary,
   getInitials,
@@ -2495,7 +2496,7 @@ export function RHDashboardScreen({ navigation }: ScreenProps<'RHDashboard'>) {
 // ---------- Profile ----------
 
 export function RHProfileScreen({ navigation }: ScreenProps<'RHProfile'>) {
-  const { identity } = useContext(AuthIdentityContext);
+  const { identity, setIdentity } = useContext(AuthIdentityContext);
   const { perfil, isLoading, errorMessage } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
   const colaboradorId = identity?.colaboradorId ?? null;
@@ -2558,7 +2559,7 @@ export function RHProfileScreen({ navigation }: ScreenProps<'RHProfile'>) {
           </Pressable>
         ) : null}
 
-        <Pressable style={styles.directorLogoutButton} onPress={() => navigation.replace('Login')}>
+        <Pressable style={styles.directorLogoutButton} onPress={() => performLogout(navigation, setIdentity)}>
           <Text style={styles.directorLogoutButtonText}>Sair da conta</Text>
         </Pressable>
       </ScrollView>

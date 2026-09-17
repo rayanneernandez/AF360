@@ -26,6 +26,7 @@ import {
 } from '@expo/vector-icons';
 import {
   Alert,
+  Animated,
   AppState,
   Image,
   ImageBackground,
@@ -146,6 +147,7 @@ import {
   fetchMensagens,
   updateConversa,
   login,
+  changePassword,
   fetchColaboradorHome,
   fetchColaboradorComunicados,
   fetchColaboradorSolicitacoes,
@@ -222,6 +224,7 @@ export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
   ForgotPassword: undefined;
+  ChangePassword: { email: string };
   SelectPanel: undefined;
   DeviceAuth: undefined;
   TwoFactorVerification: {
@@ -1106,6 +1109,70 @@ async function needsTwoFactorVerification(profileId: string): Promise<boolean> {
   return Date.now() - lastVerifiedAt > TWO_FACTOR_VALIDITY_MS;
 }
 
+// "Manter conectado" (Login) — guarda a identidade autenticada no aparelho
+// pra não pedir login de novo toda vez que o app abre. Só é gravado quando a
+// pessoa loga com o checkbox marcado (ver LoginScreen.handleLogin); se não
+// marcar, ou se sair da conta explicitamente, isso é limpo. Expira sozinho
+// depois de 10 dias sem abrir o app — cada restauração bem-sucedida (ver
+// SplashScreen) renova o prazo por mais 10 dias a partir daquele acesso.
+const SESSION_IDENTITY_STORAGE_KEY = '@af360/session-identity';
+const SESSION_SAVED_AT_STORAGE_KEY = '@af360/session-saved-at';
+const SESSION_VALIDITY_MS = 10 * 24 * 60 * 60 * 1000; // 10 dias
+
+async function persistSession(identity: AuthIdentity): Promise<void> {
+  try {
+    await AsyncStorage.setItem(SESSION_IDENTITY_STORAGE_KEY, JSON.stringify(identity));
+    await AsyncStorage.setItem(SESSION_SAVED_AT_STORAGE_KEY, String(Date.now()));
+  } catch {
+    // Se falhar ao salvar, sem problema — só significa que vai pedir login
+    // de novo na próxima vez, nunca menos seguro do que deveria ser.
+  }
+}
+
+async function clearPersistedSession(): Promise<void> {
+  try {
+    await AsyncStorage.multiRemove([SESSION_IDENTITY_STORAGE_KEY, SESSION_SAVED_AT_STORAGE_KEY]);
+  } catch {
+    // Ignora — pior caso, uma sessão antiga fica no storage até expirar
+    // sozinha pelos 10 dias.
+  }
+}
+
+async function loadPersistedSession(): Promise<AuthIdentity | null> {
+  try {
+    const [rawIdentity, rawSavedAt] = await Promise.all([
+      AsyncStorage.getItem(SESSION_IDENTITY_STORAGE_KEY),
+      AsyncStorage.getItem(SESSION_SAVED_AT_STORAGE_KEY),
+    ]);
+    if (!rawIdentity || !rawSavedAt) return null;
+
+    const savedAt = Number(rawSavedAt);
+    if (!Number.isFinite(savedAt) || Date.now() - savedAt > SESSION_VALIDITY_MS) {
+      await clearPersistedSession();
+      return null;
+    }
+
+    // Renova a validade a partir deste acesso — "10 dias sem acessar"
+    // reinicia a contagem em vez de expirar sempre 10 dias após o login.
+    await AsyncStorage.setItem(SESSION_SAVED_AT_STORAGE_KEY, String(Date.now()));
+    return JSON.parse(rawIdentity) as AuthIdentity;
+  } catch {
+    return null;
+  }
+}
+
+// Encerra a sessão de verdade: limpa a sessão salva (senão "Manter
+// conectado" simplesmente logaria de volta sozinho no próximo boot) e o
+// estado em memória, antes de voltar pro Login.
+export async function performLogout(
+  navigation: NativeStackNavigationProp<RootStackParamList, any>,
+  setIdentity: (identity: AuthIdentity | null) => void
+): Promise<void> {
+  await clearPersistedSession();
+  setIdentity(null);
+  navigation.replace('Login');
+}
+
 const SecurityPreferencesContext = createContext<{
   isTwoFactorEnabled: boolean;
   isBiometricLoginEnabled: boolean;
@@ -1139,10 +1206,9 @@ export const UserRoleContext = createContext<{
 });
 
 // Identidade real retornada pelo POST /api/auth/login (Supabase Auth por trás
-// da af360-api). Fica em memória apenas (sem @react-native-async-storage/async-storage
-// instalado no projeto ainda) — ou seja, a sessão se perde ao fechar o app.
-// Se/quando o pacote for adicionado ao package.json, dá pra persistir e
-// restaurar isso no boot (ex.: dentro de um useEffect no App()).
+// da af360-api). Em memória durante a sessão; opcionalmente também persistida
+// em AsyncStorage quando "Manter conectado" está marcado no login (ver
+// persistSession/loadPersistedSession e o boot em SplashScreen).
 export const AuthIdentityContext = createContext<{
   identity: AuthIdentity | null;
   setIdentity: (identity: AuthIdentity | null) => void;
@@ -3051,6 +3117,7 @@ export default function App() {
                     <Stack.Screen name="Splash" component={SplashScreen} />
                     <Stack.Screen name="Login" component={LoginScreen} />
                     <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+                    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
                     <Stack.Screen name="SelectPanel" component={SelectPanelScreen} />
                     <Stack.Screen name="DeviceAuth" component={DeviceAuthScreen} />
                     <Stack.Screen name="TwoFactorVerification" component={TwoFactorVerificationScreen} />
@@ -3210,13 +3277,72 @@ export default function App() {
 }
 
 function SplashScreen({ navigation }: ScreenProps<'Splash'>) {
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      navigation.replace('Login');
-    }, 1800);
+  const SPLASH_DURATION_MS = 1800;
+  const fillAnim = useRef(new Animated.Value(0)).current;
+  const { setIdentity } = useContext(AuthIdentityContext);
+  const { setActiveRole } = useContext(UserRoleContext);
+  const { isBiometricLoginEnabled, isTwoFactorEnabled } = useContext(SecurityPreferencesContext);
 
-    return () => clearTimeout(timer);
-  }, [navigation]);
+  useEffect(() => {
+    Animated.timing(fillAnim, {
+      toValue: 1,
+      duration: SPLASH_DURATION_MS,
+      useNativeDriver: false,
+    }).start();
+
+    let isActive = true;
+
+    // "Manter conectado": se existir uma sessão salva e ainda válida (até 10
+    // dias sem acessar), restaura a identidade e já manda direto pro painel
+    // certo — sem pedir login de novo. Reaproveita o mesmo caminho de
+    // biometria/2FA de um login normal (proceedAfterRoleChosen), então essas
+    // proteções continuam valendo mesmo numa sessão restaurada.
+    const proceed = async () => {
+      const restoredIdentity = await loadPersistedSession();
+      if (!isActive) return;
+
+      if (!restoredIdentity) {
+        navigation.replace('Login');
+        return;
+      }
+
+      setIdentity(restoredIdentity);
+
+      // Sessão restaurada ainda com senha temporária pendente (ex.: fechou o
+      // app antes de trocar) — mesma regra do login normal, obriga a trocar
+      // antes de liberar qualquer painel.
+      if (restoredIdentity.mustChangePassword) {
+        navigation.replace('ChangePassword', { email: restoredIdentity.email });
+        return;
+      }
+
+      const availableRoles = restoredIdentity.availableRoles ?? [restoredIdentity.role];
+
+      if (availableRoles.length > 1) {
+        navigation.replace('SelectPanel');
+      } else if (availableRoles.length === 1) {
+        await proceedAfterRoleChosen(
+          availableRoles[0],
+          navigation,
+          setActiveRole,
+          isBiometricLoginEnabled,
+          isTwoFactorEnabled,
+          restoredIdentity
+        );
+      } else {
+        navigation.replace('Login');
+      }
+    };
+
+    const timer = setTimeout(() => {
+      proceed();
+    }, SPLASH_DURATION_MS);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timer);
+    };
+  }, [navigation, fillAnim, setIdentity, setActiveRole, isBiometricLoginEnabled, isTwoFactorEnabled]);
 
   return (
     <LinearGradient colors={['#253F91', '#4C3A95', '#E0002A']} style={styles.flex}>
@@ -3233,12 +3359,18 @@ function SplashScreen({ navigation }: ScreenProps<'Splash'>) {
             style={styles.splashLogo}
             resizeMode="contain"
           />
-          <Text style={styles.splashTitle}>AMERICAN FUEL</Text>
           <Text style={styles.splashSubtitle}>Abastece a jornada do motorista</Text>
         </View>
         <View style={styles.splashFooter}>
           <View style={styles.loadingTrack}>
-            <View style={styles.loadingFill} />
+            <Animated.View
+              style={[
+                styles.loadingFill,
+                {
+                  width: fillAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+                },
+              ]}
+            />
           </View>
           <Text style={styles.loadingText}>CARREGANDO</Text>
         </View>
@@ -3267,6 +3399,29 @@ function getDashboardRouteForRole(role: UserRole): keyof RootStackParamList {
     : 'Dashboard';
 }
 
+// Cada painel tem sua própria tela de notificações (mesmo padrão de
+// getDashboardRouteForRole) — usado pelo sino do TopBar pra abrir a tela
+// certa conforme o perfil ativo, em vez de sempre a do Colaborador.
+function getNotificationsRouteForRole(role: UserRole): keyof RootStackParamList {
+  return role === 'diretoria'
+    ? 'DirectorNotifications'
+    : role === 'rh'
+    ? 'RHNotifications'
+    : role === 'administrador'
+    ? 'AdminNotifications'
+    : role === 'financeiro'
+    ? 'FinanceiroNotifications'
+    : role === 'gestao'
+    ? 'GestaoNotifications'
+    : role === 'administrativo'
+    ? 'AdministrativoNotifications'
+    : role === 'marketing'
+    ? 'MarketingNotifications'
+    : role === 'recrutamento'
+    ? 'RecrutamentoNotifications'
+    : 'Notifications';
+}
+
 // Decide se pede o código de 2FA (só se a preferência estiver ligada E a
 // última verificação com sucesso NESTE aparelho já passou de 15 dias, ou
 // nunca aconteceu) e navega de acordo — senão vai direto pro destino.
@@ -3286,11 +3441,18 @@ async function goToTargetOrTwoFactor(
   // essa mesma conta administradora entrar no painel Colaborador pra testar,
   // também não pede 2FA. Tirar essa exceção quando existirem contas "de
   // verdade" desses perfis em produção.
+  //
+  // TEMPORÁRIO (17/09/2026): conta de teste criada pela Lovable só pra
+  // validar o fluxo de senha temporária/troca obrigatória (colaborador puro,
+  // e-mail de teste sem caixa de entrada de verdade — não dá pra receber o
+  // código). Tirar assim que o teste desse fluxo terminar.
+  const EMAILS_TESTE_SEM_2FA = ['teste.colaborador@americanfuel.com.br'];
   const contaEhDeTeste =
     role === 'administrador' ||
     role === 'diretoria' ||
     identity?.role === 'administrador' ||
-    identity?.availableRoles?.includes('administrador');
+    identity?.availableRoles?.includes('administrador') ||
+    EMAILS_TESTE_SEM_2FA.includes(String(identity?.email || '').trim().toLowerCase());
   if (contaEhDeTeste) {
     // targetRoute é dinâmico (keyof RootStackParamList) — cada tela exige um
     // formato de params diferente, então o TS não consegue casar isso com o
@@ -3388,6 +3550,22 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
 
       setIdentity(identity);
 
+      // "Manter conectado": só persiste a sessão no aparelho se a pessoa
+      // marcou o checkbox; senão garante que nenhuma sessão antiga (de um
+      // login anterior com o checkbox marcado) fique salva por engano.
+      if (keepConnected) {
+        await persistSession(identity);
+      } else {
+        await clearPersistedSession();
+      }
+
+      // Senha temporária (criada pelo administrador) — obriga a trocar antes
+      // de liberar qualquer painel, mesmo que a conta tenha mais de um.
+      if (identity.mustChangePassword) {
+        navigation.replace('ChangePassword', { email: identity.email });
+        return;
+      }
+
       if (availableRoles.length > 1) {
         navigation.replace('SelectPanel');
         return;
@@ -3441,7 +3619,7 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
             <InputRow
               icon={<Feather name="user" size={18} color="#99A0BA" />}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => setEmail(text.replace(/\s/g, ''))}
               autoCapitalize="none"
               keyboardType="email-address"
               placeholder="email@americanfuel.com.br"
@@ -3451,7 +3629,7 @@ function LoginScreen({ navigation }: ScreenProps<'Login'>) {
             <InputRow
               icon={<Feather name="lock" size={18} color="#99A0BA" />}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(text) => setPassword(text.replace(/\s/g, ''))}
               secureTextEntry
               placeholder="****"
             />
@@ -3718,6 +3896,164 @@ function ForgotPasswordScreen({ navigation }: ScreenProps<'ForgotPassword'>) {
       <View style={styles.loginFooter}>
         <Text style={styles.forgotPasswordHelpText}>Precisa de ajuda? Fale com o RH · ramal 4020</Text>
       </View>
+    </SafeAreaView>
+  );
+}
+
+// Obrigatório quando o administrador cria o acesso com uma senha temporária
+// (painel Usuários) — o login (POST /api/auth/login) devolve
+// mustChangePassword: true (guardado como user_metadata no Supabase Auth, ver
+// af360-api/routes/auth.js) e o app manda pra cá em vez de liberar qualquer
+// painel. Depois de trocar com sucesso, segue o mesmo caminho de
+// biometria/2FA de um login normal (proceedAfterRoleChosen).
+function ChangePasswordScreen({ navigation, route }: ScreenProps<'ChangePassword'>) {
+  const { email } = route.params;
+  const { identity } = useContext(AuthIdentityContext);
+  const { setActiveRole } = useContext(UserRoleContext);
+  const { isTwoFactorEnabled, isBiometricLoginEnabled } = useContext(SecurityPreferencesContext);
+  const insets = useSafeAreaInsets();
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Alert.alert('Preencha os campos', 'Informe a senha atual e a nova senha (com confirmação).');
+      return;
+    }
+    if (newPassword.length < 6) {
+      Alert.alert('Senha muito curta', 'A nova senha precisa ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('As senhas não coincidem', 'Digite a mesma senha nos dois campos.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await changePassword(email, currentPassword, newPassword);
+
+      if (!identity) {
+        navigation.replace('Login');
+        return;
+      }
+
+      const availableRoles = identity.availableRoles ?? [identity.role];
+      if (availableRoles.length > 1) {
+        navigation.replace('SelectPanel');
+        return;
+      }
+
+      await proceedAfterRoleChosen(
+        availableRoles[0],
+        navigation,
+        setActiveRole,
+        isBiometricLoginEnabled,
+        isTwoFactorEnabled,
+        identity
+      );
+    } catch (err) {
+      let title = 'Não foi possível trocar a senha';
+      let message = 'Tente novamente em instantes.';
+
+      if (err instanceof ApiError) {
+        if (err.code === 'invalid_current_password') {
+          title = 'Senha atual incorreta';
+          message = 'Confira a senha temporária que você usou pra entrar e tente de novo.';
+        } else if (err.code === 'weak_password') {
+          title = 'Senha muito curta';
+          message = 'A nova senha precisa ter pelo menos 6 caracteres.';
+        } else if (err.code === 'network_error') {
+          title = 'Sem conexão';
+          message = 'Não foi possível conectar. Verifique sua internet.';
+        } else if (err.code === 'auth_not_configured') {
+          title = 'Indisponível no momento';
+          message = 'Fale com o suporte — o serviço ainda está sendo configurado.';
+        }
+      }
+
+      Alert.alert(title, message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.screen} edges={[]}>
+      <StatusBar style="light" />
+      <LinearGradient
+        colors={['#284494', '#4A3A95']}
+        style={[styles.forgotPasswordHero, { paddingTop: 14 + insets.top }]}
+      >
+        <Image
+          source={require('./assets/logo-branca.png')}
+          style={styles.heroWatermarkLogo}
+          resizeMode="contain"
+        />
+
+        <View style={styles.forgotPasswordLockBadge}>
+          <Feather name="lock" size={22} color="#FFFFFF" />
+        </View>
+
+        <Text style={styles.loginTitle}>Troque sua senha</Text>
+        <Text style={styles.loginSubtitle}>
+          Você entrou com uma senha temporária. Crie uma senha definitiva pra continuar.
+        </Text>
+      </LinearGradient>
+
+      <ScrollView
+        style={styles.loginCard}
+        contentContainerStyle={styles.forgotPasswordCardContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <FieldLabel label="Senha temporária (atual)" />
+        <InputRow
+          icon={<Feather name="lock" size={18} color="#99A0BA" />}
+          value={currentPassword}
+          onChangeText={(text) => setCurrentPassword(text.replace(/\s/g, ''))}
+          secureTextEntry
+          placeholder="****"
+        />
+
+        <FieldLabel label="Nova senha" style={styles.spacingTop} />
+        <InputRow
+          icon={<Feather name="lock" size={18} color="#99A0BA" />}
+          value={newPassword}
+          onChangeText={(text) => setNewPassword(text.replace(/\s/g, ''))}
+          secureTextEntry
+          placeholder="Mínimo 6 caracteres"
+        />
+
+        <FieldLabel label="Confirmar nova senha" style={styles.spacingTop} />
+        <InputRow
+          icon={<Feather name="lock" size={18} color="#99A0BA" />}
+          value={confirmPassword}
+          onChangeText={(text) => setConfirmPassword(text.replace(/\s/g, ''))}
+          secureTextEntry
+          placeholder="Repita a nova senha"
+        />
+
+        <Pressable
+          style={[styles.primaryButton, styles.spacingTop, isSubmitting ? styles.primaryButtonDisabled : null]}
+          onPress={handleSubmit}
+          disabled={isSubmitting}
+        >
+          <Text style={styles.primaryButtonText}>{isSubmitting ? 'Salvando...' : 'Trocar senha e entrar'}</Text>
+          {!isSubmitting ? <Feather name="arrow-right" size={18} color="#FFFFFF" /> : null}
+        </Pressable>
+
+        <Pressable
+          style={[styles.secondaryButton, styles.forgotPasswordCancelButton]}
+          onPress={() => navigation.replace('Login')}
+        >
+          <Text style={styles.secondaryButtonText}>Cancelar e sair</Text>
+        </Pressable>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -4009,6 +4345,9 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [proximoEvento, setProximoEvento] = useState<RhCalendarioEvento | null | undefined>(undefined);
+  // Privacidade: valor do último contracheque começa oculto no card da Home
+  // — alguém olhando de relance a tela não vê o salário; o olhinho revela.
+  const [isPayslipValueVisible, setIsPayslipValueVisible] = useState(false);
 
   useEffect(() => {
     if (!colaboradorId) {
@@ -4045,6 +4384,14 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
   // rh_calendario_eventos (endpoint liberado pela Lovable em 03/08/2026) — o
   // card "Próximos eventos" mostra o próprio próximo evento (data + título),
   // igual ao card do web, em vez de uma contagem.
+  //
+  // Duas coisas de propósito aqui, pra não depender só do backend:
+  // 1) "de" é o início do dia de hoje (não o instante exato agora) — senão um
+  //    evento de hoje com inicio_em na madrugada fica de fora do filtro e o
+  //    card mostra o de daqui a semanas em vez do de hoje.
+  // 2) Busca vários (limit maior) e ordena por inicio_em no cliente, em vez
+  //    de confiar cegamente que o backend já manda ordenado com limit=1 —
+  //    assim o "próximo evento" bate sempre com o que está no Calendário.
   useEffect(() => {
     if (!colaboradorId) {
       setProximoEvento(null);
@@ -4052,9 +4399,21 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
     }
 
     let isActive = true;
-    fetchRhCalendarioEventos({ colaboradorId, de: new Date().toISOString(), incluirGlobais: true, limit: 1 })
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    fetchRhCalendarioEventos({
+      colaboradorId,
+      de: startOfToday.toISOString(),
+      incluirGlobais: true,
+      limit: 50,
+    })
       .then((eventos) => {
-        if (isActive) setProximoEvento(eventos[0] ?? null);
+        if (!isActive) return;
+        const ordenados = [...eventos].sort(
+          (a, b) => new Date(a.inicio_em).getTime() - new Date(b.inicio_em).getTime()
+        );
+        setProximoEvento(ordenados[0] ?? null);
       })
       .catch(() => {
         if (isActive) setProximoEvento(null);
@@ -4153,15 +4512,26 @@ function DashboardScreen({ navigation }: ScreenProps<'Dashboard'>) {
               </View>
               <Text style={styles.infoCardTitle}>Último contracheque</Text>
             </View>
-            <Pressable style={styles.smallActionButton} onPress={() => navigation.navigate('Payslips')}>
-              <Text style={styles.smallActionButtonText}>Ver</Text>
-            </Pressable>
+            <View style={styles.infoCardTopActions}>
+              <Pressable
+                style={styles.infoCardEyeButton}
+                onPress={() => setIsPayslipValueVisible((current) => !current)}
+                hitSlop={8}
+              >
+                <Feather name={isPayslipValueVisible ? 'eye-off' : 'eye'} size={18} color="#4F5873" />
+              </Pressable>
+              <Pressable style={styles.smallActionButton} onPress={() => navigation.navigate('Payslips')}>
+                <Text style={styles.smallActionButtonText}>Ver</Text>
+              </Pressable>
+            </View>
           </View>
 
           {homeData?.ultimoContracheque ? (
             <>
               <Text style={styles.infoCardMeta}>{homeData.ultimoContracheque.competenciaLabel} · líquido</Text>
-              <Text style={styles.infoCardValue}>{homeData.ultimoContracheque.valorLiquido}</Text>
+              <Text style={styles.infoCardValue}>
+                {isPayslipValueVisible ? homeData.ultimoContracheque.valorLiquido : '••••••'}
+              </Text>
             </>
           ) : (
             <Text style={styles.infoCardMeta}>
@@ -6561,8 +6931,8 @@ function PayslipsScreen({ navigation }: ScreenProps<'Payslips'>) {
         transparent
         onRequestClose={closePayslipPreview}
       >
-        <View style={styles.payslipModalBackdrop}>
-          <View style={styles.payslipModalCard}>
+        <Pressable style={styles.payslipModalBackdrop} onPress={closePayslipPreview}>
+          <Pressable style={styles.payslipModalCard} onPress={() => {}}>
             <View style={styles.payslipModalHeader}>
               <View style={styles.payslipModalHeaderTextBlock}>
                 <Text style={styles.payslipModalTitle}>
@@ -6615,8 +6985,8 @@ function PayslipsScreen({ navigation }: ScreenProps<'Payslips'>) {
                 ) : null}
               </ScrollView>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -6795,6 +7165,28 @@ function ApprovalsScreen({ navigation }: ScreenProps<'Approvals'>) {
   );
 }
 
+// notif_inbox (colaborador) não tem um campo de "tipo"/destino estruturado —
+// só `modulo`, texto livre e sempre igual pra praticamente tudo do RH (ex.:
+// "rh"). Detecta pelo título/mensagem qual tela a notificação se refere;
+// null quando nada bate (mantém o Alert com o texto completo como fallback
+// honesto, em vez de arriscar navegar pro lugar errado).
+function getColaboradorNotificationTargetRoute(
+  item: ColaboradorNotificacaoItem
+): keyof RootStackParamList | null {
+  const texto = `${item.titulo} ${item.mensagem}`.toLowerCase();
+
+  if (texto.includes('contracheque') || texto.includes('holerite')) return 'Payslips';
+  if (texto.includes('treinamento') || texto.includes('curso')) return 'Trainings';
+  if (texto.includes('comunicado')) return 'Communications';
+  if (texto.includes('solicita')) return 'Requests';
+  if (texto.includes('uniforme')) return 'Uniforms';
+  if (texto.includes('reembolso')) return 'Reimbursement';
+  if (texto.includes('benefíc') || texto.includes('beneficio')) return 'Benefits';
+  if (texto.includes('féria') || texto.includes('feria') || texto.includes('calend')) return 'Calendar';
+
+  return null;
+}
+
 function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>) {
   const { identity } = useContext(AuthIdentityContext);
   const colaboradorId = identity?.colaboradorId ?? null;
@@ -6833,14 +7225,21 @@ function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>) {
     };
   }, [colaboradorId]);
 
-  // A versão mockada usava um campo `target` pra navegar direto pra
-  // Payslips/TrainingDetail/etc. ao tocar na notificação. notif_inbox só
-  // guarda `modulo` (texto livre) — não dá pra reconstruir com certeza qual
-  // tela/entidade a notificação se refere a partir disso sozinho, então aqui
-  // o toque só mostra o conteúdo completo (título + mensagem) num Alert, sem
-  // tentar adivinhar a rota certa.
+  // notif_inbox só guarda `modulo` (texto livre e genérico — normalmente
+  // sempre "rh", não dá pra saber a tela exata só por ele). Em vez de
+  // depender disso, olha por palavras-chave no título/mensagem pra decidir
+  // pra onde navegar; se não reconhecer nenhuma, cai no comportamento antigo
+  // (mostra o conteúdo completo num Alert) em vez de arriscar ir pro lugar
+  // errado.
   const handleNotificationPress = (item: ColaboradorNotificacaoItem) => {
     markNotificationAsRead(item.id);
+
+    const targetRoute = getColaboradorNotificationTargetRoute(item);
+    if (targetRoute) {
+      navigation.navigate(targetRoute as any);
+      return;
+    }
+
     Alert.alert(item.titulo, item.mensagem);
   };
 
@@ -7542,7 +7941,7 @@ function buildColaboradorProfileSections(
 }
 
 function ProfileScreen({ navigation }: ScreenProps<'Profile'>) {
-  const { identity } = useContext(AuthIdentityContext);
+  const { identity, setIdentity } = useContext(AuthIdentityContext);
   const { perfil, isLoading, errorMessage } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
   const colaboradorId = identity?.colaboradorId ?? null;
@@ -7607,7 +8006,7 @@ function ProfileScreen({ navigation }: ScreenProps<'Profile'>) {
               style={[styles.profileMenuRow, index < profileMenuItems.length - 1 ? styles.profileMenuBorder : null]}
               onPress={() => {
                 if (item.id === 'logout') {
-                  navigation.replace('Login');
+                  performLogout(navigation, setIdentity);
                   return;
                 }
 
@@ -7637,7 +8036,7 @@ function ProfileScreen({ navigation }: ScreenProps<'Profile'>) {
           </Pressable>
         ) : null}
 
-        <Pressable style={styles.profileLogoutButton} onPress={() => navigation.replace('Login')}>
+        <Pressable style={styles.profileLogoutButton} onPress={() => performLogout(navigation, setIdentity)}>
           <Text style={styles.profileLogoutButtonText}>Sair da conta</Text>
         </Pressable>
       </ScrollView>
@@ -8469,7 +8868,7 @@ function DirectorDashboardScreen({ navigation }: ScreenProps<'DirectorDashboard'
 }
 
 function DirectorProfileScreen({ navigation }: ScreenProps<'DirectorProfile'>) {
-  const { identity } = useContext(AuthIdentityContext);
+  const { identity, setIdentity } = useContext(AuthIdentityContext);
   const { perfil, isLoading, errorMessage } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
   const colaboradorId = identity?.colaboradorId ?? null;
@@ -8531,7 +8930,7 @@ function DirectorProfileScreen({ navigation }: ScreenProps<'DirectorProfile'>) {
           </Pressable>
         ) : null}
 
-        <Pressable style={styles.directorLogoutButton} onPress={() => navigation.replace('Login')}>
+        <Pressable style={styles.directorLogoutButton} onPress={() => performLogout(navigation, setIdentity)}>
           <Text style={styles.directorLogoutButtonText}>Sair da conta</Text>
         </Pressable>
       </ScrollView>
@@ -13564,15 +13963,34 @@ export function TopBar({
 
   const openNotifications = () => {
     if (navigationRef.isReady()) {
-      navigationRef.navigate('Notifications');
+      navigationRef.navigate(getNotificationsRouteForRole(variant) as any);
+    }
+  };
+
+  // Botão de voltar, presente em todas as telas dos perfis: se existir uma
+  // tela anterior na pilha (ex.: veio de Notificações, Perfil, etc.), volta
+  // pra ela; se não existir (ex.: já está na Visão Geral/Dashboard, que é o
+  // topo da pilha), manda pro Início com todos os perfis (SelectPanel).
+  const goBackOrHome = () => {
+    if (!navigationRef.isReady()) return;
+    if (navigationRef.canGoBack()) {
+      navigationRef.goBack();
+    } else {
+      navigationRef.navigate('SelectPanel');
     }
   };
 
   return (
     <View style={styles.topBar}>
-      <Pressable style={styles.menuButton} onPress={openMenu}>
-        <Feather name="menu" size={20} color="#313951" />
-      </Pressable>
+      <View style={styles.topBarLeft}>
+        <Pressable style={styles.menuButton} onPress={openMenu}>
+          <Feather name="menu" size={20} color="#313951" />
+        </Pressable>
+
+        <Pressable style={styles.topBarBackButton} onPress={goBackOrHome} hitSlop={8}>
+          <Feather name="arrow-left" size={18} color="#313951" />
+        </Pressable>
+      </View>
 
       {isDirector ? (
         <DirectorBrandLogo light={onColor} />
@@ -13595,12 +14013,14 @@ export function TopBar({
       )}
 
       <View style={styles.topBarRight}>
-        {isDirector || isRH || isAdmin || isFinanceiro || isGestao || isAdministrativo || isMarketing || isRecrutamento ? null : (
-          <Pressable style={styles.notificationBellButton} onPress={openNotifications}>
-            <Feather name="bell" size={17} color="#313951" />
-            {hasUnreadNotifications ? <View style={styles.notificationBellDot} /> : null}
-          </Pressable>
-        )}
+        <Pressable style={styles.notificationBellButton} onPress={openNotifications}>
+          <Feather name="bell" size={17} color="#313951" />
+          {/* O contador de não-lidas hoje só existe pro Colaborador (ColaboradorNotificationsContext) —
+              nos outros perfis o sino já navega certo pra tela de cada um, só a bolinha de "não lida" ainda não se aplica lá. */}
+          {!isDirector && !isRH && !isAdmin && !isFinanceiro && !isGestao && !isAdministrativo && !isMarketing && !isRecrutamento && hasUnreadNotifications ? (
+            <View style={styles.notificationBellDot} />
+          ) : null}
+        </Pressable>
 
         <Pressable
           style={[
@@ -14409,7 +14829,6 @@ export const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   loadingFill: {
-    width: 58,
     height: '100%',
     borderRadius: 999,
     backgroundColor: '#FFFFFF',
@@ -14822,6 +15241,11 @@ export const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 12,
   },
+  topBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   sideMenuOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 20,
@@ -14969,6 +15393,16 @@ export const styles = StyleSheet.create({
     backgroundColor: '#E6213D',
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
+  },
+  topBarBackButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E0E4EE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
   avatar: {
     width: 38,
@@ -15252,6 +15686,21 @@ export const styles = StyleSheet.create({
     color: '#0F1733',
     fontSize: 26,
     fontWeight: '800',
+  },
+  infoCardTopActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  infoCardEyeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E0E4EE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
   smallActionButton: {
     backgroundColor: '#EF002E',

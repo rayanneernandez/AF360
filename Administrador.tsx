@@ -44,6 +44,7 @@ import {
   adminUserInitials,
   directorUserInitials,
   AuthIdentityContext,
+  performLogout,
   AdminThemeContext,
   NotificationRoutineFormModal,
   TemplateFormModal,
@@ -1243,7 +1244,7 @@ export function AdminDashboardScreen({ navigation }: ScreenProps<'AdminDashboard
 // ============================================================================
 
 export function AdminProfileScreen({ navigation }: ScreenProps<'AdminProfile'>) {
-  const { identity } = useContext(AuthIdentityContext);
+  const { identity, setIdentity } = useContext(AuthIdentityContext);
   const { theme } = useContext(AdminThemeContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
 
@@ -1326,7 +1327,7 @@ export function AdminProfileScreen({ navigation }: ScreenProps<'AdminProfile'>) 
           </Pressable>
         ) : null}
 
-        <Pressable style={styles.directorLogoutButton} onPress={() => navigation.replace('Login')}>
+        <Pressable style={styles.directorLogoutButton} onPress={() => performLogout(navigation, setIdentity)}>
           <Text style={styles.directorLogoutButtonText}>Sair da conta</Text>
         </Pressable>
       </ScrollView>

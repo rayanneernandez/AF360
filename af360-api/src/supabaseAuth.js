@@ -42,4 +42,39 @@ async function signInWithPassword(email, password) {
   return { ok: true, accessToken: json.access_token, user: json.user };
 }
 
-module.exports = { signInWithPassword };
+// Troca a própria senha do usuário logado (usa o access_token da sessão,
+// obtido re-autenticando com a senha atual — ver routes/auth.js
+// POST /change-password). Não precisa de service_role key: PUT /auth/v1/user
+// com o Bearer token do próprio usuário já é o jeito padrão do GoTrue pra
+// isso. Aproveita a mesma chamada pra já apagar a flag "senha temporária"
+// (user_metadata.must_change_password), guardada no próprio Supabase Auth —
+// sem depender de nenhuma coluna nova na tabela profiles (essa é gerenciada
+// pela Lovable, fora do nosso controle).
+async function updateOwnPassword(accessToken, newPassword) {
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    method: 'PUT',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      password: newPassword,
+      data: { must_change_password: false },
+    }),
+  });
+
+  const json = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      message: json?.error_description || json?.msg || json?.error || 'Não foi possível trocar a senha.',
+    };
+  }
+
+  return { ok: true, user: json };
+}
+
+module.exports = { signInWithPassword, updateOwnPassword };

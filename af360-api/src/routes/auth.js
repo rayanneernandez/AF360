@@ -1,5 +1,5 @@
 const express = require('express');
-const { signInWithPassword } = require('../supabaseAuth');
+const { signInWithPassword, updateOwnPassword } = require('../supabaseAuth');
 const { fetchTable } = require('../lovable');
 const { normalizeModuleName, fetchEffectiveModules } = require('../permissions');
 
@@ -193,10 +193,61 @@ router.post('/login', async (req, res) => {
         availableRoles,
         colaboradorId: rhColaborador?.id || null,
         empresaId: rhColaborador?.empresa_id || profile?.empresa_id || null,
+        // Senha temporária (criada pelo administrador no painel Usuários) —
+        // guardada como user_metadata no próprio Supabase Auth, não numa
+        // coluna da tabela profiles (essa é gerenciada pela Lovable). Se
+        // vier true, o app mobile obriga a trocar a senha antes de liberar
+        // qualquer painel.
+        mustChangePassword: Boolean(authResult.user?.user_metadata?.must_change_password),
       },
     });
   } catch (err) {
     console.error('[auth/login] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/auth/change-password  { email, currentPassword, newPassword }
+// Troca a senha do próprio usuário (fluxo de "senha temporária" no primeiro
+// acesso, ou troca voluntária em Configurações de Segurança). Reautentica
+// com a senha ATUAL pra obter um access_token válido (o login original não
+// guarda token nenhum, por design — ver AuthIdentity), então usa esse token
+// pra chamar PUT /auth/v1/user via updateOwnPassword. Isso também já limpa
+// a flag must_change_password na mesma chamada.
+router.post('/change-password', async (req, res) => {
+  try {
+    const { email, currentPassword, newPassword } = req.body || {};
+
+    if (!email || !currentPassword || !newPassword) {
+      return res.status(400).json({ ok: false, error: 'missing_fields' });
+    }
+
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ ok: false, error: 'weak_password', message: 'A nova senha precisa ter pelo menos 6 caracteres.' });
+    }
+
+    let authResult;
+    try {
+      authResult = await signInWithPassword(email, currentPassword);
+    } catch (err) {
+      if (err.code === 'missing_anon_key') {
+        return res.status(500).json({ ok: false, error: 'auth_not_configured', message: err.message });
+      }
+      throw err;
+    }
+
+    if (!authResult.ok) {
+      return res.status(401).json({ ok: false, error: 'invalid_current_password', message: authResult.message });
+    }
+
+    const updateResult = await updateOwnPassword(authResult.accessToken, newPassword);
+    if (!updateResult.ok) {
+      return res.status(400).json({ ok: false, error: 'update_failed', message: updateResult.message });
+    }
+
+    res.json({ ok: true, data: { updated: true } });
+  } catch (err) {
+    console.error('[auth/change-password] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
   }
 });
