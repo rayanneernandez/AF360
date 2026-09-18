@@ -2210,6 +2210,16 @@ function getRecrutamentoImportacoes(params, actorId) {
 function postRecrutamentoProcessarImportacao(id, actorId) {
   return lovablePost('/api/public/internal/recrutamento', { recurso: 'processar-importacao', id }, {}, actorId);
 }
+// "importacao" (singular) segue o mesmo padrão de todo resto da API
+// (vaga/vagas, candidato/candidatos, avaliacao/avaliacoes...) pra CRUD de um
+// item só — não confirmado formalmente com a Lovable, mas testado direto
+// (18/09/2026) e funcionou tanto pro GET de detalhe quanto pro DELETE.
+function getRecrutamentoImportacao(id, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'importacao', id }, actorId);
+}
+function deleteRecrutamentoImportacao(id, actorId) {
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'importacao', id }, actorId);
+}
 
 // --- Pendências de documentos ---
 function getRecrutamentoPendencias(params, actorId) {
@@ -2376,6 +2386,8 @@ module.exports = {
   postRecrutamentoImportarCurriculo,
   getRecrutamentoImportacoes,
   postRecrutamentoProcessarImportacao,
+  getRecrutamentoImportacao,
+  deleteRecrutamentoImportacao,
   getRecrutamentoPendencias,
   postRecrutamentoPendenciaAcao,
   getRecrutamentoTriagemModelos,
