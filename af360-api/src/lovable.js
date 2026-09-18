@@ -614,16 +614,22 @@ function deleteAdminNotifTemplate(id, actorId) {
 // completos. "acao" (query string no POST) pode ser: testar,
 // rotacionar-secret, sincronizar-templates, testar-template. ---
 
-function getWaConfig({ reveal, actorId } = {}) {
-  return lovableGet('/api/public/internal/wa-config', reveal ? { reveal: 1 } : {}, actorId);
+// canal: 'geral' (Administrativo, default se omitido) ou 'rs' (Recrutamento
+// — conexão própria, confirmado pela Lovable em 18/09/2026: Department ID e
+// templates diferentes do canal 'geral').
+function getWaConfig({ reveal, actorId, canal } = {}) {
+  const params = {};
+  if (reveal) params.reveal = 1;
+  if (canal) params.canal = canal;
+  return lovableGet('/api/public/internal/wa-config', params, actorId);
 }
 
-function patchWaConfig(body, actorId) {
-  return lovablePatch('/api/public/internal/wa-config', {}, body, actorId);
+function patchWaConfig(body, actorId, canal) {
+  return lovablePatch('/api/public/internal/wa-config', canal ? { canal } : {}, body, actorId);
 }
 
-function postWaConfigAcao(acao, body, actorId) {
-  return lovablePost('/api/public/internal/wa-config', { acao }, body ?? {}, actorId);
+function postWaConfigAcao(acao, body, actorId, canal) {
+  return lovablePost('/api/public/internal/wa-config', canal ? { acao, canal } : { acao }, body ?? {}, actorId);
 }
 
 // --- Integrações: Google Meu Negócio (gmb_config singleton + gmb_locations
