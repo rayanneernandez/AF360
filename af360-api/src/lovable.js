@@ -2337,6 +2337,17 @@ function deleteRecrutamentoDocAdmissao(id, actorId) {
   return lovableDelete('/api/public/internal/recrutamento', { recurso: 'doc-admissao', id }, actorId);
 }
 
+// --- Configurações: Kits de admissão ---
+function getRecrutamentoKitsAdmissao(actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'kits-admissao' }, actorId);
+}
+function postRecrutamentoKitAdmissao(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'kit-admissao' }, body, actorId);
+}
+function deleteRecrutamentoKitAdmissao(id, actorId) {
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'kit-admissao', id }, actorId);
+}
+
 // --- Configurações: Alertas de IA (análise de currículo) ---
 function getRecrutamentoAlertasIa(actorId) {
   return lovableGet('/api/public/internal/recrutamento', { recurso: 'alertas-ia' }, actorId);
@@ -2415,6 +2426,9 @@ module.exports = {
   postRecrutamentoDocAdmissao,
   patchRecrutamentoDocAdmissao,
   deleteRecrutamentoDocAdmissao,
+  getRecrutamentoKitsAdmissao,
+  postRecrutamentoKitAdmissao,
+  deleteRecrutamentoKitAdmissao,
   getRecrutamentoAlertasIa,
   postRecrutamentoAlertaIa,
   patchRecrutamentoAlertaIa,

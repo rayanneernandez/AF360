@@ -46,6 +46,9 @@ const {
   postRecrutamentoDocAdmissao,
   patchRecrutamentoDocAdmissao,
   deleteRecrutamentoDocAdmissao,
+  getRecrutamentoKitsAdmissao,
+  postRecrutamentoKitAdmissao,
+  deleteRecrutamentoKitAdmissao,
   getRecrutamentoAlertasIa,
   postRecrutamentoAlertaIa,
   patchRecrutamentoAlertaIa,
@@ -106,7 +109,7 @@ function extractArrayPayload(json) {
 
 // GET /api/recrutamento?recurso=dashboard|vagas|vaga|candidatos|candidato|
 //   importacoes|pendencias|triagem-modelos|avaliacoes|questoes|doc-admissao|
-//   alertas-ia|telegram&...
+//   kits-admissao|alertas-ia|telegram&...
 router.get('/', async (req, res) => {
   const { recurso, actorId, ...params } = req.query;
   try {
@@ -168,6 +171,11 @@ router.get('/', async (req, res) => {
       }
       case 'doc-admissao': {
         const json = await getRecrutamentoDocAdmissao(actorId);
+        const { rows, count } = extractArrayPayload(json);
+        return res.json({ ok: true, count, data: rows });
+      }
+      case 'kits-admissao': {
+        const json = await getRecrutamentoKitsAdmissao(actorId);
         const { rows, count } = extractArrayPayload(json);
         return res.json({ ok: true, count, data: rows });
       }
@@ -522,6 +530,28 @@ router.delete('/doc-admissao', async (req, res) => {
     res.json({ ok: true, data: null });
   } catch (err) {
     console.error('[recrutamento/doc-admissao DELETE] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// kit-admissao: POST serve tanto criação quanto edição (id no body) —
+// confirmado pela Lovable em 18/09/2026.
+router.post('/kit-admissao', async (req, res) => {
+  try {
+    const json = await postRecrutamentoKitAdmissao(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[recrutamento/kit-admissao POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+router.delete('/kit-admissao', async (req, res) => {
+  try {
+    if (!req.query.id) return res.status(400).json({ ok: false, error: 'id_obrigatorio' });
+    await deleteRecrutamentoKitAdmissao(req.query.id, req.query.actorId);
+    res.json({ ok: true, data: null });
+  } catch (err) {
+    console.error('[recrutamento/kit-admissao DELETE] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
