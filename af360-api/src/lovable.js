@@ -2236,6 +2236,57 @@ function deleteRecrutamentoTriagemModelo(id, actorId) {
 function patchRecrutamentoTriagemVaga(vagaId, body, actorId) {
   return lovablePatch('/api/public/internal/recrutamento', { recurso: 'triagem-vaga', vaga_id: vagaId }, body, actorId);
 }
+// Leitura do roteiro de triagem — confirmado pela Lovable em 18/09/2026
+// (recurso próprio, diferente do PATCH acima que só grava). Devolve
+// { vaga_titulo, triagem_wa_ativa, triagem_msg_abertura,
+// triagem_msg_encerramento, total_perguntas, perguntas:[{ordem,texto,opcoes[]}] }.
+function getRecrutamentoTriagemVagaLeitura(vagaId, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'triagem-vaga', vaga_id: vagaId }, actorId);
+}
+
+// --- Match, avaliações e links por etapa (confirmados pela Lovable em
+// 18/09/2026) ---
+// Body: { aplicacao_id } ou { candidato_id, vaga_id }. Devolve/grava
+// match_score, match_analise, match_calculado_em.
+function postRecrutamentoMatchCandidato(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'match-candidato' }, body, actorId);
+}
+// Body: { avaliacao_id, candidato_ids[], vaga_id? }. Devolve
+// { avaliacao, expira_em, envios:[{envio_id,token,link,nome,whatsapp}] }.
+function postRecrutamentoAvaliacaoEnviar(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'avaliacao-enviar' }, body, actorId);
+}
+// Body: { etapa: cadastro|perguntas|disc|admissao, candidato_id, vaga_id?,
+// avaliacao_id? (disc), dias?, empresa_id?/cargo?/tipo_contrato?/kit_id?
+// (admissao) }. Cada etapa devolve um link próprio.
+function postRecrutamentoLinkEtapa(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'link-etapa' }, body, actorId);
+}
+// Body: { candidato_id, file_name, file_base64, analisar? }. Anexa o arquivo
+// direto no candidato indicado (sem a IA reidentificar quem é) e devolve
+// curriculo_url + link temporário + análise (se PDF e analisar=true).
+function postRecrutamentoAnexarCurriculo(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'anexar-curriculo' }, body, actorId);
+}
+
+// --- Consulta de CPF / antecedentes (confirmado pela Lovable em 18/09/2026) ---
+function getRecrutamentoConsultasPf(candidatoId, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'consultas-pf', candidato_id: candidatoId }, actorId);
+}
+function getRecrutamentoConsultaPfArquivo(consultaId, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'consulta-pf-arquivo', id: consultaId }, actorId);
+}
+// Body: { candidato_id, pular_cpf? }.
+function postRecrutamentoConsultarPf(body, actorId) {
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'consultar-pf' }, body, actorId);
+}
+
+// --- Consentimento LGPD (confirmado pela Lovable em 18/09/2026) ---
+// Devolve { tem_consentimento, consentimento:{aceite,data_hora,termo_versao,
+// termo_texto,ip,user_agent}, termo_versao_atual }.
+function getRecrutamentoConsentimento(candidatoId, actorId) {
+  return lovableGet('/api/public/internal/recrutamento', { recurso: 'consentimento', candidato_id: candidatoId }, actorId);
+}
 
 // --- Configurações: Provas e DISC ---
 function getRecrutamentoAvaliacoes(actorId) {
@@ -2332,6 +2383,15 @@ module.exports = {
   patchRecrutamentoTriagemModelo,
   deleteRecrutamentoTriagemModelo,
   patchRecrutamentoTriagemVaga,
+  getRecrutamentoTriagemVagaLeitura,
+  postRecrutamentoMatchCandidato,
+  postRecrutamentoAvaliacaoEnviar,
+  postRecrutamentoLinkEtapa,
+  postRecrutamentoAnexarCurriculo,
+  getRecrutamentoConsultasPf,
+  getRecrutamentoConsultaPfArquivo,
+  postRecrutamentoConsultarPf,
+  getRecrutamentoConsentimento,
   getRecrutamentoAvaliacoes,
   postRecrutamentoAvaliacao,
   patchRecrutamentoAvaliacao,

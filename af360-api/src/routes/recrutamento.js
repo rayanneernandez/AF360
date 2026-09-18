@@ -23,6 +23,15 @@ const {
   patchRecrutamentoTriagemModelo,
   deleteRecrutamentoTriagemModelo,
   patchRecrutamentoTriagemVaga,
+  getRecrutamentoTriagemVagaLeitura,
+  postRecrutamentoMatchCandidato,
+  postRecrutamentoAvaliacaoEnviar,
+  postRecrutamentoLinkEtapa,
+  postRecrutamentoAnexarCurriculo,
+  getRecrutamentoConsultasPf,
+  getRecrutamentoConsultaPfArquivo,
+  postRecrutamentoConsultarPf,
+  getRecrutamentoConsentimento,
   getRecrutamentoAvaliacoes,
   postRecrutamentoAvaliacao,
   patchRecrutamentoAvaliacao,
@@ -159,6 +168,26 @@ router.get('/', async (req, res) => {
         const json = await getRecrutamentoTelegram(actorId);
         return res.json({ ok: true, data: json?.data ?? json ?? {} });
       }
+      case 'triagem-vaga': {
+        if (!params.vaga_id) return res.status(400).json({ ok: false, error: 'vaga_id_obrigatorio' });
+        const json = await getRecrutamentoTriagemVagaLeitura(params.vaga_id, actorId);
+        return res.json({ ok: true, data: json?.data ?? json ?? {} });
+      }
+      case 'consultas-pf': {
+        if (!params.candidato_id) return res.status(400).json({ ok: false, error: 'candidato_id_obrigatorio' });
+        const json = await getRecrutamentoConsultasPf(params.candidato_id, actorId);
+        return res.json({ ok: true, data: json?.data ?? json ?? {} });
+      }
+      case 'consulta-pf-arquivo': {
+        if (!params.id) return res.status(400).json({ ok: false, error: 'id_obrigatorio' });
+        const json = await getRecrutamentoConsultaPfArquivo(params.id, actorId);
+        return res.json({ ok: true, data: json?.data ?? json ?? {} });
+      }
+      case 'consentimento': {
+        if (!params.candidato_id) return res.status(400).json({ ok: false, error: 'candidato_id_obrigatorio' });
+        const json = await getRecrutamentoConsentimento(params.candidato_id, actorId);
+        return res.json({ ok: true, data: json?.data ?? json ?? {} });
+      }
       case 'wa-conversas': {
         const json = await getMarketingWaConversas({ ...params, canal: RS_CANAL }, actorId);
         const { rows, count } = extractArrayPayload(json);
@@ -256,6 +285,56 @@ router.post('/sugestao-ia', async (req, res) => {
     res.json({ ok: true, data: rows });
   } catch (err) {
     console.error('[recrutamento/sugestao-ia POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+// Body: { aplicacao_id } ou { candidato_id, vaga_id }.
+router.post('/match-candidato', async (req, res) => {
+  try {
+    const json = await postRecrutamentoMatchCandidato(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[recrutamento/match-candidato POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+// Body: { avaliacao_id, candidato_ids[], vaga_id? }.
+router.post('/avaliacao-enviar', async (req, res) => {
+  try {
+    const json = await postRecrutamentoAvaliacaoEnviar(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[recrutamento/avaliacao-enviar POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+// Body: { etapa, candidato_id, vaga_id?, avaliacao_id?, dias?, empresa_id?, cargo?, tipo_contrato?, kit_id? }.
+router.post('/link-etapa', async (req, res) => {
+  try {
+    const json = await postRecrutamentoLinkEtapa(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[recrutamento/link-etapa POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+// Body: { candidato_id, file_name, file_base64, analisar? }.
+router.post('/anexar-curriculo', async (req, res) => {
+  try {
+    const json = await postRecrutamentoAnexarCurriculo(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[recrutamento/anexar-curriculo POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+// Body: { candidato_id, pular_cpf? }.
+router.post('/consultar-pf', async (req, res) => {
+  try {
+    const json = await postRecrutamentoConsultarPf(req.body ?? {}, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[recrutamento/consultar-pf POST] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
