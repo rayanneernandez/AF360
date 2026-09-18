@@ -2358,14 +2358,17 @@ function deleteRecrutamentoKitAdmissao(id, actorId) {
 function getRecrutamentoAlertasIa(actorId) {
   return lovableGet('/api/public/internal/recrutamento', { recurso: 'alertas-ia' }, actorId);
 }
+// Escrita usa singular (alerta-ia), igual ao padrão do resto da API
+// (avaliacoes/avaliacao, triagem-modelos/triagem-modelo, questoes/questao,
+// kits-admissao/kit-admissao) — só a leitura é plural.
 function postRecrutamentoAlertaIa(body, actorId) {
-  return lovablePost('/api/public/internal/recrutamento', { recurso: 'alertas-ia' }, body, actorId);
+  return lovablePost('/api/public/internal/recrutamento', { recurso: 'alerta-ia' }, body, actorId);
 }
 function patchRecrutamentoAlertaIa(id, body, actorId) {
-  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'alertas-ia', id }, body, actorId);
+  return lovablePatch('/api/public/internal/recrutamento', { recurso: 'alerta-ia', id }, body, actorId);
 }
 function deleteRecrutamentoAlertaIa(id, actorId) {
-  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'alertas-ia', id }, actorId);
+  return lovableDelete('/api/public/internal/recrutamento', { recurso: 'alerta-ia', id }, actorId);
 }
 
 // --- Configurações: Alertas no Telegram ---
