@@ -16,8 +16,6 @@ const {
   postRecrutamentoImportarCurriculo,
   getRecrutamentoImportacoes,
   postRecrutamentoProcessarImportacao,
-  getRecrutamentoImportacao,
-  deleteRecrutamentoImportacao,
   getRecrutamentoPendencias,
   postRecrutamentoPendenciaAcao,
   getRecrutamentoTriagemModelos,
@@ -135,11 +133,6 @@ router.get('/', async (req, res) => {
         const json = await getRecrutamentoImportacoes(params, actorId);
         const { rows, count } = extractArrayPayload(json);
         return res.json({ ok: true, count, data: rows });
-      }
-      case 'importacao': {
-        if (!params.id) return res.status(400).json({ ok: false, error: 'id_obrigatorio' });
-        const json = await getRecrutamentoImportacao(params.id, actorId);
-        return res.json({ ok: true, data: json?.data ?? json ?? {} });
       }
       case 'pendencias': {
         const json = await getRecrutamentoPendencias(params, actorId);
@@ -363,16 +356,6 @@ router.post('/processar-importacao', async (req, res) => {
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[recrutamento/processar-importacao POST] erro:', err.message);
-    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
-  }
-});
-router.delete('/importacao', async (req, res) => {
-  try {
-    if (!req.query.id) return res.status(400).json({ ok: false, error: 'id_obrigatorio' });
-    await deleteRecrutamentoImportacao(req.query.id, req.query.actorId);
-    res.json({ ok: true, data: null });
-  } catch (err) {
-    console.error('[recrutamento/importacao DELETE] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
