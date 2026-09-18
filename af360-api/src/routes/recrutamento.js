@@ -74,9 +74,13 @@ const {
 // WhatsApp/Notificações reaproveitam o MESMO motor do Marketing (confirmado
 // pela Lovable em 07/09/2026) — WhatsApp por canal='rs' (mesma tabela
 // wa_conversas do Marketing, só filtrada), Notificações pelo sistema
-// genérico modulo='recrutamento' (mesma infra do Financeiro/Gestão/Admin).
+// genérico modulo='rs' (mesma infra do Financeiro/Gestão/Admin — confirmado
+// direto no endpoint em 18/09/2026: os módulos usam código curto, ex.:
+// "gst"/"rh"/"colab"/"fin"/"adm"/"mkt", não o nome completo. "recrutamento"
+// não existe como valor de módulo, por isso a aba Templates dava "modulo
+// inválido" e vinha sempre vazia).
 const RS_CANAL = 'rs';
-const RS_NOTIF_MODULO = 'recrutamento';
+const RS_NOTIF_MODULO = 'rs';
 
 const router = express.Router();
 
