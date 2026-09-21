@@ -5953,6 +5953,14 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
 
   const handleCopiarLinkAgenda = () => {
     if (!agendaAssinatura) return;
+    // DEBUG TEMPORÁRIO (21/09/2026): url veio vazia da API em produção —
+    // em vez de travar/navegar pra lugar nenhum, mostra o objeto cru que
+    // voltou do backend pra identificar o nome de campo real. Remover assim
+    // que confirmarmos o contrato certo.
+    if (!agendaAssinatura.url) {
+      Alert.alert('Campo "url" veio vazio', JSON.stringify(agendaAssinatura, null, 2));
+      return;
+    }
     Clipboard.setStringAsync(agendaAssinatura.url).then(() => {
       Alert.alert('Copiado', 'O link da sua agenda foi copiado.');
     });
@@ -5960,6 +5968,11 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
 
   const handleAbrirAppAgenda = () => {
     if (!agendaAssinatura) return;
+    // DEBUG TEMPORÁRIO (21/09/2026): ver comentário acima em handleCopiarLinkAgenda.
+    if (!agendaAssinatura.url) {
+      Alert.alert('Campo "url" veio vazio', JSON.stringify(agendaAssinatura, null, 2));
+      return;
+    }
     // No navegador (Web) não existe "app de agenda" nem suporte real ao
     // esquema webcal:// — window.open() com um esquema desconhecido não dá
     // erro (só não faz nada visível), então o .catch() abaixo nunca disparava
