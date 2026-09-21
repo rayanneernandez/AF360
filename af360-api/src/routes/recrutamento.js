@@ -63,6 +63,7 @@ const {
   postMarketingWaEnviar,
   postMarketingWaNova,
   patchMarketingWaConversa,
+  postMarketingWaMarcarLido,
   getAdminNotifRotinas,
   postAdminNotifRotina,
   patchAdminNotifRotina,
@@ -652,6 +653,15 @@ router.patch('/wa-conversa/:phone', async (req, res) => {
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[recrutamento/wa-conversa PATCH] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+router.post('/wa-marcar-lido', async (req, res) => {
+  try {
+    const json = await postMarketingWaMarcarLido({ ...(req.body ?? {}), canal: RS_CANAL }, req.query.actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[recrutamento/wa-marcar-lido POST] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
