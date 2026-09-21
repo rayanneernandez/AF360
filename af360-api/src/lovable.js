@@ -956,6 +956,32 @@ function deleteRhCalendario(id, actorId) {
   return lovableDelete('/api/public/internal/rh-calendario', { id }, actorId);
 }
 
+// --- Assinatura da agenda pessoal (.ics) — mesmo endpoint do calendário,
+// recurso='assinatura' (contrato confirmado pela Lovable em 21/09/2026).
+// Token fixo por colaborador, não expira, criado sob demanda no GET (a
+// menos que criar=0, que só consulta sem criar).
+function getRhAgendaAssinatura(colaboradorId, criar, actorId) {
+  return lovableGet(
+    '/api/public/internal/rh-calendario',
+    { recurso: 'assinatura', colaborador_id: colaboradorId, criar: criar === false ? 0 : undefined },
+    actorId
+  );
+}
+function postRhAgendaAssinatura(colaboradorId, actorId) {
+  return lovablePost('/api/public/internal/rh-calendario', { recurso: 'assinatura', colaborador_id: colaboradorId }, {}, actorId);
+}
+function postRhAgendaAssinaturaRotacionar(colaboradorId, actorId) {
+  return lovablePost(
+    '/api/public/internal/rh-calendario',
+    { recurso: 'assinatura-rotacionar', colaborador_id: colaboradorId },
+    {},
+    actorId
+  );
+}
+function deleteRhAgendaAssinatura(colaboradorId, actorId) {
+  return lovableDelete('/api/public/internal/rh-calendario', { recurso: 'assinatura', colaborador_id: colaboradorId }, actorId);
+}
+
 // --- Comunicados (rh_comunicados; endpoint dedicado /api/public/internal/
 // rh-comunicados confirmado pela Lovable em 03/08/2026, mesmo padrão "recurso"
 // dos outros — recurso=comunicados|leituras). anexo_url aceita imagem ou PDF.
@@ -2594,6 +2620,10 @@ module.exports = {
   postRhCalendario,
   patchRhCalendario,
   deleteRhCalendario,
+  getRhAgendaAssinatura,
+  postRhAgendaAssinatura,
+  postRhAgendaAssinaturaRotacionar,
+  deleteRhAgendaAssinatura,
   getRhComunicados,
   postRhComunicado,
   patchRhComunicado,

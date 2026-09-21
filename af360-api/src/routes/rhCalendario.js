@@ -1,5 +1,14 @@
 const express = require('express');
-const { getRhCalendario, postRhCalendario, patchRhCalendario, deleteRhCalendario } = require('../lovable');
+const {
+  getRhCalendario,
+  postRhCalendario,
+  patchRhCalendario,
+  deleteRhCalendario,
+  getRhAgendaAssinatura,
+  postRhAgendaAssinatura,
+  postRhAgendaAssinaturaRotacionar,
+  deleteRhAgendaAssinatura,
+} = require('../lovable');
 
 const router = express.Router();
 
@@ -46,6 +55,72 @@ router.post('/', async (req, res) => {
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[rh/calendario POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// --- Assinatura da agenda pessoal (.ics) — recurso='assinatura' no mesmo
+// endpoint do calendário (contrato confirmado pela Lovable em 21/09/2026).
+// Token fixo por colaborador, sem expiração; GET cria na hora se ainda não
+// existir (a menos que criar=0). Rotas específicas ANTES de '/:id' abaixo,
+// senão o Express casaria '/assinatura' com o parâmetro :id.
+
+// GET /api/rh/calendario/assinatura?colaboradorId=&criar=0
+router.get('/assinatura', async (req, res) => {
+  try {
+    const { colaboradorId, criar, actorId } = req.query;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaborador_id', message: 'colaboradorId é obrigatório.' });
+    }
+    const json = await getRhAgendaAssinatura(colaboradorId, criar === '0' || criar === 'false' ? false : undefined, actorId);
+    res.json({ ok: true, data: json?.data ?? null });
+  } catch (err) {
+    console.error('[rh/calendario/assinatura GET] erro:', err.message);
+    res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+// POST /api/rh/calendario/assinatura?colaboradorId=&actorId= — cria/garante o registro
+router.post('/assinatura', async (req, res) => {
+  try {
+    const { colaboradorId, actorId } = req.query;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaborador_id', message: 'colaboradorId é obrigatório.' });
+    }
+    const json = await postRhAgendaAssinatura(colaboradorId, actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/calendario/assinatura POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/rh/calendario/assinatura/rotacionar?colaboradorId=&actorId= — troca o token (revoga o link antigo)
+router.post('/assinatura/rotacionar', async (req, res) => {
+  try {
+    const { colaboradorId, actorId } = req.query;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaborador_id', message: 'colaboradorId é obrigatório.' });
+    }
+    const json = await postRhAgendaAssinaturaRotacionar(colaboradorId, actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/calendario/assinatura/rotacionar POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// DELETE /api/rh/calendario/assinatura?colaboradorId=&actorId= — revoga sem gerar outro
+router.delete('/assinatura', async (req, res) => {
+  try {
+    const { colaboradorId, actorId } = req.query;
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaborador_id', message: 'colaboradorId é obrigatório.' });
+    }
+    const json = await deleteRhAgendaAssinatura(colaboradorId, actorId);
+    res.json({ ok: true, data: json?.data ?? json });
+  } catch (err) {
+    console.error('[rh/calendario/assinatura DELETE] erro:', err.message);
     res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });

@@ -2828,6 +2828,48 @@ export async function deleteRhCalendarioEvento(id: string, actorId?: string | nu
   await api.delete(withActorId(`/api/rh/calendario/${encodeURIComponent(id)}`, actorId));
 }
 
+// --- Assinatura da agenda pessoal (.ics) — token fixo por colaborador, não
+// expira; contrato confirmado pela Lovable em 21/09/2026.
+export type RhAgendaAssinatura = {
+  id: string;
+  colaborador_id: string;
+  token: string;
+  url: string;
+  expira_em: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// criar=false só consulta (não cria o registro se ainda não existir, devolve null).
+export async function fetchRhAgendaAssinatura(
+  colaboradorId: string,
+  criar: boolean = true
+): Promise<RhAgendaAssinatura | null> {
+  const search = new URLSearchParams({ colaboradorId });
+  if (!criar) search.set('criar', '0');
+  const json = await api.get(`/api/rh/calendario/assinatura?${search.toString()}`);
+  return (json.data as RhAgendaAssinatura | null) ?? null;
+}
+
+export async function createRhAgendaAssinatura(colaboradorId: string, actorId?: string | null): Promise<RhAgendaAssinatura> {
+  const search = new URLSearchParams({ colaboradorId });
+  const json = await api.post(withActorId(`/api/rh/calendario/assinatura?${search.toString()}`, actorId), {});
+  return json.data as RhAgendaAssinatura;
+}
+
+// Troca o token (invalida o link antigo e devolve um novo) — usar se a pessoa suspeitar que o link vazou.
+export async function rotacionarRhAgendaAssinatura(colaboradorId: string, actorId?: string | null): Promise<RhAgendaAssinatura> {
+  const search = new URLSearchParams({ colaboradorId });
+  const json = await api.post(withActorId(`/api/rh/calendario/assinatura/rotacionar?${search.toString()}`, actorId), {});
+  return json.data as RhAgendaAssinatura;
+}
+
+// Revoga sem gerar outro (a pessoa precisa gerar de novo se quiser voltar a usar).
+export async function deleteRhAgendaAssinatura(colaboradorId: string, actorId?: string | null): Promise<void> {
+  const search = new URLSearchParams({ colaboradorId });
+  await api.delete(withActorId(`/api/rh/calendario/assinatura?${search.toString()}`, actorId));
+}
+
 // --- Treinamentos: conteúdo real (rh_treinamentos, rh_treinamento_aulas,
 // rh_treinamento_questoes, rh_treinamento_inscricoes, rh_treinamento_
 // respostas) — GET confirmado pela Lovable em 03/08/2026. Somente leitura por
@@ -4523,6 +4565,9 @@ export type AdminWaConfig = {
   metaAccessTokenMasked: string | null;
   hasMetaAccessToken: boolean;
   metaPhoneNumberId: string | null;
+  // Confirmados pela Lovable em 18/09/2026 — ficam no mesmo wa_config.
+  numeroExibicao: string | null;
+  rotulo: string | null;
   updatedAt: string | null;
   templates: AdminWaTemplateItem[];
   // wa_templates ficou sem GRANT até 30/07/2026 — se a leitura falhar de
@@ -4536,12 +4581,23 @@ export type AdminWaConfig = {
   metaAccessToken?: string | null;
 };
 
+// canal: omitido = conexão do Administrativo ('geral'); 'rs' = conexão
+// própria do Recrutamento — registros distintos, confirmado pela Lovable em
+// 18/09/2026 (Department ID e templates diferentes por canal).
+function withWaQuery(path: string, opts?: { reveal?: boolean; canal?: string; actorId?: string | null }) {
+  const params: string[] = [];
+  if (opts?.reveal) params.push('reveal=1');
+  if (opts?.canal) params.push(`canal=${encodeURIComponent(opts.canal)}`);
+  const withParams = params.length ? `${path}${path.includes('?') ? '&' : '?'}${params.join('&')}` : path;
+  return withActorId(withParams, opts?.actorId);
+}
+
 export async function fetchAdminWaConfig(opts?: {
   reveal?: boolean;
+  canal?: string;
   actorId?: string | null;
 }): Promise<AdminWaConfig> {
-  const path = `/api/admin/integracoes/whatsapp${opts?.reveal ? '?reveal=1' : ''}`;
-  const json = await api.get(withActorId(path, opts?.actorId));
+  const json = await api.get(withWaQuery('/api/admin/integracoes/whatsapp', opts));
   return json.data as AdminWaConfig;
 }
 
@@ -4556,40 +4612,46 @@ export type AdminWaConfigWriteBody = {
   meta_business_id?: string;
   meta_access_token?: string;
   meta_phone_number_id?: string;
+  numero_exibicao?: string;
+  rotulo?: string;
 };
 
 export async function updateAdminWaConfig(
   body: AdminWaConfigWriteBody,
-  actorId?: string | null
+  actorId?: string | null,
+  canal?: string
 ): Promise<AdminWaConfig> {
-  const json = await api.patch(withActorId('/api/admin/integracoes/whatsapp', actorId), body);
+  const json = await api.patch(withWaQuery('/api/admin/integracoes/whatsapp', { canal, actorId }), body);
   return json.data as AdminWaConfig;
 }
 
-export async function testAdminWaConnection(actorId?: string | null): Promise<Record<string, unknown>> {
-  const json = await api.post(withActorId('/api/admin/integracoes/whatsapp/testar', actorId), {});
+export async function testAdminWaConnection(actorId?: string | null, canal?: string): Promise<Record<string, unknown>> {
+  const json = await api.post(withWaQuery('/api/admin/integracoes/whatsapp/testar', { canal, actorId }), {});
   return (json.data ?? {}) as Record<string, unknown>;
 }
 
 export async function rotateAdminWaWebhookSecret(
-  actorId?: string | null
+  actorId?: string | null,
+  canal?: string
 ): Promise<{ webhookSecret: string | null; webhookUrl: string | null }> {
-  const json = await api.post(withActorId('/api/admin/integracoes/whatsapp/rotacionar-secret', actorId), {});
+  const json = await api.post(withWaQuery('/api/admin/integracoes/whatsapp/rotacionar-secret', { canal, actorId }), {});
   return json.data as { webhookSecret: string | null; webhookUrl: string | null };
 }
 
 export async function syncAdminWaTemplates(
-  actorId?: string | null
+  actorId?: string | null,
+  canal?: string
 ): Promise<{ templates: AdminWaTemplateItem[]; templatesError?: string | null }> {
-  const json = await api.post(withActorId('/api/admin/integracoes/whatsapp/sincronizar-templates', actorId), {});
+  const json = await api.post(withWaQuery('/api/admin/integracoes/whatsapp/sincronizar-templates', { canal, actorId }), {});
   return json.data as { templates: AdminWaTemplateItem[]; templatesError?: string | null };
 }
 
 export async function testAdminWaTemplate(
   body: { phone: string; templateName: string; language?: string; variables?: string[] },
-  actorId?: string | null
+  actorId?: string | null,
+  canal?: string
 ): Promise<Record<string, unknown>> {
-  const json = await api.post(withActorId('/api/admin/integracoes/whatsapp/testar-template', actorId), body);
+  const json = await api.post(withWaQuery('/api/admin/integracoes/whatsapp/testar-template', { canal, actorId }), body);
   return (json.data ?? {}) as Record<string, unknown>;
 }
 
@@ -7287,7 +7349,7 @@ export type MarketingWaConversaItem = {
   ultima_direcao: 'inbound' | 'outbound' | string | null;
   // Campos confirmados pela Lovable em 03/09/2026.
   tags: string[];
-  nao_lidas: number;
+  nao_lidas: number | null;
   nao_assumido: boolean;
   ultima_mensagem_status: MarketingWaMensagemStatus | null;
   ultima_mensagem_tipo: string | null;
@@ -7993,16 +8055,51 @@ async function fetchRecrutamentoRecurso<T>(
 }
 
 // --- Dashboard ---
+// Formato real confirmado direto no endpoint (04/09/2026) — a versão antiga
+// desse tipo tinha "funil" como objeto e vários nomes de campo chutados
+// (ex.: "candidatos"/"total_candidatos" em vez de candidatos_total), o que
+// fazia o dashboard do app mostrar zero em quase tudo mesmo com dado real.
+
+export type RecrutamentoDashboardSnapshot = {
+  vagas_abertas: number;
+  vagas_pausadas: number;
+  vagas_rascunho: number;
+  vagas_encerradas: number;
+  candidatos_total: number;
+  aplicacoes_total: number;
+  aplicacoes_ativas: number;
+  contratacoes_total: number;
+};
+
+// Métricas do período selecionado (mês ou ano, conforme filtro.modo) — é
+// daqui que vêm os KPIs do topo (Novos Candidatos, Aplicações, Contratações,
+// Score IA), diferente do snapshot acima (que é o total histórico/atual).
+export type RecrutamentoDashboardPeriodoAtual = {
+  novas_vagas: number;
+  novas_aplicacoes: number;
+  novos_candidatos: number;
+  contratacoes: number;
+  tempo_medio_contratacao_dias: number | null;
+  score_ia_medio: number | null;
+};
+
+export type RecrutamentoFunilEstagio = { estagio: string; qtd: number };
+export type RecrutamentoSerieMes = { mes: string; candidatos: number; aplicacoes: number; contratacoes: number };
+export type RecrutamentoOrigemItem = { origem: string; qtd: number };
+export type RecrutamentoCidadeItem = { cidade: string; qtd: number };
+export type RecrutamentoGeneroItem = { sexo: string; qtd: number };
+export type RecrutamentoTopVagaItem = { titulo: string; qtd: number };
 
 export type RecrutamentoDashboard = {
-  snapshot: Record<string, unknown>;
-  periodo_atual: Record<string, unknown>;
-  funil: Record<string, unknown>;
-  serie: Array<Record<string, unknown>>;
-  top_vagas: Array<Record<string, unknown>>;
-  origem: Array<Record<string, unknown>>;
-  top_cidades: Array<Record<string, unknown>>;
-  distrib_genero: Array<Record<string, unknown>>;
+  snapshot: RecrutamentoDashboardSnapshot;
+  periodo_atual: RecrutamentoDashboardPeriodoAtual;
+  periodo: { ano: number; mes: number; modo: 'mes' | 'ano' };
+  funil: RecrutamentoFunilEstagio[];
+  serie: RecrutamentoSerieMes[];
+  top_vagas: RecrutamentoTopVagaItem[];
+  origem: RecrutamentoOrigemItem[];
+  top_cidades: RecrutamentoCidadeItem[];
+  distrib_genero: RecrutamentoGeneroItem[];
 };
 
 export async function fetchRecrutamentoDashboard(filtro: {
@@ -8012,9 +8109,28 @@ export async function fetchRecrutamentoDashboard(filtro: {
 }): Promise<RecrutamentoDashboard> {
   const { data } = await fetchRecrutamentoRecurso<Partial<RecrutamentoDashboard>>('dashboard', filtro);
   return {
-    snapshot: data.snapshot ?? {},
-    periodo_atual: data.periodo_atual ?? {},
-    funil: data.funil ?? {},
+    snapshot: {
+      vagas_abertas: 0,
+      vagas_pausadas: 0,
+      vagas_rascunho: 0,
+      vagas_encerradas: 0,
+      candidatos_total: 0,
+      aplicacoes_total: 0,
+      aplicacoes_ativas: 0,
+      contratacoes_total: 0,
+      ...data.snapshot,
+    },
+    periodo_atual: {
+      novas_vagas: 0,
+      novas_aplicacoes: 0,
+      novos_candidatos: 0,
+      contratacoes: 0,
+      tempo_medio_contratacao_dias: null,
+      score_ia_medio: null,
+      ...data.periodo_atual,
+    },
+    periodo: data.periodo ?? { ano: new Date().getFullYear(), mes: new Date().getMonth() + 1, modo: 'mes' },
+    funil: data.funil ?? [],
     serie: data.serie ?? [],
     top_vagas: data.top_vagas ?? [],
     origem: data.origem ?? [],
@@ -8024,19 +8140,55 @@ export async function fetchRecrutamentoDashboard(filtro: {
 }
 
 // --- Vagas ---
+// Campos confirmados direto no endpoint (04/09/2026). Atenção: o campo real
+// de estado é "estado", não "uf" (a versão antiga deste tipo usava "uf", que
+// não existe na resposta — o campo sempre vinha vazio no formulário).
+
+// Resumo de cada candidatura vinda embutida no fetch de UMA vaga
+// (recurso=vaga&id=...) — confirmado direto no endpoint (17/09/2026). Só traz
+// esses 4 campos por candidato (sem observações/datas — isso só vem no fetch
+// completo do candidato, em perfil.aplicacoes).
+export type RecrutamentoVagaAplicacaoResumo = {
+  id: string;
+  estagio: string | null;
+  match_score: number | null;
+  candidato: {
+    id: string;
+    nome_completo: string;
+    codigo?: string | null;
+    cidade?: string | null;
+    estado?: string | null;
+    whatsapp?: string | null;
+  };
+};
 
 export type RecrutamentoVaga = {
   id: string;
   titulo: string;
+  descricao?: string | null;
+  requisitos?: string | null;
   empresa_id: string | null;
   empresa_nome?: string | null;
+  empresa?: { id: string; razao_social?: string | null; nome_fantasia?: string | null } | null;
   cidade: string | null;
-  uf: string | null;
+  estado: string | null;
   modalidade: string | null;
   senioridade: string | null;
+  faixa_salarial?: string | null;
   status: string;
   publicada_lp: boolean;
+  publicada_lp_em?: string | null;
+  na_lp?: boolean;
   num_vagas?: number;
+  // Nº de candidatos já vinculados a essa vaga — vem pronto do endpoint,
+  // não precisa ser calculado no app.
+  total_candidatos?: number;
+  aplicacoes?: RecrutamentoVagaAplicacaoResumo[];
+  beneficios?: string[] | null;
+  beneficios_outros?: string | null;
+  exibir_empresa?: boolean;
+  exibir_salario?: boolean;
+  created_at?: string | null;
   [key: string]: unknown;
 };
 
@@ -8076,19 +8228,28 @@ export async function deleteRecrutamentoVaga(id: string): Promise<void> {
 
 // --- Candidatos ---
 
+// Campos confirmados direto no endpoint (17/09/2026) — a versão antiga desse
+// tipo tinha "nome"/"tipo_vaga"/"uf" chutados, mas os campos reais são
+// "nome_completo"/"profissao"/"estado" (não existe "tipo_vaga" nenhum).
 export type RecrutamentoCandidatoItem = {
   id: string;
   codigo: string;
-  nome: string;
-  tipo_vaga: string | null;
+  nome_completo: string;
+  profissao: string | null;
   email: string | null;
   whatsapp: string | null;
   cidade: string | null;
   bairro: string | null;
-  uf: string | null;
+  estado: string | null;
   etapa: string | null;
   alocado: boolean;
   documentos: { aprovados: number; total: number };
+  ia_analise?: Record<string, unknown> | null;
+  curriculo_url?: string | null;
+  pretensao_salarial?: string | null;
+  disponibilidade?: string | null;
+  origem?: string | null;
+  created_at?: string | null;
   [key: string]: unknown;
 };
 
@@ -8116,26 +8277,122 @@ export async function fetchRecrutamentoCandidatos(filtro: RecrutamentoCandidatoF
   return Array.isArray(data) ? data : (data as { itens?: RecrutamentoCandidatoItem[] })?.itens ?? [];
 }
 
-export type RecrutamentoCandidatoDetalhe = RecrutamentoCandidatoItem & {
-  etapas?: Array<Record<string, unknown>>;
-  historico?: Array<Record<string, unknown>>;
-  admissoes?: Array<Record<string, unknown>>;
-  avaliacoes?: Array<Record<string, unknown>>;
+// Formato real do detalhe do candidato, confirmado direto no endpoint
+// (17/09/2026) — vem aninhado em "perfil", NÃO plano como o antigo tipo
+// assumia (por isso a tela de detalhe mostrava tudo em branco antes: lia
+// detalhe.nome/detalhe.uf/etc. direto na raiz, que nunca existiram ali).
+export type RecrutamentoCandidatoIaAnalise = {
+  pros?: string[];
+  contras?: string[];
+  alertas?: string[];
+  resumo?: string;
+  empresas?: Array<{ empresa?: string; cargo?: string; local?: string; inicio?: string; fim?: string; duracao_meses?: number }>;
+  habilidades_destaque?: string[];
+  coerencia_localidades?: string;
+  faixa_experiencia_anos?: number;
+  [key: string]: unknown;
+};
+
+export type RecrutamentoCandidatoExperiencia = {
+  id: string;
+  empresa: string | null;
+  cargo: string | null;
+  inicio: string | null;
+  fim: string | null;
+  emprego_atual?: boolean;
+  motivo_saida?: string | null;
+  atividades?: string | null;
+  ordem?: number;
+  [key: string]: unknown;
+};
+
+export type RecrutamentoCandidatoAplicacao = {
+  id: string;
+  vaga: { id: string; titulo: string; status?: string } | null;
+  estagio: string | null;
+  match_score: number | null;
+  observacoes?: string | null;
+  match_analise?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+};
+
+export type RecrutamentoCandidatoPerfil = {
+  id: string;
+  codigo: string;
+  nome_completo: string;
+  email: string | null;
+  telefone: string | null;
+  whatsapp: string | null;
+  cpf: string | null;
+  cidade: string | null;
+  estado: string | null;
+  bairro: string | null;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  profissao: string | null;
+  genero: string | null;
+  linkedin: string | null;
+  pretensao_salarial: string | null;
+  disponibilidade: string | null;
+  resumo: string | null;
+  habilidades: string[];
+  origem: string | null;
+  curriculo_url: string | null;
+  created_at: string | null;
+  ia_analise: RecrutamentoCandidatoIaAnalise | null;
+  ia_analisado_em: string | null;
+  ia_modelo: string | null;
+  experiencias: RecrutamentoCandidatoExperiencia[];
+  aplicacoes: RecrutamentoCandidatoAplicacao[];
+  // "Consulta de dados pessoais" (antecedentes) e "Consentimento" (termo
+  // LGPD) aparecem no painel web, mas NENHUM endpoint conferido até agora
+  // (17/09/2026) devolve isso pro app — nem esse candidato nem nenhum outro
+  // testado. Deixo os tipos aqui como opcionais pra já funcionar assim que a
+  // Lovable confirmar/ligar o campo certo, sem precisar mexer na tela de
+  // novo.
+  consultas?: Array<{ id: string; realizado_em?: string | null; resultado?: string | null; [key: string]: unknown }>;
+  consentimento?: {
+    aceito: boolean;
+    aceito_em?: string | null;
+    versao?: string | null;
+    ip_origem?: string | null;
+    user_agent?: string | null;
+    texto?: string | null;
+  } | null;
+  [key: string]: unknown;
+};
+
+export type RecrutamentoCandidatoDetalhe = {
+  perfil: RecrutamentoCandidatoPerfil;
+  etapas: Array<Record<string, unknown>>;
+  historico: Array<Record<string, unknown>>;
+  admissoes: Array<Record<string, unknown>>;
+  avaliacoes: Array<Record<string, unknown>>;
 };
 
 export async function fetchRecrutamentoCandidato(id: string): Promise<RecrutamentoCandidatoDetalhe> {
-  const { data } = await fetchRecrutamentoRecurso<RecrutamentoCandidatoDetalhe>('candidato', { id });
-  return data;
+  const { data } = await fetchRecrutamentoRecurso<Partial<RecrutamentoCandidatoDetalhe>>('candidato', { id });
+  return {
+    perfil: data.perfil as RecrutamentoCandidatoPerfil,
+    etapas: data.etapas ?? [],
+    historico: data.historico ?? [],
+    admissoes: data.admissoes ?? [],
+    avaliacoes: data.avaliacoes ?? [],
+  };
 }
 
-export async function createRecrutamentoCandidato(body: Record<string, unknown>): Promise<RecrutamentoCandidatoDetalhe> {
+export async function createRecrutamentoCandidato(body: Record<string, unknown>): Promise<RecrutamentoCandidatoPerfil> {
   const json = await api.post('/api/recrutamento/candidato', body);
-  return json.data as RecrutamentoCandidatoDetalhe;
+  return json.data as RecrutamentoCandidatoPerfil;
 }
 
-export async function updateRecrutamentoCandidato(id: string, body: Record<string, unknown>): Promise<RecrutamentoCandidatoDetalhe> {
+export async function updateRecrutamentoCandidato(id: string, body: Record<string, unknown>): Promise<RecrutamentoCandidatoPerfil> {
   const json = await api.patch(`/api/recrutamento/candidato?id=${encodeURIComponent(id)}`, body);
-  return json.data as RecrutamentoCandidatoDetalhe;
+  return json.data as RecrutamentoCandidatoPerfil;
 }
 
 export async function deleteRecrutamentoCandidato(id: string): Promise<void> {
@@ -8155,15 +8412,139 @@ export async function fetchRecrutamentoSugestaoIa(vagaId: string, limite = 10): 
   return (json.data as RecrutamentoCandidatoItem[]) ?? [];
 }
 
+// --- Roteiro de triagem, match, avaliações/DISC, links por etapa, anexar
+// currículo, consulta de CPF/antecedentes e consentimento LGPD — todos
+// confirmados e testados pela Lovable em 18/09/2026 (recursos novos). ---
+
+export type RecrutamentoTriagemPergunta = { ordem: number; texto: string; opcoes: string[] };
+export type RecrutamentoTriagemVagaRoteiro = {
+  vaga_id: string;
+  vaga_titulo: string;
+  triagem_wa_ativa: boolean;
+  triagem_msg_abertura: string | null;
+  triagem_msg_encerramento: string | null;
+  total_perguntas: number;
+  perguntas: RecrutamentoTriagemPergunta[];
+};
+export async function fetchRecrutamentoTriagemVagaRoteiro(vagaId: string): Promise<RecrutamentoTriagemVagaRoteiro> {
+  const { data } = await fetchRecrutamentoRecurso<RecrutamentoTriagemVagaRoteiro>('triagem-vaga', { vaga_id: vagaId });
+  return data;
+}
+
+export async function calcularRecrutamentoMatch(body: { aplicacao_id: string } | { candidato_id: string; vaga_id: string }): Promise<{
+  match_score: number;
+  match_analise: string;
+  match_calculado_em: string;
+}> {
+  const json = await api.post('/api/recrutamento/match-candidato', body);
+  return json.data as { match_score: number; match_analise: string; match_calculado_em: string };
+}
+
+export async function enviarRecrutamentoAvaliacao(body: {
+  avaliacao_id: string;
+  candidato_ids: string[];
+  vaga_id?: string;
+}): Promise<{
+  avaliacao: Record<string, unknown>;
+  expira_em: string;
+  envios: Array<{ envio_id: string; token: string; link: string; nome: string; whatsapp: string | null }>;
+}> {
+  const json = await api.post('/api/recrutamento/avaliacao-enviar', body);
+  return json.data as {
+    avaliacao: Record<string, unknown>;
+    expira_em: string;
+    envios: Array<{ envio_id: string; token: string; link: string; nome: string; whatsapp: string | null }>;
+  };
+}
+
+export async function gerarRecrutamentoLinkEtapa(body: {
+  etapa: 'cadastro' | 'perguntas' | 'disc' | 'admissao';
+  candidato_id: string;
+  vaga_id?: string;
+  avaliacao_id?: string;
+  dias?: number;
+  empresa_id?: string;
+  cargo?: string;
+  tipo_contrato?: string;
+  kit_id?: string;
+}): Promise<{ link: string; token: string; expira_em?: string }> {
+  const json = await api.post('/api/recrutamento/link-etapa', body);
+  return json.data as { link: string; token: string; expira_em?: string };
+}
+
+export async function anexarRecrutamentoCurriculo(body: {
+  candidato_id: string;
+  file_name: string;
+  file_base64: string;
+  analisar?: boolean;
+}): Promise<{ curriculo_url: string; link?: string; analise?: Record<string, unknown> }> {
+  const json = await api.post('/api/recrutamento/anexar-curriculo', body);
+  return json.data as { curriculo_url: string; link?: string; analise?: Record<string, unknown> };
+}
+
+export type RecrutamentoConsultaPf = {
+  id: string;
+  tipo: string;
+  provedor?: string;
+  sucesso: boolean;
+  status_code?: number;
+  mensagem?: string;
+  resumo?: Record<string, unknown>;
+  resposta?: Record<string, unknown>;
+  created_at?: string;
+  [key: string]: unknown;
+};
+export async function fetchRecrutamentoConsultasPf(candidatoId: string): Promise<{
+  itens: RecrutamentoConsultaPf[];
+  ultima_cpf: RecrutamentoConsultaPf | null;
+  ultima_antecedentes: RecrutamentoConsultaPf | null;
+}> {
+  const { data } = await fetchRecrutamentoRecurso<{
+    itens?: RecrutamentoConsultaPf[];
+    ultima_cpf?: RecrutamentoConsultaPf | null;
+    ultima_antecedentes?: RecrutamentoConsultaPf | null;
+  }>('consultas-pf', { candidato_id: candidatoId });
+  return { itens: data.itens ?? [], ultima_cpf: data.ultima_cpf ?? null, ultima_antecedentes: data.ultima_antecedentes ?? null };
+}
+export async function consultarRecrutamentoPf(body: { candidato_id: string; pular_cpf?: boolean }): Promise<void> {
+  await api.post('/api/recrutamento/consultar-pf', body);
+}
+
+export type RecrutamentoConsentimento = {
+  candidato_id: string;
+  tem_consentimento: boolean;
+  consentimento: {
+    id: string;
+    aceite: boolean;
+    termo_versao: string;
+    termo_texto: string;
+    data_hora: string;
+    ip: string | null;
+    user_agent: string | null;
+  } | null;
+  termo_versao_atual: string;
+};
+export async function fetchRecrutamentoConsentimento(candidatoId: string): Promise<RecrutamentoConsentimento> {
+  const { data } = await fetchRecrutamentoRecurso<RecrutamentoConsentimento>('consentimento', { candidato_id: candidatoId });
+  return data;
+}
+
 // --- Importar Currículo ---
 
+// Campos confirmados testando o fluxo real de ponta a ponta (18/09/2026):
+// subi um PDF de teste, chequei o retorno do import e depois o retorno da
+// listagem — os campos reais são "nome_completo" e "created_at" (não
+// "nome_detectado"/"enviado_em", que eram só um chute).
 export type RecrutamentoImportacao = {
   id: string;
-  nome_detectado: string | null;
+  nome_completo: string | null;
   email: string | null;
   telefone: string | null;
   status: string;
-  enviado_em: string | null;
+  candidato_id: string | null;
+  created_at: string | null;
+  storage_caminho?: string | null;
+  arquivo?: string | null;
   [key: string]: unknown;
 };
 
@@ -8186,14 +8567,68 @@ export async function reprocessarRecrutamentoImportacao(id: string): Promise<voi
   await api.post(`/api/recrutamento/processar-importacao?id=${encodeURIComponent(id)}`);
 }
 
+// Detalhe completo de uma importação — confirmado pela Lovable (18/09/2026),
+// mas o deploy delas deu "build unsuccessful" e o recurso ainda não
+// responde em produção. Deixo tipado e pronto pra funcionar assim que o
+// deploy delas for refeito.
+export type RecrutamentoImportacaoDetalhe = {
+  id: string;
+  status: string;
+  texto_extraido: string | null;
+  extracao_json: Record<string, unknown> | null;
+  arquivo_url: string | null;
+  candidato: { id: string; nome_completo: string } | null;
+  [key: string]: unknown;
+};
+export async function fetchRecrutamentoImportacao(id: string): Promise<RecrutamentoImportacaoDetalhe> {
+  const { data } = await fetchRecrutamentoRecurso<RecrutamentoImportacaoDetalhe>('importacao', { id });
+  return data;
+}
+export async function excluirRecrutamentoImportacao(id: string): Promise<void> {
+  await api.delete(`/api/recrutamento/importacao?id=${encodeURIComponent(id)}`);
+}
+
 // --- Pendências ---
 
+// Campos reais confirmados pela Lovable (18/09/2026) — status aceita
+// pendente|aprovada|recusada|atendida|cancelada; "descricao" é o
+// tipo/documento pedido (não existe campo "tipo"); data é "created_at"
+// (não "criado_em").
+export type RecrutamentoPendenciaAdmissao = {
+  id: string;
+  cargo: string | null;
+  status: string;
+  empresa?: { id: string; razao_social?: string | null; nome_fantasia?: string | null } | null;
+  candidato?: {
+    id: string;
+    nome_completo: string;
+    codigo?: string | null;
+    cpf?: string | null;
+    email?: string | null;
+    telefone?: string | null;
+    whatsapp?: string | null;
+  } | null;
+};
 export type RecrutamentoPendencia = {
   id: string;
-  candidato_nome?: string | null;
-  tipo?: string | null;
+  descricao: string | null;
+  origem: 'rh' | 'contabilidade' | string;
   status: string;
-  criado_em?: string | null;
+  motivo?: string | null;
+  recusa_motivo?: string | null;
+  created_at: string | null;
+  updated_at?: string | null;
+  aprovado_em?: string | null;
+  enviada_em?: string | null;
+  atendida_em?: string | null;
+  cobrancas?: number;
+  ultima_cobranca_em?: string | null;
+  token_link?: string | null;
+  token_expira_em?: string | null;
+  link?: string | null;
+  candidato_nome?: string | null;
+  empresa_nome?: string | null;
+  admissao?: RecrutamentoPendenciaAdmissao | null;
   [key: string]: unknown;
 };
 
@@ -8222,6 +8657,7 @@ export async function cobrarRecrutamentoPendencia(id: string): Promise<void> {
 export type RecrutamentoTriagemModelo = {
   id: string;
   nome: string;
+  descricao?: string | null;
   perguntas: string[];
   [key: string]: unknown;
 };
@@ -8233,14 +8669,14 @@ export async function fetchRecrutamentoTriagemModelos(): Promise<RecrutamentoTri
   return Array.isArray(data) ? data : (data as { itens?: RecrutamentoTriagemModelo[] })?.itens ?? [];
 }
 
-export async function createRecrutamentoTriagemModelo(body: { nome: string; perguntas: string[] }): Promise<RecrutamentoTriagemModelo> {
+export async function createRecrutamentoTriagemModelo(body: { nome: string; descricao?: string | null; perguntas: string[] }): Promise<RecrutamentoTriagemModelo> {
   const json = await api.post('/api/recrutamento/triagem-modelo', body);
   return json.data as RecrutamentoTriagemModelo;
 }
 
 export async function updateRecrutamentoTriagemModelo(
   id: string,
-  body: { nome?: string; perguntas?: string[] }
+  body: { nome?: string; descricao?: string | null; perguntas?: string[] }
 ): Promise<RecrutamentoTriagemModelo> {
   const json = await api.patch(`/api/recrutamento/triagem-modelo?id=${encodeURIComponent(id)}`, body);
   return json.data as RecrutamentoTriagemModelo;
@@ -8254,6 +8690,24 @@ export async function vincularRecrutamentoTriagemVaga(vagaId: string, modeloId: 
   await api.patch(`/api/recrutamento/triagem-vaga?vaga_id=${encodeURIComponent(vagaId)}`, { modelo_id: modeloId });
 }
 
+// Grava o roteiro de triagem direto na vaga (colunas triagem_perguntas/
+// triagem_msg_abertura/triagem_msg_encerramento/triagem_wa_ativa —
+// confirmadas no endpoint de vaga, mas SEMPRE vazias em produção até agora,
+// 17/09/2026). O formato de cada item de "perguntas" (texto/opcoes vs.
+// pergunta/respostas) ainda não foi confirmado com a Lovable — usei o mais
+// próximo do modelo já existente (RecrutamentoTriagemModelo.perguntas).
+export async function updateRecrutamentoTriagemVagaRoteiro(
+  vagaId: string,
+  body: {
+    triagem_perguntas?: Array<{ texto: string; opcoes: string[] }>;
+    triagem_msg_abertura?: string | null;
+    triagem_msg_encerramento?: string | null;
+    triagem_wa_ativa?: boolean;
+  }
+): Promise<void> {
+  await api.patch(`/api/recrutamento/triagem-vaga?vaga_id=${encodeURIComponent(vagaId)}`, body);
+}
+
 // --- Configurações: Provas e DISC ---
 
 export type RecrutamentoAvaliacao = {
@@ -8263,6 +8717,9 @@ export type RecrutamentoAvaliacao = {
   duracao_min?: number | null;
   validade_dias?: number | null;
   descricao?: string | null;
+  instrucoes?: string | null;
+  nota_corte?: number | null;
+  ativa?: boolean;
   [key: string]: unknown;
 };
 
@@ -8287,13 +8744,16 @@ export async function deleteRecrutamentoAvaliacao(id: string): Promise<void> {
   await api.delete(`/api/recrutamento/avaliacao?id=${encodeURIComponent(id)}`);
 }
 
+export type RecrutamentoQuestaoOpcao = { id: string; fator: 'D' | 'I' | 'S' | 'C'; texto: string };
+
 export type RecrutamentoQuestao = {
   id: string;
   avaliacao_id: string;
   enunciado: string;
   tipo: string;
-  opcoes?: string[];
-  gabarito?: string | null;
+  ordem?: number;
+  peso?: number | null;
+  opcoes: RecrutamentoQuestaoOpcao[];
   [key: string]: unknown;
 };
 
@@ -8326,6 +8786,8 @@ export type RecrutamentoDocAdmissao = {
   descricao?: string | null;
   obrigatorio: boolean;
   ativo: boolean;
+  aceita_varios_arquivos?: boolean;
+  ordem?: number | null;
   [key: string]: unknown;
 };
 
@@ -8336,14 +8798,14 @@ export async function fetchRecrutamentoDocAdmissao(): Promise<RecrutamentoDocAdm
   return Array.isArray(data) ? data : (data as { itens?: RecrutamentoDocAdmissao[] })?.itens ?? [];
 }
 
-export async function createRecrutamentoDocAdmissao(body: { nome: string; descricao?: string; obrigatorio?: boolean }): Promise<RecrutamentoDocAdmissao> {
+export async function createRecrutamentoDocAdmissao(body: { nome: string; descricao?: string; obrigatorio?: boolean; aceita_varios_arquivos?: boolean; ordem?: number }): Promise<RecrutamentoDocAdmissao> {
   const json = await api.post('/api/recrutamento/doc-admissao', body);
   return json.data as RecrutamentoDocAdmissao;
 }
 
 export async function updateRecrutamentoDocAdmissao(
   id: string,
-  body: { nome?: string; descricao?: string; obrigatorio?: boolean; ativo?: boolean }
+  body: { nome?: string; descricao?: string; obrigatorio?: boolean; ativo?: boolean; aceita_varios_arquivos?: boolean; ordem?: number }
 ): Promise<RecrutamentoDocAdmissao> {
   const json = await api.patch(`/api/recrutamento/doc-admissao?id=${encodeURIComponent(id)}`, body);
   return json.data as RecrutamentoDocAdmissao;
@@ -8353,12 +8815,48 @@ export async function deleteRecrutamentoDocAdmissao(id: string): Promise<void> {
   await api.delete(`/api/recrutamento/doc-admissao?id=${encodeURIComponent(id)}`);
 }
 
+// --- Configurações: Kits de admissão ---
+
+export type RecrutamentoKitAdmissao = {
+  id: string;
+  nome: string;
+  cargo?: string | null;
+  tipo_contrato?: string | null;
+  ativo?: boolean;
+  doc_tipo_ids: string[];
+  total_documentos?: number;
+  [key: string]: unknown;
+};
+
+export async function fetchRecrutamentoKitsAdmissao(): Promise<RecrutamentoKitAdmissao[]> {
+  const { data } = await fetchRecrutamentoRecurso<
+    RecrutamentoKitAdmissao[] | { itens: RecrutamentoKitAdmissao[] }
+  >('kits-admissao');
+  return Array.isArray(data) ? data : (data as { itens?: RecrutamentoKitAdmissao[] })?.itens ?? [];
+}
+
+export async function saveRecrutamentoKitAdmissao(body: {
+  id?: string;
+  nome: string;
+  cargo?: string;
+  tipo_contrato?: string;
+  ativo?: boolean;
+  doc_tipo_ids: string[];
+}): Promise<RecrutamentoKitAdmissao> {
+  const json = await api.post('/api/recrutamento/kit-admissao', body);
+  return json.data as RecrutamentoKitAdmissao;
+}
+
+export async function deleteRecrutamentoKitAdmissao(id: string): Promise<void> {
+  await api.delete(`/api/recrutamento/kit-admissao?id=${encodeURIComponent(id)}`);
+}
+
 // --- Configurações: Alertas de IA (análise de currículo) ---
 
 export type RecrutamentoAlertaIa = {
   id: string;
-  nome: string;
-  descricao: string;
+  titulo: string;
+  instrucao: string;
   ativo: boolean;
   [key: string]: unknown;
 };
@@ -8372,12 +8870,12 @@ export async function fetchRecrutamentoAlertasIa(): Promise<{ itens: Recrutament
   return { itens, limiteAtivos };
 }
 
-export async function createRecrutamentoAlertaIa(body: { nome: string; descricao: string }): Promise<RecrutamentoAlertaIa> {
+export async function createRecrutamentoAlertaIa(body: { titulo: string; instrucao: string }): Promise<RecrutamentoAlertaIa> {
   const json = await api.post('/api/recrutamento/alerta-ia', body);
   return json.data as RecrutamentoAlertaIa;
 }
 
-export async function updateRecrutamentoAlertaIa(id: string, body: { nome?: string; descricao?: string; ativo?: boolean }): Promise<RecrutamentoAlertaIa> {
+export async function updateRecrutamentoAlertaIa(id: string, body: { titulo?: string; instrucao?: string; ativo?: boolean }): Promise<RecrutamentoAlertaIa> {
   const json = await api.patch(`/api/recrutamento/alerta-ia?id=${encodeURIComponent(id)}`, body);
   return json.data as RecrutamentoAlertaIa;
 }
@@ -8390,33 +8888,60 @@ export async function deleteRecrutamentoAlertaIa(id: string): Promise<void> {
 
 export type RecrutamentoTelegramDestino = {
   id: string;
-  nome: string;
+  titulo: string;
+  chat_id?: string | null;
+  tipo?: 'private' | 'group' | string;
   ativo: boolean;
-  ultimo_aviso?: string | null;
+  ultimo_envio_at?: string | null;
   [key: string]: unknown;
 };
 
 export type RecrutamentoTelegramConfig = {
   ativo: boolean;
-  bot_username?: string | null;
+  botConfigurado: boolean;
+  chatId: string | null;
+  chatTitulo: string | null;
   conversa_nova: boolean;
   candidato_novo: boolean;
+  ultimoEnvioAt: string | null;
   destinos: RecrutamentoTelegramDestino[];
   [key: string]: unknown;
 };
 
+// Formato real confirmado pela Lovable em 18/09/2026: os campos ficam
+// aninhados em "config" (não na raiz), e o campo de status do bot é
+// "bot_configurado" (não "bot_username").
 export async function fetchRecrutamentoTelegram(): Promise<RecrutamentoTelegramConfig> {
-  const { data } = await fetchRecrutamentoRecurso<Partial<RecrutamentoTelegramConfig>>('telegram');
+  const { data } = await fetchRecrutamentoRecurso<{
+    config?: {
+      ativo?: boolean;
+      avisar_conversa_nova?: boolean;
+      avisar_candidato_novo?: boolean;
+      chat_id?: string | null;
+      chat_titulo?: string | null;
+      ultimo_envio_at?: string | null;
+    };
+    destinos?: RecrutamentoTelegramDestino[];
+    bot_configurado?: boolean;
+  }>('telegram');
+  const config = data.config ?? {};
   return {
-    ativo: data.ativo ?? false,
-    bot_username: data.bot_username ?? null,
-    conversa_nova: data.conversa_nova ?? false,
-    candidato_novo: data.candidato_novo ?? false,
+    ativo: config.ativo ?? false,
+    botConfigurado: data.bot_configurado ?? false,
+    chatId: config.chat_id ?? null,
+    chatTitulo: config.chat_titulo ?? null,
+    conversa_nova: config.avisar_conversa_nova ?? false,
+    candidato_novo: config.avisar_candidato_novo ?? false,
+    ultimoEnvioAt: config.ultimo_envio_at ?? null,
     destinos: data.destinos ?? [],
   };
 }
 
-export async function updateRecrutamentoTelegram(body: { ativo?: boolean; conversa_nova?: boolean; candidato_novo?: boolean }): Promise<RecrutamentoTelegramConfig> {
+export async function updateRecrutamentoTelegram(body: {
+  ativo?: boolean;
+  avisar_conversa_nova?: boolean;
+  avisar_candidato_novo?: boolean;
+}): Promise<RecrutamentoTelegramConfig> {
   const json = await api.patch('/api/recrutamento/telegram', body);
   return json.data as RecrutamentoTelegramConfig;
 }
@@ -8448,7 +8973,13 @@ export async function fetchRecrutamentoWaConversas(filtro?: {
   return {
     itens: itens as MarketingWaConversaItem[],
     total: json.count ?? itens.length,
-    contadores: (json.contadores as MarketingWaContadores) ?? { todos: 0, fila: 0, ativos: 0, finalizadas: 0 },
+    contadores: (json.contadores as MarketingWaContadores) ?? {
+      fila: 0,
+      em_atendimento: 0,
+      finalizadas_hoje: 0,
+      tma_hoje_segundos: null,
+      abas: { todos: 0, fila: 0, ativos: 0, finalizadas: 0, grupos: 0 },
+    },
   };
 }
 
@@ -8472,6 +9003,34 @@ export async function enviarRecrutamentoWaMensagem(body: { phone: string; texto:
 
 export async function criarRecrutamentoWaConversa(body: { phone: string; nome?: string; texto: string }): Promise<void> {
   await api.post('/api/recrutamento/wa-nova', body);
+}
+
+// Mesmo endpoint /wa-enviar de texto, só que com os campos de mídia — o
+// backend já encaminha o body inteiro (visto no código da rota), então
+// funciona igual ao sendMarketingWaMidia sem precisar de rota nova.
+export async function enviarRecrutamentoWaMidia(body: {
+  phone: string;
+  type: MarketingWaMidiaTipo;
+  media_base64: string;
+  media_mime: string;
+  file_name?: string;
+}): Promise<void> {
+  await api.post('/api/recrutamento/wa-enviar', body);
+}
+
+// A rota já existia no backend (encaminha pro mesmo PATCH do Marketing),
+// só faltava essa função no app pra usar "Assumir"/"Finalizar"/"Silenciar"/
+// "Bloquear" igual ao módulo de Marketing.
+export async function patchRecrutamentoWaConversa(
+  phone: string,
+  body: Partial<{ chat_status: MarketingWaChatStatus; muted: boolean; blocked: boolean; display_name: string; tags: string[]; notas: string }>
+): Promise<MarketingWaConversaItem> {
+  const json = await api.patch(`/api/recrutamento/wa-conversa/${encodeURIComponent(phone)}`, body);
+  return json.data as MarketingWaConversaItem;
+}
+
+export async function marcarRecrutamentoWaLido(phone: string): Promise<void> {
+  await api.post('/api/recrutamento/wa-marcar-lido', { phone });
 }
 
 // --- Notificações (R&S) — mesmo sistema genérico do Marketing, modulo já

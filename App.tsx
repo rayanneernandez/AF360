@@ -3,6 +3,7 @@ import { useEventListener } from 'expo';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import * as Clipboard from 'expo-clipboard';
 import { WebView } from 'react-native-webview';
 import YoutubePlayer, { type YoutubeIframeRef } from 'react-native-youtube-iframe';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,6 +26,7 @@ import {
   MaterialCommunityIcons,
 } from '@expo/vector-icons';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   AppState,
@@ -193,6 +195,10 @@ import {
   updateAdminTema,
   fetchRhCalendarioEventos,
   type RhCalendarioEvento,
+  fetchRhAgendaAssinatura,
+  createRhAgendaAssinatura,
+  rotacionarRhAgendaAssinatura,
+  type RhAgendaAssinatura,
   fetchRhTreinamentoAulas,
   fetchRhTreinamentoQuestoes,
   fetchRhTreinamentoDetalhe,
@@ -5816,6 +5822,9 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
     {}
   );
   const [realEventsByMonth, setRealEventsByMonth] = useState<Record<number, CalendarEvent[]>>({});
+  const [agendaAssinatura, setAgendaAssinatura] = useState<RhAgendaAssinatura | null>(null);
+  const [isLoadingAgenda, setIsLoadingAgenda] = useState(false);
+  const [isCreatingAgenda, setIsCreatingAgenda] = useState(false);
   const currentMonth = calendarMonths[currentMonthIndex];
   const mergedEvents = useMemo(
     () =>
@@ -5902,6 +5911,91 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
     };
   }, [colaboradorId]);
 
+  // Assinatura da agenda pessoal (.ics) — token confirmado pela Lovable em
+  // 21/09/2026: consulta sem criar (criar=0) pra não gerar um registro à toa
+  // só de a pessoa abrir a tela; só cria de verdade quando ela toca em
+  // "Vincular à agenda".
+  useEffect(() => {
+    if (!colaboradorId) {
+      setAgendaAssinatura(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingAgenda(true);
+
+    fetchRhAgendaAssinatura(colaboradorId, false)
+      .then((data) => {
+        if (isMounted) setAgendaAssinatura(data);
+      })
+      .catch(() => {
+        if (isMounted) setAgendaAssinatura(null);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingAgenda(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [colaboradorId]);
+
+  const handleVincularAgenda = () => {
+    if (!colaboradorId) return;
+    setIsCreatingAgenda(true);
+    createRhAgendaAssinatura(colaboradorId, identity?.profileId)
+      .then((data) => setAgendaAssinatura(data))
+      .catch((err) => {
+        Alert.alert('Erro', err instanceof Error ? err.message : 'Não foi possível gerar o link da agenda.');
+      })
+      .finally(() => setIsCreatingAgenda(false));
+  };
+
+  const handleCopiarLinkAgenda = () => {
+    if (!agendaAssinatura) return;
+    Clipboard.setStringAsync(agendaAssinatura.url).then(() => {
+      Alert.alert('Copiado', 'O link da sua agenda foi copiado.');
+    });
+  };
+
+  const handleAbrirAppAgenda = () => {
+    if (!agendaAssinatura) return;
+    // webcal:// é o esquema que o iOS/Android reconhecem pra abrir direto no
+    // app de calendário nativo já na tela de assinatura — cai automaticamente
+    // pro link https normal (abre no navegador) se o dispositivo não souber
+    // lidar com webcal.
+    const webcalUrl = agendaAssinatura.url.replace(/^https?:\/\//, 'webcal://');
+    Linking.openURL(webcalUrl).catch(() => {
+      Linking.openURL(agendaAssinatura.url).catch(() => {
+        Alert.alert('Erro', 'Não foi possível abrir o app de agenda. Copie o link e cole manualmente.');
+      });
+    });
+  };
+
+  const handleRotacionarAgenda = () => {
+    if (!colaboradorId) return;
+    Alert.alert(
+      'Trocar link da agenda',
+      'O link atual vai parar de funcionar e um novo será gerado. Use isso só se o link antigo tiver vazado.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Trocar link',
+          style: 'destructive',
+          onPress: () => {
+            setIsCreatingAgenda(true);
+            rotacionarRhAgendaAssinatura(colaboradorId, identity?.profileId)
+              .then((data) => setAgendaAssinatura(data))
+              .catch((err) => {
+                Alert.alert('Erro', err instanceof Error ? err.message : 'Não foi possível trocar o link da agenda.');
+              })
+              .finally(() => setIsCreatingAgenda(false));
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -5970,6 +6064,59 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
             </View>
           </View>
         </View>
+
+        {colaboradorId ? (
+          <View style={styles.agendaLinkCard}>
+            <View style={styles.agendaLinkHeaderRow}>
+              <Feather name="calendar" size={16} color="#3A4B8C" />
+              <Text style={styles.agendaLinkTitle}>Agenda do celular</Text>
+            </View>
+            <Text style={styles.agendaLinkSubtitle}>
+              Vincule uma vez e os eventos passam a aparecer no aplicativo de agenda do seu celular, sempre atualizados.
+            </Text>
+
+            {isLoadingAgenda ? (
+              <ActivityIndicator color="#3A4B8C" style={{ marginTop: 10 }} />
+            ) : !agendaAssinatura ? (
+              <Pressable
+                style={[styles.agendaLinkPrimaryButton, { marginTop: 10 }]}
+                onPress={handleVincularAgenda}
+                disabled={isCreatingAgenda}
+              >
+                {isCreatingAgenda ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Feather name="calendar" size={14} color="#FFFFFF" />
+                    <Text style={styles.agendaLinkPrimaryButtonText}>Vincular à agenda</Text>
+                  </>
+                )}
+              </Pressable>
+            ) : (
+              <>
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                  <Pressable style={[styles.agendaLinkPrimaryButton, { flex: 1 }]} onPress={handleAbrirAppAgenda}>
+                    <Feather name="calendar" size={14} color="#FFFFFF" />
+                    <Text style={styles.agendaLinkPrimaryButtonText}>Abrir no app de agenda</Text>
+                  </Pressable>
+                  <Pressable style={[styles.agendaLinkSecondaryButton, { flex: 1 }]} onPress={handleCopiarLinkAgenda}>
+                    <Feather name="copy" size={14} color="#3A4B8C" />
+                    <Text style={styles.agendaLinkSecondaryButtonText}>Copiar link</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.agendaLinkUrlText} numberOfLines={2}>
+                  {agendaAssinatura.url}
+                </Text>
+                <Text style={styles.agendaLinkHelpText}>
+                  No iPhone: Ajustes {'>'} Apps {'>'} Calendário {'>'} Contas {'>'} Adicionar conta {'>'} Outra {'>'} Adicionar assinatura de calendário. No Android: Google Agenda no computador {'>'} Outros calendários {'>'} Assinar via URL. Esse link é pessoal, não compartilhe.
+                </Text>
+                <Pressable onPress={handleRotacionarAgenda} disabled={isCreatingAgenda} style={{ marginTop: 8, alignSelf: 'flex-start' }}>
+                  <Text style={styles.agendaLinkRotateText}>Link vazou? Trocar link</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        ) : null}
 
         {viewMode === 'list' ? (
           <>
@@ -16610,6 +16757,75 @@ export const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1.4,
     marginBottom: 10,
+  },
+  agendaLinkCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#EDEFF5',
+  },
+  agendaLinkHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  agendaLinkTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#15203E',
+  },
+  agendaLinkSubtitle: {
+    fontSize: 12,
+    color: '#7C8397',
+    marginTop: 4,
+  },
+  agendaLinkPrimaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#3A4B8C',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  agendaLinkPrimaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  agendaLinkSecondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EEF0F8',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  agendaLinkSecondaryButtonText: {
+    color: '#3A4B8C',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  agendaLinkUrlText: {
+    fontSize: 11,
+    color: '#8A93A8',
+    marginTop: 10,
+  },
+  agendaLinkHelpText: {
+    fontSize: 11,
+    color: '#9AA1B5',
+    marginTop: 8,
+    lineHeight: 16,
+  },
+  agendaLinkRotateText: {
+    fontSize: 12,
+    color: '#C2263A',
+    fontWeight: '700',
   },
   calendarEventCard: {
     backgroundColor: '#FFFFFF',
