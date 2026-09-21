@@ -211,6 +211,7 @@ import {
   fetchRhTreinamentoProgressoAulas,
   upsertRhTreinamentoProgressoAula,
   type RhTreinamentoProgressoAula,
+  fetchRhTreinamentoRespostasColaborador,
   marcarComunicadoLido,
   fetchDiretoriaPainel,
   type DiretoriaPainelRecurso,
@@ -4760,7 +4761,7 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
   useScreenCaptureProtection();
   const { identity } = useContext(AuthIdentityContext);
   const colaboradorId = identity?.colaboradorId ?? null;
-  const { courseProgress, updateLessonWatchTime } = useContext(TrainingProgressContext);
+  const { courseProgress, updateLessonWatchTime, saveExamAttempt } = useContext(TrainingProgressContext);
   const courseId = route.params.courseId;
 
   const [treinamento, setTreinamento] = useState<RhTreinamentoCatalogo | null>(null);
@@ -4845,6 +4846,40 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
       isActive = false;
     };
   }, [inscricaoId]);
+
+  // Resultado da prova (rh_treinamento_tentativas) — carregado do servidor
+  // assim que sabemos quem é o colaborador, pra mostrar o selo "Aprovado" /
+  // "Refazer prova" corretamente mesmo numa sessão nova (sem isso, o selo só
+  // existia em memória e sumia a cada F5/reabertura do app, mesmo pra quem
+  // já tinha passado na prova antes). Não sobrescreve se já existe um
+  // resultado desta MESMA sessão (acabou de fazer a prova agora), pra não
+  // "atrasar" o que já está na tela com um round-trip de rede.
+  useEffect(() => {
+    if (!colaboradorId || courseProgress[courseId]?.examAttempt) return;
+    let isActive = true;
+    fetchRhTreinamentoRespostasColaborador(courseId, colaboradorId)
+      .then((data) => {
+        if (!isActive) return;
+        if (data.tentativas.length === 0) return;
+        const ultima = [...data.tentativas].sort((a, b) => b.tentativa_numero - a.tentativa_numero)[0];
+        saveExamAttempt(courseId, {
+          scorePercent: Math.round(ultima.nota),
+          correctAnswers: ultima.acertos,
+          totalQuestions: ultima.total,
+          passed: ultima.aprovado,
+          minimumScore: data.prova_min_acerto || 70,
+          reason: 'submitted',
+        });
+      })
+      .catch(() => {
+        // Silencioso: sem resultado prévio no servidor, a tela simplesmente
+        // continua mostrando "Iniciar prova" (comportamento já correto).
+      });
+    return () => {
+      isActive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colaboradorId, courseId]);
 
   // Quando não há aulas cadastradas em rh_treinamento_aulas, mas o próprio
   // treinamento tem um video_url direto, tratamos ele como a aula única —
@@ -5234,21 +5269,34 @@ function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail
                         />
                       ) : null
                     ) : externalVideoEmbedUrl ? (
-                      <WebView
-                        source={{
-                          html: buildEmbeddedVideoHtml(externalVideoEmbedUrl),
-                          baseUrl: 'https://player.vimeo.com',
-                        }}
-                        originWhitelist={['*']}
-                        style={{ width: '100%', height: '100%', backgroundColor: '#000' }}
-                        allowsFullscreenVideo
-                        allowsInlineMediaPlayback
-                        javaScriptEnabled
-                        domStorageEnabled
-                        mediaPlaybackRequiresUserAction={false}
-                        mixedContentMode="always"
-                        onError={() => setVideoLoadError(true)}
-                      />
+                      // react-native-webview não tem implementação pra Web —
+                      // no navegador ele só renderizaria um texto de erro
+                      // genérico da própria lib. Em iOS/Android (app nativo
+                      // de verdade) funciona normalmente.
+                      Platform.OS === 'web' ? (
+                        <View style={{ width: '100%', height: '100%', backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                          <Feather name="smartphone" size={24} color="#FFFFFF" style={{ marginBottom: 8 }} />
+                          <Text style={{ color: '#FFFFFF', textAlign: 'center', fontSize: 13 }}>
+                            Este vídeo só toca no app instalado no celular, não nesta pré-visualização pelo navegador.
+                          </Text>
+                        </View>
+                      ) : (
+                        <WebView
+                          source={{
+                            html: buildEmbeddedVideoHtml(externalVideoEmbedUrl),
+                            baseUrl: 'https://player.vimeo.com',
+                          }}
+                          originWhitelist={['*']}
+                          style={{ width: '100%', height: '100%', backgroundColor: '#000' }}
+                          allowsFullscreenVideo
+                          allowsInlineMediaPlayback
+                          javaScriptEnabled
+                          domStorageEnabled
+                          mediaPlaybackRequiresUserAction={false}
+                          mixedContentMode="always"
+                          onError={() => setVideoLoadError(true)}
+                        />
+                      )
                     ) : selectedLesson.video_url ? (
                       <View style={{ width: '100%', height: '100%', position: 'relative' }}>
                         {/* Controles nativos ligados (play/pause/tela cheia
@@ -5747,6 +5795,17 @@ function TrainingExamResultScreen({ navigation, route }: ScreenProps<'TrainingEx
   const { courseProgress } = useContext(TrainingProgressContext);
   const courseId = route.params.courseId;
   const attempt = courseProgress[courseId]?.examAttempt;
+
+  // courseProgress só existe em memória (nunca persistido) — se a pessoa
+  // atualizar a página (F5 no preview Web) ou abrir essa tela sem ter
+  // acabado de fazer a prova nesta sessão, attempt vem undefined. Antes
+  // disso deixava a tela em branco sem explicação nenhuma; agora volta pro
+  // detalhe do treinamento, de onde dá pra tentar de novo.
+  useEffect(() => {
+    if (!attempt) {
+      navigation.replace('TrainingDetail', { courseId });
+    }
+  }, [attempt, courseId, navigation]);
 
   if (!attempt) {
     return null;
