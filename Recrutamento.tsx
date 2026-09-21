@@ -3230,6 +3230,7 @@ type RsCandidatoFormState = {
   whatsapp: string;
   telefone: string;
   cpf: string;
+  genero: string;
   cidade: string;
   estado: string;
   bairro: string;
@@ -3239,6 +3240,9 @@ type RsCandidatoFormState = {
   complemento: string;
   disponibilidade: string;
   pretensao_salarial: string;
+  linkedin: string;
+  habilidades: string[];
+  resumo: string;
   origem: string;
 };
 
@@ -3249,6 +3253,7 @@ const RS_CANDIDATO_FORM_VAZIO: RsCandidatoFormState = {
   whatsapp: '',
   telefone: '',
   cpf: '',
+  genero: '',
   cidade: '',
   estado: '',
   bairro: '',
@@ -3258,8 +3263,21 @@ const RS_CANDIDATO_FORM_VAZIO: RsCandidatoFormState = {
   complemento: '',
   disponibilidade: '',
   pretensao_salarial: '',
+  linkedin: '',
+  habilidades: [],
+  resumo: '',
   origem: '',
 };
+
+// Mesmos valores reais confirmados no dashboard (RS_SEXO_LABEL/RS_SEXO_COLOR,
+// vindos de distrib_genero) — usa o mesmo enum aqui pra não inventar valor
+// novo que o backend não reconheça.
+const RS_GENERO_OPCOES: Array<{ value: string | null; label: string }> = [
+  { value: null, label: 'Selecione' },
+  { value: 'feminino', label: 'Feminino' },
+  { value: 'masculino', label: 'Masculino' },
+  { value: 'nao_informado', label: 'Prefiro não informar' },
+];
 
 // Form único de criar/editar candidato — usado tanto pelo "+ Novo" da lista
 // quanto pelo "Editar" do menu "...". Ao editar, quem chama já buscou o
@@ -3286,14 +3304,46 @@ function RsCandidatoFormModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, initial]);
 
+  const [isGeneroOpen, setIsGeneroOpen] = useState(false);
+  const [novaHabilidade, setNovaHabilidade] = useState('');
+
   const set = <K extends keyof RsCandidatoFormState>(key: K) => (value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const addHabilidade = () => {
+    const valor = novaHabilidade.trim();
+    if (!valor) return;
+    setForm((prev) => (prev.habilidades.includes(valor) ? prev : { ...prev, habilidades: [...prev.habilidades, valor] }));
+    setNovaHabilidade('');
+  };
+  const removeHabilidade = (valor: string) => {
+    setForm((prev) => ({ ...prev, habilidades: prev.habilidades.filter((h) => h !== valor) }));
+  };
 
   return (
     <RsModal visible={visible} title={initial.nome_completo ? 'Editar candidato' : 'Novo candidato'} onClose={onClose}>
+      <Text style={[rsStyles.sectionTitle, { marginTop: 4 }]}>Dados pessoais</Text>
       <RsFormLabel>Nome completo*</RsFormLabel>
       <RsTextInput value={form.nome_completo} onChangeText={set('nome_completo')} placeholder="Nome completo" />
-      <RsFormLabel>Profissão / tipo de vaga</RsFormLabel>
-      <RsTextInput value={form.profissao} onChangeText={set('profissao')} placeholder="Ex.: Frentista" />
+      <View style={{ flexDirection: 'row', gap: 10, zIndex: isGeneroOpen ? 200 : 1 }}>
+        <View style={{ flex: 1 }}>
+          <RsFormLabel>CPF</RsFormLabel>
+          <RsTextInput value={form.cpf} onChangeText={set('cpf')} placeholder="000.000.000-00" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <RsFormLabel>Gênero</RsFormLabel>
+          <RsFieldDropdown
+            label={RS_GENERO_OPCOES.find((o) => o.value === (form.genero || null))?.label ?? 'Selecione'}
+            options={RS_GENERO_OPCOES}
+            selectedValue={form.genero || null}
+            isOpen={isGeneroOpen}
+            onToggle={() => setIsGeneroOpen((o) => !o)}
+            onSelect={(v) => {
+              setForm((prev) => ({ ...prev, genero: v ?? '' }));
+              setIsGeneroOpen(false);
+            }}
+          />
+        </View>
+      </View>
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <View style={{ flex: 1 }}>
           <RsFormLabel>WhatsApp</RsFormLabel>
@@ -3306,8 +3356,8 @@ function RsCandidatoFormModal({
       </View>
       <RsFormLabel>E-mail</RsFormLabel>
       <RsTextInput value={form.email} onChangeText={set('email')} placeholder="email@exemplo.com" keyboardType="email-address" autoCapitalize="none" />
-      <RsFormLabel>CPF</RsFormLabel>
-      <RsTextInput value={form.cpf} onChangeText={set('cpf')} placeholder="000.000.000-00" />
+
+      <Text style={[rsStyles.sectionTitle, { marginTop: 14 }]}>Endereço</Text>
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <View style={{ flex: 1 }}>
           <RsFormLabel>Bairro</RsFormLabel>
@@ -3342,6 +3392,10 @@ function RsCandidatoFormModal({
           <RsTextInput value={form.cep} onChangeText={set('cep')} placeholder="00000-000" />
         </View>
       </View>
+
+      <Text style={[rsStyles.sectionTitle, { marginTop: 14 }]}>Mais sobre o candidato</Text>
+      <RsFormLabel>Profissão / tipo de vaga</RsFormLabel>
+      <RsTextInput value={form.profissao} onChangeText={set('profissao')} placeholder="Ex.: Frentista" />
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <View style={{ flex: 1 }}>
           <RsFormLabel>Disponibilidade</RsFormLabel>
@@ -3352,8 +3406,57 @@ function RsCandidatoFormModal({
           <RsTextInput value={form.pretensao_salarial} onChangeText={set('pretensao_salarial')} placeholder="R$ 0,00" />
         </View>
       </View>
+      <RsFormLabel>LinkedIn</RsFormLabel>
+      <RsTextInput value={form.linkedin} onChangeText={set('linkedin')} placeholder="https://linkedin.com/in/..." autoCapitalize="none" />
+
+      <RsFormLabel>Habilidades</RsFormLabel>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+        <RsTextInput
+          value={novaHabilidade}
+          onChangeText={setNovaHabilidade}
+          placeholder="Digite e toque em + para adicionar"
+          style={{ flex: 1 }}
+          onSubmitEditing={addHabilidade}
+          returnKeyType="done"
+        />
+        <Pressable style={{ padding: 8 }} onPress={addHabilidade}>
+          <Feather name="plus-circle" size={22} color="#1F3A5F" />
+        </Pressable>
+      </View>
+      {form.habilidades.length > 0 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {form.habilidades.map((h) => (
+            <Pressable
+              key={h}
+              onPress={() => removeHabilidade(h)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EEF1F8', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#1F3A5F' }}>{h}</Text>
+              <Feather name="x" size={12} color="#5E667D" />
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      <RsFormLabel>Resumo</RsFormLabel>
+      <RsTextInput
+        value={form.resumo}
+        onChangeText={(v) => setForm((prev) => ({ ...prev, resumo: v.slice(0, 500) }))}
+        placeholder="Breve resumo sobre o candidato"
+        multiline
+        numberOfLines={4}
+        style={{ minHeight: 90, textAlignVertical: 'top' }}
+      />
+      <Text style={{ fontSize: 11, color: '#8992A8', marginTop: 2, textAlign: 'right' }}>{form.resumo.length}/500</Text>
+
       <RsFormLabel>Origem</RsFormLabel>
       <RsTextInput value={form.origem} onChangeText={set('origem')} placeholder="Ex.: whatsapp, indicação..." />
+
+      {/* Referência profissional (nome/telefone) — o painel web mostra esse
+          bloco, mas nenhum endpoint confirmado ainda devolve/aceita esses
+          campos pro candidato (perguntado à Lovable). Fica de fora até a
+          confirmação, pra não mandar campo que pode ser ignorado ou dar erro. */}
+
       <Pressable
         style={[rsStyles.primaryButton, { justifyContent: 'center', marginTop: 16, marginBottom: 16 }]}
         onPress={() => onSave(form)}
@@ -3480,6 +3583,7 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
   const [isSavingForm, setIsSavingForm] = useState(false);
   const [isSugestaoOpen, setIsSugestaoOpen] = useState(false);
   const [linkEtapaCandidato, setLinkEtapaCandidato] = useState<RecrutamentoCandidatoItem | null>(null);
+  const [isNovoMenuOpen, setIsNovoMenuOpen] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
@@ -3648,9 +3752,23 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
   };
 
   const openNovo = () => {
+    setIsNovoMenuOpen(false);
     setEditingCandidatoId(null);
     setFormInitial(RS_CANDIDATO_FORM_VAZIO);
     setIsFormOpen(true);
+  };
+
+  // "Pré-cadastro via link" (gerar link público pra o próprio candidato se
+  // cadastrar) aparece no painel web, mas nenhum endpoint de geração desse
+  // link específico foi confirmado ainda pela Lovable — o "Gerar link por
+  // etapa" existente é só pra candidato JÁ cadastrado, não serve pra criar
+  // um novo do zero. Fica como aviso honesto até confirmarem o contrato.
+  const openPreCadastroLink = () => {
+    setIsNovoMenuOpen(false);
+    Alert.alert(
+      'Ainda não disponível',
+      'A geração de link de pré-cadastro (pra o próprio candidato preencher os dados) depende de um endpoint que ainda não foi confirmado com a Lovable. Por enquanto, use "Cadastro completo".'
+    );
   };
 
   // Busca o perfil completo antes de abrir o form de edição — a linha da
@@ -3667,6 +3785,7 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
           whatsapp: perfil.whatsapp ?? '',
           telefone: perfil.telefone ?? '',
           cpf: perfil.cpf ?? '',
+          genero: perfil.genero ?? '',
           cidade: perfil.cidade ?? '',
           estado: perfil.estado ?? '',
           bairro: perfil.bairro ?? '',
@@ -3676,6 +3795,9 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
           complemento: perfil.complemento ?? '',
           disponibilidade: perfil.disponibilidade ?? '',
           pretensao_salarial: perfil.pretensao_salarial ?? '',
+          linkedin: perfil.linkedin ?? '',
+          habilidades: perfil.habilidades ?? [],
+          resumo: perfil.resumo ?? '',
           origem: perfil.origem ?? '',
         });
         setEditingCandidatoId(c.id);
@@ -3697,6 +3819,7 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
       whatsapp: form.whatsapp.trim() || null,
       telefone: form.telefone.trim() || null,
       cpf: form.cpf.trim() || null,
+      genero: form.genero.trim() || null,
       cidade: form.cidade.trim() || null,
       estado: form.estado.trim() || null,
       bairro: form.bairro.trim() || null,
@@ -3706,6 +3829,9 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
       complemento: form.complemento.trim() || null,
       disponibilidade: form.disponibilidade.trim() || null,
       pretensao_salarial: form.pretensao_salarial.trim() || null,
+      linkedin: form.linkedin.trim() || null,
+      habilidades: form.habilidades,
+      resumo: form.resumo.trim() || null,
       origem: form.origem.trim() || null,
     };
     const request = editingCandidatoId ? updateRecrutamentoCandidato(editingCandidatoId, body) : createRecrutamentoCandidato(body);
@@ -3757,11 +3883,32 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <RsPageHeader icon="users" title="Candidatos" subtitle="Base de candidatos e etapas do processo." />
 
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-          <Pressable style={[rsStyles.primaryButton, { flex: 1, justifyContent: 'center' }]} onPress={openNovo}>
-            <Feather name="plus" size={14} color="#FFFFFF" />
-            <Text style={rsStyles.primaryButtonText}>Novo</Text>
-          </Pressable>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10, position: 'relative', zIndex: isNovoMenuOpen ? 200 : 1 }}>
+          <View style={{ flex: 1 }}>
+            <Pressable style={[rsStyles.primaryButton, { justifyContent: 'center' }]} onPress={() => setIsNovoMenuOpen((o) => !o)}>
+              <Feather name="plus" size={14} color="#FFFFFF" />
+              <Text style={rsStyles.primaryButtonText}>Novo</Text>
+              <Feather name={isNovoMenuOpen ? 'chevron-up' : 'chevron-down'} size={14} color="#FFFFFF" />
+            </Pressable>
+            {isNovoMenuOpen ? (
+              <View style={rsStyles.overlayDropdown}>
+                <Pressable style={[rsStyles.overlayDropdownItem, { flexDirection: 'row', alignItems: 'center', gap: 10 }]} onPress={openNovo}>
+                  <Feather name="user-plus" size={16} color="#1F3A5F" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={rsStyles.overlayDropdownItemText}>Cadastro completo</Text>
+                    <Text style={{ fontSize: 11, color: '#8992A8' }}>Preencher todos os dados agora</Text>
+                  </View>
+                </Pressable>
+                <Pressable style={[rsStyles.overlayDropdownItem, { flexDirection: 'row', alignItems: 'center', gap: 10 }]} onPress={openPreCadastroLink}>
+                  <Feather name="link" size={16} color="#1F3A5F" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={rsStyles.overlayDropdownItemText}>Pré-cadastro via link</Text>
+                    <Text style={{ fontSize: 11, color: '#8992A8' }}>Gerar link p/ candidato completar</Text>
+                  </View>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
           <Pressable style={[rsStyles.secondaryButton, { flex: 1, justifyContent: 'center' }]} onPress={() => setIsSugestaoOpen(true)}>
             <Feather name="zap" size={14} color="#1F3A5F" />
             <Text style={rsStyles.secondaryButtonText}>Sugestão IA</Text>
