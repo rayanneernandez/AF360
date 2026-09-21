@@ -5960,10 +5960,18 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
 
   const handleAbrirAppAgenda = () => {
     if (!agendaAssinatura) return;
-    // webcal:// é o esquema que o iOS/Android reconhecem pra abrir direto no
-    // app de calendário nativo já na tela de assinatura — cai automaticamente
-    // pro link https normal (abre no navegador) se o dispositivo não souber
-    // lidar com webcal.
+    // No navegador (Web) não existe "app de agenda" nem suporte real ao
+    // esquema webcal:// — window.open() com um esquema desconhecido não dá
+    // erro (só não faz nada visível), então o .catch() abaixo nunca disparava
+    // pra cair no link https. No Web abre direto o link https normal; só em
+    // iOS/Android tenta webcal:// primeiro (abre direto no app nativo de
+    // calendário já na tela de assinatura), caindo pro link https se falhar.
+    if (Platform.OS === 'web') {
+      Linking.openURL(agendaAssinatura.url).catch(() => {
+        Alert.alert('Erro', 'Não foi possível abrir o link. Copie o link e cole manualmente.');
+      });
+      return;
+    }
     const webcalUrl = agendaAssinatura.url.replace(/^https?:\/\//, 'webcal://');
     Linking.openURL(webcalUrl).catch(() => {
       Linking.openURL(agendaAssinatura.url).catch(() => {
