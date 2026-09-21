@@ -8782,16 +8782,65 @@ function SecuritySettingsScreen({ navigation }: ScreenProps<'SecuritySettings'>)
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const { identity } = useContext(AuthIdentityContext);
   const { isTwoFactorEnabled, isBiometricLoginEnabled, setIsTwoFactorEnabled, setIsBiometricLoginEnabled } =
     useContext(SecurityPreferencesContext);
 
-  const handleSavePassword = () => {
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setShowCurrentPassword(false);
-    setShowNewPassword(false);
-    setShowConfirmPassword(false);
+  const handleSavePassword = async () => {
+    if (isSavingPassword) return;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Alert.alert('Preencha os campos', 'Informe a senha atual e a nova senha (com confirmação).');
+      return;
+    }
+    if (newPassword.length < 6) {
+      Alert.alert('Senha muito curta', 'A nova senha precisa ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('As senhas não coincidem', 'Digite a mesma senha nos dois campos.');
+      return;
+    }
+    if (!identity?.email) {
+      Alert.alert('Não foi possível identificar sua conta', 'Faça login novamente e tente de novo.');
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      await changePassword(identity.email, currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
+      Alert.alert('Senha alterada', 'Sua senha foi atualizada com sucesso.');
+    } catch (err) {
+      let title = 'Não foi possível trocar a senha';
+      let message = 'Tente novamente em instantes.';
+
+      if (err instanceof ApiError) {
+        if (err.code === 'invalid_current_password') {
+          title = 'Senha atual incorreta';
+          message = 'Confira a senha atual e tente de novo.';
+        } else if (err.code === 'weak_password') {
+          title = 'Senha muito curta';
+          message = 'A nova senha precisa ter pelo menos 6 caracteres.';
+        } else if (err.code === 'network_error') {
+          title = 'Sem conexão';
+          message = 'Não foi possível conectar. Verifique sua internet.';
+        } else if (err.code === 'auth_not_configured') {
+          title = 'Indisponível no momento';
+          message = 'Fale com o suporte — o serviço ainda está sendo configurado.';
+        }
+      }
+
+      Alert.alert(title, message);
+    } finally {
+      setIsSavingPassword(false);
+    }
   };
 
   return (
@@ -8836,8 +8885,14 @@ function SecuritySettingsScreen({ navigation }: ScreenProps<'SecuritySettings'>)
             onToggleVisible={() => setShowConfirmPassword((value) => !value)}
           />
 
-          <Pressable style={styles.primaryButton} onPress={handleSavePassword}>
-            <Text style={styles.primaryButtonText}>Salvar nova senha</Text>
+          <Pressable
+            style={[styles.primaryButton, isSavingPassword && { opacity: 0.6 }]}
+            onPress={handleSavePassword}
+            disabled={isSavingPassword}
+          >
+            <Text style={styles.primaryButtonText}>
+              {isSavingPassword ? 'Salvando...' : 'Salvar nova senha'}
+            </Text>
           </Pressable>
         </View>
 
