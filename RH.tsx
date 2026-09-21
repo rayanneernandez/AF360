@@ -43,6 +43,7 @@ import {
   notificationAudienceOptions,
   notificationTriggerOptions,
   notificationChannelMeta,
+  CALENDARIO_TIPO_META,
 } from './App';
 import type {
   ScreenProps,
@@ -185,6 +186,12 @@ import {
   fetchRhUnidades,
   fetchRhCargos,
   fetchRhSetores,
+  fetchRhCalendarioEventos,
+  createRhCalendarioEvento,
+  updateRhCalendarioEvento,
+  deleteRhCalendarioEvento,
+  type RhCalendarioEvento,
+  fetchRhColaboradorDetalhe,
   updateRhColaborador,
   createRhColaborador,
   fetchRhBeneficios,
@@ -2601,7 +2608,12 @@ function RHSimplePickerModal({
     <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
       <Pressable style={styles.simpleListCard} onPress={() => {}}>
         <Text style={styles.simpleListTitle}>{title}</Text>
-        <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.simpleListScroll}
+          showsVerticalScrollIndicator
+          indicatorStyle="black"
+          persistentScrollbar
+        >
           {options.map((option) => {
             const isSelected = option === selectedValue;
             return (
@@ -9503,6 +9515,7 @@ function ColaboradorSearchPickerModal({
   onClose,
   onSelect,
   inline,
+  autoLoadAll,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -9510,6 +9523,10 @@ function ColaboradorSearchPickerModal({
   // Ver comentário em RHSimplePickerModal — mesmo motivo (evita dois <Modal>
   // nativos empilhados quando aberto de dentro de outro modal já visível).
   inline?: boolean;
+  // Por padrão só busca depois de 2+ letras (evita puxar a base toda à toa).
+  // Telas que precisam listar todo mundo já ao abrir (ex.: Calendário —
+  // "Individual") passam true aqui, e a busca só filtra dentro do resultado.
+  autoLoadAll?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<RhColaboradorRaw[]>([]);
@@ -9524,19 +9541,23 @@ function ColaboradorSearchPickerModal({
   }, [visible]);
 
   useEffect(() => {
-    if (!visible || query.trim().length < 2) {
+    if (!visible) {
+      setResults([]);
+      return;
+    }
+    if (!autoLoadAll && query.trim().length < 2) {
       setResults([]);
       return;
     }
     setIsSearching(true);
     const timer = setTimeout(() => {
-      fetchRhColaboradores({ q: query.trim() })
-        .then((rows) => setResults(rows.slice(0, 30)))
+      fetchRhColaboradores(query.trim() ? { q: query.trim() } : {})
+        .then((rows) => setResults(rows.slice(0, autoLoadAll ? 500 : 30)))
         .catch(() => setResults([]))
         .finally(() => setIsSearching(false));
     }, 300);
     return () => clearTimeout(timer);
-  }, [query, visible]);
+  }, [query, visible, autoLoadAll]);
 
   if (inline && !visible) {
     return null;
@@ -9570,7 +9591,9 @@ function ColaboradorSearchPickerModal({
           <ScrollView style={{ maxHeight: 320 }} keyboardShouldPersistTaps="handled">
             {results.length === 0 ? (
               <RHEmptyTabState
-                message={query.trim().length < 2 ? 'Digite pra buscar.' : 'Nenhum colaborador encontrado.'}
+                message={
+                  !autoLoadAll && query.trim().length < 2 ? 'Digite pra buscar.' : 'Nenhum colaborador encontrado.'
+                }
               />
             ) : (
               results.map((colaborador) => (
@@ -11507,7 +11530,12 @@ function RHColaboradorPickerModal({
             placeholderTextColor="#A7AEC2"
           />
         </View>
-        <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.simpleListScroll}
+          showsVerticalScrollIndicator
+          indicatorStyle="black"
+          persistentScrollbar
+        >
           {isLoading ? (
             <Text style={rhStyles.filterFieldLabel}>Buscando...</Text>
           ) : results.length === 0 ? (
@@ -13441,7 +13469,12 @@ function RHExperienciaHistoricoModal({
             </Pressable>
           </View>
 
-          <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+          <ScrollView
+          style={styles.simpleListScroll}
+          showsVerticalScrollIndicator
+          indicatorStyle="black"
+          persistentScrollbar
+        >
             {isLoading ? (
               <Text style={rhStyles.filterFieldLabel}>Carregando...</Text>
             ) : errorMessage ? (
@@ -14411,7 +14444,12 @@ function RHFolhaHistoricoModal({
     <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
       <Pressable style={styles.simpleListCard} onPress={() => {}}>
         <Text style={styles.simpleListTitle}>Histórico</Text>
-        <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.simpleListScroll}
+          showsVerticalScrollIndicator
+          indicatorStyle="black"
+          persistentScrollbar
+        >
           {isLoading ? (
             <Text style={rhStyles.filterFieldLabel}>Carregando...</Text>
           ) : items.length === 0 ? (
@@ -20118,6 +20156,914 @@ export function RHTreinamentosScreen({ navigation }: ScreenProps<'RHTreinamentos
 
 // ---------- Local styles ----------
 
+// ---------- Calendário (RH) ----------
+// rh_calendario_eventos — CRUD real (endpoint confirmado pela Lovable em
+// 03/08/2026; tela "Calendário" no painel web deles adicionada em
+// 17/09/2026). "Para quem" não é um enum próprio no banco — é sintetizado a
+// partir de empresa_id/colaborador_id: os dois nulos = todos os
+// colaboradores da rede; só empresa_id = uma empresa; colaborador_id = uma
+// pessoa específica.
+
+const CALENDARIO_TIPO_KEYS = ['feriado', 'folga', 'escala', 'treinamento', 'reuniao', 'evento', 'outros'] as const;
+
+// Funções (não const de topo de módulo) de propósito: App.tsx e RH.tsx têm um
+// ciclo de import entre si (cada um importa do outro), e ler
+// CALENDARIO_TIPO_META no topo do módulo do RH.tsx pode executar antes do
+// App.tsx terminar de inicializar esse export — vira
+// "Cannot access 'CALENDARIO_TIPO_META' before initialization" no bundle web.
+// Como função, só lê o valor quando é chamada (em render, depois que os dois
+// módulos já carregaram), então é seguro.
+function calendarioTipoOptions(): string[] {
+  return ['Todos os tipos', ...CALENDARIO_TIPO_KEYS.map((key) => CALENDARIO_TIPO_META[key].tag)];
+}
+function calendarioTipoLabelToKey(label: string): string {
+  const found = CALENDARIO_TIPO_KEYS.find((key) => CALENDARIO_TIPO_META[key].tag === label);
+  return found ?? 'evento';
+}
+
+const CALENDARIO_HORAS = Array.from({ length: 24 }, (_, i) => i);
+const CALENDARIO_MINUTOS = Array.from({ length: 60 }, (_, i) => i);
+
+// Seletor de horário em duas colunas (hora + minuto), tocando pra escolher —
+// deixa marcar qualquer minuto (não só de 15 em 15), sem depender de digitar
+// nem de nenhuma lib nativa de picker (mesma regra do resto do app: 100%
+// JS/RN puro, roda via Expo Go).
+function RHTimePickerModal({
+  visible,
+  title,
+  value,
+  onSelect,
+  onClose,
+  inline,
+}: {
+  visible: boolean;
+  title: string;
+  value: string;
+  onSelect: (value: string) => void;
+  onClose: () => void;
+  inline?: boolean;
+}) {
+  const parseValue = (raw: string): [number, number] => {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(raw?.trim() ?? '');
+    if (!match) return [8, 0];
+    return [Number(match[1]), Number(match[2])];
+  };
+
+  const [selectedHora, setSelectedHora] = useState(() => parseValue(value)[0]);
+  const [selectedMinuto, setSelectedMinuto] = useState(() => parseValue(value)[1]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const [h, m] = parseValue(value);
+    setSelectedHora(h);
+    setSelectedMinuto(m);
+  }, [visible, value]);
+
+  if (inline && !visible) {
+    return null;
+  }
+
+  const handleConfirm = () => {
+    onSelect(`${String(selectedHora).padStart(2, '0')}:${String(selectedMinuto).padStart(2, '0')}`);
+    onClose();
+  };
+
+  const content = (
+    <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
+      <Pressable style={rhStyles.timePickerCard} onPress={() => {}}>
+        <Text style={styles.simpleListTitle}>{title}</Text>
+        <View style={rhStyles.timePickerColumnsRow}>
+          <ScrollView
+            style={rhStyles.timePickerColumn}
+            showsVerticalScrollIndicator
+            persistentScrollbar
+          >
+            {CALENDARIO_HORAS.map((h) => (
+              <Pressable key={h} style={rhStyles.timePickerOptionRow} onPress={() => setSelectedHora(h)}>
+                <Text
+                  style={[
+                    rhStyles.timePickerOptionText,
+                    h === selectedHora ? rhStyles.timePickerOptionTextActive : null,
+                  ]}
+                >
+                  {String(h).padStart(2, '0')}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+          <ScrollView
+            style={rhStyles.timePickerColumn}
+            showsVerticalScrollIndicator
+            persistentScrollbar
+          >
+            {CALENDARIO_MINUTOS.map((m) => (
+              <Pressable key={m} style={rhStyles.timePickerOptionRow} onPress={() => setSelectedMinuto(m)}>
+                <Text
+                  style={[
+                    rhStyles.timePickerOptionText,
+                    m === selectedMinuto ? rhStyles.timePickerOptionTextActive : null,
+                  ]}
+                >
+                  {String(m).padStart(2, '0')}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+        <Pressable style={[rhStyles.primaryButtonGreen, styles.spacingTop]} onPress={handleConfirm}>
+          <Text style={styles.primaryButtonText}>Confirmar</Text>
+        </Pressable>
+      </Pressable>
+    </Pressable>
+  );
+
+  if (inline) {
+    return <View style={rhStyles.inlinePickerLayer}>{content}</View>;
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      {content}
+    </Modal>
+  );
+}
+
+type CalendarioDestinoCategoria = 'Todos os colaboradores' | 'Por empresa' | 'Individual';
+
+function getEventoDestinoCategoria(evento: RhCalendarioEvento): CalendarioDestinoCategoria {
+  if (evento.colaborador_id) return 'Individual';
+  if (evento.empresa_id) return 'Por empresa';
+  return 'Todos os colaboradores';
+}
+
+function formatEventoHorarioLabel(evento: RhCalendarioEvento): string {
+  if (evento.dia_inteiro) return 'Dia inteiro';
+  const inicio = new Date(evento.inicio_em);
+  const horaInicio = `${String(inicio.getHours()).padStart(2, '0')}:${String(inicio.getMinutes()).padStart(2, '0')}`;
+  if (!evento.fim_em) return horaInicio;
+  const fim = new Date(evento.fim_em);
+  const horaFim = `${String(fim.getHours()).padStart(2, '0')}:${String(fim.getMinutes()).padStart(2, '0')}`;
+  return `${horaInicio} – ${horaFim}`;
+}
+
+// --- Exportação .ics (não existe endpoint pra isso — gerado 100% no
+// app a partir dos eventos já carregados, no formato iCalendar/RFC5545). ---
+
+function icsEscapeText(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+}
+
+function formatIcsDateTime(iso: string): string {
+  const date = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
+}
+
+function formatIcsDateOnly(iso: string): string {
+  return iso.split('T')[0].replace(/-/g, '');
+}
+
+function buildIcsContent(eventos: RhCalendarioEvento[]): string {
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//AF360//Calendario RH//PT', 'CALSCALE:GREGORIAN'];
+  const agora = formatIcsDateTime(new Date().toISOString());
+
+  eventos.forEach((evento) => {
+    lines.push('BEGIN:VEVENT');
+    lines.push(`UID:${evento.id}@af360`);
+    lines.push(`DTSTAMP:${agora}`);
+    if (evento.dia_inteiro) {
+      lines.push(`DTSTART;VALUE=DATE:${formatIcsDateOnly(evento.inicio_em)}`);
+      if (evento.fim_em) lines.push(`DTEND;VALUE=DATE:${formatIcsDateOnly(evento.fim_em)}`);
+    } else {
+      lines.push(`DTSTART:${formatIcsDateTime(evento.inicio_em)}`);
+      if (evento.fim_em) lines.push(`DTEND:${formatIcsDateTime(evento.fim_em)}`);
+    }
+    lines.push(`SUMMARY:${icsEscapeText(evento.titulo)}`);
+    if (evento.descricao) lines.push(`DESCRIPTION:${icsEscapeText(evento.descricao)}`);
+    lines.push('END:VEVENT');
+  });
+
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+function RHCalendarioEventFormModal({
+  visible,
+  onClose,
+  onSaved,
+  editingEvento,
+  unidadesReais,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+  editingEvento: RhCalendarioEvento | null;
+  unidadesReais: RhUnidadeItem[];
+}) {
+  const [titulo, setTitulo] = useState('');
+  const [tipoLabel, setTipoLabel] = useState(CALENDARIO_TIPO_META.evento.tag);
+  const [outrosDetalhe, setOutrosDetalhe] = useState('');
+  const [diaInteiro, setDiaInteiro] = useState(false);
+  const [inicioDataLabel, setInicioDataLabel] = useState('');
+  const [inicioHora, setInicioHora] = useState('');
+  const [fimDataLabel, setFimDataLabel] = useState('');
+  const [fimHora, setFimHora] = useState('');
+  const [destino, setDestino] = useState<CalendarioDestinoCategoria>('Todos os colaboradores');
+  const [empresaLabel, setEmpresaLabel] = useState('');
+  const [colaboradorSelecionado, setColaboradorSelecionado] = useState<RhColaboradorRaw | null>(null);
+  const [descricao, setDescricao] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [isTipoPickerOpen, setIsTipoPickerOpen] = useState(false);
+  const [isInicioDataPickerOpen, setIsInicioDataPickerOpen] = useState(false);
+  const [isFimDataPickerOpen, setIsFimDataPickerOpen] = useState(false);
+  const [isInicioHoraPickerOpen, setIsInicioHoraPickerOpen] = useState(false);
+  const [isFimHoraPickerOpen, setIsFimHoraPickerOpen] = useState(false);
+  const [isDestinoPickerOpen, setIsDestinoPickerOpen] = useState(false);
+  const [isEmpresaPickerOpen, setIsEmpresaPickerOpen] = useState(false);
+  const [isColaboradorPickerOpen, setIsColaboradorPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    if (editingEvento) {
+      const tipoKey = editingEvento.tipo ?? 'evento';
+      const meta = CALENDARIO_TIPO_META[tipoKey] ?? CALENDARIO_TIPO_META.evento;
+      setTipoLabel(meta.tag);
+      setTitulo(editingEvento.titulo ?? '');
+      setDiaInteiro(Boolean(editingEvento.dia_inteiro));
+
+      const inicio = new Date(editingEvento.inicio_em);
+      setInicioDataLabel(formatDateBR(inicio));
+      setInicioHora(`${String(inicio.getHours()).padStart(2, '0')}:${String(inicio.getMinutes()).padStart(2, '0')}`);
+
+      if (editingEvento.fim_em) {
+        const fim = new Date(editingEvento.fim_em);
+        setFimDataLabel(formatDateBR(fim));
+        setFimHora(`${String(fim.getHours()).padStart(2, '0')}:${String(fim.getMinutes()).padStart(2, '0')}`);
+      } else {
+        setFimDataLabel('');
+        setFimHora('');
+      }
+
+      if (tipoKey === 'outros') {
+        setOutrosDetalhe(editingEvento.descricao ?? '');
+        setDescricao('');
+      } else {
+        setOutrosDetalhe('');
+        setDescricao(editingEvento.descricao ?? '');
+      }
+
+      setColaboradorSelecionado(null);
+      if (editingEvento.colaborador_id) {
+        setDestino('Individual');
+        setEmpresaLabel('');
+        fetchRhColaboradorDetalhe(editingEvento.colaborador_id)
+          .then((colaborador) => setColaboradorSelecionado(colaborador))
+          .catch(() => {});
+      } else if (editingEvento.empresa_id) {
+        setDestino('Por empresa');
+        const unidade = unidadesReais.find((item) => item.id === editingEvento.empresa_id);
+        setEmpresaLabel(unidade?.nome ?? '');
+      } else {
+        setDestino('Todos os colaboradores');
+        setEmpresaLabel('');
+      }
+    } else {
+      setTitulo('');
+      setTipoLabel(CALENDARIO_TIPO_META.evento.tag);
+      setOutrosDetalhe('');
+      setDiaInteiro(false);
+      setInicioDataLabel('');
+      setInicioHora('');
+      setFimDataLabel('');
+      setFimHora('');
+      setDestino('Todos os colaboradores');
+      setEmpresaLabel('');
+      setColaboradorSelecionado(null);
+      setDescricao('');
+    }
+    setIsSaving(false);
+  }, [visible, editingEvento, unidadesReais]);
+
+  const handleSubmit = () => {
+    if (!titulo.trim()) {
+      Alert.alert('Título obrigatório', 'Informe o título do evento.');
+      return;
+    }
+
+    const tipoKey = calendarioTipoLabelToKey(tipoLabel);
+
+    if (tipoKey === 'outros' && !outrosDetalhe.trim()) {
+      Alert.alert('Especifique o tipo', 'Diga o que é esse evento do tipo "Outros".');
+      return;
+    }
+
+    const inicioDataIso = brDateLabelToIso(inicioDataLabel);
+    if (!inicioDataIso) {
+      Alert.alert('Data obrigatória', 'Selecione a data de início.');
+      return;
+    }
+    if (!diaInteiro && !isHoraValida(inicioHora)) {
+      Alert.alert('Horário inválido', 'Informe um horário de início válido (hh:mm).');
+      return;
+    }
+
+    const inicioEm = diaInteiro ? `${inicioDataIso}T00:00:00` : `${inicioDataIso}T${inicioHora}:00`;
+
+    let fimEm: string | null = null;
+    if (fimDataLabel.trim()) {
+      const fimDataIso = brDateLabelToIso(fimDataLabel);
+      if (!fimDataIso) {
+        Alert.alert('Data de fim inválida', 'Confira a data de fim.');
+        return;
+      }
+      if (!diaInteiro && fimHora && !isHoraValida(fimHora)) {
+        Alert.alert('Horário de fim inválido', 'Informe um horário de fim válido (hh:mm), ou deixe em branco.');
+        return;
+      }
+      fimEm = diaInteiro ? `${fimDataIso}T23:59:00` : `${fimDataIso}T${fimHora || inicioHora}:00`;
+    }
+
+    if (destino === 'Por empresa' && !empresaLabel) {
+      Alert.alert('Selecione a empresa', 'Escolha pra qual empresa este evento é.');
+      return;
+    }
+    if (destino === 'Individual' && !colaboradorSelecionado) {
+      Alert.alert('Selecione o colaborador', 'Escolha pra quem este evento é.');
+      return;
+    }
+
+    const empresaSelecionada = unidadesReais.find((item) => item.nome === empresaLabel);
+
+    const body = {
+      titulo: titulo.trim(),
+      tipo: tipoKey,
+      inicio_em: inicioEm,
+      fim_em: fimEm,
+      dia_inteiro: diaInteiro,
+      descricao: tipoKey === 'outros' ? outrosDetalhe.trim() : descricao.trim() || null,
+      empresa_id: destino === 'Por empresa' ? empresaSelecionada?.id ?? null : null,
+      colaborador_id: destino === 'Individual' ? colaboradorSelecionado?.id ?? null : null,
+    };
+
+    setIsSaving(true);
+    const request = editingEvento
+      ? updateRhCalendarioEvento(editingEvento.id, body)
+      : createRhCalendarioEvento(body as any);
+
+    request
+      .then(() => onSaved())
+      .catch((err) => Alert.alert('Erro', err instanceof Error ? err.message : 'Não foi possível salvar o evento.'))
+      .finally(() => setIsSaving(false));
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.requestModalBackdrop}>
+        <View style={styles.requestModalCard}>
+          <View style={styles.requestModalHeader}>
+            <Text style={styles.requestModalTitle}>{editingEvento ? 'Editar evento' : 'Novo evento'}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Feather name="x" size={20} color="#677089" />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={rhStyles.calendarioFormScroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.requestFieldLabel}>Título *</Text>
+            <TextInput
+              style={styles.processTextInput}
+              value={titulo}
+              onChangeText={setTitulo}
+              placeholder="Ex.: Reunião de alinhamento"
+              placeholderTextColor="#A7AEC2"
+            />
+
+            <RHSelectField
+              label="Tipo"
+              value={tipoLabel}
+              icon="chevron-down"
+              onPress={() => setIsTipoPickerOpen(true)}
+            />
+
+            {calendarioTipoLabelToKey(tipoLabel) === 'outros' ? (
+              <>
+                <Text style={[styles.requestFieldLabel, styles.spacingTop]}>O que é? *</Text>
+                <TextInput
+                  style={styles.processTextInput}
+                  value={outrosDetalhe}
+                  onChangeText={setOutrosDetalhe}
+                  placeholder="Descreva o que é esse evento"
+                  placeholderTextColor="#A7AEC2"
+                />
+              </>
+            ) : null}
+
+            <View style={[rhStyles.sectionHeaderRow, styles.spacingTop]}>
+              <View>
+                <Text style={rhStyles.filterFieldLabel}>Dia inteiro</Text>
+                <Text style={rhStyles.historyCardMeta}>Sem horário definido (feriado, folga).</Text>
+              </View>
+              <ToggleSwitch value={diaInteiro} onValueChange={() => setDiaInteiro((current) => !current)} />
+            </View>
+
+            <View style={rhStyles.formRow}>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Início"
+                  required
+                  value={inicioDataLabel}
+                  placeholder="dd/mm/aaaa"
+                  icon="calendar"
+                  onPress={() => setIsInicioDataPickerOpen(true)}
+                />
+              </View>
+              <View style={rhStyles.formRowItem}>
+                <RHSelectField
+                  label="Fim (opcional)"
+                  value={fimDataLabel}
+                  placeholder="dd/mm/aaaa"
+                  icon="calendar"
+                  onPress={() => setIsFimDataPickerOpen(true)}
+                />
+              </View>
+            </View>
+
+            {!diaInteiro ? (
+              <View style={rhStyles.formRow}>
+                <View style={rhStyles.formRowItem}>
+                  <RHSelectField
+                    label="Hora início"
+                    required
+                    value={inicioHora}
+                    placeholder="Selecione"
+                    icon="clock"
+                    onPress={() => setIsInicioHoraPickerOpen(true)}
+                  />
+                </View>
+                {fimDataLabel ? (
+                  <View style={rhStyles.formRowItem}>
+                    <RHSelectField
+                      label="Hora fim"
+                      value={fimHora}
+                      placeholder="Selecione"
+                      icon="clock"
+                      onPress={() => setIsFimHoraPickerOpen(true)}
+                    />
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            <RHSelectField
+              label="Quem vai ver este evento"
+              required
+              value={destino}
+              icon="chevron-down"
+              onPress={() => setIsDestinoPickerOpen(true)}
+            />
+
+            {destino === 'Por empresa' ? (
+              <RHSelectField
+                label="Empresa"
+                value={empresaLabel}
+                placeholder="Selecione a empresa"
+                icon="chevron-down"
+                onPress={() => setIsEmpresaPickerOpen(true)}
+              />
+            ) : null}
+
+            {destino === 'Individual' ? (
+              <RHSelectField
+                label="Colaborador"
+                value={colaboradorSelecionado?.nome_completo ?? ''}
+                placeholder="Buscar colaborador"
+                icon="search"
+                onPress={() => setIsColaboradorPickerOpen(true)}
+              />
+            ) : null}
+
+            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Descrição</Text>
+            <TextInput
+              style={[styles.processTextInput, styles.processDocumentationArea]}
+              value={descricao}
+              onChangeText={setDescricao}
+              placeholder="Pauta, local, link da reunião..."
+              placeholderTextColor="#A7AEC2"
+              multiline
+              textAlignVertical="top"
+            />
+
+            <Pressable
+              style={[rhStyles.primaryButtonGreen, styles.spacingTop, isSaving ? { opacity: 0.6 } : null]}
+              disabled={isSaving}
+              onPress={handleSubmit}
+            >
+              {isSaving ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Feather name="check" size={15} color="#FFFFFF" />
+                  <Text style={styles.primaryButtonText}>{editingEvento ? 'Salvar' : 'Publicar evento'}</Text>
+                </>
+              )}
+            </Pressable>
+          </ScrollView>
+
+          <RHDatePickerModal
+            inline
+            visible={isInicioDataPickerOpen}
+            title="Início"
+            value={inicioDataLabel}
+            onSelect={setInicioDataLabel}
+            onClose={() => setIsInicioDataPickerOpen(false)}
+          />
+          <RHDatePickerModal
+            inline
+            visible={isFimDataPickerOpen}
+            title="Fim"
+            value={fimDataLabel}
+            onSelect={setFimDataLabel}
+            onClose={() => setIsFimDataPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isTipoPickerOpen}
+            title="Tipo"
+            options={CALENDARIO_TIPO_KEYS.map((key) => CALENDARIO_TIPO_META[key].tag)}
+            selectedValue={tipoLabel}
+            onSelect={setTipoLabel}
+            onClose={() => setIsTipoPickerOpen(false)}
+          />
+          <RHTimePickerModal
+            inline
+            visible={isInicioHoraPickerOpen}
+            title="Hora início"
+            value={inicioHora}
+            onSelect={setInicioHora}
+            onClose={() => setIsInicioHoraPickerOpen(false)}
+          />
+          <RHTimePickerModal
+            inline
+            visible={isFimHoraPickerOpen}
+            title="Hora fim"
+            value={fimHora}
+            onSelect={setFimHora}
+            onClose={() => setIsFimHoraPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isDestinoPickerOpen}
+            title="Quem vai ver este evento"
+            options={['Todos os colaboradores', 'Por empresa', 'Individual']}
+            selectedValue={destino}
+            onSelect={(value) => setDestino(value as CalendarioDestinoCategoria)}
+            onClose={() => setIsDestinoPickerOpen(false)}
+          />
+          <RHSimplePickerModal
+            inline
+            visible={isEmpresaPickerOpen}
+            title="Empresa"
+            options={unidadesReais.map((item) => item.nome).sort((a, b) => a.localeCompare(b, 'pt-BR'))}
+            selectedValue={empresaLabel}
+            onSelect={setEmpresaLabel}
+            onClose={() => setIsEmpresaPickerOpen(false)}
+          />
+          <ColaboradorSearchPickerModal
+            inline
+            autoLoadAll
+            visible={isColaboradorPickerOpen}
+            onSelect={setColaboradorSelecionado}
+            onClose={() => setIsColaboradorPickerOpen(false)}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+export function RHCalendarioScreen({ navigation }: ScreenProps<'RHCalendario'>) {
+  const hoje = useMemo(() => new Date(), []);
+  const inicioPadrao = useMemo(() => new Date(hoje.getFullYear(), hoje.getMonth(), 1), [hoje]);
+  const fimPadrao = useMemo(() => new Date(hoje.getFullYear(), hoje.getMonth() + 3, 0), [hoje]);
+
+  const [deLabel, setDeLabel] = useState(formatDateBR(inicioPadrao));
+  const [ateLabel, setAteLabel] = useState(formatDateBR(fimPadrao));
+  const [isDePickerOpen, setIsDePickerOpen] = useState(false);
+  const [isAtePickerOpen, setIsAtePickerOpen] = useState(false);
+
+  const [eventos, setEventos] = useState<RhCalendarioEvento[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [unidadesReais, setUnidadesReais] = useState<RhUnidadeItem[]>([]);
+  const [colaboradorNomeById, setColaboradorNomeById] = useState<Map<string, string>>(new Map());
+
+  const [search, setSearch] = useState('');
+  const [tipoFilter, setTipoFilter] = useState('Todos os tipos');
+  const [isTipoFilterOpen, setIsTipoFilterOpen] = useState(false);
+  const [destinoFilter, setDestinoFilter] = useState('Qualquer destino');
+  const [isDestinoFilterOpen, setIsDestinoFilterOpen] = useState(false);
+
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingEvento, setEditingEvento] = useState<RhCalendarioEvento | null>(null);
+
+  const empresaNomeById = useMemo(() => {
+    const map = new Map<string, string>();
+    unidadesReais.forEach((unidade) => {
+      if (unidade.id && unidade.nome) map.set(unidade.id, unidade.nome);
+    });
+    return map;
+  }, [unidadesReais]);
+
+  const loadEventos = useCallback(() => {
+    const deIso = brDateLabelToIso(deLabel);
+    const ateIso = brDateLabelToIso(ateLabel);
+    if (!deIso || !ateIso) return;
+
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchRhCalendarioEventos({ de: deIso, ate: ateIso, incluirGlobais: true, limit: 500 })
+      .then((data) => {
+        setEventos([...data].sort((a, b) => new Date(a.inicio_em).getTime() - new Date(b.inicio_em).getTime()));
+      })
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar os eventos.');
+      })
+      .finally(() => setIsLoading(false));
+  }, [deLabel, ateLabel]);
+
+  useEffect(() => {
+    loadEventos();
+  }, [loadEventos]);
+
+  useEffect(() => {
+    fetchRhUnidades().then(setUnidadesReais).catch(() => {});
+  }, []);
+
+  // Nomes dos colaboradores dos eventos individuais — busca só os que
+  // aparecem de fato na lista carregada, não a base toda.
+  useEffect(() => {
+    const idsFaltando = Array.from(
+      new Set(eventos.map((evento) => evento.colaborador_id).filter((id): id is string => Boolean(id)))
+    ).filter((id) => !colaboradorNomeById.has(id));
+
+    if (idsFaltando.length === 0) return;
+
+    let isActive = true;
+    Promise.all(idsFaltando.map((id) => fetchRhColaboradorDetalhe(id).catch(() => null))).then((resultados) => {
+      if (!isActive) return;
+      setColaboradorNomeById((current) => {
+        const next = new Map(current);
+        resultados.forEach((colaborador, index) => {
+          if (colaborador) next.set(idsFaltando[index], colaborador.nome_completo ?? 'Colaborador');
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [eventos, colaboradorNomeById]);
+
+  const filteredEventos = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return eventos.filter((evento) => {
+      const matchesQuery =
+        !query ||
+        evento.titulo.toLowerCase().includes(query) ||
+        (evento.descricao ?? '').toLowerCase().includes(query);
+      const tipoTag = CALENDARIO_TIPO_META[evento.tipo]?.tag ?? evento.tipo;
+      const matchesTipo = tipoFilter === 'Todos os tipos' || tipoTag === tipoFilter;
+      const categoria = getEventoDestinoCategoria(evento);
+      const matchesDestino = destinoFilter === 'Qualquer destino' || destinoFilter === categoria;
+      return matchesQuery && matchesTipo && matchesDestino;
+    });
+  }, [eventos, search, tipoFilter, destinoFilter]);
+
+  const getDestinoLabel = (evento: RhCalendarioEvento) => {
+    if (evento.colaborador_id) return colaboradorNomeById.get(evento.colaborador_id) ?? 'Colaborador específico';
+    if (evento.empresa_id) return empresaNomeById.get(evento.empresa_id) ?? 'Uma empresa';
+    return 'Todos os colaboradores';
+  };
+
+  const handleNovoEvento = () => {
+    setEditingEvento(null);
+    setIsFormOpen(true);
+  };
+
+  const handleEditarEvento = (evento: RhCalendarioEvento) => {
+    setEditingEvento(evento);
+    setIsFormOpen(true);
+  };
+
+  const handleExcluirEvento = (evento: RhCalendarioEvento) => {
+    Alert.alert('Excluir evento', `Remover "${evento.titulo}" do calendário?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          deleteRhCalendarioEvento(evento.id)
+            .then(() => setEventos((current) => current.filter((item) => item.id !== evento.id)))
+            .catch((err) =>
+              Alert.alert('Erro', err instanceof Error ? err.message : 'Não foi possível excluir o evento.')
+            );
+        },
+      },
+    ]);
+  };
+
+  const handleBaixarIcs = async () => {
+    if (filteredEventos.length === 0) {
+      Alert.alert('Nada para baixar', 'Não há eventos no período/filtro selecionado.');
+      return;
+    }
+    try {
+      const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!baseDirectory) {
+        Alert.alert('Indisponível', 'Não foi possível gerar o arquivo .ics neste dispositivo.');
+        return;
+      }
+      const fileUri = `${baseDirectory}calendario-rh.ics`;
+      await FileSystem.writeAsStringAsync(fileUri, buildIcsContent(filteredEventos), {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'text/calendar',
+          dialogTitle: 'Baixar calendário (.ics)',
+          UTI: 'com.apple.ical.ics',
+        });
+        return;
+      }
+      Alert.alert('Arquivo gerado', `Salvo em:\n${fileUri}`);
+    } catch {
+      Alert.alert('Erro ao gerar .ics', 'Não foi possível gerar o arquivo agora.');
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={rhUserInitials} variant="rh" onAvatarPress={() => navigation.navigate('RHProfile')} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <RHPageHeader
+          icon="calendar"
+          title="Calendário"
+          subtitle="Eventos, feriados, folgas, treinamentos e reuniões — para todos, por empresa ou individuais. Aparecem no portal e no app do colaborador."
+        />
+
+        <View style={rhStyles.formRow}>
+          <View style={rhStyles.formRowItem}>
+            <RHSelectField label="De" value={deLabel} icon="calendar" onPress={() => setIsDePickerOpen(true)} />
+          </View>
+          <View style={rhStyles.formRowItem}>
+            <RHSelectField label="Até" value={ateLabel} icon="calendar" onPress={() => setIsAtePickerOpen(true)} />
+          </View>
+        </View>
+
+        <View style={rhStyles.searchRow}>
+          <Feather name="search" size={16} color="#9AA1B5" />
+          <TextInput
+            style={rhStyles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Título ou descrição"
+            placeholderTextColor="#A7AEC2"
+          />
+        </View>
+
+        <View style={rhStyles.filterPillRow}>
+          <RHFilterPill label={tipoFilter} prefix="Tipo" onPress={() => setIsTipoFilterOpen(true)} compact />
+          <RHFilterPill
+            label={destinoFilter}
+            prefix="Para quem"
+            onPress={() => setIsDestinoFilterOpen(true)}
+            compact
+          />
+        </View>
+
+        <View style={styles.directorNotifHeaderRow}>
+          <Text style={styles.directorNotifCountLabel}>{filteredEventos.length} eventos</Text>
+          <View style={rhStyles.headerActionsRow}>
+            <Pressable style={rhStyles.secondaryIconButton} onPress={handleBaixarIcs}>
+              <Feather name="download" size={15} color="#15203E" />
+              <Text style={rhStyles.secondaryIconButtonText}>Baixar .ics</Text>
+            </Pressable>
+            <Pressable style={styles.directorNotifNewButton} onPress={handleNovoEvento}>
+              <Feather name="plus" size={15} color="#FFFFFF" />
+              <Text style={styles.directorNotifNewButtonText}>Novo evento</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {isLoading ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Carregando eventos...</Text>
+          </View>
+        ) : errorMessage ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>{errorMessage}</Text>
+          </View>
+        ) : filteredEventos.length === 0 ? (
+          <View style={styles.processEmptyCard}>
+            <Text style={styles.processEmptyText}>Nenhum evento no período selecionado.</Text>
+          </View>
+        ) : (
+          filteredEventos.map((evento) => {
+            const meta = CALENDARIO_TIPO_META[evento.tipo] ?? CALENDARIO_TIPO_META.evento;
+            return (
+              <View key={evento.id} style={rhStyles.calendarioEventoCard}>
+                <View style={rhStyles.calendarioEventoTopRow}>
+                  <View style={[styles.statusPill, { backgroundColor: meta.tagTint }]}>
+                    <Text style={[styles.statusPillText, { color: meta.tagColor }]}>{meta.tag}</Text>
+                  </View>
+                  <View style={rhStyles.calendarioEventoActions}>
+                    <Pressable
+                      style={rhStyles.calendarioEventoActionButton}
+                      onPress={() => handleEditarEvento(evento)}
+                      hitSlop={8}
+                    >
+                      <Feather name="edit-2" size={15} color="#5E667D" />
+                    </Pressable>
+                    <Pressable
+                      style={rhStyles.calendarioEventoActionButton}
+                      onPress={() => handleExcluirEvento(evento)}
+                      hitSlop={8}
+                    >
+                      <Feather name="trash-2" size={15} color="#E6213D" />
+                    </Pressable>
+                  </View>
+                </View>
+
+                <Text style={rhStyles.calendarioEventoTitulo}>{evento.titulo}</Text>
+                <Text style={rhStyles.calendarioEventoMeta}>
+                  {formatDateBR(new Date(evento.inicio_em))} · {formatEventoHorarioLabel(evento)} ·{' '}
+                  {getDestinoLabel(evento)}
+                </Text>
+                {evento.descricao ? (
+                  <Text style={rhStyles.calendarioEventoDescricao}>{evento.descricao}</Text>
+                ) : null}
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
+
+      <RHCalendarioEventFormModal
+        visible={isFormOpen}
+        editingEvento={editingEvento}
+        unidadesReais={unidadesReais}
+        onClose={() => setIsFormOpen(false)}
+        onSaved={() => {
+          setIsFormOpen(false);
+          loadEventos();
+        }}
+      />
+
+      <RHDatePickerModal
+        visible={isDePickerOpen}
+        title="De"
+        value={deLabel}
+        onSelect={setDeLabel}
+        onClose={() => setIsDePickerOpen(false)}
+      />
+      <RHDatePickerModal
+        visible={isAtePickerOpen}
+        title="Até"
+        value={ateLabel}
+        onSelect={setAteLabel}
+        onClose={() => setIsAtePickerOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isTipoFilterOpen}
+        title="Tipo"
+        options={calendarioTipoOptions()}
+        selectedValue={tipoFilter}
+        onSelect={setTipoFilter}
+        onClose={() => setIsTipoFilterOpen(false)}
+      />
+      <RHSimplePickerModal
+        visible={isDestinoFilterOpen}
+        title="Para quem"
+        options={['Qualquer destino', 'Todos os colaboradores', 'Por empresa', 'Individual']}
+        selectedValue={destinoFilter}
+        onSelect={setDestinoFilter}
+        onClose={() => setIsDestinoFilterOpen(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
 const rhStyles = StyleSheet.create({
   pageHeaderSubtitle: {
     marginTop: 2,
@@ -23112,6 +24058,94 @@ const rhStyles = StyleSheet.create({
   },
   rubricaValor: {
     fontSize: 13,
+    fontWeight: '800',
+  },
+  calendarioEventoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    padding: 14,
+    marginBottom: 10,
+  },
+  calendarioEventoTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  calendarioEventoActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  calendarioEventoActionButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  calendarioEventoTitulo: {
+    marginTop: 10,
+    color: '#15203E',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  calendarioEventoMeta: {
+    marginTop: 4,
+    color: '#7A8299',
+    fontSize: 12,
+  },
+  calendarioEventoDescricao: {
+    marginTop: 6,
+    color: '#4A5169',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  // Altura fixa em pixels (não percentual) de propósito: dentro de um
+  // <Modal>, "maxHeight: '88%'" do card pai às vezes não resolve certo no
+  // build web (React Native Web + Modal tem umas particularidades de altura
+  // percentual) — sem uma altura de verdade pro ScrollView, ele não tem o
+  // que "estourar" e a barra de rolagem não aparece, mesmo tendo mais
+  // conteúdo abaixo. Fixo em número funciona igual em qualquer plataforma.
+  calendarioFormScroll: {
+    maxHeight: 480,
+  },
+  timePickerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    width: 220,
+    alignSelf: 'center',
+  },
+  timePickerColumnsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 10,
+  },
+  timePickerColumn: {
+    flex: 1,
+    maxHeight: 220,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 12,
+  },
+  timePickerOptionRow: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F7',
+  },
+  timePickerOptionText: {
+    color: '#4A5169',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  timePickerOptionTextActive: {
+    color: '#1B6E3A',
     fontWeight: '800',
   },
 });

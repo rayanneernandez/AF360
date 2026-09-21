@@ -2080,7 +2080,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
       .catch(() => setSugestoes([]));
     // Marca como lida ao abrir — se falhar, não bloqueia a leitura da
     // conversa, só não zera o badge de não lidas na lista.
-    if (conversa.nao_lidas > 0) {
+    if ((conversa.nao_lidas ?? 0) > 0) {
       marcarMarketingWaLido(conversa.phone, actorId)
         .then(() => load())
         .catch(() => {});
@@ -2403,7 +2403,7 @@ export function MarketingWhatsAppScreen({ navigation }: ScreenProps<'MarketingWh
                 <View style={{ alignItems: 'flex-end', gap: 4 }}>
                   <Text style={mkStyles.listRowMeta}>{formatDiaCurto(conversa.ultima_mensagem_em)}</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    {conversa.nao_lidas > 0 ? (
+                    {(conversa.nao_lidas ?? 0) > 0 ? (
                       <View style={mkStyles.waUnreadBadge}>
                         <Text style={mkStyles.waUnreadBadgeText}>{conversa.nao_lidas}</Text>
                       </View>
