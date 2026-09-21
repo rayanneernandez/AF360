@@ -33,6 +33,7 @@ import {
   Keyboard,
   Linking,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -53,6 +54,7 @@ import {
   RHConformidadeAdmissoesScreen,
   RHTransferenciasScreen,
   RHComunicadosScreen,
+  RHCalendarioScreen,
   RHSolicitacoesScreen,
   RHImportarPdfScreen,
   RHNotificationsScreen,
@@ -118,6 +120,7 @@ import {
   RecrutamentoDashboardScreen,
   RecrutamentoProfileScreen,
   RecrutamentoVagasScreen,
+  RecrutamentoVagaDetalheScreen,
   RecrutamentoCandidatosScreen,
   RecrutamentoCandidatoDetalheScreen,
   RecrutamentoImportarCurriculoScreen,
@@ -270,6 +273,7 @@ export type RootStackParamList = {
   RHConformidadeAdmissoes: undefined;
   RHTransferencias: undefined;
   RHComunicados: undefined;
+  RHCalendario: undefined;
   RHSolicitacoes: undefined;
   RHImportarPdf: undefined;
   RHNotifications: undefined;
@@ -338,6 +342,7 @@ export type RootStackParamList = {
   RecrutamentoDashboard: undefined;
   RecrutamentoProfile: undefined;
   RecrutamentoVagas: undefined;
+  RecrutamentoVagaDetalhe: { id: string };
   RecrutamentoCandidatos: undefined;
   RecrutamentoCandidatoDetalhe: { id: string };
   RecrutamentoImportarCurriculo: undefined;
@@ -504,6 +509,7 @@ export type RHSideMenuRoute =
   | 'RHConformidadeAdmissoes'
   | 'RHTransferencias'
   | 'RHComunicados'
+  | 'RHCalendario'
   | 'RHSolicitacoes'
   | 'RHImportarPdf'
   | 'RHNotifications'
@@ -1558,6 +1564,7 @@ export const rhSideMenuSections: Array<{
       },
       { id: 'rh-transferencias', label: 'Transferências', icon: 'repeat', route: 'RHTransferencias' },
       { id: 'rh-comunicados', label: 'Comunicados', icon: 'volume-2', route: 'RHComunicados' },
+      { id: 'rh-calendario', label: 'Calendário', icon: 'calendar', route: 'RHCalendario' },
       { id: 'rh-solicitacoes', label: 'Solicitações', icon: 'message-circle', route: 'RHSolicitacoes' },
       { id: 'rh-importar-pdf', label: 'Importar PDF', icon: 'file-text', route: 'RHImportarPdf' },
       { id: 'rh-notifications', label: 'Notificações', icon: 'bell', route: 'RHNotifications' },
@@ -3159,6 +3166,7 @@ export default function App() {
                     <Stack.Screen name="RHConformidadeAdmissoes" component={RHConformidadeAdmissoesScreen} />
                     <Stack.Screen name="RHTransferencias" component={RHTransferenciasScreen} />
                     <Stack.Screen name="RHComunicados" component={RHComunicadosScreen} />
+                    <Stack.Screen name="RHCalendario" component={RHCalendarioScreen} />
                     <Stack.Screen name="RHSolicitacoes" component={RHSolicitacoesScreen} />
                     <Stack.Screen name="RHImportarPdf" component={RHImportarPdfScreen} />
                     <Stack.Screen name="RHNotifications" component={RHNotificationsScreen} />
@@ -3227,6 +3235,7 @@ export default function App() {
                     <Stack.Screen name="RecrutamentoDashboard" component={RecrutamentoDashboardScreen} />
                     <Stack.Screen name="RecrutamentoProfile" component={RecrutamentoProfileScreen} />
                     <Stack.Screen name="RecrutamentoVagas" component={RecrutamentoVagasScreen} />
+                    <Stack.Screen name="RecrutamentoVagaDetalhe" component={RecrutamentoVagaDetalheScreen} />
                     <Stack.Screen name="RecrutamentoCandidatos" component={RecrutamentoCandidatosScreen} />
                     <Stack.Screen name="RecrutamentoCandidatoDetalhe" component={RecrutamentoCandidatoDetalheScreen} />
                     <Stack.Screen name="RecrutamentoImportarCurriculo" component={RecrutamentoImportarCurriculoScreen} />
@@ -3733,8 +3742,8 @@ const PANEL_OPTION_META: Record<
     tint: '#FBE4ED',
   },
   recrutamento: {
-    label: 'Recrutamento',
-    subtitle: 'Vagas, candidatos e processo seletivo (R&S)',
+    label: 'R&S',
+    subtitle: 'Recrutamento',
     icon: 'briefcase',
     color: '#1F3A5F',
     tint: '#E8EEF6',
@@ -4707,16 +4716,27 @@ function TrainingsScreen({ navigation }: ScreenProps<'Trainings'>) {
   );
 }
 
+// expo-screen-capture não tem implementação no Web (usePreventScreenCapture,
+// enableAppSwitcherProtectionAsync e useScreenshotListener lançam
+// "UnavailabilityError"/"addListener is not a function" lá) — essa proteção
+// só faz sentido em iOS/Android mesmo, então no Web os hooks nem são
+// chamados. Isso não muda a ordem/quantidade de hooks entre renders porque
+// Platform.OS é uma constante fixa do processo, nunca muda em runtime.
 function useScreenCaptureProtection() {
-  ScreenCapture.usePreventScreenCapture();
+  const isNative = Platform.OS !== 'web';
+
+  if (isNative) {
+    ScreenCapture.usePreventScreenCapture();
+  }
 
   useEffect(() => {
+    if (!isNative) return;
     ScreenCapture.enableAppSwitcherProtectionAsync().catch(() => {});
 
     return () => {
       ScreenCapture.disableAppSwitcherProtectionAsync().catch(() => {});
     };
-  }, []);
+  }, [isNative]);
 
   const handleScreenshotDetected = useCallback(() => {
     Alert.alert(
@@ -4725,7 +4745,9 @@ function useScreenCaptureProtection() {
     );
   }, []);
 
-  ScreenCapture.useScreenshotListener(handleScreenshotDetected);
+  if (isNative) {
+    ScreenCapture.useScreenshotListener(handleScreenshotDetected);
+  }
 }
 
 function TrainingDetailScreen({ navigation, route }: ScreenProps<'TrainingDetail'>) {
@@ -8249,7 +8271,12 @@ function SimpleListModal({
     <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
       <Pressable style={styles.simpleListCard} onPress={() => {}}>
         <Text style={styles.simpleListTitle}>{title}</Text>
-        <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.simpleListScroll}
+          showsVerticalScrollIndicator
+          indicatorStyle="black"
+          persistentScrollbar
+        >
           {options.map((option, index) => {
             const isSelected = option === selectedValue;
 
@@ -8324,7 +8351,12 @@ function TemplatePickerModal({
     <Pressable style={styles.datePickerBackdrop} onPress={onClose}>
       <Pressable style={styles.simpleListCard} onPress={() => {}}>
         <Text style={styles.simpleListTitle}>Template</Text>
-        <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.simpleListScroll}
+          showsVerticalScrollIndicator
+          indicatorStyle="black"
+          persistentScrollbar
+        >
           {options.map((option) => {
             const isSelected = option.label === selectedValue;
 
@@ -8433,7 +8465,12 @@ function StationMultiSelectModal({
             {isAllSelected ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
           </Pressable>
 
-          <ScrollView style={styles.simpleListScroll} showsVerticalScrollIndicator={false}>
+          <ScrollView
+          style={styles.simpleListScroll}
+          showsVerticalScrollIndicator
+          indicatorStyle="black"
+          persistentScrollbar
+        >
             {filteredOptions.length === 0 ? (
               <Text style={styles.stationMultiSelectEmptyText}>Nenhum posto encontrado.</Text>
             ) : null}
@@ -13017,7 +13054,7 @@ export function TemplateFormModal({
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.requestFieldLabel}>Código *</Text>
+                <Text style={[styles.requestFieldLabel, { fontWeight: '400' }]}>Código *</Text>
                 <TextInput
                   style={styles.processTextInput}
                   value={form.code}
@@ -13028,7 +13065,7 @@ export function TemplateFormModal({
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.requestFieldLabel}>Nome *</Text>
+                <Text style={[styles.requestFieldLabel, { fontWeight: '400' }]}>Nome *</Text>
                 <TextInput
                   style={styles.processTextInput}
                   value={form.title}
@@ -13039,7 +13076,7 @@ export function TemplateFormModal({
               </View>
             </View>
 
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Título da mensagem *</Text>
+            <Text style={[styles.requestFieldLabel, styles.spacingTop, { fontWeight: '400' }]}>Título da mensagem *</Text>
             <TextInput
               style={styles.processTextInput}
               value={form.messageTitle}
@@ -13048,7 +13085,7 @@ export function TemplateFormModal({
               placeholderTextColor="#A7AEC2"
             />
 
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>
+            <Text style={[styles.requestFieldLabel, styles.spacingTop, { fontWeight: '400' }]}>
               Mensagem * (use {'{{variavel}}'} para substituir no envio)
             </Text>
             <TextInput
@@ -13061,7 +13098,7 @@ export function TemplateFormModal({
               textAlignVertical="top"
             />
 
-            <Text style={[styles.requestFieldLabel, styles.spacingTop]}>Variáveis disponíveis (separadas por vírgula)</Text>
+            <Text style={[styles.requestFieldLabel, styles.spacingTop, { fontWeight: '400' }]}>Variáveis disponíveis (separadas por vírgula)</Text>
             <TextInput
               style={styles.processTextInput}
               value={form.variablesText}
@@ -14150,8 +14187,8 @@ function RecrutamentoBrandLogo() {
         <Feather name="briefcase" size={16} color="#FFFFFF" />
       </View>
       <View>
-        <Text style={styles.recrutamentoBrandTitle}>Recrutamento</Text>
-        <Text style={styles.recrutamentoBrandSubtitle}>VAGAS E SELEÇÃO</Text>
+        <Text style={styles.recrutamentoBrandTitle}>R&S</Text>
+        <Text style={styles.recrutamentoBrandSubtitle}>RECRUTAMENTO</Text>
       </View>
     </View>
   );
@@ -14627,7 +14664,7 @@ function mergeCalendarEvents(...eventLists: CalendarEvent[][]) {
 // rh_calendario_eventos (real, endpoint liberado pela Lovable em 03/08/2026)
 // convertido pro formato local CalendarEvent — mesma cor/estilo usados pra
 // eventos do mock, agrupado por mês pra reaproveitar o merge com feriados.
-const CALENDARIO_TIPO_META: Record<string, { tag: string; tagColor: string; tagTint: string; dateColor: string; dateTint: string }> = {
+export const CALENDARIO_TIPO_META: Record<string, { tag: string; tagColor: string; tagTint: string; dateColor: string; dateTint: string }> = {
   feriado: { tag: 'Feriado', tagColor: '#C23B4B', tagTint: '#FBE3E7', dateColor: '#C23B4B', dateTint: '#FBE3E7' },
   folga: { tag: 'Folga', tagColor: '#2B9862', tagTint: '#E2F4EA', dateColor: '#2B9862', dateTint: '#E2F4EA' },
   escala: { tag: 'Escala', tagColor: '#5E6DB4', tagTint: '#E9EEFF', dateColor: '#5E6DB4', dateTint: '#E9EEFF' },
