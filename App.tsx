@@ -4,6 +4,9 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as Print from 'expo-print';
 import { WebView } from 'react-native-webview';
 import YoutubePlayer, { type YoutubeIframeRef } from 'react-native-youtube-iframe';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6813,6 +6816,14 @@ function formatBRL(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 // Máscara progressiva de moeda (mesmo padrão usado no RH: dígitos entram da
 // direita pra esquerda nos centavos).
 function formatCurrencyInputApp(text: string): string {
@@ -10744,6 +10755,88 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
     );
   };
 
+  const [isExportingGnvPdf, setIsExportingGnvPdf] = useState(false);
+  // Mesmo layout do PDF exportado pelo painel web (confirmado com print
+  // enviado pelo time em 23/09/2026): título, período + posto, tabela
+  // Posto/Volume/Faturamento/% desconto (já vem ordenada por % desconto desc
+  // do backend) e rodapé "Gerado em".
+  const handleExportGnvPdf = async () => {
+    if (gnvPostosTodos.length === 0) {
+      Alert.alert('Nada para exportar', 'Não há postos com GNV no período selecionado.');
+      return;
+    }
+    setIsExportingGnvPdf(true);
+    try {
+      const geradoEm = new Date().toLocaleString('pt-BR');
+      const deLabel = new Date(`${filtros.de}T00:00:00`).toLocaleDateString('pt-BR');
+      const ateLabel = new Date(`${filtros.ate}T00:00:00`).toLocaleDateString('pt-BR');
+      const postoLabel = selectedStation === 'Todos os Postos' ? 'Todos os postos' : selectedStation;
+      const linhasHtml = gnvPostosTodos
+        .map((station: any) => {
+          const nome = pickStr(station, ['posto_nome']) ?? '—';
+          const volume = pickNum(station, ['volume_total']);
+          const faturamento = pickNum(station, ['faturamento_total']);
+          const pct = pickNum(station, ['pct_desconto_gnv']);
+          const volumeLabel =
+            volume === null ? '—' : `${volume.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m³`;
+          const faturamentoLabel = faturamento === null ? '—' : formatBRL(faturamento);
+          const pctLabel = pct === null ? '—' : `${pct.toFixed(1).replace('.', ',')}%`;
+          return `<tr><td>${escapeHtml(nome)}</td><td class="num">${escapeHtml(volumeLabel)}</td><td class="num">${escapeHtml(faturamentoLabel)}</td><td class="num pct">${escapeHtml(pctLabel)}</td></tr>`;
+        })
+        .join('');
+      const html = `
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              body { font-family: Helvetica, Arial, sans-serif; padding: 24px; color: #15203E; }
+              .header { background: #29448D; color: #FFFFFF; padding: 20px 24px; margin: -24px -24px 20px -24px; }
+              .header h1 { font-size: 20px; margin: 0 0 4px 0; }
+              .header .meta { font-size: 12px; opacity: 0.9; }
+              .accent { height: 4px; background: #E6213D; margin: -20px -24px 20px -24px; }
+              table { width: 100%; border-collapse: collapse; font-size: 10px; }
+              th { background: #EEF1F8; color: #29448D; text-align: left; padding: 8px; }
+              td { border-bottom: 1px solid #EEF0F6; padding: 8px; }
+              td.num { text-align: right; }
+              td.pct { font-weight: 700; }
+              .footer { margin-top: 16px; font-size: 9px; color: #8992A8; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Relatório de Métricas GNV</h1>
+              <div class="meta">${escapeHtml(deLabel)} a ${escapeHtml(ateLabel)} &nbsp;•&nbsp; ${escapeHtml(postoLabel)}</div>
+            </div>
+            <div class="accent"></div>
+            <table>
+              <thead><tr><th>Posto</th><th class="num">Volume</th><th class="num">Faturamento</th><th class="num">% desconto</th></tr></thead>
+              <tbody>${linhasHtml}</tbody>
+            </table>
+            <div class="footer">Gerado em ${escapeHtml(geradoEm)}</div>
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html });
+      const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      const destino = baseDirectory ? `${baseDirectory}relatorio-metricas-gnv-${filtros.de}-a-${filtros.ate}.pdf` : uri;
+      if (baseDirectory) {
+        await FileSystem.copyAsync({ from: uri, to: destino });
+      }
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(destino, { mimeType: 'application/pdf', dialogTitle: 'Exportar relatório GNV (PDF)' });
+      } else {
+        Alert.alert('PDF gerado', `Arquivo salvo em:\n${destino}`);
+      }
+    } catch {
+      Alert.alert('Erro ao exportar', 'Não foi possível gerar o PDF agora.');
+    } finally {
+      setIsExportingGnvPdf(false);
+    }
+  };
+
   // Confirmado pela Lovable em 05/08/2026 — shape real do recurso=gnv:
   // dados.resumo.{total_faturado_gnv,faturamento_desconto_gnv,faturamento_pdv,
   // pct_desconto_gnv,volume_total_m3,economia_icms,margem_pct} e dados.postos
@@ -10883,6 +10976,14 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
           <Pressable style={styles.directorFilterPill} onPress={handleOpenApelidos}>
             <Feather name="tag" size={14} color="#5E667D" />
             <Text style={styles.directorFilterPillText}>Apelidos</Text>
+          </Pressable>
+          <Pressable style={styles.directorFilterPill} onPress={handleExportGnvPdf} disabled={isExportingGnvPdf}>
+            {isExportingGnvPdf ? (
+              <ActivityIndicator size="small" color="#5E667D" />
+            ) : (
+              <Feather name="download" size={14} color="#5E667D" />
+            )}
+            <Text style={styles.directorFilterPillText}>Exportar PDF</Text>
           </Pressable>
         </View>
 
