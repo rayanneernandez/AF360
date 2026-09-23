@@ -3223,6 +3223,114 @@ function RsLinkEtapaMenuModal({
   );
 }
 
+// "Pré-cadastro via link" — contrato confirmado pela Lovable (23/09/2026):
+// mesmo endpoint de "link por etapa", com etapa='cadastro' e SEM
+// candidato_id (o candidato ainda não existe, ele mesmo preenche tudo pela
+// página pública). dias: 1=24h, 3, 15, 30 (padrão do web usa 7 como
+// selecionado inicialmente, mas o endpoint aceita 1-30).
+const RS_PRE_CADASTRO_VALIDADE_OPCOES: Array<{ dias: number; label: string }> = [
+  { dias: 1, label: '24h' },
+  { dias: 3, label: '3 dias' },
+  { dias: 7, label: '7 dias' },
+  { dias: 15, label: '15 dias' },
+  { dias: 30, label: '30 dias' },
+];
+
+function RsPreCadastroLinkModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const [descricao, setDescricao] = useState('');
+  const [dias, setDias] = useState(7);
+  const [isGerando, setIsGerando] = useState(false);
+  const [resultado, setResultado] = useState<{ link: string; expira_em?: string } | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      setDescricao('');
+      setDias(7);
+      setResultado(null);
+    }
+  }, [visible]);
+
+  const handleGerar = () => {
+    setIsGerando(true);
+    gerarRecrutamentoLinkEtapa({ etapa: 'cadastro', descricao: descricao.trim() || undefined, dias })
+      .then((res) => {
+        setResultado({ link: res.link, expira_em: res.expira_em });
+        Clipboard.setStringAsync(res.link).catch(() => {});
+      })
+      .catch((err) => Alert.alert('Erro', showRsError(err, 'Não foi possível gerar o link.')))
+      .finally(() => setIsGerando(false));
+  };
+
+  return (
+    <RsModal visible={visible} title="Link de cadastro" onClose={onClose}>
+      {resultado ? (
+        <>
+          <Text style={[rsStyles.listRowMeta, { marginBottom: 10 }]}>
+            Link gerado e copiado pra área de transferência. Compartilhe com o candidato:
+          </Text>
+          <View style={[rsStyles.dreCard, { marginBottom: 10 }]}>
+            <Text style={{ fontSize: 13, color: '#15203E', fontWeight: '700' }} selectable>
+              {resultado.link}
+            </Text>
+          </View>
+          {resultado.expira_em ? (
+            <Text style={[rsStyles.listRowMeta, { marginBottom: 14 }]}>
+              Expira em {new Date(resultado.expira_em).toLocaleDateString('pt-BR')}.
+            </Text>
+          ) : null}
+          <Pressable
+            style={[rsStyles.secondaryButton, { justifyContent: 'center', marginBottom: 10 }]}
+            onPress={() => Clipboard.setStringAsync(resultado.link).then(() => Alert.alert('Copiado', 'Link copiado novamente.'))}
+          >
+            <Feather name="copy" size={14} color="#1F3A5F" />
+            <Text style={rsStyles.secondaryButtonText}>Copiar link</Text>
+          </Pressable>
+          <Pressable style={[rsStyles.primaryButton, { justifyContent: 'center', marginBottom: 16 }]} onPress={onClose}>
+            <Text style={rsStyles.primaryButtonText}>Concluir</Text>
+          </Pressable>
+        </>
+      ) : (
+        <>
+          <Text style={rsStyles.listRowMeta}>Defina a validade. Após o prazo, o link não funcionará mais.</Text>
+          <RsFormLabel>Descrição (opcional)</RsFormLabel>
+          <RsTextInput value={descricao} onChangeText={setDescricao} placeholder="Ex.: WhatsApp RH" maxLength={200} />
+          <RsFormLabel>Validade</RsFormLabel>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+            {RS_PRE_CADASTRO_VALIDADE_OPCOES.map((opt) => {
+              const isSelected = dias === opt.dias;
+              return (
+                <Pressable
+                  key={opt.dias}
+                  onPress={() => setDias(opt.dias)}
+                  style={{
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                    borderRadius: 20,
+                    borderWidth: 1.5,
+                    borderColor: isSelected ? '#C23B5A' : '#D9DEEA',
+                    backgroundColor: isSelected ? '#FDEFF2' : '#FFFFFF',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? '#C23B5A' : '#5E667D' }}>{opt.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+            <Pressable style={[rsStyles.secondaryButton, { flex: 1, justifyContent: 'center' }]} onPress={onClose}>
+              <Text style={rsStyles.secondaryButtonText}>Cancelar</Text>
+            </Pressable>
+            <Pressable style={[rsStyles.primaryButton, { flex: 1, justifyContent: 'center' }]} onPress={handleGerar} disabled={isGerando}>
+              {isGerando ? <ActivityIndicator color="#FFFFFF" /> : <Feather name="link" size={14} color="#FFFFFF" />}
+              <Text style={rsStyles.primaryButtonText}>Gerar link</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+    </RsModal>
+  );
+}
+
 type RsCandidatoFormState = {
   nome_completo: string;
   profissao: string;
@@ -3243,6 +3351,8 @@ type RsCandidatoFormState = {
   linkedin: string;
   habilidades: string[];
   resumo: string;
+  referencia_nome: string;
+  referencia_telefone: string;
   origem: string;
 };
 
@@ -3266,6 +3376,8 @@ const RS_CANDIDATO_FORM_VAZIO: RsCandidatoFormState = {
   linkedin: '',
   habilidades: [],
   resumo: '',
+  referencia_nome: '',
+  referencia_telefone: '',
   origem: '',
 };
 
@@ -3452,10 +3564,17 @@ function RsCandidatoFormModal({
       <RsFormLabel>Origem</RsFormLabel>
       <RsTextInput value={form.origem} onChangeText={set('origem')} placeholder="Ex.: whatsapp, indicação..." />
 
-      {/* Referência profissional (nome/telefone) — o painel web mostra esse
-          bloco, mas nenhum endpoint confirmado ainda devolve/aceita esses
-          campos pro candidato (perguntado à Lovable). Fica de fora até a
-          confirmação, pra não mandar campo que pode ser ignorado ou dar erro. */}
+      <Text style={[rsStyles.sectionTitle, { marginTop: 14 }]}>Referência profissional (opcional)</Text>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <RsFormLabel>Nome da referência{form.referencia_telefone.trim() ? '*' : ''}</RsFormLabel>
+          <RsTextInput value={form.referencia_nome} onChangeText={set('referencia_nome')} placeholder="Nome da referência" maxLength={80} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <RsFormLabel>Telefone</RsFormLabel>
+          <RsTextInput value={form.referencia_telefone} onChangeText={set('referencia_telefone')} placeholder="(00) 00000-0000" keyboardType="phone-pad" />
+        </View>
+      </View>
 
       <Pressable
         style={[rsStyles.primaryButton, { justifyContent: 'center', marginTop: 16, marginBottom: 16 }]}
@@ -3584,6 +3703,7 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
   const [isSugestaoOpen, setIsSugestaoOpen] = useState(false);
   const [linkEtapaCandidato, setLinkEtapaCandidato] = useState<RecrutamentoCandidatoItem | null>(null);
   const [isNovoMenuOpen, setIsNovoMenuOpen] = useState(false);
+  const [isPreCadastroLinkOpen, setIsPreCadastroLinkOpen] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
@@ -3758,17 +3878,9 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
     setIsFormOpen(true);
   };
 
-  // "Pré-cadastro via link" (gerar link público pra o próprio candidato se
-  // cadastrar) aparece no painel web, mas nenhum endpoint de geração desse
-  // link específico foi confirmado ainda pela Lovable — o "Gerar link por
-  // etapa" existente é só pra candidato JÁ cadastrado, não serve pra criar
-  // um novo do zero. Fica como aviso honesto até confirmarem o contrato.
   const openPreCadastroLink = () => {
     setIsNovoMenuOpen(false);
-    Alert.alert(
-      'Ainda não disponível',
-      'A geração de link de pré-cadastro (pra o próprio candidato preencher os dados) depende de um endpoint que ainda não foi confirmado com a Lovable. Por enquanto, use "Cadastro completo".'
-    );
+    setIsPreCadastroLinkOpen(true);
   };
 
   // Busca o perfil completo antes de abrir o form de edição — a linha da
@@ -3798,6 +3910,8 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
           linkedin: perfil.linkedin ?? '',
           habilidades: perfil.habilidades ?? [],
           resumo: perfil.resumo ?? '',
+          referencia_nome: perfil.referencia_nome ?? '',
+          referencia_telefone: perfil.referencia_telefone ?? '',
           origem: perfil.origem ?? '',
         });
         setEditingCandidatoId(c.id);
@@ -3809,6 +3923,12 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
   const handleSaveForm = (form: RsCandidatoFormState) => {
     if (!form.nome_completo.trim()) {
       Alert.alert('Campo obrigatório', 'Informe o nome completo.');
+      return;
+    }
+    // Regra confirmada pela Lovable: se veio telefone de referência, o nome
+    // da referência passa a ser obrigatório (mesma validação do web).
+    if (form.referencia_telefone.trim() && !form.referencia_nome.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe o nome da referência, já que um telefone foi preenchido.');
       return;
     }
     setIsSavingForm(true);
@@ -3832,6 +3952,8 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
       linkedin: form.linkedin.trim() || null,
       habilidades: form.habilidades,
       resumo: form.resumo.trim() || null,
+      referencia_nome: form.referencia_nome.trim() || null,
+      referencia_telefone: form.referencia_telefone.trim() || null,
       origem: form.origem.trim() || null,
     };
     const request = editingCandidatoId ? updateRecrutamentoCandidato(editingCandidatoId, body) : createRecrutamentoCandidato(body);
@@ -4200,6 +4322,8 @@ export function RecrutamentoCandidatosScreen({ navigation }: ScreenProps<'Recrut
       />
 
       <RsLinkEtapaMenuModal candidato={linkEtapaCandidato} onClose={() => setLinkEtapaCandidato(null)} onSelect={handleGerarLinkEtapa} />
+
+      <RsPreCadastroLinkModal visible={isPreCadastroLinkOpen} onClose={() => setIsPreCadastroLinkOpen(false)} />
 
       <RsCandidatoFormModal
         visible={isFormOpen}

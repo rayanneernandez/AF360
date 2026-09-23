@@ -8340,6 +8340,8 @@ export type RecrutamentoCandidatoPerfil = {
   disponibilidade: string | null;
   resumo: string | null;
   habilidades: string[];
+  referencia_nome: string | null;
+  referencia_telefone: string | null;
   origem: string | null;
   curriculo_url: string | null;
   created_at: string | null;
@@ -8459,9 +8461,14 @@ export async function enviarRecrutamentoAvaliacao(body: {
 
 export async function gerarRecrutamentoLinkEtapa(body: {
   etapa: 'cadastro' | 'perguntas' | 'disc' | 'admissao';
-  candidato_id: string;
+  // candidato_id só é obrigatório pras etapas de um candidato JÁ cadastrado
+  // (perguntas/disc/admissao). Pra etapa='cadastro' sem candidato_id, é o
+  // pré-cadastro público do zero (contrato confirmado pela Lovable em
+  // 23/09/2026): usa descricao + dias em vez disso.
+  candidato_id?: string;
   vaga_id?: string;
   avaliacao_id?: string;
+  descricao?: string;
   dias?: number;
   empresa_id?: string;
   cargo?: string;
