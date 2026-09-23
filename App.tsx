@@ -156,6 +156,9 @@ import {
   updateConversa,
   login,
   changePassword,
+  fetchAdminUnidades,
+  updateAdminUnidade,
+  type AdminUnidadeItem,
   fetchColaboradorHome,
   fetchColaboradorComunicados,
   fetchColaboradorSolicitacoes,
@@ -10702,6 +10705,7 @@ function StockScreen({ navigation }: ScreenProps<'Stock'>) {
 }
 
 function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
+  const { identity } = useContext(AuthIdentityContext);
   const postos = useDiretoriaPostos();
   const stationOptions = useMemo(() => ['Todos os Postos', ...postos.map((p) => p.nome)], [postos]);
   const [selectedStation, setSelectedStation] = useState('Todos os Postos');
@@ -10748,11 +10752,45 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
   }, [gnvViewMode, gnvAnchorDate, selectedPostoId]);
   const { dados: gnv, isLoading, errorMessage, refresh: refreshGnv } = useDiretoriaPainelRecurso('gnv', filtros);
 
+  // Reaproveita o mesmo recurso já usado no módulo Administrador
+  // (fetchAdminUnidades/updateAdminUnidade, campo "apelido" real da tabela de
+  // unidades/postos) — é o mesmo apelido que aparece no painel web.
+  const [isApelidosOpen, setIsApelidosOpen] = useState(false);
+  const [isLoadingApelidos, setIsLoadingApelidos] = useState(false);
+  const [apelidosErro, setApelidosErro] = useState<string | null>(null);
+  const [apelidosUnidades, setApelidosUnidades] = useState<AdminUnidadeItem[]>([]);
+  const [apelidosDraft, setApelidosDraft] = useState<Record<string, string>>({});
+  const [apelidosSalvandoId, setApelidosSalvandoId] = useState<string | null>(null);
+
   const handleOpenApelidos = () => {
-    Alert.alert(
-      'Apelidos dos postos',
-      'A edição de apelidos de postos ainda não está disponível no app — em breve.'
-    );
+    setIsApelidosOpen(true);
+    setIsLoadingApelidos(true);
+    setApelidosErro(null);
+    fetchAdminUnidades()
+      .then((detalhe) => {
+        setApelidosUnidades(detalhe.unidades);
+        const draft: Record<string, string> = {};
+        detalhe.unidades.forEach((u) => {
+          draft[u.id] = u.apelido ?? '';
+        });
+        setApelidosDraft(draft);
+      })
+      .catch(() => setApelidosErro('Não foi possível carregar os postos agora.'))
+      .finally(() => setIsLoadingApelidos(false));
+  };
+
+  const handleSalvarApelido = (unidade: AdminUnidadeItem) => {
+    const novoApelido = (apelidosDraft[unidade.id] ?? '').trim();
+    if (novoApelido === (unidade.apelido ?? '')) return;
+    setApelidosSalvandoId(unidade.id);
+    updateAdminUnidade(unidade.id, { apelido: novoApelido || null }, identity?.profileId)
+      .then((atualizado) => {
+        setApelidosUnidades((prev) => prev.map((u) => (u.id === unidade.id ? atualizado : u)));
+      })
+      .catch(() =>
+        Alert.alert('Erro ao salvar', `Não foi possível salvar o apelido de "${unidade.nomeFantasia ?? unidade.id}".`)
+      )
+      .finally(() => setApelidosSalvandoId(null));
   };
 
   const [isExportingGnvPdf, setIsExportingGnvPdf] = useState(false);
@@ -10763,6 +10801,16 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
   const handleExportGnvPdf = async () => {
     if (gnvPostosTodos.length === 0) {
       Alert.alert('Nada para exportar', 'Não há postos com GNV no período selecionado.');
+      return;
+    }
+    // expo-print não gera arquivo no Web (só abre a caixa de impressão do
+    // navegador, imprimindo a tela em vez de gerar o PDF de verdade) — a
+    // exportação real só funciona no app instalado no celular.
+    if (Platform.OS === 'web') {
+      Alert.alert(
+        'Disponível só no app instalado',
+        'A exportação em PDF gera o arquivo de verdade no celular (com o app instalado). Aqui no navegador de teste ela abriria a impressão da tela, então não temos como simular certinho por aqui.'
+      );
       return;
     }
     setIsExportingGnvPdf(true);
@@ -10845,6 +10893,13 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
   // faturamento_desconto_gnv,faturamento_pdv,faturamento_total,pct_desconto_gnv}.
   const resumo = gnv?.resumo ?? gnv ?? null;
   const gnvPostosTodos = pickArr(gnv, ['postos']);
+
+  // Só faz sentido mostrar os postos que aparecem na Métrica GNV do período
+  // (evita listar a rede inteira quando o usuário só quer renomear quem
+  // vende GNV) — casa por id, que é o mesmo id usado em "postos"/GNV.
+  const gnvPostosIds = useMemo(() => new Set(gnvPostosTodos.map((s: any) => pickStr(s, ['posto_id']))), [gnvPostosTodos]);
+  const apelidosUnidadesFiltradas =
+    gnvPostosIds.size > 0 ? apelidosUnidades.filter((u) => gnvPostosIds.has(u.id)) : apelidosUnidades;
 
   // Confirmado pela Lovable em 05/08/2026: cada posto já vem com faixa_status
   // ("ideal"|"atencao"|"risco") pré-calculado, respeitando faixa_tipo
@@ -11114,6 +11169,62 @@ function GnvMetricsScreen({ navigation }: ScreenProps<'GnvMetrics'>) {
         onSelect={setSelectedStation}
         onClose={() => setIsStationPickerOpen(false)}
       />
+
+      <Modal visible={isApelidosOpen} animationType="fade" transparent onRequestClose={() => setIsApelidosOpen(false)}>
+        <Pressable style={styles.datePickerBackdrop} onPress={() => setIsApelidosOpen(false)}>
+          <Pressable style={[styles.simpleListCard, { maxHeight: '80%' }]} onPress={() => {}}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <Text style={styles.simpleListTitle}>Apelidos dos postos</Text>
+              <Pressable onPress={() => setIsApelidosOpen(false)} hitSlop={10}>
+                <Feather name="x" size={20} color="#5E667D" />
+              </Pressable>
+            </View>
+            {isLoadingApelidos ? (
+              <ActivityIndicator color="#E6213D" style={{ marginVertical: 24 }} />
+            ) : apelidosErro ? (
+              <Text style={[styles.conversaEmptyText, { marginVertical: 24 }]}>{apelidosErro}</Text>
+            ) : (
+              <ScrollView keyboardShouldPersistTaps="handled" style={{ marginTop: 8 }}>
+                {apelidosUnidadesFiltradas.length === 0 ? (
+                  <Text style={styles.conversaEmptyText}>Nenhum posto encontrado.</Text>
+                ) : (
+                  apelidosUnidadesFiltradas.map((unidade) => {
+                    const draftValue = apelidosDraft[unidade.id] ?? '';
+                    const houveMudanca = draftValue.trim() !== (unidade.apelido ?? '');
+                    return (
+                      <View key={unidade.id} style={styles.gnvApelidoRow}>
+                        <Text style={styles.gnvApelidoNome} numberOfLines={1}>
+                          {unidade.nomeFantasia ?? unidade.id}
+                        </Text>
+                        <View style={styles.gnvApelidoInputRow}>
+                          <TextInput
+                            style={styles.gnvApelidoInput}
+                            value={draftValue}
+                            onChangeText={(text) => setApelidosDraft((prev) => ({ ...prev, [unidade.id]: text }))}
+                            placeholder="Sem apelido"
+                            placeholderTextColor="#A7AEC2"
+                          />
+                          <Pressable
+                            style={[styles.gnvApelidoSaveButton, !houveMudanca ? { opacity: 0.4 } : null]}
+                            onPress={() => handleSalvarApelido(unidade)}
+                            disabled={!houveMudanca || apelidosSalvandoId === unidade.id}
+                          >
+                            {apelidosSalvandoId === unidade.id ? (
+                              <ActivityIndicator size="small" color="#FFFFFF" />
+                            ) : (
+                              <Feather name="check" size={16} color="#FFFFFF" />
+                            )}
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -19692,6 +19803,40 @@ export const styles = StyleSheet.create({
     color: '#E6213D',
     fontSize: 13,
     fontWeight: '800',
+  },
+  gnvApelidoRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF0F6',
+  },
+  gnvApelidoNome: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#15203E',
+    marginBottom: 6,
+  },
+  gnvApelidoInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  gnvApelidoInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#D9DEEA',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#15203E',
+  },
+  gnvApelidoSaveButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#E6213D',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   processNewButton: {
     flexDirection: 'row',
