@@ -5991,6 +5991,18 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
 
     fetchRhAgendaAssinatura(colaboradorId, false)
       .then((data) => {
+        // Bug real identificado: o GET de uma assinatura já existente
+        // (criar=0) às vezes volta sem o campo "url" preenchido (a Lovable
+        // parece computar essa URL só na criação/POST), enquanto o objeto
+        // continua "verdadeiro" — a tela então mostrava "vinculado" com os
+        // botões de copiar/abrir sem funcionar. Se acontecer, chama de novo
+        // o "garantir" (mesmo endpoint do Vincular, que já é idempotente e
+        // sempre devolve a URL) pra completar o registro.
+        if (data && !data.url && isMounted) {
+          return createRhAgendaAssinatura(colaboradorId, identity?.profileId).then((completo) => {
+            if (isMounted) setAgendaAssinatura(completo);
+          });
+        }
         if (isMounted) setAgendaAssinatura(data);
       })
       .catch(() => {
@@ -6003,7 +6015,7 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
     return () => {
       isMounted = false;
     };
-  }, [colaboradorId]);
+  }, [colaboradorId, identity?.profileId]);
 
   const handleVincularAgenda = () => {
     if (!colaboradorId) return;
@@ -6016,28 +6028,45 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
       .finally(() => setIsCreatingAgenda(false));
   };
 
+  // Fallback final, caso a URL ainda esteja vazia por algum motivo (rede
+  // instável, ou o próprio backend engasgou) — tenta "garantir" de novo
+  // antes de desistir, em vez de deixar o botão travado.
+  const garantirAgendaComUrl = (): Promise<RhAgendaAssinatura | null> => {
+    if (agendaAssinatura?.url) return Promise.resolve(agendaAssinatura);
+    if (!colaboradorId) return Promise.resolve(null);
+    return createRhAgendaAssinatura(colaboradorId, identity?.profileId)
+      .then((data) => {
+        setAgendaAssinatura(data);
+        return data;
+      })
+      .catch(() => null);
+  };
+
   const handleCopiarLinkAgenda = () => {
     if (!agendaAssinatura) return;
-    // DEBUG TEMPORÁRIO (21/09/2026): url veio vazia da API em produção —
-    // em vez de travar/navegar pra lugar nenhum, mostra o objeto cru que
-    // voltou do backend pra identificar o nome de campo real. Remover assim
-    // que confirmarmos o contrato certo.
-    if (!agendaAssinatura.url) {
-      Alert.alert('Campo "url" veio vazio', JSON.stringify(agendaAssinatura, null, 2));
-      return;
-    }
-    Clipboard.setStringAsync(agendaAssinatura.url).then(() => {
-      Alert.alert('Copiado', 'O link da sua agenda foi copiado.');
+    garantirAgendaComUrl().then((data) => {
+      if (!data?.url) {
+        Alert.alert('Não foi possível copiar', 'Não conseguimos gerar o link agora. Tente novamente em instantes.');
+        return;
+      }
+      Clipboard.setStringAsync(data.url).then(() => {
+        Alert.alert('Copiado', 'O link da sua agenda foi copiado.');
+      });
     });
   };
 
   const handleAbrirAppAgenda = () => {
     if (!agendaAssinatura) return;
-    // DEBUG TEMPORÁRIO (21/09/2026): ver comentário acima em handleCopiarLinkAgenda.
-    if (!agendaAssinatura.url) {
-      Alert.alert('Campo "url" veio vazio', JSON.stringify(agendaAssinatura, null, 2));
-      return;
-    }
+    garantirAgendaComUrl().then((data) => {
+      if (!data?.url) {
+        Alert.alert('Não foi possível abrir', 'Não conseguimos gerar o link agora. Tente novamente em instantes.');
+        return;
+      }
+      abrirAgendaComUrl(data.url);
+    });
+  };
+
+  const abrirAgendaComUrl = (url: string) => {
     // No navegador (Web) não existe "app de agenda" nem suporte real ao
     // esquema webcal:// — window.open() com um esquema desconhecido não dá
     // erro (só não faz nada visível), então o .catch() abaixo nunca disparava
@@ -6045,14 +6074,14 @@ function CalendarScreen({ navigation }: ScreenProps<'Calendar'>) {
     // iOS/Android tenta webcal:// primeiro (abre direto no app nativo de
     // calendário já na tela de assinatura), caindo pro link https se falhar.
     if (Platform.OS === 'web') {
-      Linking.openURL(agendaAssinatura.url).catch(() => {
+      Linking.openURL(url).catch(() => {
         Alert.alert('Erro', 'Não foi possível abrir o link. Copie o link e cole manualmente.');
       });
       return;
     }
-    const webcalUrl = agendaAssinatura.url.replace(/^https?:\/\//, 'webcal://');
+    const webcalUrl = url.replace(/^https?:\/\//, 'webcal://');
     Linking.openURL(webcalUrl).catch(() => {
-      Linking.openURL(agendaAssinatura.url).catch(() => {
+      Linking.openURL(url).catch(() => {
         Alert.alert('Erro', 'Não foi possível abrir o app de agenda. Copie o link e cole manualmente.');
       });
     });
