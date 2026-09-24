@@ -11,7 +11,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "br.com.af360",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSFaceIDUsageDescription": "Use Face ID para entrar no app mais rápido, sem digitar sua senha."
       }
     },
     "android": {
@@ -40,6 +41,12 @@
         "expo-audio",
         {
           "microphonePermission": "Permita o acesso ao microfone para gravar notas de voz no WhatsApp."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Use Face ID para entrar no app mais rápido, sem digitar sua senha."
         }
       ],
       "./plugins/withBlockMediaPermissions.js"

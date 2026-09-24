@@ -12,6 +12,7 @@ import YoutubePlayer, { type YoutubeIframeRef } from 'react-native-youtube-ifram
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as ScreenCapture from 'expo-screen-capture';
+import * as LocalAuthentication from 'expo-local-authentication';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 import {
   NavigationContainer,
@@ -1101,6 +1102,7 @@ export const ColaboradorPerfilContext = createContext<{
 // decide se PRECISA pedir de novo é o app, olhando a última vez que essa
 // conta verificou com sucesso NESTE aparelho.
 const TWO_FACTOR_ENABLED_STORAGE_KEY = '@af360/2fa-enabled';
+const BIOMETRIC_LOGIN_ENABLED_STORAGE_KEY = '@af360/biometric-login-enabled';
 const TWO_FACTOR_VERIFIED_AT_PREFIX = '@af360/2fa-verified-at:';
 const TWO_FACTOR_VALIDITY_MS = 15 * 24 * 60 * 60 * 1000; // 15 dias
 
@@ -2894,7 +2896,21 @@ export default function App() {
     setIsTwoFactorEnabledState(value);
     AsyncStorage.setItem(TWO_FACTOR_ENABLED_STORAGE_KEY, value ? '1' : '0').catch(() => {});
   }, []);
-  const [isBiometricLoginEnabled, setIsBiometricLoginEnabled] = useState(false);
+  // Mesmo padrão do 2FA acima: persistido de verdade no AsyncStorage (antes
+  // era só um useState puro, então a preferência nunca sobrevivia a um
+  // reabrir do app e o "login por biometria" não tinha efeito real nenhum).
+  const [isBiometricLoginEnabled, setIsBiometricLoginEnabledState] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(BIOMETRIC_LOGIN_ENABLED_STORAGE_KEY)
+      .then((value) => {
+        if (value !== null) setIsBiometricLoginEnabledState(value === '1');
+      })
+      .catch(() => {});
+  }, []);
+  const setIsBiometricLoginEnabled = useCallback((value: boolean) => {
+    setIsBiometricLoginEnabledState(value);
+    AsyncStorage.setItem(BIOMETRIC_LOGIN_ENABLED_STORAGE_KEY, value ? '1' : '0').catch(() => {});
+  }, []);
   const [courseProgress, setCourseProgress] = useState<Record<string, TrainingCourseProgress>>({});
 
   // Precisam ser estáveis entre renders (useCallback) porque telas como
@@ -4090,12 +4106,30 @@ function DeviceAuthScreen({ navigation }: ScreenProps<'DeviceAuth'>) {
     goToTargetOrTwoFactor(navigation, identity, isTwoFactorEnabled, getDashboardRouteForRole(activeRole), activeRole);
   };
 
-  const handleAuthenticate = () => {
+  // Antes isso era um setTimeout de 900ms que sempre "dava certo" — qualquer
+  // toque no botão liberava o acesso, sem checar biometria nenhuma de
+  // verdade. Agora usa expo-local-authentication de verdade no celular; no
+  // Web (sem suporte a biometria de aparelho) mantém o comportamento antigo
+  // só como fallback de teste, já que essa tela só aparece quando o próprio
+  // usuário ativou o toggle (e a ativação já exige hardware real).
+  const handleAuthenticate = async () => {
+    if (isAuthenticating) return;
     setIsAuthenticating(true);
-
-    setTimeout(() => {
-      proceedAfterDeviceAuth();
-    }, 900);
+    try {
+      if (Platform.OS === 'web') {
+        proceedAfterDeviceAuth();
+        return;
+      }
+      const resultado = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Confirme sua identidade para entrar',
+        cancelLabel: 'Cancelar',
+      });
+      if (resultado.success) {
+        proceedAfterDeviceAuth();
+      }
+    } finally {
+      setIsAuthenticating(false);
+    }
   };
 
   return (
@@ -8886,6 +8920,45 @@ function SecuritySettingsScreen({ navigation }: ScreenProps<'SecuritySettings'>)
     }
   };
 
+  // Antes esse toggle não fazia nada de verdade (só navegava pra uma tela
+  // com um spinner falso, sem checar hardware nem persistir a escolha).
+  // Agora confere se o aparelho tem biometria configurada e pede uma
+  // autenticação real antes de ligar — assim o toggle só fica "ligado" se
+  // a biometria realmente funcionar neste aparelho.
+  const handleToggleBiometric = async () => {
+    if (isBiometricLoginEnabled) {
+      setIsBiometricLoginEnabled(false);
+      return;
+    }
+    if (Platform.OS === 'web') {
+      Alert.alert(
+        'Disponível só no app instalado',
+        'O login por biometria usa o Face ID/digital do celular — não tem como testar isso no navegador.'
+      );
+      return;
+    }
+    const hasHardware = await LocalAuthentication.hasHardwareAsync();
+    if (!hasHardware) {
+      Alert.alert('Sem suporte', 'Este aparelho não tem sensor de biometria disponível.');
+      return;
+    }
+    const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+    if (!isEnrolled) {
+      Alert.alert(
+        'Nenhuma biometria cadastrada',
+        'Cadastre sua digital ou Face ID nos ajustes do aparelho antes de ativar essa opção aqui.'
+      );
+      return;
+    }
+    const resultado = await LocalAuthentication.authenticateAsync({
+      promptMessage: 'Confirme sua identidade para ativar o login por biometria',
+      cancelLabel: 'Cancelar',
+    });
+    if (resultado.success) {
+      setIsBiometricLoginEnabled(true);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
@@ -8957,10 +9030,7 @@ function SecuritySettingsScreen({ navigation }: ScreenProps<'SecuritySettings'>)
               <Text style={styles.securityToggleTitle}>Login por biometria</Text>
               <Text style={styles.securityToggleSubtitle}>Face ID, digital ou senha deste aparelho</Text>
             </View>
-            <ToggleSwitch
-              value={isBiometricLoginEnabled}
-              onValueChange={() => setIsBiometricLoginEnabled(!isBiometricLoginEnabled)}
-            />
+            <ToggleSwitch value={isBiometricLoginEnabled} onValueChange={handleToggleBiometric} />
           </View>
         </View>
       </ScrollView>
