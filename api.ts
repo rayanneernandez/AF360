@@ -2439,7 +2439,18 @@ export async function fetchRhUniformesEntregas(colaboradorId: string): Promise<R
 // tipo/limit/offset/id adicionados em 20/08/2026 pra suportar a tela admin
 // "Recursos Operacionais" (filtro por tipo, paginação e detalhe de um pedido).
 export async function fetchRhUniformesPedidos(
-  params: { colaboradorId?: string; status?: string; tipo?: string; limit?: number; offset?: number } = {}
+  params: {
+    colaboradorId?: string;
+    status?: string;
+    tipo?: string;
+    limit?: number;
+    offset?: number;
+    // Contrato confirmado pela Lovable em 24/09/2026: filtra os pedidos pro
+    // time de quem está aprovando (gestor_id/gestor_direto_id/gestor_geral_id
+    // do colaborador). Sem isso, a lista de "Aprovações da Equipe" mostrava
+    // pedidos da empresa inteira em vez de só do próprio time.
+    aprovadorColaboradorId?: string;
+  } = {}
 ): Promise<RhUniformePedido[]> {
   const search = new URLSearchParams();
   search.set('recurso', 'pedidos');
@@ -2448,6 +2459,7 @@ export async function fetchRhUniformesPedidos(
   if (params.tipo) search.set('tipo', params.tipo);
   if (params.limit !== undefined) search.set('limit', String(params.limit));
   if (params.offset !== undefined) search.set('offset', String(params.offset));
+  if (params.aprovadorColaboradorId) search.set('aprovadorColaboradorId', params.aprovadorColaboradorId);
   const json = await api.get(`/api/rh/uniformes?${search.toString()}`);
   const data = json.data;
   const rows = (Array.isArray(data) ? data : data ? [data] : []) as RhUniformePedido[];
@@ -2478,19 +2490,26 @@ export async function criarPedidoUniforme(body: {
   return json.data as RhUniformePedido;
 }
 
-export async function aprovarPedidoUniforme(id: string, actorId?: string | null): Promise<RhUniformePedido> {
-  const json = await api.patch(withActorId(`/api/rh/uniformes/pedidos/${encodeURIComponent(id)}/aprovar`, actorId), {});
+export async function aprovarPedidoUniforme(
+  id: string,
+  actorId?: string | null,
+  aprovadorColaboradorId?: string | null
+): Promise<RhUniformePedido> {
+  const json = await api.patch(withActorId(`/api/rh/uniformes/pedidos/${encodeURIComponent(id)}/aprovar`, actorId), {
+    aprovador_colaborador_id: aprovadorColaboradorId ?? undefined,
+  });
   return json.data as RhUniformePedido;
 }
 
 export async function recusarPedidoUniforme(
   id: string,
   motivoRecusa: string,
-  actorId?: string | null
+  actorId?: string | null,
+  aprovadorColaboradorId?: string | null
 ): Promise<RhUniformePedido> {
   const json = await api.patch(
     withActorId(`/api/rh/uniformes/pedidos/${encodeURIComponent(id)}/recusar`, actorId),
-    { motivo_recusa: motivoRecusa }
+    { motivo_recusa: motivoRecusa, aprovador_colaborador_id: aprovadorColaboradorId ?? undefined }
   );
   return json.data as RhUniformePedido;
 }

@@ -7319,12 +7319,14 @@ function PayslipsScreen({ navigation }: ScreenProps<'Payslips'>) {
 }
 
 // Pedidos de uniforme/EPI pendentes de aprovação (rh_op_pedidos — endpoint
-// confirmado pela Lovable em 03/08/2026). Hoje buscamos por status
-// (pendente_ciencia/em_aprovacao/aguardando_gerente/aguardando_gestao) em
-// toda a rede — o endpoint ainda não filtra por "quem sou eu como
-// aprovador" (isso depende de gestor_direto_id/gestor_geral_id em
-// rh_colaboradores), então esta tela mostra os pendentes reais, mas ainda
-// não restritos só ao time de quem está logado.
+// confirmado pela Lovable em 03/08/2026, filtro por time confirmado em
+// 24/09/2026). Buscamos por status (pendente_ciencia/em_aprovacao/
+// aguardando_gerente/aguardando_gestao) já restrito ao time de quem está
+// logado (aprovadorColaboradorId, via gestor_id/gestor_direto_id/
+// gestor_geral_id em rh_colaboradores). Se o colaborador não tiver
+// liderados cadastrados, a lista vem vazia (nunca "todos") — a Lovable
+// avisou que hoje NINGUÉM tem gestor preenchido ainda, então a tela fica
+// vazia até o RH cadastrar os líderes de cada posto.
 const APROVACAO_PEDIDO_STATUS_PENDENTE = 'pendente_ciencia,em_aprovacao,aguardando_gerente,aguardando_gestao';
 
 function RecusarPedidoModal({
@@ -7388,16 +7390,23 @@ function ApprovalsScreen({ navigation }: ScreenProps<'Approvals'>) {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
 
+  // aprovadorColaboradorId (contrato confirmado pela Lovable em 24/09/2026):
+  // filtra pra só os pedidos do time de quem está logado, tanto na listagem
+  // quanto na hora de aprovar/recusar (403 se tentar mexer em pedido de fora
+  // do time). Antes disso, essa tela mostrava pedidos da empresa inteira.
   const loadPedidos = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
-    fetchRhUniformesPedidos({ status: APROVACAO_PEDIDO_STATUS_PENDENTE })
+    fetchRhUniformesPedidos({
+      status: APROVACAO_PEDIDO_STATUS_PENDENTE,
+      aprovadorColaboradorId: identity?.colaboradorId ?? undefined,
+    })
       .then(setPedidos)
       .catch((err) => {
         setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as aprovações.');
       })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [identity?.colaboradorId]);
 
   useEffect(() => {
     loadPedidos();
@@ -7405,7 +7414,7 @@ function ApprovalsScreen({ navigation }: ScreenProps<'Approvals'>) {
 
   const handleApprove = (pedido: RhUniformePedido) => {
     setProcessingId(pedido.id);
-    aprovarPedidoUniforme(pedido.id, identity?.profileId)
+    aprovarPedidoUniforme(pedido.id, identity?.profileId, identity?.colaboradorId)
       .then(() => loadPedidos())
       .catch((err) => Alert.alert('Não foi possível aprovar', err instanceof Error ? err.message : 'Tente novamente.'))
       .finally(() => setProcessingId(null));
@@ -7414,7 +7423,7 @@ function ApprovalsScreen({ navigation }: ScreenProps<'Approvals'>) {
   const handleReject = (motivo: string) => {
     if (!rejectingId) return;
     setProcessingId(rejectingId);
-    recusarPedidoUniforme(rejectingId, motivo, identity?.profileId)
+    recusarPedidoUniforme(rejectingId, motivo, identity?.profileId, identity?.colaboradorId)
       .then(() => {
         setRejectingId(null);
         loadPedidos();

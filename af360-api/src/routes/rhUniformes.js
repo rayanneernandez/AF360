@@ -51,9 +51,9 @@ function writeErrorStatus(err) {
 //   &cargoId=&colaboradorId=&devolvido=&status=&tipo=&id=&itemId=&limit=&offset=&actorId=
 router.get('/', async (req, res) => {
   try {
-    const { recurso, cargoId, colaboradorId, devolvido, status, tipo, id, itemId, limit, offset, actorId } = req.query;
+    const { recurso, cargoId, colaboradorId, devolvido, status, tipo, id, itemId, limit, offset, actorId, aprovadorColaboradorId } = req.query;
     const json = await getRhUniformes(
-      { recurso, cargoId, colaboradorId, devolvido, status, tipo, id: id ?? itemId, limit, offset },
+      { recurso, cargoId, colaboradorId, devolvido, status, tipo, id: id ?? itemId, limit, offset, aprovadorColaboradorId },
       actorId
     );
     const row = json?.data ?? json;
@@ -77,10 +77,11 @@ router.post('/pedidos', async (req, res) => {
   }
 });
 
-// PATCH /api/rh/uniformes/pedidos/:id/aprovar?actorId=
+// PATCH /api/rh/uniformes/pedidos/:id/aprovar?actorId= — body: { aprovador_colaborador_id? }
 router.patch('/pedidos/:id/aprovar', async (req, res) => {
   try {
-    const json = await patchRhUniformePedidoAprovar(req.params.id, req.query.actorId);
+    const aprovadorColaboradorId = req.body?.aprovador_colaborador_id ?? req.body?.aprovadorColaboradorId;
+    const json = await patchRhUniformePedidoAprovar(req.params.id, req.query.actorId, aprovadorColaboradorId);
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[rh/uniformes/pedidos/:id/aprovar PATCH] erro:', err.message);
@@ -88,11 +89,12 @@ router.patch('/pedidos/:id/aprovar', async (req, res) => {
   }
 });
 
-// PATCH /api/rh/uniformes/pedidos/:id/recusar?actorId= — body: { motivo_recusa }
+// PATCH /api/rh/uniformes/pedidos/:id/recusar?actorId= — body: { motivo_recusa, aprovador_colaborador_id? }
 router.patch('/pedidos/:id/recusar', async (req, res) => {
   try {
     const motivo = req.body?.motivo_recusa ?? req.body?.motivoRecusa ?? '';
-    const json = await patchRhUniformePedidoRecusar(req.params.id, motivo, req.query.actorId);
+    const aprovadorColaboradorId = req.body?.aprovador_colaborador_id ?? req.body?.aprovadorColaboradorId;
+    const json = await patchRhUniformePedidoRecusar(req.params.id, motivo, req.query.actorId, aprovadorColaboradorId);
     res.json({ ok: true, data: json?.data ?? json });
   } catch (err) {
     console.error('[rh/uniformes/pedidos/:id/recusar PATCH] erro:', err.message);

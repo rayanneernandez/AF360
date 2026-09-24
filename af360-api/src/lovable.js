@@ -887,12 +887,27 @@ function patchRhSolicitacao(id, body, actorId) {
 // mesma função, mesmos recursos de sempre (kit/entregas/pedidos/itens),
 // só com mais filtros passados direto pro Lovable.
 function getRhUniformes(
-  { recurso, cargoId, colaboradorId, devolvido, status, tipo, id, limit, offset } = {},
+  { recurso, cargoId, colaboradorId, devolvido, status, tipo, id, limit, offset, aprovadorColaboradorId } = {},
   actorId
 ) {
   return lovableGet(
     '/api/public/internal/rh-uniformes',
-    { recurso, cargo_id: cargoId, colaborador_id: colaboradorId, devolvido, status, tipo, id, limit, offset },
+    {
+      recurso,
+      cargo_id: cargoId,
+      colaborador_id: colaboradorId,
+      devolvido,
+      status,
+      tipo,
+      id,
+      limit,
+      offset,
+      // Contrato confirmado pela Lovable em 24/09/2026: filtra os pedidos
+      // pra só os do time de quem está aprovando (gestor_id/gestor_direto_id/
+      // gestor_geral_id). Sem colaborador com time montado, a lista volta
+      // vazia — não volta "todos" por engano.
+      aprovador_colaborador_id: aprovadorColaboradorId,
+    },
     actorId
   );
 }
@@ -901,15 +916,24 @@ function postRhUniformePedido(body, actorId) {
   return lovablePost('/api/public/internal/rh-uniformes', { acao: 'pedido' }, body, actorId);
 }
 
-function patchRhUniformePedidoAprovar(id, actorId) {
-  return lovablePatch('/api/public/internal/rh-uniformes', { id, acao: 'aprovar' }, {}, actorId);
+// aprovadorColaboradorId vai no CORPO (não na query), conforme contrato
+// confirmado pela Lovable em 24/09/2026 — sem ele o endpoint segue
+// funcionando como antes (sem checar time); com ele, 403 se o pedido não for
+// do time desse aprovador.
+function patchRhUniformePedidoAprovar(id, actorId, aprovadorColaboradorId) {
+  return lovablePatch(
+    '/api/public/internal/rh-uniformes',
+    { id, acao: 'aprovar' },
+    { aprovador_colaborador_id: aprovadorColaboradorId },
+    actorId
+  );
 }
 
-function patchRhUniformePedidoRecusar(id, motivoRecusa, actorId) {
+function patchRhUniformePedidoRecusar(id, motivoRecusa, actorId, aprovadorColaboradorId) {
   return lovablePatch(
     '/api/public/internal/rh-uniformes',
     { id, acao: 'recusar' },
-    { motivo_recusa: motivoRecusa },
+    { motivo_recusa: motivoRecusa, aprovador_colaborador_id: aprovadorColaboradorId },
     actorId
   );
 }
