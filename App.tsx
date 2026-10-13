@@ -41,6 +41,7 @@ import {
   Linking,
   Modal,
   Platform,
+  KeyboardAvoidingView,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -169,6 +170,8 @@ import {
   fetchColaboradorBeneficios,
   fetchColaboradorNotificacoes,
   fetchNotificacoesInbox,
+  fetchAssistenteDisponivel,
+  enviarMensagemAssistente,
   marcarNotificacaoLida,
   marcarNotificacoesLidas,
   fetchColaboradorContracheques,
@@ -405,6 +408,237 @@ const webAlertStyles = StyleSheet.create({
   buttonsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 20 },
   button: { flexGrow: 1, flexBasis: 120, alignItems: 'center', justifyContent: 'center', borderRadius: 12, paddingVertical: 13, paddingHorizontal: 14 },
   buttonText: { fontSize: 14, fontWeight: '800' },
+});
+
+// Assistente AF360: botão redondo flutuante + painel de chat, em todas as
+// telas, só para quem o painel web libera (cargo diretor/supervisor/gerente —
+// quem decide é chat-portal-disponivel). Conversa única por colaborador, igual
+// à do web; o histórico fica só na tela, como no painel.
+type AssistenteMensagem = { id: number; autor: 'usuario' | 'assistente'; texto: string; erro?: boolean };
+
+const ASSISTENTE_ERROS: Record<string, string> = {
+  sem_acesso: 'Você não tem acesso ao assistente.',
+  sem_url: 'O assistente está indisponível no momento.',
+  sem_resposta: 'O assistente não respondeu. Tente novamente.',
+  rede: 'Não foi possível falar com o assistente. Tente novamente.',
+};
+
+function AssistenteChat() {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const [disponivel, setDisponivel] = useState(false);
+  const [aberto, setAberto] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [mensagens, setMensagens] = useState<AssistenteMensagem[]>([]);
+  const scrollRef = useRef<ScrollView>(null);
+  const nextId = useRef(1);
+
+  useEffect(() => {
+    setDisponivel(false);
+    setAberto(false);
+    setMensagens([]);
+    if (!colaboradorId) return undefined;
+    let ativo = true;
+    fetchAssistenteDisponivel(colaboradorId)
+      .then((ok) => {
+        if (ativo) setDisponivel(ok);
+      })
+      .catch(() => {
+        if (ativo) setDisponivel(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [colaboradorId]);
+
+  if (!colaboradorId || !disponivel) return null;
+
+  const enviar = async () => {
+    const mensagem = texto.trim();
+    if (!mensagem || enviando) return;
+    setTexto('');
+    setEnviando(true);
+    setMensagens((atual) => [...atual, { id: nextId.current++, autor: 'usuario', texto: mensagem }]);
+    const resultado = await enviarMensagemAssistente(colaboradorId, mensagem);
+    const resposta: AssistenteMensagem = resultado.ok
+      ? { id: nextId.current++, autor: 'assistente', texto: resultado.resposta || '—' }
+      : {
+          id: nextId.current++,
+          autor: 'assistente',
+          erro: true,
+          texto:
+            ASSISTENTE_ERROS[resultado.erro ?? ''] ??
+            (resultado.erro && /^http_/.test(resultado.erro)
+              ? 'O assistente está indisponível no momento.'
+              : resultado.erro || 'Não foi possível falar com o assistente. Tente novamente.'),
+        };
+    setMensagens((atual) => [...atual, resposta]);
+    setEnviando(false);
+  };
+
+  const semEnvio = enviando || !texto.trim();
+
+  return (
+    <View pointerEvents="box-none" style={assistenteStyles.overlay}>
+      {aberto ? (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={assistenteStyles.panel}
+        >
+          <View style={assistenteStyles.header}>
+            <Text style={assistenteStyles.headerTitle}>Assistente AF360</Text>
+            <Pressable onPress={() => setAberto(false)} hitSlop={10}>
+              <Feather name="x" size={18} color="#15203E" />
+            </Pressable>
+          </View>
+          <ScrollView
+            ref={scrollRef}
+            style={assistenteStyles.body}
+            contentContainerStyle={assistenteStyles.bodyContent}
+            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          >
+            {mensagens.length === 0 ? <Text style={assistenteStyles.empty}>Como posso ajudar?</Text> : null}
+            {mensagens.map((item) => (
+              <View
+                key={item.id}
+                style={[
+                  assistenteStyles.bubble,
+                  item.autor === 'usuario' ? assistenteStyles.bubbleUser : assistenteStyles.bubbleBot,
+                ]}
+              >
+                <Text
+                  selectable
+                  style={[
+                    assistenteStyles.bubbleText,
+                    item.autor === 'usuario' ? assistenteStyles.bubbleTextUser : null,
+                    item.erro ? assistenteStyles.bubbleTextError : null,
+                  ]}
+                >
+                  {item.texto}
+                </Text>
+              </View>
+            ))}
+            {enviando ? <Text style={assistenteStyles.thinking}>Pensando…</Text> : null}
+          </ScrollView>
+          <View style={assistenteStyles.inputRow}>
+            <TextInput
+              value={texto}
+              onChangeText={setTexto}
+              placeholder="Digite sua mensagem..."
+              placeholderTextColor="#9AA1B5"
+              maxLength={4000}
+              editable={!enviando}
+              onSubmitEditing={enviar}
+              returnKeyType="send"
+              style={assistenteStyles.input}
+            />
+            <Pressable
+              onPress={enviar}
+              disabled={semEnvio}
+              style={[assistenteStyles.sendButton, semEnvio ? assistenteStyles.sendButtonDisabled : null]}
+            >
+              <Feather name="send" size={16} color="#FFFFFF" />
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      ) : null}
+      <Pressable
+        onPress={() => setAberto((valor) => !valor)}
+        style={assistenteStyles.fab}
+        accessibilityLabel={aberto ? 'Fechar assistente' : 'Abrir assistente'}
+      >
+        <Feather name={aberto ? 'x' : 'message-circle'} size={24} color="#FFFFFF" />
+      </Pressable>
+    </View>
+  );
+}
+
+const assistenteStyles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    alignItems: 'flex-end',
+    padding: 16,
+    paddingBottom: 24,
+  },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#1F3A93',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+  },
+  panel: {
+    width: '100%',
+    maxWidth: 380,
+    height: 420,
+    maxHeight: '75%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    marginBottom: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E6F0',
+  },
+  headerTitle: { fontSize: 15, fontWeight: '800', color: '#15203E' },
+  body: { flex: 1 },
+  bodyContent: { padding: 14, gap: 8, flexGrow: 1 },
+  empty: { color: '#7C8397', fontSize: 13, textAlign: 'center', marginTop: 40 },
+  bubble: { maxWidth: '85%', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  bubbleUser: { alignSelf: 'flex-end', backgroundColor: '#1F3A93' },
+  bubbleBot: { alignSelf: 'flex-start', backgroundColor: '#F1F3F9' },
+  bubbleText: { fontSize: 14, color: '#15203E', lineHeight: 20 },
+  bubbleTextUser: { color: '#FFFFFF' },
+  bubbleTextError: { color: '#C0182E' },
+  thinking: { alignSelf: 'flex-start', color: '#7C8397', fontSize: 13, fontStyle: 'italic' },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E6F0',
+  },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 14,
+    color: '#15203E',
+  },
+  sendButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#1F3A93',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonDisabled: { opacity: 0.45 },
 });
 
 function WebAlertHost() {
@@ -3394,6 +3628,7 @@ export default function App() {
                   ) : null}
                 </View>
               </NavigationContainer>
+              <AssistenteChat />
               <WebAlertHost />
             </MenuContext.Provider>
           </TrainingProgressContext.Provider>

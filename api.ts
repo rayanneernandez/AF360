@@ -2235,6 +2235,25 @@ export async function marcarNotificacoesLidas(body: {
   return { atualizadas: Number((json.data as { atualizadas?: number } | undefined)?.atualizadas ?? 0) };
 }
 
+// --- Assistente AF360 (chat flutuante, só para diretor/supervisor/gerente) ---
+
+export async function fetchAssistenteDisponivel(colaboradorId: string): Promise<boolean> {
+  const json = await api.post('/api/assistente/disponivel', { colaboradorId });
+  return (json.data as { disponivel?: boolean } | undefined)?.disponivel === true;
+}
+
+export async function enviarMensagemAssistente(
+  colaboradorId: string,
+  mensagem: string
+): Promise<{ ok: boolean; resposta: string; erro: string | null }> {
+  try {
+    const json = await api.post('/api/assistente/mensagem', { colaboradorId, mensagem });
+    return { ok: true, resposta: String((json.data as { resposta?: string } | undefined)?.resposta ?? ''), erro: null };
+  } catch (error) {
+    return { ok: false, resposta: '', erro: error instanceof Error ? error.message : 'falha' };
+  }
+}
+
 // --- Colaborador (self-service): Contra-cheques (histórico completo) ---
 
 export type ColaboradorContrachequeItem = {

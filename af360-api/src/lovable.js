@@ -2154,6 +2154,14 @@ function getMarketingWaTags(actorId) {
 function postNotifInboxLidas(body) {
   return lovablePost('/api/public/internal/notif-inbox-lidas', {}, body);
 }
+// Assistente AF360 (chat flutuante do portal). Body: { colaborador_id } e
+// { colaborador_id, mensagem } (1 a 4.000 caracteres).
+function postChatPortalDisponivel(body) {
+  return lovablePost('/api/public/internal/chat-portal-disponivel', {}, body);
+}
+function postChatPortalMensagem(body) {
+  return lovablePost('/api/public/internal/chat-portal-mensagem', {}, body);
+}
 // Marca a conversa como lida. Body: { phone }.
 function postMarketingWaMarcarLido(body, actorId) {
   return lovablePost('/api/public/internal/marketing', { recurso: 'wa-marcar-lido' }, body, actorId);
@@ -2832,6 +2840,8 @@ module.exports = {
   getMarketingWaTags,
   postMarketingWaMarcarLido,
   postNotifInboxLidas,
+  postChatPortalDisponivel,
+  postChatPortalMensagem,
   getMarketingWaTemplates,
   postMarketingWaEnviarTemplate,
   getMarketingWaSugestoes,
