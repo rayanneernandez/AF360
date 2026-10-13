@@ -34,6 +34,7 @@ import {
   Alert,
   type AlertButton,
   Animated,
+  PanResponder,
   AppState,
   Image,
   ImageBackground,
@@ -423,11 +424,55 @@ const ASSISTENTE_ERROS: Record<string, string> = {
   rede: 'Não foi possível falar com o assistente. Tente novamente.',
 };
 
+// Estado compartilhado do assistente (botão flutuante, painel e item do menu
+// lateral). fabVisivel é preferência do aparelho: a pessoa pode tirar o botão
+// da tela e continuar abrindo o assistente pelo menu.
+const ASSISTENTE_FAB_STORAGE_KEY = 'af360.assistente.fabVisivel';
+const assistenteStore = { disponivel: false, aberto: false, fabVisivel: true };
+const assistenteListeners = new Set<() => void>();
+
+function setAssistenteState(partial: Partial<typeof assistenteStore>) {
+  Object.assign(assistenteStore, partial);
+  assistenteListeners.forEach((listener) => listener());
+}
+
+AsyncStorage.getItem(ASSISTENTE_FAB_STORAGE_KEY)
+  .then((value) => {
+    if (value === '0') setAssistenteState({ fabVisivel: false });
+  })
+  .catch(() => {});
+
+function useAssistenteState() {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const listener = () => force((value) => value + 1);
+    assistenteListeners.add(listener);
+    return () => {
+      assistenteListeners.delete(listener);
+    };
+  }, []);
+  return assistenteStore;
+}
+
 function AssistenteChat() {
   const { identity } = useContext(AuthIdentityContext);
   const colaboradorId = identity?.colaboradorId ?? null;
-  const [disponivel, setDisponivel] = useState(false);
-  const [aberto, setAberto] = useState(false);
+  const { disponivel, aberto, fabVisivel } = useAssistenteState();
+  const setDisponivel = (value: boolean) => setAssistenteState({ disponivel: value });
+  const setAberto = (value: boolean) => setAssistenteState({ aberto: value });
+  const fabPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const fabPanResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 5 || Math.abs(gesture.dy) > 5,
+      onPanResponderGrant: () => {
+        fabPan.extractOffset();
+      },
+      onPanResponderMove: Animated.event([null, { dx: fabPan.x, dy: fabPan.y }], { useNativeDriver: false }),
+      onPanResponderRelease: () => {
+        fabPan.flattenOffset();
+      },
+    })
+  ).current;
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [mensagens, setMensagens] = useState<AssistenteMensagem[]>([]);
@@ -435,8 +480,7 @@ function AssistenteChat() {
   const nextId = useRef(1);
 
   useEffect(() => {
-    setDisponivel(false);
-    setAberto(false);
+    setAssistenteState({ disponivel: false, aberto: false });
     setMensagens([]);
     if (!colaboradorId) return undefined;
     let ativo = true;
@@ -543,13 +587,31 @@ function AssistenteChat() {
           </View>
         </KeyboardAvoidingView>
       ) : null}
-      <Pressable
-        onPress={() => setAberto((valor) => !valor)}
-        style={assistenteStyles.fab}
-        accessibilityLabel={aberto ? 'Fechar assistente' : 'Abrir assistente'}
-      >
-        <Feather name={aberto ? 'x' : 'message-circle'} size={24} color="#FFFFFF" />
-      </Pressable>
+      {fabVisivel ? (
+        <Animated.View
+          {...fabPanResponder.panHandlers}
+          style={[assistenteStyles.fabWrap, { transform: fabPan.getTranslateTransform() }]}
+        >
+          <Pressable
+            onPress={() => setAberto(!aberto)}
+            style={assistenteStyles.fab}
+            accessibilityLabel={aberto ? 'Fechar assistente' : 'Abrir assistente'}
+          >
+            <Feather name={aberto ? 'x' : 'message-circle'} size={24} color="#FFFFFF" />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setAssistenteState({ fabVisivel: false, aberto: false });
+              AsyncStorage.setItem(ASSISTENTE_FAB_STORAGE_KEY, '0').catch(() => {});
+            }}
+            hitSlop={8}
+            style={assistenteStyles.fabDismiss}
+            accessibilityLabel="Tirar o botão da tela"
+          >
+            <Feather name="x" size={11} color="#FFFFFF" />
+          </Pressable>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -561,6 +623,18 @@ const assistenteStyles = StyleSheet.create({
     alignItems: 'flex-end',
     padding: 16,
     paddingBottom: 24,
+  },
+  fabWrap: { width: 56, height: 56 },
+  fabDismiss: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#5E667D',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fab: {
     width: 56,
@@ -15089,7 +15163,8 @@ export function SideMenuOverlay({
   const isAdministrativo = variant === 'administrativo';
   const isMarketing = variant === 'marketing';
   const isRecrutamento = variant === 'recrutamento';
-  const { identity } = useContext(AuthIdentityContext);
+  const { identity, setIdentity } = useContext(AuthIdentityContext);
+  const assistenteState = useAssistenteState();
   const { perfil: colaboradorPerfil, isLoading: isLoadingColaboradorPerfil } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
   const sections = isDirector
@@ -15223,6 +15298,18 @@ export function SideMenuOverlay({
           ))}
 
           <View style={styles.sideMenuFooter}>
+            {assistenteState.disponivel ? (
+              <Pressable
+                style={styles.sideMenuItem}
+                onPress={() => {
+                  onClose();
+                  setAssistenteState({ aberto: true });
+                }}
+              >
+                <Feather name="message-circle" size={18} color="#2B3147" />
+                <Text style={styles.sideMenuItemText}>Assistente AF360</Text>
+              </Pressable>
+            ) : null}
             {hasMultiplePanels ? (
               <Pressable
                 style={styles.sideMenuItem}
@@ -15240,8 +15327,11 @@ export function SideMenuOverlay({
 
             <Pressable
               style={styles.sideMenuItem}
-              onPress={() => {
+              onPress={async () => {
                 onClose();
+                // Encerra a sessão de verdade (senão "manter conectado" loga de volta).
+                await clearPersistedSession();
+                setIdentity(null);
                 if (navigationRef.isReady()) {
                   navigationRef.reset({
                     index: 0,
