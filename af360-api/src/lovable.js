@@ -2145,6 +2145,15 @@ function getMarketingWaAgenda(params, actorId) {
 function getMarketingWaTags(actorId) {
   return lovableGet('/api/public/internal/marketing', { recurso: 'wa-tags' }, actorId);
 }
+// Caixa de notificações (notif_inbox) — recurso interno de escrita criado pela
+// Lovable em 13/10/2026 (precisa estar publicado no site pra valer).
+// Body: { colaborador_id, id } marca uma (404 se não for dela / não existir,
+// ja_lida:true se já estava lida) ou { colaborador_id, todas: true, tipo? }
+// marca todas as não lidas (tipo opcional: alerta | fluxo) e devolve
+// { ok, atualizadas }.
+function postNotifInboxLidas(body) {
+  return lovablePost('/api/public/internal/notif-inbox-lidas', {}, body);
+}
 // Marca a conversa como lida. Body: { phone }.
 function postMarketingWaMarcarLido(body, actorId) {
   return lovablePost('/api/public/internal/marketing', { recurso: 'wa-marcar-lido' }, body, actorId);
@@ -2822,6 +2831,7 @@ module.exports = {
   getMarketingWaAgenda,
   getMarketingWaTags,
   postMarketingWaMarcarLido,
+  postNotifInboxLidas,
   getMarketingWaTemplates,
   postMarketingWaEnviarTemplate,
   getMarketingWaSugestoes,

@@ -1,5 +1,5 @@
 const express = require('express');
-const { fetchTable } = require('../lovable');
+const { fetchTable, postNotifInboxLidas } = require('../lovable');
 
 const router = express.Router();
 
@@ -74,6 +74,43 @@ router.get('/inbox', async (req, res) => {
   } catch (err) {
     console.error('[notificacoes/inbox] erro:', err.message);
     res.status(500).json({ ok: false, error: 'query_failed', message: err.message });
+  }
+});
+
+function writeErrorStatus(err) {
+  if (err.lovableStatus === 404) return 404;
+  return err.lovableStatus && err.lovableStatus >= 400 && err.lovableStatus < 500 ? 400 : 500;
+}
+
+// POST /api/notificacoes/lida  { colaboradorId, id }
+router.post('/lida', async (req, res) => {
+  try {
+    const { colaboradorId, id } = req.body ?? {};
+    if (!colaboradorId || !id) {
+      return res.status(400).json({ ok: false, error: 'missing_colaboradorId_or_id' });
+    }
+    const json = await postNotifInboxLidas({ colaborador_id: colaboradorId, id });
+    res.json({ ok: true, data: json ?? {} });
+  } catch (err) {
+    console.error('[notificacoes/lida POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
+  }
+});
+
+// POST /api/notificacoes/lidas-todas  { colaboradorId, tipo? }
+router.post('/lidas-todas', async (req, res) => {
+  try {
+    const { colaboradorId, tipo } = req.body ?? {};
+    if (!colaboradorId) {
+      return res.status(400).json({ ok: false, error: 'missing_colaboradorId' });
+    }
+    const body = { colaborador_id: colaboradorId, todas: true };
+    if (tipo === 'alerta' || tipo === 'fluxo') body.tipo = tipo;
+    const json = await postNotifInboxLidas(body);
+    res.json({ ok: true, data: json ?? {} });
+  } catch (err) {
+    console.error('[notificacoes/lidas-todas POST] erro:', err.message);
+    res.status(writeErrorStatus(err)).json({ ok: false, error: 'write_failed', message: err.message });
   }
 });
 
