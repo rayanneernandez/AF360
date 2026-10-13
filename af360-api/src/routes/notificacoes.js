@@ -25,13 +25,47 @@ function mapRow(row) {
   };
 }
 
+// Igual ao painel web: tipo vazio conta como alerta. Como "tipo diferente de
+// fluxo" não pega vazio no banco, alerta = (tipo 'alerta') + (tipo vazio).
+function tipoFilters(tipo) {
+  return tipo === 'fluxo' ? [{ tipo: 'fluxo' }] : [{ tipo: 'alerta' }, { tipo__is: 'null' }];
+}
+
 function countNaoLidas(colaboradorId, tipo) {
-  return fetchTable('notif_inbox', {
-    select: 'id',
-    limit: 1,
-    count: true,
-    filters: { colaborador_id: colaboradorId, tipo, lido_em__is: 'null' },
-  }).then((json) => json?.count ?? 0);
+  return Promise.all(
+    tipoFilters(tipo).map((f) =>
+      fetchTable('notif_inbox', {
+        select: 'id',
+        limit: 1,
+        count: true,
+        filters: { colaborador_id: colaboradorId, ...f, lido_em__is: 'null' },
+      }).then((json) => json?.count ?? 0)
+    )
+  ).then((counts) => counts.reduce((a, b) => a + b, 0));
+}
+
+// Lista (e total) de um tipo, juntando as consultas de tipoFilters.
+async function listarPorTipo(colaboradorId, tipo, somenteNaoLidas, limit, offset) {
+  const parts = await Promise.all(
+    tipoFilters(tipo).map((f) => {
+      const filters = { colaborador_id: colaboradorId, ...f };
+      if (somenteNaoLidas) filters.lido_em__is = 'null';
+      return fetchTable('notif_inbox', {
+        select: SELECT,
+        filters,
+        order: 'created_at:desc',
+        limit: offset + limit,
+        offset: 0,
+        count: true,
+      });
+    })
+  );
+  const rows = parts
+    .flatMap((p) => p?.data || [])
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(offset, offset + limit);
+  const total = parts.reduce((acc, p) => acc + (p?.count ?? 0), 0);
+  return { data: rows, count: total };
 }
 
 // GET /api/notificacoes/inbox?colaboradorId=&tipo=alerta|fluxo&somenteNaoLidas=1&limit=&offset=
@@ -46,18 +80,8 @@ router.get('/inbox', async (req, res) => {
     const limit = Math.min(Math.max(Number(req.query.limit) || PAGE_SIZE_DEFAULT, 1), PAGE_SIZE_MAX);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
 
-    const filters = { colaborador_id: colaboradorId, tipo };
-    if (somenteNaoLidas) filters.lido_em__is = 'null';
-
     const [lista, naoLidasAlerta, naoLidasFluxo] = await Promise.all([
-      fetchTable('notif_inbox', {
-        select: SELECT,
-        filters,
-        order: 'created_at:desc',
-        limit,
-        offset,
-        count: true,
-      }),
+      listarPorTipo(colaboradorId, tipo, somenteNaoLidas, limit, offset),
       countNaoLidas(colaboradorId, 'alerta'),
       countNaoLidas(colaboradorId, 'fluxo'),
     ]);
