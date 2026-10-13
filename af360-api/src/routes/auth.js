@@ -24,25 +24,25 @@ const KNOWN_RH_EMAILS = ['marina.costa@americanfuel.com.br', 'rh@americanfuel.co
 // independente da flag GESTAO_ROLE_ENABLED (que é global e afetaria quem
 // ainda está com o build antigo publicado nas lojas). Tirar essa lista assim
 // que o build novo estiver aprovado nas duas lojas e a flag global for ligada.
-const KNOWN_GESTAO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br', 'suporte@americanfuel.com.br'];
+const KNOWN_GESTAO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
 // Mesmo padrão pro painel "Administrativo" (Operação: alvarás, manutenção,
 // almoxarifado, frota) — lição aprendida do crash de produção do Gestão:
 // SÓ libera pra quem testa via Expo/dev client, independente da flag global
 // (que afetaria quem ainda está com o build antigo publicado nas lojas).
 // Tirar essa lista assim que o build novo (com o painel Administrativo) for
 // aprovado nas duas lojas e a flag global for ligada.
-const KNOWN_ADMINISTRATIVO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br', 'suporte@americanfuel.com.br'];
+const KNOWN_ADMINISTRATIVO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
 // Mesmo padrão pro painel "Marketing & Fidelidade" (Ocorrências, WhatsApp,
 // Google, Notificações, Leva+) — SÓ libera pra quem testa via Expo/dev
 // client, independente da flag global. Tirar essa lista assim que o build
 // novo (com o painel Marketing) for aprovado nas duas lojas e a flag global
 // for ligada.
-const KNOWN_MARKETING_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br', 'suporte@americanfuel.com.br'];
+const KNOWN_MARKETING_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
 // Mesmo padrão pro painel "Recrutamento (R&S)" — SÓ libera pra quem testa via
 // Expo/dev client, independente da flag global. Tirar essa lista assim que o
 // build novo (com o painel Recrutamento) for aprovado nas duas lojas e a
 // flag global for ligada.
-const KNOWN_RECRUTAMENTO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br', 'suporte@americanfuel.com.br'];
+const KNOWN_RECRUTAMENTO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
 
 // normalizeModuleName/fetchEffectiveModules moram em ../permissions.js
 // (extraídas daqui em 27/07/2026 pra serem reaproveitadas por routes/admin.js
@@ -82,8 +82,16 @@ const MARKETING_ROLE_ENABLED = process.env.MARKETING_ROLE_ENABLED === 'true';
 // disponível nas duas lojas.
 const RECRUTAMENTO_ROLE_ENABLED = process.env.RECRUTAMENTO_ROLE_ENABLED === 'true';
 
-function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email }) {
+// clientRoles = painéis que o app que está logando declarou saber abrir
+// (campo supportedRoles do POST /login, mandado só pelos builds novos). Os
+// painéis atrás de flag (gestao/administrativo/marketing/recrutamento) passam
+// a valer pra esse app mesmo com a flag desligada — o build antigo das lojas
+// não manda esse campo, então continua sem receber role que ele não conhece
+// (e portanto sem o crash descrito acima). A flag ligada continua valendo
+// pra todo mundo, como antes.
+function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email, clientRoles = new Set() }) {
   const roles = new Set();
+  const canUse = (role, flagEnabled) => flagEnabled || clientRoles.has(role);
 
   // a) Sinal real e confiável: profiles.is_master = acesso total (é o badge
   // "Master" da tela Usuários, sempre acima de qualquer módulo) -> abre
@@ -94,10 +102,10 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
     roles.add('diretoria');
     roles.add('rh');
     roles.add('financeiro');
-    if (GESTAO_ROLE_ENABLED) roles.add('gestao');
-    if (ADMINISTRATIVO_ROLE_ENABLED) roles.add('administrativo');
-    if (MARKETING_ROLE_ENABLED) roles.add('marketing');
-    if (RECRUTAMENTO_ROLE_ENABLED) roles.add('recrutamento');
+    if (canUse('gestao', GESTAO_ROLE_ENABLED)) roles.add('gestao');
+    if (canUse('administrativo', ADMINISTRATIVO_ROLE_ENABLED)) roles.add('administrativo');
+    if (canUse('marketing', MARKETING_ROLE_ENABLED)) roles.add('marketing');
+    if (canUse('recrutamento', RECRUTAMENTO_ROLE_ENABLED)) roles.add('recrutamento');
   }
 
   // b) Sinal real pro resto: módulos efetivos (Cargo ∪ user_modules).
@@ -111,16 +119,16 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
   // "Gestão" (Vendas/Abastecimento/Margem/Encerrante) — ver GESTAO_ROLE_ENABLED
   // acima. normalizeModuleName já vira "Gestão" -> "gestao", mesmo módulo que
   // a Lovable já usa no painel web pra dar acesso a essa área.
-  if (GESTAO_ROLE_ENABLED && effectiveModules?.has('gestao')) roles.add('gestao');
+  if (canUse('gestao', GESTAO_ROLE_ENABLED) && effectiveModules?.has('gestao')) roles.add('gestao');
   // "Administrativo" (Alvarás/Manutenções/Almoxarifado/Frota) — ver
   // ADMINISTRATIVO_ROLE_ENABLED acima.
-  if (ADMINISTRATIVO_ROLE_ENABLED && effectiveModules?.has('administrativo')) roles.add('administrativo');
+  if (canUse('administrativo', ADMINISTRATIVO_ROLE_ENABLED) && effectiveModules?.has('administrativo')) roles.add('administrativo');
   // "Marketing & Fidelidade" (Ocorrências/WhatsApp/Google/Notificações/
   // Leva+) — ver MARKETING_ROLE_ENABLED acima.
-  if (MARKETING_ROLE_ENABLED && effectiveModules?.has('marketing')) roles.add('marketing');
+  if (canUse('marketing', MARKETING_ROLE_ENABLED) && effectiveModules?.has('marketing')) roles.add('marketing');
   // "Recrutamento" (R&S: vagas, candidatos, importar currículo) — ver
   // RECRUTAMENTO_ROLE_ENABLED acima.
-  if (RECRUTAMENTO_ROLE_ENABLED && effectiveModules?.has('recrutamento')) roles.add('recrutamento');
+  if (canUse('recrutamento', RECRUTAMENTO_ROLE_ENABLED) && effectiveModules?.has('recrutamento')) roles.add('recrutamento');
 
   // c) Ponte temporária por e-mail conhecido — só pra cobrir usuários de
   // teste cujo acesso ainda não tem os módulos certos configurados.
@@ -153,7 +161,8 @@ function resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email
 // POST /api/auth/login  { email, password }
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body || {};
+    const { email, password, supportedRoles } = req.body || {};
+    const clientRoles = new Set(Array.isArray(supportedRoles) ? supportedRoles.map(String) : []);
 
     if (!email || !password) {
       return res.status(400).json({ ok: false, error: 'missing_credentials' });
@@ -191,7 +200,7 @@ router.post('/login', async (req, res) => {
 
     const effectiveModules = await fetchEffectiveModules({ fetchTable, role: roleRow, userId });
 
-    const availableRoles = resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email });
+    const availableRoles = resolveAvailableRoles({ profile, effectiveModules, rhColaborador, email, clientRoles });
     // 'role' fica como o principal/sugerido, só por compatibilidade com quem
     // ainda ler esse campo isolado — o app decide tudo pelo array agora.
     const role = availableRoles[0] ?? 'colaborador';
