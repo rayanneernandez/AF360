@@ -24,25 +24,25 @@ const KNOWN_RH_EMAILS = ['marina.costa@americanfuel.com.br', 'rh@americanfuel.co
 // independente da flag GESTAO_ROLE_ENABLED (que é global e afetaria quem
 // ainda está com o build antigo publicado nas lojas). Tirar essa lista assim
 // que o build novo estiver aprovado nas duas lojas e a flag global for ligada.
-const KNOWN_GESTAO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
+const KNOWN_GESTAO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br', 'suporte@americanfuel.com.br'];
 // Mesmo padrão pro painel "Administrativo" (Operação: alvarás, manutenção,
 // almoxarifado, frota) — lição aprendida do crash de produção do Gestão:
 // SÓ libera pra quem testa via Expo/dev client, independente da flag global
 // (que afetaria quem ainda está com o build antigo publicado nas lojas).
 // Tirar essa lista assim que o build novo (com o painel Administrativo) for
 // aprovado nas duas lojas e a flag global for ligada.
-const KNOWN_ADMINISTRATIVO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
+const KNOWN_ADMINISTRATIVO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br', 'suporte@americanfuel.com.br'];
 // Mesmo padrão pro painel "Marketing & Fidelidade" (Ocorrências, WhatsApp,
 // Google, Notificações, Leva+) — SÓ libera pra quem testa via Expo/dev
 // client, independente da flag global. Tirar essa lista assim que o build
 // novo (com o painel Marketing) for aprovado nas duas lojas e a flag global
 // for ligada.
-const KNOWN_MARKETING_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
+const KNOWN_MARKETING_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br', 'suporte@americanfuel.com.br'];
 // Mesmo padrão pro painel "Recrutamento (R&S)" — SÓ libera pra quem testa via
 // Expo/dev client, independente da flag global. Tirar essa lista assim que o
 // build novo (com o painel Recrutamento) for aprovado nas duas lojas e a
 // flag global for ligada.
-const KNOWN_RECRUTAMENTO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br'];
+const KNOWN_RECRUTAMENTO_TEST_EMAILS = ['rayanne.ernandez@globaltera.com.br', 'administrador@americanfuel.com.br', 'suporte@americanfuel.com.br'];
 
 // normalizeModuleName/fetchEffectiveModules moram em ../permissions.js
 // (extraídas daqui em 27/07/2026 pra serem reaproveitadas por routes/admin.js
