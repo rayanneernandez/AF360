@@ -37,6 +37,7 @@ import {
   marketingUser,
   marketingUserInitials,
   AuthIdentityContext,
+  ModuleProfileScreen,
   ToggleSwitch,
   NotificationRoutineFormModal,
   TemplateFormModal,
@@ -3919,33 +3920,7 @@ export function MarketingNotificationsScreen({ navigation }: ScreenProps<'Market
 // --- 7. Perfil ---
 
 export function MarketingProfileScreen({ navigation }: ScreenProps<'MarketingProfile'>) {
-  return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <View style={styles.topBarContainer}>
-        <TopBar initials={marketingUserInitials} variant="marketing" />
-      </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <MktPageHeader icon="user" title="Meu Perfil" subtitle={marketingUser.accessLabel} />
-        <View style={mkStyles.profileCard}>
-          <View style={mkStyles.profileAvatarShell}>
-            <Text style={mkStyles.profileAvatarText}>{marketingUserInitials}</Text>
-          </View>
-          <Text style={mkStyles.profileName}>{marketingUser.fullName}</Text>
-          <Text style={mkStyles.profileRole}>{marketingUser.roleAndUnit}</Text>
-
-          <View style={mkStyles.profileFieldRow}>
-            <Feather name="mail" size={14} color="#7C8397" />
-            <Text style={mkStyles.profileFieldText}>{marketingUser.email}</Text>
-          </View>
-          <View style={mkStyles.profileFieldRow}>
-            <Feather name="phone" size={14} color="#7C8397" />
-            <Text style={mkStyles.profileFieldText}>{marketingUser.phone}</Text>
-          </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  return <ModuleProfileScreen navigation={navigation} variant="marketing" />;
 }
 
 // --- 8. Configurações (SLA, horário de atendimento, feriados, integrações) ---

@@ -15,6 +15,7 @@ import {
   financeiroUser,
   financeiroUserInitials,
   AuthIdentityContext,
+  ModuleProfileScreen,
   ToggleSwitch,
   NotificationRoutineFormModal,
   TemplateFormModal,
@@ -4183,33 +4184,7 @@ export function FinanceiroConfiguracoesScreen({ navigation }: ScreenProps<'Finan
 }
 
 export function FinanceiroProfileScreen({ navigation }: ScreenProps<'FinanceiroProfile'>) {
-  return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <View style={styles.topBarContainer}>
-        <TopBar initials={financeiroUserInitials} variant="financeiro" />
-      </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <FinanceiroPageHeader icon="user" title="Meu Perfil" subtitle={financeiroUser.accessLabel} />
-        <View style={fnStyles.profileCard}>
-          <View style={fnStyles.profileAvatarShell}>
-            <Text style={fnStyles.profileAvatarText}>{financeiroUserInitials}</Text>
-          </View>
-          <Text style={fnStyles.profileName}>{financeiroUser.fullName}</Text>
-          <Text style={fnStyles.profileRole}>{financeiroUser.roleAndUnit}</Text>
-
-          <View style={fnStyles.profileFieldRow}>
-            <Feather name="mail" size={14} color="#7C8397" />
-            <Text style={fnStyles.profileFieldText}>{financeiroUser.email}</Text>
-          </View>
-          <View style={fnStyles.profileFieldRow}>
-            <Feather name="phone" size={14} color="#7C8397" />
-            <Text style={fnStyles.profileFieldText}>{financeiroUser.phone}</Text>
-          </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  return <ModuleProfileScreen navigation={navigation} variant="financeiro" />;
 }
 
 const fnStyles = StyleSheet.create({

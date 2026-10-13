@@ -32,6 +32,7 @@ import {
 import {
   ActivityIndicator,
   Alert,
+  type AlertButton,
   Animated,
   AppState,
   Image,
@@ -372,21 +373,93 @@ export type RootStackParamList = {
 };
 
 // No navegador (react-native-web) o Alert.alert é uma função vazia — erros de
-// login, confirmações de exclusão etc. simplesmente não aparecem. Aqui ele passa
-// a usar os diálogos do próprio navegador; no celular (iOS/Android) nada muda.
+// login, confirmações de exclusão etc. simplesmente não aparecem. Aqui ele
+// passa a abrir um modal do próprio app (WebAlertHost, montado na raiz); no
+// celular (iOS/Android) nada muda, continua o alerta nativo.
+type WebAlertRequest = {
+  title: string;
+  message?: string;
+  buttons: AlertButton[];
+};
+let webAlertListener: ((request: WebAlertRequest) => void) | null = null;
+const webAlertPending: WebAlertRequest[] = [];
+
 if (Platform.OS === 'web' && typeof window !== 'undefined') {
   Alert.alert = (title, message, buttons) => {
-    const texto = [title, message].filter(Boolean).join('\n\n');
-    if (!buttons || buttons.length <= 1) {
-      window.alert(texto);
-      buttons?.[0]?.onPress?.();
-      return;
-    }
-    const cancelar = buttons.find((button) => button.style === 'cancel');
-    const confirmar = buttons.find((button) => button !== cancelar) ?? buttons[0];
-    if (window.confirm(texto)) confirmar.onPress?.();
-    else cancelar?.onPress?.();
+    const request: WebAlertRequest = {
+      title,
+      message,
+      buttons: buttons && buttons.length > 0 ? buttons : [{ text: 'OK' }],
+    };
+    if (webAlertListener) webAlertListener(request);
+    else webAlertPending.push(request);
   };
+}
+
+const webAlertStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(15,20,40,0.5)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  card: { width: '100%', maxWidth: 380, backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 22, paddingTop: 24, paddingBottom: 18 },
+  iconCircle: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 14 },
+  title: { fontSize: 17, fontWeight: '800', color: '#15203E', textAlign: 'center' },
+  message: { fontSize: 14, color: '#5E667D', textAlign: 'center', lineHeight: 20, marginTop: 8 },
+  buttonsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 20 },
+  button: { flexGrow: 1, flexBasis: 120, alignItems: 'center', justifyContent: 'center', borderRadius: 12, paddingVertical: 13, paddingHorizontal: 14 },
+  buttonText: { fontSize: 14, fontWeight: '800' },
+});
+
+function WebAlertHost() {
+  const [queue, setQueue] = useState<WebAlertRequest[]>([]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return undefined;
+    webAlertListener = (request) => setQueue((current) => [...current, request]);
+    if (webAlertPending.length > 0) setQueue((current) => [...current, ...webAlertPending.splice(0)]);
+    return () => {
+      webAlertListener = null;
+    };
+  }, []);
+
+  const current = queue[0];
+  if (Platform.OS !== 'web' || !current) return null;
+
+  const cancelButton = current.buttons.find((button) => button.style === 'cancel');
+  const hasDestructive = current.buttons.some((button) => button.style === 'destructive');
+  const close = (button?: WebAlertRequest['buttons'][number]) => {
+    setQueue((items) => items.slice(1));
+    button?.onPress?.();
+  };
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={() => close(cancelButton)}>
+      <View style={webAlertStyles.backdrop}>
+        <View style={webAlertStyles.card}>
+          <View style={[webAlertStyles.iconCircle, { backgroundColor: hasDestructive ? '#FCEAEA' : '#E8EEF6' }]}>
+            <Feather
+              name={hasDestructive ? 'alert-triangle' : current.buttons.length > 1 ? 'help-circle' : 'info'}
+              size={22}
+              color={hasDestructive ? '#E6213D' : '#1F3A5F'}
+            />
+          </View>
+          <Text style={webAlertStyles.title}>{current.title}</Text>
+          {current.message ? <Text style={webAlertStyles.message}>{current.message}</Text> : null}
+          <View style={webAlertStyles.buttonsRow}>
+            {current.buttons.map((button, index) => {
+              const isCancel = button.style === 'cancel';
+              const isDestructive = button.style === 'destructive';
+              const isPrimary = !isCancel && !isDestructive && (current.buttons.length === 1 || index === current.buttons.length - 1);
+              const backgroundColor = isDestructive ? '#E6213D' : isPrimary ? '#E0002A' : '#EEF0F5';
+              const color = isCancel || (!isDestructive && !isPrimary) ? '#3D4560' : '#FFFFFF';
+              return (
+                <Pressable key={`${button.text}-${index}`} style={[webAlertStyles.button, { backgroundColor }]} onPress={() => close(button)}>
+                  <Text style={[webAlertStyles.buttonText, { color }]}>{button.text ?? 'OK'}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 export type ScreenProps<RouteName extends keyof RootStackParamList> = NativeStackScreenProps<
@@ -3321,6 +3394,7 @@ export default function App() {
                   ) : null}
                 </View>
               </NavigationContainer>
+              <WebAlertHost />
             </MenuContext.Provider>
           </TrainingProgressContext.Provider>
         </SecurityPreferencesContext.Provider>
@@ -8492,6 +8566,84 @@ export function buildColaboradorProfileSummary(
     { label: 'E-mail', value: f(row?.email_corporativo ?? row?.email_pessoal ?? identity?.email) },
     { label: 'Telefone', value: f(row?.telefone ?? row?.celular) },
   ];
+}
+
+// Tela "Meu Perfil" padrão dos painéis de módulo — mesmo layout da Diretoria,
+// com os dados reais de quem está logado.
+export function ModuleProfileScreen({
+  navigation,
+  variant,
+}: {
+  navigation: NativeStackNavigationProp<RootStackParamList, any>;
+  variant: 'gestao' | 'financeiro' | 'marketing' | 'administrativo' | 'recrutamento';
+}) {
+  const { identity, setIdentity } = useContext(AuthIdentityContext);
+  const { perfil, isLoading, errorMessage } = useContext(ColaboradorPerfilContext);
+  const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const name = perfil?.nome_completo || identity?.fullName || identity?.email || '—';
+  const roleLine = [perfil?.cargo, perfil?.posto_trabalho]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ');
+  const initials = getInitials(name === '—' ? 'AF' : name);
+  const fields = buildColaboradorProfileSummary(perfil, identity);
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={initials} variant={variant} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <LinearGradient colors={['#2F4EA8', '#4C439E']} style={styles.directorProfileHero}>
+          <View style={styles.directorProfileBadge}>
+            <Text style={styles.directorProfileBadgeText}>{initials}</Text>
+          </View>
+          <View>
+            <Text style={styles.directorProfileName}>{name}</Text>
+            <Text style={styles.directorProfileRole}>{roleLine || identity?.email || '—'}</Text>
+          </View>
+        </LinearGradient>
+
+        {!colaboradorId ? (
+          <View style={styles.directorProfileCard}>
+            <View style={styles.directorProfileRow}>
+              <Text style={styles.directorProfileLabel}>E-mail</Text>
+              <Text style={styles.directorProfileValue}>{identity?.email || '—'}</Text>
+            </View>
+          </View>
+        ) : isLoading && !perfil ? (
+          <Text style={styles.conversaEmptyText}>Carregando seu perfil...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+        ) : (
+          <View style={styles.directorProfileCard}>
+            {fields.map((item, index) => (
+              <View
+                key={item.label}
+                style={[styles.directorProfileRow, index < fields.length - 1 ? styles.directorProfileRowBorder : null]}
+              >
+                <Text style={styles.directorProfileLabel}>{item.label}</Text>
+                <Text style={styles.directorProfileValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {hasMultiplePanels ? (
+          <Pressable style={styles.switchPanelButton} onPress={() => navigation.replace('SelectPanel')}>
+            <Feather name="repeat" size={16} color="#29448D" />
+            <Text style={styles.switchPanelButtonText}>Voltar para o Início</Text>
+          </Pressable>
+        ) : null}
+
+        <Pressable style={styles.directorLogoutButton} onPress={() => performLogout(navigation, setIdentity)}>
+          <Text style={styles.directorLogoutButtonText}>Sair da conta</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
 
 function buildColaboradorProfileSections(

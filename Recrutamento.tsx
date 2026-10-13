@@ -32,6 +32,7 @@ import {
   setAudioModeAsync,
 } from 'expo-audio';
 import {
+  ModuleProfileScreen,
   styles,
   TopBar,
   recrutamentoUser,
@@ -8062,41 +8063,7 @@ export function RecrutamentoConfiguracoesScreen({ navigation }: ScreenProps<'Rec
 // ============================================================
 
 export function RecrutamentoProfileScreen({ navigation }: ScreenProps<'RecrutamentoProfile'>) {
-  return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <View style={styles.topBarContainer}>
-        <TopBar initials={recrutamentoUserInitials} variant="recrutamento" />
-      </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <RsPageHeader icon="user" title="Meu Perfil" subtitle={recrutamentoUser.accessLabel} />
-        <View style={rsStyles.chartCard}>
-          <View style={rsStyles.profileAvatar}>
-            <Text style={rsStyles.profileAvatarText}>{recrutamentoUserInitials}</Text>
-          </View>
-          <Text style={rsStyles.profileName}>{recrutamentoUser.fullName}</Text>
-          <Text style={rsStyles.profileRole}>{recrutamentoUser.roleAndUnit}</Text>
-          <View style={rsStyles.profileFieldRow}>
-            <Feather name="mail" size={14} color="#5E667D" />
-            <Text style={rsStyles.profileFieldText}>{recrutamentoUser.email}</Text>
-          </View>
-          <View style={rsStyles.profileFieldRow}>
-            <Feather name="phone" size={14} color="#5E667D" />
-            <Text style={rsStyles.profileFieldText}>{recrutamentoUser.phone}</Text>
-          </View>
-        </View>
-        <Pressable
-          style={rsStyles.dangerButton}
-          onPress={() => {
-            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-          }}
-        >
-          <Feather name="log-out" size={15} color="#E6213D" />
-          <Text style={rsStyles.dangerButtonText}>Sair da conta</Text>
-        </Pressable>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  return <ModuleProfileScreen navigation={navigation} variant="recrutamento" />;
 }
 
 // ============================================================

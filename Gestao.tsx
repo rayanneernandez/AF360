@@ -11,6 +11,7 @@ import {
   gestaoUser,
   gestaoUserInitials,
   AuthIdentityContext,
+  ModuleProfileScreen,
   ToggleSwitch,
   NotificationRoutineFormModal,
   TemplateFormModal,
@@ -1553,33 +1554,7 @@ export function GestaoConfiguracoesScreen({ navigation }: ScreenProps<'GestaoCon
 // --- Perfil ---
 
 export function GestaoProfileScreen({ navigation }: ScreenProps<'GestaoProfile'>) {
-  return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <View style={styles.topBarContainer}>
-        <TopBar initials={gestaoUserInitials} variant="gestao" />
-      </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <GestaoPageHeader icon="user" title="Meu Perfil" subtitle={gestaoUser.accessLabel} />
-        <View style={gsStyles.profileCard}>
-          <View style={gsStyles.profileAvatarShell}>
-            <Text style={gsStyles.profileAvatarText}>{gestaoUserInitials}</Text>
-          </View>
-          <Text style={gsStyles.profileName}>{gestaoUser.fullName}</Text>
-          <Text style={gsStyles.profileRole}>{gestaoUser.roleAndUnit}</Text>
-
-          <View style={gsStyles.profileFieldRow}>
-            <Feather name="mail" size={14} color="#7C8397" />
-            <Text style={gsStyles.profileFieldText}>{gestaoUser.email}</Text>
-          </View>
-          <View style={gsStyles.profileFieldRow}>
-            <Feather name="phone" size={14} color="#7C8397" />
-            <Text style={gsStyles.profileFieldText}>{gestaoUser.phone}</Text>
-          </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  return <ModuleProfileScreen navigation={navigation} variant="gestao" />;
 }
 
 const gsStyles = StyleSheet.create({

@@ -11,6 +11,7 @@ import {
   administrativoUser,
   administrativoUserInitials,
   AuthIdentityContext,
+  ModuleProfileScreen,
   ToggleSwitch,
   NotificationRoutineFormModal,
   TemplateFormModal,
@@ -1999,33 +2000,7 @@ export function AdministrativoNotificationsScreen({ navigation }: ScreenProps<'A
 // --- Perfil ---
 
 export function AdministrativoProfileScreen({ navigation }: ScreenProps<'AdministrativoProfile'>) {
-  return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <View style={styles.topBarContainer}>
-        <TopBar initials={administrativoUserInitials} variant="administrativo" />
-      </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <AdmPageHeader icon="user" title="Meu Perfil" subtitle={administrativoUser.accessLabel} />
-        <View style={adStyles.profileCard}>
-          <View style={adStyles.profileAvatarShell}>
-            <Text style={adStyles.profileAvatarText}>{administrativoUserInitials}</Text>
-          </View>
-          <Text style={adStyles.profileName}>{administrativoUser.fullName}</Text>
-          <Text style={adStyles.profileRole}>{administrativoUser.roleAndUnit}</Text>
-
-          <View style={adStyles.profileFieldRow}>
-            <Feather name="mail" size={14} color="#7C8397" />
-            <Text style={adStyles.profileFieldText}>{administrativoUser.email}</Text>
-          </View>
-          <View style={adStyles.profileFieldRow}>
-            <Feather name="phone" size={14} color="#7C8397" />
-            <Text style={adStyles.profileFieldText}>{administrativoUser.phone}</Text>
-          </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  return <ModuleProfileScreen navigation={navigation} variant="administrativo" />;
 }
 
 const adStyles = StyleSheet.create({
