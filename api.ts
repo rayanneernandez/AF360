@@ -1938,8 +1938,25 @@ export type AuthIdentity = {
   mustChangePassword: boolean;
 };
 
+// Painéis que ESTE build do app sabe abrir. O backend só devolve os painéis
+// atrás de flag (gestao/administrativo/marketing/recrutamento) pra quem
+// declara suportá-los — o build antigo das lojas não manda esse campo e por
+// isso nunca recebe um painel que ele não conhece (o que o derrubava). Manter
+// em sincronia com UserRole/PANEL_OPTION_META em App.tsx.
+const APP_SUPPORTED_ROLES = [
+  'colaborador',
+  'diretoria',
+  'rh',
+  'administrador',
+  'financeiro',
+  'gestao',
+  'administrativo',
+  'marketing',
+  'recrutamento',
+];
+
 export async function login(email: string, password: string): Promise<AuthIdentity> {
-  const json = await api.post('/api/auth/login', { email, password });
+  const json = await api.post('/api/auth/login', { email, password, supportedRoles: APP_SUPPORTED_ROLES });
   return json.data as AuthIdentity;
 }
 
@@ -2159,6 +2176,63 @@ export type ColaboradorNotificacoesDetalhe = { items: ColaboradorNotificacaoItem
 export async function fetchColaboradorNotificacoes(colaboradorId: string): Promise<ColaboradorNotificacoesDetalhe> {
   const json = await api.get(`/api/rh/dashboard/notificacoes?colaboradorId=${encodeURIComponent(colaboradorId)}`);
   return json.data as ColaboradorNotificacoesDetalhe;
+}
+
+// --- Caixa de notificações (Alertas / Fluxos) — mesma tabela notif_inbox do
+// sino do painel web, vale pra todos os perfis (confirmado pela Lovable em
+// 13/10/2026). tag = coluna modulo (ex.: n8n-ranking-gerente); anexoUrl é um
+// link temporário de um único PDF. ---
+
+export type NotificacaoInboxTipo = 'alerta' | 'fluxo';
+
+export type NotificacaoInboxItem = {
+  id: string;
+  titulo: string;
+  mensagem: string;
+  tag: string | null;
+  tipo: NotificacaoInboxTipo;
+  anexoUrl: string | null;
+  createdAt: string | null;
+  unread: boolean;
+};
+
+export type NotificacaoInboxPagina = {
+  items: NotificacaoInboxItem[];
+  total: number;
+  naoLidas: Record<NotificacaoInboxTipo, number>;
+};
+
+export async function fetchNotificacoesInbox(params: {
+  colaboradorId: string;
+  tipo: NotificacaoInboxTipo;
+  somenteNaoLidas?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<NotificacaoInboxPagina> {
+  const query = [
+    `colaboradorId=${encodeURIComponent(params.colaboradorId)}`,
+    `tipo=${params.tipo}`,
+    params.somenteNaoLidas ? 'somenteNaoLidas=1' : null,
+    params.limit ? `limit=${params.limit}` : null,
+    params.offset ? `offset=${params.offset}` : null,
+  ]
+    .filter(Boolean)
+    .join('&');
+  const json = await api.get(`/api/notificacoes/inbox?${query}`);
+  return json.data as NotificacaoInboxPagina;
+}
+
+export async function marcarNotificacaoLida(body: { colaboradorId: string; id: string }): Promise<void> {
+  await api.post('/api/notificacoes/lida', body);
+}
+
+// Sem tipo marca as das duas abas, igual ao "Marcar todas como lidas" do painel.
+export async function marcarNotificacoesLidas(body: {
+  colaboradorId: string;
+  tipo?: NotificacaoInboxTipo;
+}): Promise<{ atualizadas: number }> {
+  const json = await api.post('/api/notificacoes/lidas-todas', body);
+  return { atualizadas: Number((json.data as { atualizadas?: number } | undefined)?.atualizadas ?? 0) };
 }
 
 // --- Colaborador (self-service): Contra-cheques (histórico completo) ---

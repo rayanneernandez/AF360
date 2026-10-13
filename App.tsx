@@ -1,4 +1,4 @@
-import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Component, createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useEventListener } from 'expo';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -167,6 +167,9 @@ import {
   fetchColaboradorTreinamentos,
   fetchColaboradorBeneficios,
   fetchColaboradorNotificacoes,
+  fetchNotificacoesInbox,
+  marcarNotificacaoLida,
+  marcarNotificacoesLidas,
   fetchColaboradorContracheques,
   fetchRhColaboradorDetalhe,
   type RhColaboradorRaw,
@@ -196,6 +199,8 @@ import {
   type ColaboradorTreinamentoItem,
   type ColaboradorBeneficioItem,
   type ColaboradorNotificacaoItem,
+  type NotificacaoInboxItem,
+  type NotificacaoInboxTipo,
   type ColaboradorContrachequeItem,
   type AdminTemaItem,
   fetchAdminTemas,
@@ -261,7 +266,7 @@ export type RootStackParamList = {
   Reimbursement: undefined;
   Payslips: undefined;
   Approvals: undefined;
-  Notifications: undefined;
+  Notifications: { role?: UserRole } | undefined;
   Requests: undefined;
   Communications: undefined;
   Profile: undefined;
@@ -365,6 +370,24 @@ export type RootStackParamList = {
   RecrutamentoNotifications: undefined;
   RecrutamentoConfiguracoes: undefined;
 };
+
+// No navegador (react-native-web) o Alert.alert é uma função vazia — erros de
+// login, confirmações de exclusão etc. simplesmente não aparecem. Aqui ele passa
+// a usar os diálogos do próprio navegador; no celular (iOS/Android) nada muda.
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  Alert.alert = (title, message, buttons) => {
+    const texto = [title, message].filter(Boolean).join('\n\n');
+    if (!buttons || buttons.length <= 1) {
+      window.alert(texto);
+      buttons?.[0]?.onPress?.();
+      return;
+    }
+    const cancelar = buttons.find((button) => button.style === 'cancel');
+    const confirmar = buttons.find((button) => button !== cancelar) ?? buttons[0];
+    if (window.confirm(texto)) confirmar.onPress?.();
+    else cancelar?.onPress?.();
+  };
+}
 
 export type ScreenProps<RouteName extends keyof RootStackParamList> = NativeStackScreenProps<
   RootStackParamList,
@@ -3435,29 +3458,6 @@ function getDashboardRouteForRole(role: UserRole): keyof RootStackParamList {
     : role === 'recrutamento'
     ? 'RecrutamentoDashboard'
     : 'Dashboard';
-}
-
-// Cada painel tem sua própria tela de notificações (mesmo padrão de
-// getDashboardRouteForRole) — usado pelo sino do TopBar pra abrir a tela
-// certa conforme o perfil ativo, em vez de sempre a do Colaborador.
-function getNotificationsRouteForRole(role: UserRole): keyof RootStackParamList {
-  return role === 'diretoria'
-    ? 'DirectorNotifications'
-    : role === 'rh'
-    ? 'RHNotifications'
-    : role === 'administrador'
-    ? 'AdminNotifications'
-    : role === 'financeiro'
-    ? 'FinanceiroNotifications'
-    : role === 'gestao'
-    ? 'GestaoNotifications'
-    : role === 'administrativo'
-    ? 'AdministrativoNotifications'
-    : role === 'marketing'
-    ? 'MarketingNotifications'
-    : role === 'recrutamento'
-    ? 'RecrutamentoNotifications'
-    : 'Notifications';
 }
 
 // Decide se pede o código de 2FA (só se a preferência estiver ligada E a
@@ -7506,7 +7506,7 @@ function ApprovalsScreen({ navigation }: ScreenProps<'Approvals'>) {
 // null quando nada bate (mantém o Alert com o texto completo como fallback
 // honesto, em vez de arriscar navegar pro lugar errado).
 function getColaboradorNotificationTargetRoute(
-  item: ColaboradorNotificacaoItem
+  item: { titulo: string; mensagem: string }
 ): keyof RootStackParamList | null {
   const texto = `${item.titulo} ${item.mensagem}`.toLowerCase();
 
@@ -7522,67 +7522,406 @@ function getColaboradorNotificationTargetRoute(
   return null;
 }
 
-function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>) {
-  const { identity } = useContext(AuthIdentityContext);
-  const colaboradorId = identity?.colaboradorId ?? null;
+// Caixa de notificações compartilhada por todos os perfis (Alertas / Fluxos),
+// espelhando o sino do painel web — mesma tabela notif_inbox, identificada
+// pelo colaborador_id (confirmado pela Lovable em 13/10/2026). "Marcar como
+// lida" grava no servidor (recurso notif-inbox-lidas); o
+// NotificationsReadContext guarda a marcação local enquanto isso.
+const NOTIF_INBOX_PAGE_SIZE = 30;
+
+// Guarda, por id, de qual aba a notificação é e se veio não lida do servidor —
+// o contador das abas desconta as que já foram marcadas como lidas
+// localmente, mesmo as de páginas/abas que não estão na tela agora.
+const notifInboxMeta = new Map<string, { tipo: NotificacaoInboxTipo; unread: boolean }>();
+
+function registrarNotifInboxMeta(lista: NotificacaoInboxItem[]) {
+  lista.forEach((item) => notifInboxMeta.set(item.id, { tipo: item.tipo, unread: item.unread }));
+}
+
+function formatNotifInboxDateTime(iso: string | null): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+const inboxStyles = StyleSheet.create({
+  actionsRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 10 },
+  markAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  markAllText: { fontSize: 12, fontWeight: '700', color: '#15203E' },
+  tabsRow: { flexDirection: 'row', backgroundColor: '#E9ECF3', borderRadius: 12, padding: 3, marginBottom: 12 },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  tabButtonActive: { backgroundColor: '#FFFFFF' },
+  tabText: { fontSize: 13, fontWeight: '700', color: '#7C8397' },
+  tabTextActive: { color: '#15203E' },
+  tabBadge: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: '#E6213D', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  tabBadgeText: { fontSize: 11, fontWeight: '800', color: '#FFFFFF' },
+  card: { backgroundColor: '#FFFFFF', borderRadius: 14, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 14, paddingVertical: 14 },
+  rowBorder: { borderTopWidth: 1, borderTopColor: '#EEF0F5' },
+  dotSlot: { width: 10, paddingTop: 6 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E6213D' },
+  rowTitle: { fontSize: 14, fontWeight: '800', color: '#15203E' },
+  rowPreview: { fontSize: 12.5, color: '#5E667D', marginTop: 3, lineHeight: 17 },
+  rowMetaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  tagChip: { backgroundColor: '#EEF0F5', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  tagChipText: { fontSize: 11, fontWeight: '700', color: '#3D4560' },
+  rowDate: { fontSize: 11.5, color: '#7C8397' },
+  loadMoreButton: { alignSelf: 'center', marginVertical: 12, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: '#E8EEF6' },
+  loadMoreText: { fontSize: 12, fontWeight: '800', color: '#1F3A5F' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(15,20,40,0.45)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  modalCard: { width: '100%', maxWidth: 640, maxHeight: '88%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
+  modalTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: '#15203E' },
+  modalBody: { fontSize: 14, color: '#15203E', lineHeight: 21 },
+  attachmentBox: { marginTop: 14 },
+  attachmentButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  attachmentButtonText: { fontSize: 12, fontWeight: '700', color: '#15203E' },
+  attachmentHint: { fontSize: 11.5, color: '#7C8397', marginTop: 8 },
+  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+  footerButton: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#E8EEF6' },
+  footerButtonText: { fontSize: 12.5, fontWeight: '800', color: '#1F3A5F' },
+  footerButtonPrimary: { backgroundColor: '#1F3A5F' },
+  footerButtonPrimaryText: { color: '#FFFFFF' },
+});
+
+function NotificationsInbox({
+  colaboradorId,
+  getRelatedAction,
+}: {
+  colaboradorId: string | null;
+  getRelatedAction?: (item: NotificacaoInboxItem) => (() => void) | null;
+}) {
+  const isFocused = useIsFocused();
   const { readNotificationIds, markNotificationAsRead } = useContext(NotificationsReadContext);
 
-  const [items, setItems] = useState<ColaboradorNotificacaoItem[]>([]);
+  const [aba, setAba] = useState<NotificacaoInboxTipo>('alerta');
+  const [items, setItems] = useState<NotificacaoInboxItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [naoLidasServidor, setNaoLidasServidor] = useState<Record<NotificacaoInboxTipo, number>>({ alerta: 0, fluxo: 0 });
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMais, setIsLoadingMais] = useState(false);
+  const [isMarcandoTodas, setIsMarcandoTodas] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selecionada, setSelecionada] = useState<NotificacaoInboxItem | null>(null);
 
-  useEffect(() => {
-    if (!colaboradorId) {
-      setItems([]);
-      setErrorMessage(null);
-      return;
-    }
-
-    let isActive = true;
+  const carregar = useCallback(() => {
+    if (!colaboradorId) return;
     setIsLoading(true);
     setErrorMessage(null);
-
-    fetchColaboradorNotificacoes(colaboradorId)
-      .then((data) => {
-        if (isActive) setItems(data.items);
+    fetchNotificacoesInbox({ colaboradorId, tipo: aba, limit: NOTIF_INBOX_PAGE_SIZE })
+      .then((pagina) => {
+        registrarNotifInboxMeta(pagina.items);
+        setItems(pagina.items);
+        setTotal(pagina.total);
+        setNaoLidasServidor(pagina.naoLidas);
       })
-      .catch((err) => {
-        if (isActive) {
-          setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar suas notificações.');
-        }
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar suas notificações.'))
+      .finally(() => setIsLoading(false));
+  }, [colaboradorId, aba]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    carregar();
+  }, [carregar, isFocused]);
+
+  const carregarMais = () => {
+    if (!colaboradorId || isLoadingMais) return;
+    setIsLoadingMais(true);
+    fetchNotificacoesInbox({ colaboradorId, tipo: aba, limit: NOTIF_INBOX_PAGE_SIZE, offset: items.length })
+      .then((pagina) => {
+        registrarNotifInboxMeta(pagina.items);
+        setItems((current) => [...current, ...pagina.items]);
+        setTotal(pagina.total);
+        setNaoLidasServidor(pagina.naoLidas);
       })
-      .finally(() => {
-        if (isActive) setIsLoading(false);
-      });
+      .catch((err) => Alert.alert('Erro', err instanceof Error ? err.message : 'Não foi possível carregar mais notificações.'))
+      .finally(() => setIsLoadingMais(false));
+  };
 
-    return () => {
-      isActive = false;
-    };
-  }, [colaboradorId]);
+  const naoLidasExibidas = (tipo: NotificacaoInboxTipo) => {
+    let lidasLocalmente = 0;
+    Object.keys(readNotificationIds).forEach((id) => {
+      const meta = notifInboxMeta.get(id);
+      if (meta && meta.unread && meta.tipo === tipo) lidasLocalmente += 1;
+    });
+    return Math.max(0, naoLidasServidor[tipo] - lidasLocalmente);
+  };
 
-  // notif_inbox só guarda `modulo` (texto livre e genérico — normalmente
-  // sempre "rh", não dá pra saber a tela exata só por ele). Em vez de
-  // depender disso, olha por palavras-chave no título/mensagem pra decidir
-  // pra onde navegar; se não reconhecer nenhuma, cai no comportamento antigo
-  // (mostra o conteúdo completo num Alert) em vez de arriscar ir pro lugar
-  // errado.
-  const handleNotificationPress = (item: ColaboradorNotificacaoItem) => {
+  const isNaoLida = (item: NotificacaoInboxItem) => item.unread && !readNotificationIds[item.id];
+
+  // Marca já na tela (contexto local) e grava no servidor em seguida. Se a
+  // gravação falhar, a marcação continua só local — não vale incomodar a
+  // pessoa com um alerta toda vez que ela abre uma notificação.
+  const marcarComoLida = (item: NotificacaoInboxItem) => {
+    if (!colaboradorId || !item.unread || readNotificationIds[item.id]) return;
     markNotificationAsRead(item.id);
+    marcarNotificacaoLida({ colaboradorId, id: item.id })
+      .then(() => {
+        const meta = notifInboxMeta.get(item.id);
+        if (meta) meta.unread = false;
+        setItems((current) => current.map((i) => (i.id === item.id ? { ...i, unread: false } : i)));
+        setNaoLidasServidor((current) => ({ ...current, [item.tipo]: Math.max(0, current[item.tipo] - 1) }));
+      })
+      .catch((err) => console.warn('[notificacoes] não gravou como lida:', err instanceof Error ? err.message : err));
+  };
 
+  const abrir = (item: NotificacaoInboxItem) => {
+    setSelecionada(item);
+    marcarComoLida(item);
+  };
+
+  // Igual ao painel web: marca as não lidas das duas abas de uma vez.
+  const marcarTodas = () => {
+    if (!colaboradorId || isMarcandoTodas) return;
+    setIsMarcandoTodas(true);
+    marcarNotificacoesLidas({ colaboradorId })
+      .then(() => {
+        notifInboxMeta.forEach((meta) => {
+          meta.unread = false;
+        });
+        setItems((current) => current.map((i) => ({ ...i, unread: false })));
+        setNaoLidasServidor({ alerta: 0, fluxo: 0 });
+      })
+      .catch((err) => Alert.alert('Erro', err instanceof Error ? err.message : 'Não foi possível marcar todas como lidas.'))
+      .finally(() => setIsMarcandoTodas(false));
+  };
+
+  if (!colaboradorId) {
+    return (
+      <Text style={styles.conversaEmptyText}>
+        Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar suas notificações.
+      </Text>
+    );
+  }
+
+  const relatedAction = selecionada && getRelatedAction ? getRelatedAction(selecionada) : null;
+
+  return (
+    <View>
+      <View style={inboxStyles.actionsRow}>
+        <Pressable style={inboxStyles.markAllButton} onPress={marcarTodas} disabled={isMarcandoTodas}>
+          <Feather name="check-circle" size={14} color="#15203E" />
+          <Text style={inboxStyles.markAllText}>{isMarcandoTodas ? 'Marcando...' : 'Marcar todas como lidas'}</Text>
+        </Pressable>
+      </View>
+
+      <View style={inboxStyles.tabsRow}>
+        {(['alerta', 'fluxo'] as const).map((tipo) => {
+          const active = aba === tipo;
+          const naoLidas = naoLidasExibidas(tipo);
+          return (
+            <Pressable
+              key={tipo}
+              style={[inboxStyles.tabButton, active ? inboxStyles.tabButtonActive : null]}
+              onPress={() => setAba(tipo)}
+            >
+              <Text style={[inboxStyles.tabText, active ? inboxStyles.tabTextActive : null]}>
+                {tipo === 'alerta' ? 'Alertas' : 'Fluxos'}
+              </Text>
+              {naoLidas > 0 ? (
+                <View style={inboxStyles.tabBadge}>
+                  <Text style={inboxStyles.tabBadgeText}>{naoLidas}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {isLoading ? (
+        <ActivityIndicator color="#1F3A5F" style={{ marginTop: 20 }} />
+      ) : errorMessage ? (
+        <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
+      ) : items.length === 0 ? (
+        <Text style={styles.conversaEmptyText}>
+          {aba === 'alerta' ? 'Nenhum alerta por aqui.' : 'Nenhum fluxo por aqui.'}
+        </Text>
+      ) : (
+        <View style={inboxStyles.card}>
+          {items.map((item, index) => (
+            <Pressable
+              key={item.id}
+              style={[inboxStyles.row, index > 0 ? inboxStyles.rowBorder : null]}
+              onPress={() => abrir(item)}
+            >
+              <View style={inboxStyles.dotSlot}>{isNaoLida(item) ? <View style={inboxStyles.dot} /> : null}</View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={inboxStyles.rowTitle} numberOfLines={2}>
+                  {item.titulo}
+                </Text>
+                <Text style={inboxStyles.rowPreview} numberOfLines={3}>
+                  {item.mensagem}
+                </Text>
+                <View style={inboxStyles.rowMetaRow}>
+                  {item.tag ? (
+                    <View style={inboxStyles.tagChip}>
+                      <Text style={inboxStyles.tagChipText}>{item.tag}</Text>
+                    </View>
+                  ) : null}
+                  <Text style={inboxStyles.rowDate}>{formatNotifInboxDateTime(item.createdAt)}</Text>
+                  {item.anexoUrl ? <Feather name="file-text" size={13} color="#7C8397" /> : null}
+                </View>
+              </View>
+              <Feather name="chevron-right" size={18} color="#8A93A8" style={{ marginTop: 2 }} />
+            </Pressable>
+          ))}
+          {items.length < total ? (
+            <Pressable style={inboxStyles.loadMoreButton} onPress={carregarMais} disabled={isLoadingMais}>
+              <Text style={inboxStyles.loadMoreText}>{isLoadingMais ? 'Carregando...' : 'Carregar mais'}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      )}
+
+      <Modal visible={!!selecionada} animationType="fade" transparent onRequestClose={() => setSelecionada(null)}>
+        <Pressable style={inboxStyles.modalBackdrop} onPress={() => setSelecionada(null)}>
+          <Pressable style={inboxStyles.modalCard} onPress={() => {}}>
+            {selecionada ? (
+              <>
+                <View style={inboxStyles.modalHeader}>
+                  <Text style={inboxStyles.modalTitle}>{selecionada.titulo}</Text>
+                  <Pressable onPress={() => setSelecionada(null)} hitSlop={8}>
+                    <Feather name="x" size={20} color="#677089" />
+                  </Pressable>
+                </View>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View style={[inboxStyles.rowMetaRow, { marginTop: 0, marginBottom: 12 }]}>
+                    {selecionada.tag ? (
+                      <View style={inboxStyles.tagChip}>
+                        <Text style={inboxStyles.tagChipText}>{selecionada.tag}</Text>
+                      </View>
+                    ) : null}
+                    <Text style={inboxStyles.rowDate}>{formatNotifInboxDateTime(selecionada.createdAt)}</Text>
+                  </View>
+                  <Text style={inboxStyles.modalBody} selectable>
+                    {selecionada.mensagem}
+                  </Text>
+
+                  {selecionada.anexoUrl ? (
+                    <View style={inboxStyles.attachmentBox}>
+                      <Pressable
+                        style={inboxStyles.attachmentButton}
+                        onPress={() => Linking.openURL(selecionada.anexoUrl as string)}
+                      >
+                        <Feather name="external-link" size={14} color="#15203E" />
+                        <Text style={inboxStyles.attachmentButtonText}>Abrir em nova aba / baixar</Text>
+                      </Pressable>
+                      {Platform.OS === 'web' ? (
+                        <>
+                          {createElement('iframe', {
+                            src: selecionada.anexoUrl,
+                            title: 'Anexo da notificação',
+                            style: { width: '100%', height: 420, border: 0, borderRadius: 10, backgroundColor: '#E5E7EB' },
+                          })}
+                          <Text style={inboxStyles.attachmentHint}>
+                            Se o arquivo não aparecer acima, use o botão "Abrir em nova aba / baixar".
+                          </Text>
+                        </>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </ScrollView>
+
+                <View style={inboxStyles.modalFooter}>
+                  {relatedAction ? (
+                    <Pressable
+                      style={[inboxStyles.footerButton, inboxStyles.footerButtonPrimary]}
+                      onPress={() => {
+                        setSelecionada(null);
+                        relatedAction();
+                      }}
+                    >
+                      <Text style={[inboxStyles.footerButtonText, inboxStyles.footerButtonPrimaryText]}>Abrir</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable style={inboxStyles.footerButton} onPress={() => setSelecionada(null)}>
+                    <Text style={inboxStyles.footerButtonText}>Fechar</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+// Barra de cima e tela de perfil de cada painel — a caixa de recebidos é uma
+// só, aberta pelo sino de qualquer perfil (route.params.role).
+const NOTIFICATIONS_ROLE_META: Record<UserRole, { initials: string; profileRoute: keyof RootStackParamList }> = {
+  colaborador: { initials: currentUserInitials, profileRoute: 'Profile' },
+  diretoria: { initials: directorUserInitials, profileRoute: 'DirectorProfile' },
+  rh: { initials: rhUserInitials, profileRoute: 'RHProfile' },
+  administrador: { initials: adminUserInitials, profileRoute: 'AdminProfile' },
+  financeiro: { initials: financeiroUserInitials, profileRoute: 'FinanceiroProfile' },
+  gestao: { initials: gestaoUserInitials, profileRoute: 'GestaoProfile' },
+  administrativo: { initials: administrativoUserInitials, profileRoute: 'AdministrativoProfile' },
+  marketing: { initials: marketingUserInitials, profileRoute: 'MarketingProfile' },
+  recrutamento: { initials: recrutamentoUserInitials, profileRoute: 'RecrutamentoProfile' },
+};
+
+function NotificationsScreen({ navigation, route }: ScreenProps<'Notifications'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const role = route.params?.role ?? 'colaborador';
+  const roleMeta = NOTIFICATIONS_ROLE_META[role];
+
+  // Atalho do Colaborador: notificação que cita contracheque, treinamento
+  // etc. ganha um botão "Abrir" que leva pra tela relacionada (essas telas
+  // são do painel do Colaborador, então só vale pra ele).
+  const getRelatedAction = (item: NotificacaoInboxItem) => {
+    if (role !== 'colaborador') return null;
     const targetRoute = getColaboradorNotificationTargetRoute(item);
-    if (targetRoute) {
-      navigation.navigate(targetRoute as any);
-      return;
-    }
-
-    Alert.alert(item.titulo, item.mensagem);
+    return targetRoute ? () => navigation.navigate(targetRoute as any) : null;
   };
 
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.topBarContainer}>
-        <TopBar initials={currentUserInitials} onAvatarPress={() => navigation.navigate('Profile')} />
+        <TopBar
+          initials={roleMeta.initials}
+          variant={role}
+          onAvatarPress={() => navigation.navigate(roleMeta.profileRoute as any)}
+        />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -7591,47 +7930,7 @@ function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>) {
           <Text style={styles.pageSubtitle}>Atualizações recentes</Text>
         </View>
 
-        {!colaboradorId ? (
-          <Text style={styles.conversaEmptyText}>
-            Seu acesso ainda não está vinculado a um colaborador no RH. Procure o RH para liberar suas notificações.
-          </Text>
-        ) : isLoading ? (
-          <Text style={styles.conversaEmptyText}>Carregando notificações...</Text>
-        ) : errorMessage ? (
-          <Text style={styles.conversaEmptyText}>{errorMessage}</Text>
-        ) : items.length === 0 ? (
-          <Text style={styles.conversaEmptyText}>Nenhuma notificação por aqui.</Text>
-        ) : (
-          <View style={styles.notificationsCard}>
-            {items.map((item, index) => {
-              const showUnreadDot = item.unread && !readNotificationIds[item.id];
-
-              return (
-                <Pressable
-                  key={item.id}
-                  style={[
-                    styles.notificationRow,
-                    index < items.length - 1 ? styles.notificationRowBorder : null,
-                  ]}
-                  onPress={() => handleNotificationPress(item)}
-                >
-                  <View style={[styles.iconShell, { backgroundColor: '#E9EEFF' }]}>
-                    <Feather name="bell" size={18} color="#5E6DB4" />
-                  </View>
-
-                  <View style={styles.notificationTextBlock}>
-                    <Text style={styles.notificationTitle}>{item.titulo}</Text>
-                    <Text style={styles.notificationTime}>
-                      {item.modulo ? item.modulo.charAt(0).toUpperCase() + item.modulo.slice(1) : 'Notificação'}
-                    </Text>
-                  </View>
-
-                  {showUnreadDot ? <View style={styles.notificationUnreadDot} /> : null}
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
+        <NotificationsInbox colaboradorId={colaboradorId} getRelatedAction={getRelatedAction} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -14600,9 +14899,12 @@ export function TopBar({
     (item) => item.unread && !readNotificationIds[item.id]
   );
 
+  // O sino abre a caixa de recebidos (a mesma tela pra todos os perfis, só
+  // muda a barra de cima). O item "Notificações" do menu de cada painel
+  // continua abrindo a tela de Rotinas/Templates, igual ao painel web.
   const openNotifications = () => {
     if (navigationRef.isReady()) {
-      navigationRef.navigate(getNotificationsRouteForRole(variant) as any);
+      navigationRef.navigate('Notifications', { role: variant });
     }
   };
 
