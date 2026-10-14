@@ -285,6 +285,7 @@ export type RootStackParamList = {
   Approvals: undefined;
   Notifications: { role?: UserRole } | undefined;
   Assistente: undefined;
+  AssistenteProfile: undefined;
   Requests: undefined;
   Communications: undefined;
   Profile: undefined;
@@ -717,6 +718,10 @@ function assistenteDataCurta(at: number) {
 function assistenteMillis(raw: string | null) {
   const parsed = raw ? Date.parse(raw) : NaN;
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function AssistenteProfileScreen({ navigation }: ScreenProps<'AssistenteProfile'>) {
+  return <ModuleProfileScreen navigation={navigation} variant="assistente" />;
 }
 
 function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
@@ -1289,7 +1294,12 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.topBarContainer}>
-        <TopBar initials={initials} variant={activeRole} />
+        <TopBar
+          initials={initials}
+          variant={activeRole}
+          assistente
+          onAvatarPress={() => navigation.navigate('AssistenteProfile')}
+        />
       </View>
       {!colaboradorId ? (
         <Text style={assistenteStyles.empty}>
@@ -1317,6 +1327,16 @@ const assistenteStyles = StyleSheet.create({
     padding: 16,
     paddingBottom: 24,
   },
+  brandIconShell: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#E0002A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandTitle: { color: '#15203E', fontSize: 14, fontWeight: '800' },
+  brandSubtitle: { color: '#7C8397', fontSize: 9, fontWeight: '700', letterSpacing: 0.4 },
   fabWrap: { width: 56, height: 56 },
   fabBadge: { position: 'absolute', top: -4, left: -4 },
   fabDismiss: {
@@ -4432,6 +4452,7 @@ export default function App() {
                     <Stack.Screen name="Approvals" component={ApprovalsScreen} />
                     <Stack.Screen name="Notifications" component={NotificationsScreen} />
                     <Stack.Screen name="Assistente" component={AssistenteScreen} />
+                    <Stack.Screen name="AssistenteProfile" component={AssistenteProfileScreen} />
                     <Stack.Screen name="Requests" component={RequestsScreen} />
                     <Stack.Screen name="Communications" component={CommunicationsScreen} />
                     <Stack.Screen name="Profile" component={ProfileScreen} />
@@ -9485,9 +9506,10 @@ export function ModuleProfileScreen({
   variant,
 }: {
   navigation: NativeStackNavigationProp<RootStackParamList, any>;
-  variant: 'gestao' | 'financeiro' | 'marketing' | 'administrativo' | 'recrutamento';
+  variant: 'gestao' | 'financeiro' | 'marketing' | 'administrativo' | 'recrutamento' | 'assistente';
 }) {
   const { identity, setIdentity } = useContext(AuthIdentityContext);
+  const { activeRole } = useContext(UserRoleContext);
   const { perfil, isLoading, errorMessage } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
   const colaboradorId = identity?.colaboradorId ?? null;
@@ -9502,7 +9524,11 @@ export function ModuleProfileScreen({
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.topBarContainer}>
-        <TopBar initials={initials} variant={variant} />
+        <TopBar
+          initials={initials}
+          variant={variant === 'assistente' ? activeRole : variant}
+          assistente={variant === 'assistente'}
+        />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -15969,11 +15995,14 @@ export function TopBar({
   onAvatarPress,
   variant = 'colaborador',
   onColor = false,
+  assistente = false,
 }: {
   initials: string;
   onAvatarPress?: () => void;
   variant?: UserRole;
   onColor?: boolean;
+  // Marca "Assistente IA" no lugar da marca do painel (tela do Assistente).
+  assistente?: boolean;
 }) {
   const { openMenu } = useContext(MenuContext);
   const { readNotificationIds } = useContext(NotificationsReadContext);
@@ -16024,7 +16053,9 @@ export function TopBar({
         </Pressable>
       </View>
 
-      {isDirector ? (
+      {assistente ? (
+        <AssistenteBrandLogo />
+      ) : isDirector ? (
         <DirectorBrandLogo light={onColor} />
       ) : isRH ? (
         <RHBrandLogo />
@@ -16114,6 +16145,20 @@ function AdminBrandLogo() {
       <View>
         <Text style={styles.adminBrandTitle}>Administrador</Text>
         <Text style={styles.adminBrandSubtitle}>PAINEL DE GESTÃO</Text>
+      </View>
+    </View>
+  );
+}
+
+function AssistenteBrandLogo() {
+  return (
+    <View style={styles.directorBrandRow}>
+      <View style={assistenteStyles.brandIconShell}>
+        <Feather name="cpu" size={16} color="#FFFFFF" />
+      </View>
+      <View>
+        <Text style={assistenteStyles.brandTitle}>Assistente IA</Text>
+        <Text style={assistenteStyles.brandSubtitle}>ALERTAS E FLUXOS</Text>
       </View>
     </View>
   );
