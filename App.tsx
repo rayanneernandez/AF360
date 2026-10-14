@@ -110,6 +110,7 @@ import {
   AdministrativoDashboardScreen,
   AdministrativoProfileScreen,
   AdministrativoLicencasScreen,
+  AdministrativoCertificadoScreen,
   AdministrativoChamadosScreen,
   AdministrativoInsumosScreen,
   AdministrativoFrotaScreen,
@@ -172,6 +173,7 @@ import {
   fetchColaboradorNotificacoes,
   fetchNotificacoesInbox,
   fetchAssistenteDisponivel,
+  fetchCertPermissao,
   enviarMensagemAssistente,
   marcarNotificacaoLida,
   marcarNotificacoesLidas,
@@ -352,6 +354,7 @@ export type RootStackParamList = {
   AdministrativoDashboard: undefined;
   AdministrativoProfile: undefined;
   AdministrativoLicencas: undefined;
+  AdministrativoCertificado: undefined;
   AdministrativoChamados: undefined;
   AdministrativoInsumos: undefined;
   AdministrativoFrota: undefined;
@@ -1713,6 +1716,7 @@ export type GestaoSideMenuRoute =
 export type AdministrativoSideMenuRoute =
   | 'AdministrativoDashboard'
   | 'AdministrativoLicencas'
+  | 'AdministrativoCertificado'
   | 'AdministrativoChamados'
   | 'AdministrativoInsumos'
   | 'AdministrativoFrota'
@@ -2924,6 +2928,7 @@ export const administrativoSideMenuSections: Array<{
     title: 'OPERAÇÃO',
     items: [
       { id: 'administrativo-licencas', label: 'Alvarás e Licenças', icon: 'file-text', route: 'AdministrativoLicencas' },
+      { id: 'administrativo-certificado', label: 'Certificado Digital', icon: 'shield', route: 'AdministrativoCertificado' },
       { id: 'administrativo-chamados', label: 'Manutenções', icon: 'tool', route: 'AdministrativoChamados' },
       { id: 'administrativo-insumos', label: 'Almoxarifado', icon: 'package', route: 'AdministrativoInsumos' },
       { id: 'administrativo-frota', label: 'Frota', icon: 'truck', route: 'AdministrativoFrota' },
@@ -4358,6 +4363,7 @@ export default function App() {
                     <Stack.Screen name="AdministrativoDashboard" component={AdministrativoDashboardScreen} />
                     <Stack.Screen name="AdministrativoProfile" component={AdministrativoProfileScreen} />
                     <Stack.Screen name="AdministrativoLicencas" component={AdministrativoLicencasScreen} />
+                    <Stack.Screen name="AdministrativoCertificado" component={AdministrativoCertificadoScreen} />
                     <Stack.Screen name="AdministrativoChamados" component={AdministrativoChamadosScreen} />
                     <Stack.Screen name="AdministrativoInsumos" component={AdministrativoInsumosScreen} />
                     <Stack.Screen name="AdministrativoFrota" component={AdministrativoFrotaScreen} />
@@ -15614,7 +15620,15 @@ export function SideMenuOverlay({
   const assistenteState = useAssistenteState();
   const { perfil: colaboradorPerfil, isLoading: isLoadingColaboradorPerfil } = useContext(ColaboradorPerfilContext);
   const hasMultiplePanels = (identity?.availableRoles?.length ?? 0) > 1;
-  const sections = isDirector
+  // Certificado Digital só aparece para quem o painel libera (pode_ver).
+  const [certPodeVer, setCertPodeVer] = useState(true);
+  useEffect(() => {
+    if (!isAdministrativo || !identity?.colaboradorId) return;
+    fetchCertPermissao(identity.colaboradorId)
+      .then((permissao) => setCertPodeVer(permissao.podeVer))
+      .catch(() => {});
+  }, [isAdministrativo, identity?.colaboradorId]);
+  const baseSections = isDirector
     ? directorSideMenuSections
     : isRH
     ? rhSideMenuSections
@@ -15631,6 +15645,10 @@ export function SideMenuOverlay({
     : isRecrutamento
     ? recrutamentoSideMenuSections
     : sideMenuSections;
+  const sections = baseSections.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => certPodeVer || item.id !== 'administrativo-certificado'),
+  }));
   // Nome/cargo reais (rh_colaboradores, via ColaboradorPerfilContext) em
   // todos os painéis — nunca os mocks "Bruno Lyra"/"Marina Costa"/etc. Sem
   // vínculo no RH, avisa em vez de fabricar cargo.

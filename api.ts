@@ -2258,6 +2258,158 @@ export async function enviarMensagemAssistente(
   }
 }
 
+// --- Certificado Digital (painel Administrativo) — recursos internos da
+// Lovable (cert-*), confirmados em 14/10/2026. Os nomes dos campos são os da
+// Lovable. ---
+
+export type CertStatus = 'ativo' | 'pendente_instalacao' | 'substituido' | 'vencido';
+export type CertTipoTitular = 'posto' | 'pessoa';
+
+export type CertItem = {
+  id: string;
+  titular: string;
+  cnpj: string | null;
+  empresa: string | null;
+  validade_inicio: string | null;
+  validade_fim: string | null;
+  dias_para_vencer: number | null;
+  status: CertStatus | string;
+  origem: 'agente' | 'manual' | string;
+  tipo_titular: CertTipoTitular | string;
+  sem_certificado_valido: boolean;
+};
+
+export type CertListaParams = {
+  busca?: string;
+  tipo?: 'todos' | CertTipoTitular;
+  status?: 'todos' | CertStatus;
+  soVencendo?: boolean;
+  offset?: number;
+  limite?: number;
+};
+
+async function certPost(acao: string, colaboradorId: string, campos: Record<string, unknown> = {}, timeoutMs?: number) {
+  const json = await api.post(`/api/certificados/${acao}`, { colaboradorId, ...campos }, timeoutMs);
+  return (json.data ?? {}) as Record<string, any>;
+}
+
+export async function fetchCertPermissao(colaboradorId: string): Promise<{ podeVer: boolean; podeBaixar: boolean }> {
+  const data = await certPost('permissao', colaboradorId);
+  return { podeVer: data.pode_ver === true, podeBaixar: data.pode_baixar === true };
+}
+
+export async function fetchCertLista(
+  colaboradorId: string,
+  params: CertListaParams = {}
+): Promise<{ total: number; itens: CertItem[] }> {
+  const data = await certPost('lista', colaboradorId, {
+    busca: params.busca || undefined,
+    tipo: params.tipo,
+    status: params.status,
+    so_vencendo: params.soVencendo ? true : undefined,
+    offset: params.offset,
+    limite: params.limite,
+  });
+  const itens = (Array.isArray(data.itens) ? data.itens : []) as CertItem[];
+  return { total: Number(data.total ?? itens.length), itens };
+}
+
+export type CertDetalhe = {
+  cert: Record<string, any>;
+  autor: string | null;
+  historico: Array<Record<string, any>>;
+};
+
+export async function fetchCertDetalhe(colaboradorId: string, id: string): Promise<CertDetalhe> {
+  const data = await certPost('detalhe', colaboradorId, { id });
+  const autor = data.autor;
+  return {
+    cert: (data.cert ?? {}) as Record<string, any>,
+    autor: typeof autor === 'string' ? autor : autor?.nome ?? autor?.nome_completo ?? null,
+    historico: Array.isArray(data.historico) ? data.historico : [],
+  };
+}
+
+export async function baixarCert(
+  colaboradorId: string,
+  id: string
+): Promise<{ pfxBase64: string; senha: string; nomeArquivo: string }> {
+  const data = await certPost('download', colaboradorId, { id });
+  return {
+    pfxBase64: String(data.pfx_base64 ?? ''),
+    senha: String(data.senha ?? ''),
+    nomeArquivo: String(data.nome_arquivo ?? 'certificado.pfx'),
+  };
+}
+
+export async function alterarStatusCert(colaboradorId: string, id: string, status: CertStatus): Promise<void> {
+  await certPost('status', colaboradorId, { id, status });
+}
+
+export async function enviarCert(
+  colaboradorId: string,
+  body: { tipoTitular: CertTipoTitular; postoId?: string; titularId?: string; pfxBase64: string; senha: string }
+): Promise<Record<string, any>> {
+  return certPost(
+    'upload',
+    colaboradorId,
+    {
+      tipo_titular: body.tipoTitular,
+      posto_id: body.postoId,
+      titular_id: body.titularId,
+      pfx_base64: body.pfxBase64,
+      senha: body.senha,
+    },
+    60000
+  );
+}
+
+export async function fetchCertOpcoes(
+  colaboradorId: string
+): Promise<{ postos: Array<Record<string, any>>; titulares: Array<Record<string, any>> }> {
+  const data = await certPost('opcoes', colaboradorId);
+  return {
+    postos: Array.isArray(data.postos) ? data.postos : [],
+    titulares: Array.isArray(data.titulares) ? data.titulares : [],
+  };
+}
+
+export type CertContato = {
+  id: string;
+  canal: 'email' | 'whatsapp' | string;
+  destino: string;
+  descricao: string | null;
+  ativo: boolean;
+};
+
+export async function fetchCertContatos(colaboradorId: string): Promise<CertContato[]> {
+  const data = await certPost('contatos', colaboradorId, { acao: 'listar' });
+  const lista = data.itens ?? data.contatos ?? data.data ?? [];
+  return (Array.isArray(lista) ? lista : []) as CertContato[];
+}
+
+export async function salvarCertContato(
+  colaboradorId: string,
+  contato: { id?: string; canal: 'email' | 'whatsapp'; destino: string; descricao: string; ativo: boolean }
+): Promise<void> {
+  await certPost('contatos', colaboradorId, {
+    acao: contato.id ? 'atualizar' : 'criar',
+    id: contato.id,
+    canal: contato.canal,
+    destino: contato.destino,
+    descricao: contato.descricao,
+    ativo: contato.ativo,
+  });
+}
+
+export async function alternarCertContato(colaboradorId: string, id: string, ativo: boolean): Promise<void> {
+  await certPost('contatos', colaboradorId, { acao: 'alternar', id, ativo });
+}
+
+export async function excluirCertContato(colaboradorId: string, id: string): Promise<void> {
+  await certPost('contatos', colaboradorId, { acao: 'excluir', id });
+}
+
 // --- Colaborador (self-service): Contra-cheques (histórico completo) ---
 
 export type ColaboradorContrachequeItem = {

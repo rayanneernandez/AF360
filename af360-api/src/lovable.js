@@ -2162,6 +2162,12 @@ function postChatPortalDisponivel(body) {
 function postChatPortalMensagem(body) {
   return lovablePost('/api/public/internal/chat-portal-mensagem', {}, body);
 }
+// Certificado Digital (Administrativo): recurso = cert-lista, cert-detalhe,
+// cert-download, cert-status, cert-upload, cert-opcoes, cert-contatos ou
+// cert-permissao. Body sempre com colaborador_id.
+function postCertificado(recurso, body) {
+  return lovablePost(`/api/public/internal/${recurso}`, {}, body);
+}
 // Marca a conversa como lida. Body: { phone }.
 function postMarketingWaMarcarLido(body, actorId) {
   return lovablePost('/api/public/internal/marketing', { recurso: 'wa-marcar-lido' }, body, actorId);
@@ -2841,6 +2847,7 @@ module.exports = {
   postMarketingWaMarcarLido,
   postNotifInboxLidas,
   postChatPortalDisponivel,
+  postCertificado,
   postChatPortalMensagem,
   getMarketingWaTemplates,
   postMarketingWaEnviarTemplate,

@@ -2,7 +2,11 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useIsFocused } from '@react-navigation/native';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PieChart } from 'react-native-gifted-charts';
 import {
@@ -28,6 +32,22 @@ import type {
 } from './App';
 import {
   fetchAdministrativoDashboard,
+  fetchCertPermissao,
+  fetchCertLista,
+  fetchCertDetalhe,
+  baixarCert,
+  alterarStatusCert,
+  enviarCert,
+  fetchCertOpcoes,
+  fetchCertContatos,
+  salvarCertContato,
+  alternarCertContato,
+  excluirCertContato,
+  type CertItem,
+  type CertStatus,
+  type CertTipoTitular,
+  type CertDetalhe,
+  type CertContato,
   fetchRhUnidades,
   fetchAdministrativoLicencas,
   createAdministrativoLicenca,
@@ -1663,6 +1683,1062 @@ function administrativoNotifTemplateToWriteBody(local: NotificationTemplateItem)
     variaveis: local.variables,
   };
 }
+
+// --- Certificado Digital (e-CNPJ A1 dos postos / e-CPF dos sócios) ---
+// Espelha a tela do painel web usando os recursos cert-* da Lovable (via
+// /api/certificados). Quem tem o módulo Administrativo vê e edita; baixar o
+// arquivo/ver a senha exige a permissão extra pode_baixar.
+
+const CERT_TIPO_OPTIONS: Array<{ value: 'todos' | CertTipoTitular; label: string }> = [
+  { value: 'todos', label: 'Todos os tipos' },
+  { value: 'posto', label: 'Posto (e-CNPJ)' },
+  { value: 'pessoa', label: 'Pessoa (e-CPF)' },
+];
+
+const CERT_STATUS_OPTIONS: Array<{ value: 'todos' | CertStatus; label: string }> = [
+  { value: 'todos', label: 'Todos os status' },
+  { value: 'ativo', label: 'Ativo' },
+  { value: 'pendente_instalacao', label: 'Pendente de instalação' },
+  { value: 'substituido', label: 'Substituído' },
+  { value: 'vencido', label: 'Vencido' },
+];
+
+const CERT_STATUS_ALTERAR_OPTIONS = CERT_STATUS_OPTIONS.filter(
+  (option): option is { value: CertStatus; label: string } => option.value !== 'todos'
+);
+
+const CERT_PAGE_SIZE = 50;
+
+function certStatusLabel(status: string): string {
+  return CERT_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status;
+}
+
+function certOrigemLabel(origem: string): string {
+  return origem === 'agente' ? 'Agente automático' : origem === 'manual' ? 'Manual' : origem;
+}
+
+function certDataBR(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : raw;
+}
+
+function certDataHoraBR(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw) return '—';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return certDataBR(raw);
+  return date.toLocaleString('pt-BR');
+}
+
+// Mesmas faixas do painel: vencido = vermelho; até 15 dias = amarelo; mais que
+// isso = verde.
+function certVenceMeta(dias: number | null): { label: string; bg: string; fg: string } {
+  if (dias === null || dias === undefined) return { label: '—', bg: '#EEF0F6', fg: '#5E667D' };
+  if (dias < 0) return { label: `Vencido há ${Math.abs(dias)} dias`, bg: '#FBE4E7', fg: '#C2263A' };
+  if (dias <= 15) return { label: `${dias} dias`, bg: '#FEF3D6', fg: '#8A6D1D' };
+  return { label: `${dias} dias`, bg: '#E3F6EC', fg: '#18955A' };
+}
+
+const CERT_ERROS: Record<string, string> = {
+  senha_incorreta: 'A senha do certificado está incorreta.',
+  arquivo_invalido: 'O arquivo não é um certificado .pfx/.p12 válido.',
+  pessoa_nao_encontrada: 'Pessoa não encontrada.',
+  sem_permissao_senha: 'Você não tem permissão para baixar o certificado.',
+  sem_backup_agente:
+    'O arquivo do agente automático ainda não foi copiado (a cópia roda a cada 6 horas). Tente mais tarde.',
+};
+
+function certErrorMessage(err: unknown, fallback: string): string {
+  const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: unknown }).code ?? '') : '';
+  return CERT_ERROS[code] ?? (err instanceof Error && err.message ? err.message : fallback);
+}
+
+function certMascaraTelefone(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function certOpcaoId(opcao: Record<string, any>): string {
+  return String(opcao.id ?? '');
+}
+
+function certOpcaoLabel(opcao: Record<string, any>): string {
+  return String(opcao.nome ?? opcao.titular ?? opcao.nome_completo ?? opcao.razao_social ?? opcao.label ?? opcao.id ?? '');
+}
+
+export function AdministrativoCertificadoScreen({ navigation }: ScreenProps<'AdministrativoCertificado'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const colaboradorId = identity?.colaboradorId ?? null;
+
+  const [permissao, setPermissao] = useState<{ podeVer: boolean; podeBaixar: boolean } | null>(null);
+  const [busca, setBusca] = useState('');
+  const [buscaAplicada, setBuscaAplicada] = useState('');
+  const [tipoFiltro, setTipoFiltro] = useState<'todos' | CertTipoTitular>('todos');
+  const [statusFiltro, setStatusFiltro] = useState<'todos' | CertStatus>('todos');
+  const [soVencendo, setSoVencendo] = useState(false);
+  const [tipoModalOpen, setTipoModalOpen] = useState(false);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [itens, setItens] = useState<CertItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMais, setIsLoadingMais] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Detalhe
+  const [detalheItem, setDetalheItem] = useState<CertItem | null>(null);
+  const [detalhe, setDetalhe] = useState<CertDetalhe | null>(null);
+  const [isLoadingDetalhe, setIsLoadingDetalhe] = useState(false);
+  const [detalheError, setDetalheError] = useState<string | null>(null);
+  const [novoStatus, setNovoStatus] = useState<CertStatus | null>(null);
+  const [isSalvandoStatus, setIsSalvandoStatus] = useState(false);
+  const [isBaixando, setIsBaixando] = useState(false);
+
+  // Envio
+  const [envioAberto, setEnvioAberto] = useState(false);
+  const [envioTipo, setEnvioTipo] = useState<CertTipoTitular>('posto');
+  const [opcoes, setOpcoes] = useState<{ postos: Array<Record<string, any>>; titulares: Array<Record<string, any>> } | null>(null);
+  const [envioDestinoId, setEnvioDestinoId] = useState<string | null>(null);
+  const [envioBuscaDestino, setEnvioBuscaDestino] = useState('');
+  const [envioArquivo, setEnvioArquivo] = useState<{ nome: string; uri: string } | null>(null);
+  const [envioSenha, setEnvioSenha] = useState('');
+  const [envioSenhaVisivel, setEnvioSenhaVisivel] = useState(false);
+  const [isEnviando, setIsEnviando] = useState(false);
+  const [envioResultado, setEnvioResultado] = useState<string | null>(null);
+
+  // Contatos
+  const [contatosAberto, setContatosAberto] = useState(false);
+  const [contatos, setContatos] = useState<CertContato[]>([]);
+  const [isLoadingContatos, setIsLoadingContatos] = useState(false);
+  const [contatosError, setContatosError] = useState<string | null>(null);
+  const [contatoForm, setContatoForm] = useState<{ id?: string; canal: 'email' | 'whatsapp'; destino: string; descricao: string; ativo: boolean } | null>(null);
+  const [isSalvandoContato, setIsSalvandoContato] = useState(false);
+
+  useEffect(() => {
+    if (!colaboradorId) return;
+    fetchCertPermissao(colaboradorId)
+      .then(setPermissao)
+      .catch(() => setPermissao({ podeVer: true, podeBaixar: false }));
+  }, [colaboradorId]);
+
+  const filtros = useMemo(
+    () => ({ busca: buscaAplicada, tipo: tipoFiltro, status: statusFiltro, soVencendo }),
+    [buscaAplicada, tipoFiltro, statusFiltro, soVencendo]
+  );
+
+  // Busca com pequeno atraso para não consultar a cada letra.
+  useEffect(() => {
+    const timer = setTimeout(() => setBuscaAplicada(busca.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [busca]);
+
+  const carregar = useCallback(() => {
+    if (!colaboradorId) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setErrorMessage(null);
+    fetchCertLista(colaboradorId, { ...filtros, limite: CERT_PAGE_SIZE, offset: 0 })
+      .then((data) => {
+        setItens(data.itens);
+        setTotal(data.total);
+      })
+      .catch((err) => setErrorMessage(certErrorMessage(err, 'Não foi possível carregar os certificados.')))
+      .finally(() => setIsLoading(false));
+  }, [colaboradorId, filtros]);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const carregarMais = () => {
+    if (!colaboradorId || isLoadingMais) return;
+    setIsLoadingMais(true);
+    fetchCertLista(colaboradorId, { ...filtros, limite: CERT_PAGE_SIZE, offset: itens.length })
+      .then((data) => {
+        setItens((atual) => {
+          const ids = new Set(atual.map((item) => item.id));
+          return [...atual, ...data.itens.filter((item) => !ids.has(item.id))];
+        });
+        setTotal(data.total);
+      })
+      .catch((err) => Alert.alert('Erro', certErrorMessage(err, 'Não foi possível carregar mais certificados.')))
+      .finally(() => setIsLoadingMais(false));
+  };
+
+  // --- Detalhe ---
+
+  const abrirDetalhe = (item: CertItem) => {
+    if (!colaboradorId) return;
+    setDetalheItem(item);
+    setDetalhe(null);
+    setDetalheError(null);
+    setNovoStatus(null);
+    setIsLoadingDetalhe(true);
+    fetchCertDetalhe(colaboradorId, item.id)
+      .then(setDetalhe)
+      .catch((err) => setDetalheError(certErrorMessage(err, 'Não foi possível carregar o certificado.')))
+      .finally(() => setIsLoadingDetalhe(false));
+  };
+
+  const fecharDetalhe = () => {
+    setDetalheItem(null);
+    setDetalhe(null);
+  };
+
+  const salvarStatus = () => {
+    if (!colaboradorId || !detalheItem || !novoStatus) return;
+    setIsSalvandoStatus(true);
+    alterarStatusCert(colaboradorId, detalheItem.id, novoStatus)
+      .then(() => {
+        const atualizado = { ...detalheItem, status: novoStatus };
+        setDetalheItem(atualizado);
+        setItens((atual) => atual.map((item) => (item.id === atualizado.id ? atualizado : item)));
+        setNovoStatus(null);
+        carregar();
+      })
+      .catch((err) => Alert.alert('Erro', certErrorMessage(err, 'Não foi possível alterar o status.')))
+      .finally(() => setIsSalvandoStatus(false));
+  };
+
+  const baixar = async () => {
+    if (!colaboradorId || !detalheItem || isBaixando) return;
+    setIsBaixando(true);
+    try {
+      const arquivo = await baixarCert(colaboradorId, detalheItem.id);
+      if (!arquivo.pfxBase64) {
+        Alert.alert('Erro', 'O servidor não devolveu o arquivo do certificado.');
+        return;
+      }
+      if (Platform.OS === 'web') {
+        const bytes = Uint8Array.from(atob(arquivo.pfxBase64), (char) => char.charCodeAt(0));
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'application/x-pkcs12' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = arquivo.nomeArquivo;
+        link.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+        if (!baseDirectory) {
+          Alert.alert('Download indisponível', 'Não foi possível salvar o arquivo neste dispositivo.');
+          return;
+        }
+        const fileUri = `${baseDirectory}${arquivo.nomeArquivo}`;
+        await FileSystem.writeAsStringAsync(fileUri, arquivo.pfxBase64, { encoding: FileSystem.EncodingType.Base64 });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'application/x-pkcs12',
+            dialogTitle: 'Baixar certificado',
+            UTI: 'com.rsa.pkcs-12',
+          });
+        } else {
+          Alert.alert('Certificado salvo', `Arquivo salvo em:\n${fileUri}`);
+        }
+      }
+      // A senha só aparece depois do download, para quem tem a permissão.
+      if (arquivo.senha) {
+        Alert.alert('Senha do certificado', arquivo.senha, [
+          { text: 'Copiar', onPress: () => Clipboard.setStringAsync(arquivo.senha).catch(() => {}) },
+          { text: 'Fechar', style: 'cancel' },
+        ]);
+      }
+    } catch (err) {
+      Alert.alert('Erro', certErrorMessage(err, 'Não foi possível baixar o certificado.'));
+    } finally {
+      setIsBaixando(false);
+    }
+  };
+
+  // --- Envio ---
+
+  const carregarOpcoes = () => {
+    if (!colaboradorId || opcoes) return;
+    fetchCertOpcoes(colaboradorId)
+      .then(setOpcoes)
+      .catch((err) => Alert.alert('Erro', certErrorMessage(err, 'Não foi possível carregar postos e pessoas.')));
+  };
+
+  const abrirEnvio = (preset?: { tipo: CertTipoTitular; destinoId: string | null }) => {
+    setEnvioTipo(preset?.tipo ?? 'posto');
+    setEnvioDestinoId(preset?.destinoId ?? null);
+    setEnvioBuscaDestino('');
+    setEnvioArquivo(null);
+    setEnvioSenha('');
+    setEnvioSenhaVisivel(false);
+    setEnvioResultado(null);
+    setEnvioAberto(true);
+    carregarOpcoes();
+  };
+
+  const escolherArquivo = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const nome = asset.name ?? 'certificado.pfx';
+      if (!/\.(pfx|p12)$/i.test(nome)) {
+        Alert.alert('Arquivo inválido', 'Envie um certificado no formato .pfx ou .p12.');
+        return;
+      }
+      if ((asset.size ?? 0) > 200 * 1024) {
+        Alert.alert('Arquivo muito grande', 'O tamanho máximo do certificado é 200 KB.');
+        return;
+      }
+      setEnvioArquivo({ nome, uri: asset.uri });
+    } catch {
+      Alert.alert('Erro', 'Não foi possível selecionar o arquivo.');
+    }
+  };
+
+  const lerArquivoBase64 = async (uri: string): Promise<string> => {
+    if (Platform.OS === 'web') {
+      const blob = await (await fetch(uri)).blob();
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+      return dataUrl.split(',')[1] ?? '';
+    }
+    return FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+  };
+
+  const enviar = async () => {
+    if (!colaboradorId || isEnviando) return;
+    if (!envioDestinoId) {
+      Alert.alert('Campo obrigatório', envioTipo === 'posto' ? 'Escolha o posto.' : 'Escolha a pessoa.');
+      return;
+    }
+    if (!envioArquivo) {
+      Alert.alert('Campo obrigatório', 'Escolha o arquivo do certificado (.pfx ou .p12).');
+      return;
+    }
+    if (!envioSenha) {
+      Alert.alert('Campo obrigatório', 'Informe a senha do certificado.');
+      return;
+    }
+    setIsEnviando(true);
+    try {
+      const pfxBase64 = await lerArquivoBase64(envioArquivo.uri);
+      const resposta = await enviarCert(colaboradorId, {
+        tipoTitular: envioTipo,
+        postoId: envioTipo === 'posto' ? envioDestinoId : undefined,
+        titularId: envioTipo === 'pessoa' ? envioDestinoId : undefined,
+        pfxBase64,
+        senha: envioSenha,
+      });
+      const avisos: string[] = [];
+      if (resposta.cnpj_confere === false) avisos.push('Atenção: o CNPJ do certificado não confere com o do posto.');
+      if (resposta.cpf_confere === false) avisos.push('Atenção: o CPF do certificado não confere com o da pessoa.');
+      if (resposta.sem_cpf === true) avisos.push('Este certificado não traz CPF.');
+      const validade = resposta.validade_fim ?? resposta.validade ?? null;
+      setEnvioResultado(
+        ['Certificado enviado com sucesso.', validade ? `Validade até ${certDataBR(validade)}.` : null, ...avisos]
+          .filter(Boolean)
+          .join('\n')
+      );
+      setEnvioArquivo(null);
+      setEnvioSenha('');
+      carregar();
+    } catch (err) {
+      Alert.alert('Erro ao enviar', certErrorMessage(err, 'Não foi possível enviar o certificado.'));
+    } finally {
+      setIsEnviando(false);
+    }
+  };
+
+  // --- Contatos ---
+
+  const carregarContatos = () => {
+    if (!colaboradorId) return;
+    setIsLoadingContatos(true);
+    setContatosError(null);
+    fetchCertContatos(colaboradorId)
+      .then(setContatos)
+      .catch((err) => setContatosError(certErrorMessage(err, 'Não foi possível carregar os contatos.')))
+      .finally(() => setIsLoadingContatos(false));
+  };
+
+  const abrirContatos = () => {
+    setContatoForm(null);
+    setContatosAberto(true);
+    carregarContatos();
+  };
+
+  const salvarContato = () => {
+    if (!colaboradorId || !contatoForm) return;
+    const destino = contatoForm.destino.trim();
+    if (!destino) {
+      Alert.alert('Campo obrigatório', contatoForm.canal === 'email' ? 'Informe o e-mail.' : 'Informe o WhatsApp.');
+      return;
+    }
+    if (contatoForm.canal === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destino)) {
+      Alert.alert('E-mail inválido', 'Confira o endereço de e-mail.');
+      return;
+    }
+    if (contatoForm.canal === 'whatsapp' && destino.replace(/\D/g, '').length < 10) {
+      Alert.alert('WhatsApp inválido', 'Informe o DDD e o número (mínimo 10 dígitos).');
+      return;
+    }
+    setIsSalvandoContato(true);
+    salvarCertContato(colaboradorId, {
+      ...contatoForm,
+      destino: contatoForm.canal === 'whatsapp' ? destino.replace(/\D/g, '') : destino,
+      descricao: contatoForm.descricao.trim(),
+    })
+      .then(() => {
+        setContatoForm(null);
+        carregarContatos();
+      })
+      .catch((err) => Alert.alert('Erro', certErrorMessage(err, 'Não foi possível salvar o contato.')))
+      .finally(() => setIsSalvandoContato(false));
+  };
+
+  const alternarContato = (contato: CertContato) => {
+    if (!colaboradorId) return;
+    const ativo = !contato.ativo;
+    setContatos((atual) => atual.map((item) => (item.id === contato.id ? { ...item, ativo } : item)));
+    alternarCertContato(colaboradorId, contato.id, ativo).catch((err) => {
+      setContatos((atual) => atual.map((item) => (item.id === contato.id ? { ...item, ativo: !ativo } : item)));
+      Alert.alert('Erro', certErrorMessage(err, 'Não foi possível alterar o contato.'));
+    });
+  };
+
+  const excluirContato = (contato: CertContato) => {
+    if (!colaboradorId) return;
+    Alert.alert('Excluir contato', `Excluir ${contato.destino}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: () => {
+          excluirCertContato(colaboradorId, contato.id)
+            .then(carregarContatos)
+            .catch((err) => Alert.alert('Erro', certErrorMessage(err, 'Não foi possível excluir o contato.')));
+        },
+      },
+    ]);
+  };
+
+  // --- Render ---
+
+  const listaDestinos = (envioTipo === 'posto' ? opcoes?.postos : opcoes?.titulares) ?? [];
+  const destinosFiltrados = listaDestinos
+    .filter((opcao) => certOpcaoLabel(opcao).toLowerCase().includes(envioBuscaDestino.trim().toLowerCase()))
+    .slice(0, 40);
+  const destinoSelecionado = listaDestinos.find((opcao) => certOpcaoId(opcao) === envioDestinoId) ?? null;
+
+  const cert = detalhe?.cert ?? {};
+  const presetEnvioDoDetalhe = () => {
+    const tipo = (detalheItem?.tipo_titular === 'pessoa' ? 'pessoa' : 'posto') as CertTipoTitular;
+    const destinoId = (tipo === 'posto' ? cert.posto_id : cert.titular_id) ?? cert.posto_id ?? cert.titular_id ?? null;
+    return { tipo, destinoId: destinoId ? String(destinoId) : null };
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar
+          initials={administrativoUserInitials}
+          variant="administrativo"
+          onAvatarPress={() => navigation.navigate('AdministrativoProfile')}
+        />
+      </View>
+
+      {!colaboradorId ? (
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <AdmPageHeader icon="shield" title="Certificado Digital" subtitle="Certificados e-CNPJ (A1) dos postos e seus vencimentos." />
+          <AdmEmptyState message="Seu acesso ainda não está vinculado a um colaborador. Procure o RH para liberar esta tela." />
+        </ScrollView>
+      ) : permissao && !permissao.podeVer ? (
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <AdmPageHeader icon="shield" title="Certificado Digital" subtitle="Certificados e-CNPJ (A1) dos postos e seus vencimentos." />
+          <AdmEmptyState message="Você não tem permissão para ver os certificados digitais." />
+        </ScrollView>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <AdmPageHeader icon="shield" title="Certificado Digital" subtitle="Certificados e-CNPJ (A1) dos postos e seus vencimentos." />
+
+          <Text style={certStyles.intro}>
+            Certificados A1 dos postos (e-CNPJ) e dos sócios (e-CPF). O arquivo e a senha ficam guardados cifrados.
+          </Text>
+
+          <View style={certStyles.actionsRow}>
+            <Pressable style={certStyles.secondaryButton} onPress={abrirContatos}>
+              <Text style={certStyles.secondaryButtonText}>Gerenciar contatos</Text>
+            </Pressable>
+            <Pressable style={certStyles.primaryButton} onPress={() => abrirEnvio()}>
+              <Feather name="plus" size={14} color="#FFFFFF" />
+              <Text style={certStyles.primaryButtonText}>Enviar certificado</Text>
+            </Pressable>
+          </View>
+
+          <AdmSearchInput value={busca} onChangeText={setBusca} placeholder="Buscar posto, pessoa, empresa ou CNPJ/CPF" />
+          <View style={{ height: 8 }} />
+          <AdmSelectButton
+            label={CERT_TIPO_OPTIONS.find((option) => option.value === tipoFiltro)?.label ?? 'Todos os tipos'}
+            onPress={() => setTipoModalOpen(true)}
+          />
+          <View style={{ height: 8 }} />
+          <AdmSelectButton
+            label={CERT_STATUS_OPTIONS.find((option) => option.value === statusFiltro)?.label ?? 'Todos os status'}
+            onPress={() => setStatusModalOpen(true)}
+          />
+
+          <View style={certStyles.filterRow}>
+            <Pressable
+              style={[certStyles.chip, soVencendo ? certStyles.chipActive : null]}
+              onPress={() => setSoVencendo((valor) => !valor)}
+            >
+              <Text style={[certStyles.chipText, soVencendo ? certStyles.chipTextActive : null]}>
+                Vencidos ou vencendo em 15 dias
+              </Text>
+            </Pressable>
+            <Text style={certStyles.totalText}>
+              {total} {total === 1 ? 'titular' : 'titulares'}
+            </Text>
+          </View>
+
+          {isLoading ? (
+            <ActivityIndicator color="#0F8B8D" style={{ marginTop: 20 }} />
+          ) : errorMessage ? (
+            <AdmEmptyState message={errorMessage} />
+          ) : itens.length === 0 ? (
+            <AdmEmptyState message="Nenhum certificado encontrado." />
+          ) : (
+            <>
+              {itens.map((item) => {
+                const vence = certVenceMeta(item.dias_para_vencer);
+                return (
+                  <Pressable key={item.id} style={adStyles.dreCard} onPress={() => abrirDetalhe(item)}>
+                    <Text style={certStyles.cardTitle}>{item.titular}</Text>
+                    <Text style={certStyles.cardMono}>{item.cnpj ?? '—'}</Text>
+                    {item.empresa ? <Text style={adStyles.listRowMeta}>{item.empresa}</Text> : null}
+                    <Text style={adStyles.listRowMeta}>
+                      Validade: {certDataBR(item.validade_inicio)} a {certDataBR(item.validade_fim)}
+                    </Text>
+                    <View style={certStyles.badgesRow}>
+                      {item.sem_certificado_valido ? (
+                        <View style={[adStyles.badge, { backgroundColor: '#FBE4E7' }]}>
+                          <Text style={[adStyles.badgeText, { color: '#C2263A' }]}>Sem certificado válido</Text>
+                        </View>
+                      ) : (
+                        <View style={[adStyles.badge, { backgroundColor: vence.bg }]}>
+                          <Text style={[adStyles.badgeText, { color: vence.fg }]}>{vence.label}</Text>
+                        </View>
+                      )}
+                      <View style={certStyles.outlineBadge}>
+                        <Text style={certStyles.outlineBadgeText}>{certStatusLabel(item.status)}</Text>
+                      </View>
+                      <View
+                        style={[
+                          certStyles.outlineBadge,
+                          item.origem === 'agente' ? { borderColor: '#9CC5E8', backgroundColor: '#EAF4FC' } : null,
+                        ]}
+                      >
+                        <Text
+                          style={[certStyles.outlineBadgeText, item.origem === 'agente' ? { color: '#2E75D6' } : null]}
+                        >
+                          {certOrigemLabel(item.origem)}
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              })}
+              {itens.length < total ? (
+                <Pressable style={certStyles.secondaryButton} onPress={carregarMais} disabled={isLoadingMais}>
+                  <Text style={certStyles.secondaryButtonText}>
+                    {isLoadingMais ? 'Carregando...' : `Carregar mais (${total - itens.length})`}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </>
+          )}
+        </ScrollView>
+      )}
+
+      <AdmSelectModal
+        visible={tipoModalOpen}
+        title="Tipo"
+        options={CERT_TIPO_OPTIONS}
+        selectedValue={tipoFiltro}
+        onSelect={setTipoFiltro}
+        onClose={() => setTipoModalOpen(false)}
+      />
+      <AdmSelectModal
+        visible={statusModalOpen}
+        title="Status"
+        options={CERT_STATUS_OPTIONS}
+        selectedValue={statusFiltro}
+        onSelect={setStatusFiltro}
+        onClose={() => setStatusModalOpen(false)}
+      />
+
+      {/* Detalhe do titular */}
+      <AdmModal visible={detalheItem !== null} title={detalheItem?.titular ?? 'Certificado'} onClose={fecharDetalhe}>
+        {isLoadingDetalhe ? <ActivityIndicator color="#0F8B8D" style={{ marginVertical: 20 }} /> : null}
+        {detalheError ? <AdmEmptyState message={detalheError} /> : null}
+        {detalheItem && !isLoadingDetalhe && !detalheError ? (
+          <>
+            {[
+              { label: 'CNPJ/CPF', value: detalheItem.cnpj ?? '—' },
+              { label: 'Empresa', value: detalheItem.empresa ?? '—' },
+              {
+                label: 'Validade',
+                value: `${certDataBR(detalheItem.validade_inicio)} a ${certDataBR(detalheItem.validade_fim)}`,
+              },
+              { label: 'Vence em', value: certVenceMeta(detalheItem.dias_para_vencer).label },
+              { label: 'Status', value: certStatusLabel(detalheItem.status) },
+              { label: 'Origem', value: certOrigemLabel(detalheItem.origem) },
+              { label: 'Enviado em', value: certDataHoraBR(cert.enviado_em ?? cert.created_at) },
+              { label: 'Enviado por', value: detalhe?.autor ?? '—' },
+            ].map((linha) => (
+              <View key={linha.label} style={certStyles.detailRow}>
+                <Text style={certStyles.detailLabel}>{linha.label}</Text>
+                <Text style={certStyles.detailValue}>{linha.value}</Text>
+              </View>
+            ))}
+
+            {permissao?.podeBaixar ? (
+              <Pressable
+                style={[adStyles.filterModalApplyButton, { marginTop: 14, opacity: isBaixando ? 0.6 : 1 }]}
+                onPress={baixar}
+                disabled={isBaixando}
+              >
+                <Text style={adStyles.filterModalApplyButtonText}>{isBaixando ? 'Baixando...' : 'Baixar certificado'}</Text>
+              </Pressable>
+            ) : null}
+
+            <Text style={certStyles.sectionTitle}>Alterar status</Text>
+            <AdmInlineSelect
+              label={CERT_STATUS_ALTERAR_OPTIONS.find((option) => option.value === novoStatus)?.label ?? 'Novo status'}
+              options={CERT_STATUS_ALTERAR_OPTIONS}
+              selectedValue={novoStatus as CertStatus}
+              onSelect={(valor) => setNovoStatus(valor)}
+            />
+            <Pressable
+              style={[
+                certStyles.secondaryButton,
+                { marginTop: 8, opacity: !novoStatus || isSalvandoStatus ? 0.5 : 1 },
+              ]}
+              onPress={salvarStatus}
+              disabled={!novoStatus || isSalvandoStatus}
+            >
+              <Text style={certStyles.secondaryButtonText}>{isSalvandoStatus ? 'Salvando...' : 'Salvar'}</Text>
+            </Pressable>
+
+            <Text style={certStyles.sectionTitle}>Histórico deste posto</Text>
+            {(detalhe?.historico ?? []).length === 0 ? (
+              <Text style={adStyles.listRowMeta}>Sem certificados anteriores.</Text>
+            ) : (
+              (detalhe?.historico ?? []).map((registro, index) => (
+                <View key={String(registro.id ?? index)} style={certStyles.historyCard}>
+                  <View style={certStyles.historyTop}>
+                    <Text style={certStyles.historyValidade}>
+                      {certDataBR(registro.validade_inicio)} a {certDataBR(registro.validade_fim)}
+                    </Text>
+                    <View style={certStyles.outlineBadge}>
+                      <Text style={certStyles.outlineBadgeText}>{certStatusLabel(String(registro.status ?? ''))}</Text>
+                    </View>
+                  </View>
+                  <View style={certStyles.historyTop}>
+                    <View style={certStyles.outlineBadge}>
+                      <Text style={certStyles.outlineBadgeText}>{certOrigemLabel(String(registro.origem ?? ''))}</Text>
+                    </View>
+                    <Text style={adStyles.listRowMeta}>
+                      {certDataBR(registro.created_at ?? registro.enviado_em ?? registro.data)}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
+
+            <Pressable
+              style={[certStyles.secondaryButton, { marginTop: 14 }]}
+              onPress={() => {
+                const preset = presetEnvioDoDetalhe();
+                fecharDetalhe();
+                abrirEnvio(preset);
+              }}
+            >
+              <Text style={certStyles.secondaryButtonText}>Enviar novo arquivo para este posto</Text>
+            </Pressable>
+          </>
+        ) : null}
+      </AdmModal>
+
+      {/* Enviar certificado */}
+      <AdmModal visible={envioAberto} title="Enviar certificado" onClose={() => setEnvioAberto(false)}>
+        {envioResultado ? (
+          <>
+            <View style={certStyles.successBox}>
+              <Feather name="check-circle" size={16} color="#18955A" />
+              <Text style={certStyles.successText}>{envioResultado}</Text>
+            </View>
+            <Pressable style={[adStyles.filterModalApplyButton, { marginTop: 14 }]} onPress={() => setEnvioAberto(false)}>
+              <Text style={adStyles.filterModalApplyButtonText}>Fechar</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <AdmFormLabel>Tipo de titular</AdmFormLabel>
+            <View style={certStyles.segmentRow}>
+              {(['posto', 'pessoa'] as const).map((tipo) => (
+                <Pressable
+                  key={tipo}
+                  style={[certStyles.segment, envioTipo === tipo ? certStyles.segmentActive : null]}
+                  onPress={() => {
+                    setEnvioTipo(tipo);
+                    setEnvioDestinoId(null);
+                    setEnvioBuscaDestino('');
+                  }}
+                >
+                  <Text style={[certStyles.segmentText, envioTipo === tipo ? certStyles.segmentTextActive : null]}>
+                    {tipo === 'posto' ? 'Posto (e-CNPJ)' : 'Pessoa (e-CPF)'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={{ height: 12 }} />
+            <AdmFormLabel>{envioTipo === 'posto' ? 'Posto *' : 'Pessoa *'}</AdmFormLabel>
+            {destinoSelecionado ? (
+              <Pressable style={adStyles.selectButton} onPress={() => setEnvioDestinoId(null)}>
+                <Text style={adStyles.selectButtonText} numberOfLines={1}>
+                  {certOpcaoLabel(destinoSelecionado)}
+                </Text>
+                <Feather name="x" size={16} color="#5E667D" />
+              </Pressable>
+            ) : (
+              <>
+                <TextInput
+                  style={adStyles.formInput}
+                  value={envioBuscaDestino}
+                  onChangeText={setEnvioBuscaDestino}
+                  placeholder={envioTipo === 'posto' ? 'Buscar posto' : 'Buscar pessoa'}
+                  placeholderTextColor="#8A93A8"
+                />
+                {!opcoes ? (
+                  <ActivityIndicator color="#0F8B8D" style={{ marginTop: 10 }} />
+                ) : (
+                  <View style={certStyles.optionsList}>
+                    {destinosFiltrados.length === 0 ? (
+                      <Text style={[adStyles.listRowMeta, { padding: 10 }]}>Nada encontrado.</Text>
+                    ) : (
+                      destinosFiltrados.map((opcao) => (
+                        <Pressable
+                          key={certOpcaoId(opcao)}
+                          style={certStyles.optionRow}
+                          onPress={() => setEnvioDestinoId(certOpcaoId(opcao))}
+                        >
+                          <Text style={certStyles.optionText} numberOfLines={1}>
+                            {certOpcaoLabel(opcao)}
+                          </Text>
+                        </Pressable>
+                      ))
+                    )}
+                  </View>
+                )}
+              </>
+            )}
+
+            <View style={{ height: 12 }} />
+            <AdmFormLabel>Arquivo do certificado (.pfx / .p12) *</AdmFormLabel>
+            <Pressable style={certStyles.fileButton} onPress={escolherArquivo}>
+              <Feather name="upload" size={15} color="#0F8B8D" />
+              <Text style={certStyles.fileButtonText} numberOfLines={1}>
+                {envioArquivo ? envioArquivo.nome : 'Escolher arquivo'}
+              </Text>
+            </Pressable>
+
+            <View style={{ height: 12 }} />
+            <AdmFormLabel>Senha do certificado *</AdmFormLabel>
+            <View style={certStyles.passwordRow}>
+              <TextInput
+                style={[adStyles.formInput, { flex: 1 }]}
+                value={envioSenha}
+                onChangeText={setEnvioSenha}
+                secureTextEntry={!envioSenhaVisivel}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Senha"
+                placeholderTextColor="#8A93A8"
+              />
+              <Pressable onPress={() => setEnvioSenhaVisivel((visivel) => !visivel)} hitSlop={8}>
+                <Feather name={envioSenhaVisivel ? 'eye-off' : 'eye'} size={18} color="#5E667D" />
+              </Pressable>
+            </View>
+
+            <Pressable
+              style={[adStyles.filterModalApplyButton, { marginTop: 18, opacity: isEnviando ? 0.6 : 1 }]}
+              onPress={enviar}
+              disabled={isEnviando}
+            >
+              <Text style={adStyles.filterModalApplyButtonText}>{isEnviando ? 'Enviando...' : 'Enviar certificado'}</Text>
+            </Pressable>
+          </>
+        )}
+      </AdmModal>
+
+      {/* Contatos de alerta */}
+      <AdmModal visible={contatosAberto} title="Contatos de alerta" onClose={() => setContatosAberto(false)}>
+        {contatoForm ? (
+          <>
+            <AdmFormLabel>Canal</AdmFormLabel>
+            <View style={certStyles.segmentRow}>
+              {(['email', 'whatsapp'] as const).map((canal) => (
+                <Pressable
+                  key={canal}
+                  style={[certStyles.segment, contatoForm.canal === canal ? certStyles.segmentActive : null]}
+                  onPress={() => setContatoForm({ ...contatoForm, canal, destino: '' })}
+                >
+                  <Text style={[certStyles.segmentText, contatoForm.canal === canal ? certStyles.segmentTextActive : null]}>
+                    {canal === 'email' ? 'E-mail' : 'WhatsApp'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={{ height: 12 }} />
+            <AdmFormLabel>{contatoForm.canal === 'email' ? 'E-mail *' : 'WhatsApp (DDD + número) *'}</AdmFormLabel>
+            <TextInput
+              style={adStyles.formInput}
+              value={contatoForm.destino}
+              onChangeText={(valor) =>
+                setContatoForm({
+                  ...contatoForm,
+                  destino: contatoForm.canal === 'whatsapp' ? certMascaraTelefone(valor) : valor,
+                })
+              }
+              keyboardType={contatoForm.canal === 'email' ? 'email-address' : 'phone-pad'}
+              autoCapitalize="none"
+              placeholder={contatoForm.canal === 'email' ? 'nome@empresa.com.br' : '(21) 99999-9999'}
+              placeholderTextColor="#8A93A8"
+            />
+            <View style={{ height: 12 }} />
+            <AdmFormLabel>Descrição</AdmFormLabel>
+            <TextInput
+              style={adStyles.formInput}
+              value={contatoForm.descricao}
+              onChangeText={(valor) => setContatoForm({ ...contatoForm, descricao: valor })}
+              placeholder="Ex.: Supervisão — alertas de postos/lojas"
+              placeholderTextColor="#8A93A8"
+            />
+            <View style={certStyles.contactToggleRow}>
+              <Text style={certStyles.contactToggleLabel}>Ativo</Text>
+              <ToggleSwitch
+                value={contatoForm.ativo}
+                onValueChange={() => setContatoForm({ ...contatoForm, ativo: !contatoForm.ativo })}
+              />
+            </View>
+            <Pressable
+              style={[adStyles.filterModalApplyButton, { marginTop: 16, opacity: isSalvandoContato ? 0.6 : 1 }]}
+              onPress={salvarContato}
+              disabled={isSalvandoContato}
+            >
+              <Text style={adStyles.filterModalApplyButtonText}>{isSalvandoContato ? 'Salvando...' : 'Salvar'}</Text>
+            </Pressable>
+            <Pressable style={[certStyles.secondaryButton, { marginTop: 8 }]} onPress={() => setContatoForm(null)}>
+              <Text style={certStyles.secondaryButtonText}>Voltar</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Text style={adStyles.listRowMeta}>Todos os contatos ativos recebem os alertas de vencimento pelo seu canal.</Text>
+            {isLoadingContatos ? <ActivityIndicator color="#0F8B8D" style={{ marginVertical: 16 }} /> : null}
+            {contatosError ? <AdmEmptyState message={contatosError} /> : null}
+            {!isLoadingContatos && !contatosError && contatos.length === 0 ? (
+              <AdmEmptyState message="Nenhum contato cadastrado." />
+            ) : null}
+            {contatos.map((contato) => (
+              <View key={contato.id} style={certStyles.contactCard}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={certStyles.contactTop}>
+                    <View style={certStyles.outlineBadge}>
+                      <Text style={certStyles.outlineBadgeText}>{contato.canal === 'email' ? 'E-mail' : 'WhatsApp'}</Text>
+                    </View>
+                    <Text style={certStyles.contactDestino} numberOfLines={1}>
+                      {contato.canal === 'whatsapp' ? certMascaraTelefone(contato.destino) : contato.destino}
+                    </Text>
+                  </View>
+                  {contato.descricao ? <Text style={adStyles.listRowMeta}>{contato.descricao}</Text> : null}
+                </View>
+                <ToggleSwitch value={contato.ativo} onValueChange={() => alternarContato(contato)} />
+                <Pressable
+                  onPress={() =>
+                    setContatoForm({
+                      id: contato.id,
+                      canal: contato.canal === 'whatsapp' ? 'whatsapp' : 'email',
+                      destino: contato.canal === 'whatsapp' ? certMascaraTelefone(contato.destino) : contato.destino,
+                      descricao: contato.descricao ?? '',
+                      ativo: contato.ativo,
+                    })
+                  }
+                  hitSlop={6}
+                >
+                  <Feather name="edit-2" size={16} color="#5E667D" />
+                </Pressable>
+                <Pressable onPress={() => excluirContato(contato)} hitSlop={6}>
+                  <Feather name="trash-2" size={16} color="#E6213D" />
+                </Pressable>
+              </View>
+            ))}
+            <Pressable
+              style={[adStyles.filterModalApplyButton, { marginTop: 14 }]}
+              onPress={() => setContatoForm({ canal: 'email', destino: '', descricao: '', ativo: true })}
+            >
+              <Text style={adStyles.filterModalApplyButtonText}>Adicionar contato</Text>
+            </Pressable>
+          </>
+        )}
+      </AdmModal>
+    </SafeAreaView>
+  );
+}
+
+const certStyles = StyleSheet.create({
+  intro: { fontSize: 13, color: '#5E667D', marginBottom: 12, lineHeight: 18 },
+  actionsRow: { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
+  primaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#0F8B8D',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  primaryButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  secondaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D6DBEA',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  secondaryButtonText: { color: '#15203E', fontSize: 13, fontWeight: '700' },
+  filterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginVertical: 12 },
+  chip: {
+    flexShrink: 1,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D6DBEA',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  chipActive: { backgroundColor: '#0F8B8D', borderColor: '#0F8B8D' },
+  chipText: { fontSize: 12, fontWeight: '700', color: '#15203E' },
+  chipTextActive: { color: '#FFFFFF' },
+  totalText: { fontSize: 12, color: '#7C8397' },
+  cardTitle: { fontSize: 14, fontWeight: '800', color: '#0C1736' },
+  cardMono: { fontSize: 12, color: '#5E667D', marginTop: 2, marginBottom: 2, fontVariant: ['tabular-nums'] },
+  badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8, alignItems: 'center' },
+  outlineBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D6DBEA',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+  },
+  outlineBadgeText: { fontSize: 11, fontWeight: '700', color: '#15203E' },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F2F8',
+  },
+  detailLabel: { fontSize: 13, color: '#7C8397' },
+  detailValue: { flex: 1, fontSize: 13, color: '#0C1736', fontWeight: '600', textAlign: 'right' },
+  sectionTitle: { fontSize: 14, fontWeight: '800', color: '#0C1736', marginTop: 18, marginBottom: 8 },
+  historyCard: {
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    gap: 6,
+  },
+  historyTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  historyValidade: { fontSize: 13, fontWeight: '700', color: '#0C1736' },
+  segmentRow: { flexDirection: 'row', gap: 8 },
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D6DBEA',
+    paddingVertical: 9,
+    backgroundColor: '#FFFFFF',
+  },
+  segmentActive: { backgroundColor: '#0F8B8D', borderColor: '#0F8B8D' },
+  segmentText: { fontSize: 13, fontWeight: '700', color: '#15203E' },
+  segmentTextActive: { color: '#FFFFFF' },
+  optionsList: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 10,
+    maxHeight: 200,
+    overflow: 'hidden',
+  },
+  optionRow: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F2F8' },
+  optionText: { fontSize: 13, color: '#0C1736' },
+  fileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#0F8B8D',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#F2FAFA',
+  },
+  fileButtonText: { flex: 1, fontSize: 13, fontWeight: '700', color: '#0F8B8D' },
+  passwordRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  successBox: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#E3F6EC',
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'flex-start',
+  },
+  successText: { flex: 1, fontSize: 13, color: '#18955A', lineHeight: 19 },
+  contactCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 8,
+  },
+  contactTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+  contactDestino: { flex: 1, fontSize: 13, fontWeight: '700', color: '#0C1736' },
+  contactToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
+  contactToggleLabel: { fontSize: 13, fontWeight: '700', color: '#15203E' },
+});
 
 export function AdministrativoNotificationsScreen({ navigation }: ScreenProps<'AdministrativoNotifications'>) {
   const { identity } = useContext(AuthIdentityContext);
