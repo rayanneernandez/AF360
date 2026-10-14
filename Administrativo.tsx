@@ -1813,7 +1813,7 @@ export function AdministrativoCertificadoScreen({ navigation }: ScreenProps<'Adm
   const [contatos, setContatos] = useState<CertContato[]>([]);
   const [isLoadingContatos, setIsLoadingContatos] = useState(false);
   const [contatosError, setContatosError] = useState<string | null>(null);
-  const [contatoForm, setContatoForm] = useState<{ id?: string; canal: 'email' | 'whatsapp'; destino: string; descricao: string; ativo: boolean } | null>(null);
+  const [contatoForm, setContatoForm] = useState<{ id?: string; canal: 'email' | 'whatsapp'; destino: string; descricao: string } | null>(null);
   const [isSalvandoContato, setIsSalvandoContato] = useState(false);
 
   useEffect(() => {
@@ -2105,12 +2105,11 @@ export function AdministrativoCertificadoScreen({ navigation }: ScreenProps<'Adm
 
   const alternarContato = (contato: CertContato) => {
     if (!colaboradorId) return;
-    const ativo = !contato.ativo;
-    setContatos((atual) => atual.map((item) => (item.id === contato.id ? { ...item, ativo } : item)));
-    alternarCertContato(colaboradorId, contato.id, ativo).catch((err) => {
-      setContatos((atual) => atual.map((item) => (item.id === contato.id ? { ...item, ativo: !ativo } : item)));
-      Alert.alert('Erro', certErrorMessage(err, 'Não foi possível alterar o contato.'));
-    });
+    alternarCertContato(colaboradorId, contato.id)
+      .then((ativo) =>
+        setContatos((atual) => atual.map((item) => (item.id === contato.id ? { ...item, ativo } : item)))
+      )
+      .catch((err) => Alert.alert('Erro', certErrorMessage(err, 'Não foi possível alterar o contato.')));
   };
 
   const excluirContato = (contato: CertContato) => {
@@ -2139,8 +2138,9 @@ export function AdministrativoCertificadoScreen({ navigation }: ScreenProps<'Adm
 
   const cert = detalhe?.cert ?? {};
   const presetEnvioDoDetalhe = () => {
-    const tipo = (detalheItem?.tipo_titular === 'pessoa' ? 'pessoa' : 'posto') as CertTipoTitular;
-    const destinoId = (tipo === 'posto' ? cert.posto_id : cert.titular_id) ?? cert.posto_id ?? cert.titular_id ?? null;
+    // Em "posto" o titular_id vem nulo e em "pessoa" o posto_id vem nulo.
+    const tipo = ((cert.tipo_titular ?? detalheItem?.tipo_titular) === 'pessoa' ? 'pessoa' : 'posto') as CertTipoTitular;
+    const destinoId = tipo === 'posto' ? cert.posto_id : cert.titular_id;
     return { tipo, destinoId: destinoId ? String(destinoId) : null };
   };
 
@@ -2301,7 +2301,7 @@ export function AdministrativoCertificadoScreen({ navigation }: ScreenProps<'Adm
               { label: 'Vence em', value: certVenceMeta(detalheItem.dias_para_vencer).label },
               { label: 'Status', value: certStatusLabel(detalheItem.status) },
               { label: 'Origem', value: certOrigemLabel(detalheItem.origem) },
-              { label: 'Enviado em', value: certDataHoraBR(cert.enviado_em ?? cert.created_at) },
+              { label: 'Enviado em', value: certDataHoraBR(cert.created_at) },
               { label: 'Enviado por', value: detalhe?.autor ?? '—' },
             ].map((linha) => (
               <View key={linha.label} style={certStyles.detailRow}>
@@ -2534,13 +2534,6 @@ export function AdministrativoCertificadoScreen({ navigation }: ScreenProps<'Adm
               placeholder="Ex.: Supervisão — alertas de postos/lojas"
               placeholderTextColor="#8A93A8"
             />
-            <View style={certStyles.contactToggleRow}>
-              <Text style={certStyles.contactToggleLabel}>Ativo</Text>
-              <ToggleSwitch
-                value={contatoForm.ativo}
-                onValueChange={() => setContatoForm({ ...contatoForm, ativo: !contatoForm.ativo })}
-              />
-            </View>
             <Pressable
               style={[adStyles.filterModalApplyButton, { marginTop: 16, opacity: isSalvandoContato ? 0.6 : 1 }]}
               onPress={salvarContato}
@@ -2581,7 +2574,6 @@ export function AdministrativoCertificadoScreen({ navigation }: ScreenProps<'Adm
                       canal: contato.canal === 'whatsapp' ? 'whatsapp' : 'email',
                       destino: contato.canal === 'whatsapp' ? certMascaraTelefone(contato.destino) : contato.destino,
                       descricao: contato.descricao ?? '',
-                      ativo: contato.ativo,
                     })
                   }
                   hitSlop={6}
@@ -2595,7 +2587,7 @@ export function AdministrativoCertificadoScreen({ navigation }: ScreenProps<'Adm
             ))}
             <Pressable
               style={[adStyles.filterModalApplyButton, { marginTop: 14 }]}
-              onPress={() => setContatoForm({ canal: 'email', destino: '', descricao: '', ativo: true })}
+              onPress={() => setContatoForm({ canal: 'email', destino: '', descricao: '' })}
             >
               <Text style={adStyles.filterModalApplyButtonText}>Adicionar contato</Text>
             </Pressable>
@@ -2736,8 +2728,6 @@ const certStyles = StyleSheet.create({
   },
   contactTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
   contactDestino: { flex: 1, fontSize: 13, fontWeight: '700', color: '#0C1736' },
-  contactToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
-  contactToggleLabel: { fontSize: 13, fontWeight: '700', color: '#15203E' },
 });
 
 export function AdministrativoNotificationsScreen({ navigation }: ScreenProps<'AdministrativoNotifications'>) {

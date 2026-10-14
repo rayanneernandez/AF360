@@ -2399,26 +2399,27 @@ export type CertContato = {
 
 export async function fetchCertContatos(colaboradorId: string): Promise<CertContato[]> {
   const data = await certPost('contatos', colaboradorId, { acao: 'listar' });
-  const lista = data.itens ?? data.contatos ?? data.data ?? [];
-  return (Array.isArray(lista) ? lista : []) as CertContato[];
+  return (Array.isArray(data.contatos) ? data.contatos : []) as CertContato[];
 }
 
 export async function salvarCertContato(
   colaboradorId: string,
-  contato: { id?: string; canal: 'email' | 'whatsapp'; destino: string; descricao: string; ativo: boolean }
+  contato: { id?: string; canal: 'email' | 'whatsapp'; destino: string; descricao: string }
 ): Promise<void> {
+  // "atualizar" não muda o ativo (só o "alternar" muda).
   await certPost('contatos', colaboradorId, {
     acao: contato.id ? 'atualizar' : 'criar',
     id: contato.id,
     canal: contato.canal,
     destino: contato.destino,
     descricao: contato.descricao,
-    ativo: contato.ativo,
   });
 }
 
-export async function alternarCertContato(colaboradorId: string, id: string, ativo: boolean): Promise<void> {
-  await certPost('contatos', colaboradorId, { acao: 'alternar', id, ativo });
+// A Lovable alterna sozinha e devolve o novo valor de "ativo".
+export async function alternarCertContato(colaboradorId: string, id: string): Promise<boolean> {
+  const data = await certPost('contatos', colaboradorId, { acao: 'alternar', id });
+  return data.ativo === true;
 }
 
 export async function excluirCertContato(colaboradorId: string, id: string): Promise<void> {
