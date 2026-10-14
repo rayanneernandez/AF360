@@ -589,7 +589,7 @@ function AssistenteUnreadBadge({ style }: { style?: object }) {
   if (naoLidas <= 0) return null;
   return (
     <View style={[assistenteStyles.unreadPill, style]} pointerEvents="none">
-      <Text style={assistenteStyles.unreadBadgeText}>{naoLidas > 99 ? '+99' : `+${naoLidas}`}</Text>
+      <Text style={assistenteStyles.unreadBadgeText}>{naoLidas > 99 ? '99+' : naoLidas}</Text>
     </View>
   );
 }
@@ -1593,10 +1593,10 @@ const assistenteStyles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   unreadPill: {
-    minWidth: 30,
+    minWidth: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#E11D63',
+    backgroundColor: '#E0002A',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
