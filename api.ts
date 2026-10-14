@@ -2175,7 +2175,11 @@ export type ColaboradorNotificacoesDetalhe = { items: ColaboradorNotificacaoItem
 
 export async function fetchColaboradorNotificacoes(colaboradorId: string): Promise<ColaboradorNotificacoesDetalhe> {
   const json = await api.get(`/api/rh/dashboard/notificacoes?colaboradorId=${encodeURIComponent(colaboradorId)}`);
-  return json.data as ColaboradorNotificacoesDetalhe;
+  const data = json.data as ColaboradorNotificacoesDetalhe;
+  // Os relatórios do n8n (alertas e fluxos) ficam só no Assistente AF360, não
+  // nas notificações gerais.
+  const items = data.items.filter((item) => !(item.modulo ?? '').toLowerCase().startsWith('n8n-'));
+  return { items, total: data.total - (data.items.length - items.length) };
 }
 
 // --- Caixa de notificações (Alertas / Fluxos) — mesma tabela notif_inbox do

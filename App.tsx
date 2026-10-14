@@ -439,6 +439,10 @@ const assistenteStore = {
   mensagens: [] as AssistenteMensagem[],
   enviando: false,
   proximoId: 1,
+  naoLidas: 0,
+  // Momento em que a conversa foi aberta pela última vez; o que chegou antes
+  // disso não conta como não lido mesmo que o servidor ainda não tenha gravado.
+  lidoLocalAte: 0,
 };
 const assistenteListeners = new Set<() => void>();
 
@@ -496,6 +500,17 @@ async function enviarAoAssistente(colaboradorId: string, texto: string) {
   setAssistenteState({ mensagens: [...assistenteStore.mensagens, resposta], enviando: false });
 }
 
+// Bolinha vermelha com a quantidade de mensagens não lidas do assistente.
+function AssistenteUnreadBadge({ style }: { style?: object }) {
+  const { naoLidas } = useAssistenteState();
+  if (naoLidas <= 0) return null;
+  return (
+    <View style={[assistenteStyles.unreadBadge, style]} pointerEvents="none">
+      <Text style={assistenteStyles.unreadBadgeText}>{naoLidas > 99 ? '99+' : naoLidas}</Text>
+    </View>
+  );
+}
+
 // Verifica o acesso e mostra o botão flutuante (arrastável e dispensável) em
 // todas as telas. Ele só abre a tela do assistente.
 function AssistenteChat() {
@@ -532,6 +547,34 @@ function AssistenteChat() {
     };
   }, [colaboradorId]);
 
+  // Contador de não lidas (bolinha vermelha no botão, no menu e no card).
+  useEffect(() => {
+    if (!colaboradorId || !disponivel) return undefined;
+    let ativo = true;
+    const atualizar = async () => {
+      try {
+        const [alertas, fluxos] = await Promise.all([
+          fetchNotificacoesInbox({ colaboradorId, tipo: 'alerta', somenteNaoLidas: true, limit: ASSISTENTE_PAGE }),
+          fetchNotificacoesInbox({ colaboradorId, tipo: 'fluxo', somenteNaoLidas: true, limit: ASSISTENTE_PAGE }),
+        ]);
+        if (!ativo) return;
+        const corte = assistenteStore.lidoLocalAte;
+        const naoLidas = corte
+          ? [...alertas.items, ...fluxos.items].filter((item) => assistenteMillis(item.createdAt) > corte).length
+          : alertas.naoLidas.alerta + alertas.naoLidas.fluxo;
+        setAssistenteState({ naoLidas });
+      } catch {
+        // mantém o último valor
+      }
+    };
+    atualizar();
+    const timer = setInterval(atualizar, 60000);
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+    };
+  }, [colaboradorId, disponivel, aberto]);
+
   if (!colaboradorId || !disponivel || !fabVisivel || aberto) return null;
 
   return (
@@ -547,6 +590,7 @@ function AssistenteChat() {
         >
           <Feather name="message-circle" size={24} color="#FFFFFF" />
         </Pressable>
+        <AssistenteUnreadBadge style={assistenteStyles.fabBadge} />
         <Pressable
           onPress={() => {
             setAssistenteState({ fabVisivel: false });
@@ -617,8 +661,8 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
 
   // Enquanto a tela está aberta, o botão flutuante some.
   useEffect(() => {
-    setAssistenteState({ aberto: true });
-    return () => setAssistenteState({ aberto: false });
+    setAssistenteState({ aberto: true, naoLidas: 0 });
+    return () => setAssistenteState({ aberto: false, lidoLocalAte: Date.now(), naoLidas: 0 });
   }, []);
 
   const carregar = useCallback(async () => {
@@ -1125,6 +1169,7 @@ const assistenteStyles = StyleSheet.create({
     paddingBottom: 24,
   },
   fabWrap: { width: 56, height: 56 },
+  fabBadge: { position: 'absolute', top: -4, left: -4 },
   fabDismiss: {
     position: 'absolute',
     top: -6,
@@ -4903,6 +4948,7 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
               <Text style={styles.selectPanelTitle}>Assistente IA</Text>
               <Text style={styles.selectPanelSubtitle}>Conversa, alertas e fluxos</Text>
             </View>
+            <AssistenteUnreadBadge />
             <View style={[styles.selectPanelChevronShell, { backgroundColor: '#EEEBFA' }]}>
               <Feather name="chevron-right" size={16} color="#4C3A95" />
             </View>
@@ -15710,6 +15756,7 @@ export function SideMenuOverlay({
               >
                 <Feather name="message-circle" size={18} color="#2B3147" />
                 <Text style={styles.sideMenuItemText}>Assistente AF360</Text>
+                <AssistenteUnreadBadge />
               </Pressable>
             ) : null}
             {hasMultiplePanels ? (
