@@ -725,6 +725,9 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
   const [destaqueId, setDestaqueId] = useState<string | null>(null);
   const posicoes = useRef<Record<string, number>>({});
   const tentativasAlvo = useRef(0);
+  // Espelha o alvoId: a carga da conversa não pode rolar para o fim enquanto
+  // ainda estamos indo até a mensagem tocada.
+  const alvoRef = useRef<string | null>(null);
 
   // Enquanto a tela está aberta, o botão flutuante some. O histórico do chat
   // agora vem do servidor, então as mensagens locais da sessão são descartadas.
@@ -773,7 +776,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     }
     setIsLoading(true);
     setErrorMessage(null);
-    autoScroll.current = true;
+    autoScroll.current = alvoRef.current === null;
     try {
       const pagina = await fetchAssistenteMensagens(colaboradorId, {
         tipo: filtroTipo,
@@ -850,6 +853,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     setBuscaAplicada('');
     setFiltroTipo('todos');
     setBuscaAberta(false);
+    alvoRef.current = item.id;
     setAlvoId(item.id);
     setModo('conversa');
   };
@@ -860,19 +864,30 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     if (!alvoId || modo !== 'conversa' || isLoading || isLoadingMais || filtroAtivo) return;
     if (itens.some((item) => item.id === alvoId)) {
       const alvo = alvoId;
-      const timer = setTimeout(() => {
+      // Espera a mensagem ser medida (layout) antes de rolar; tenta por ~2s.
+      let tentativas = 0;
+      let timer: ReturnType<typeof setTimeout>;
+      const rolar = () => {
         const y = posicoes.current[`s-${alvo}`];
+        if (typeof y !== 'number' && tentativas < 14) {
+          tentativas += 1;
+          timer = setTimeout(rolar, 150);
+          return;
+        }
         if (typeof y === 'number') scrollRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true });
         setDestaqueId(alvo);
+        alvoRef.current = null;
         setAlvoId(null);
         setTimeout(() => setDestaqueId(null), 3500);
-      }, 200);
+      };
+      timer = setTimeout(rolar, 200);
       return () => clearTimeout(timer);
     }
     if (temMais && tentativasAlvo.current < 15) {
       tentativasAlvo.current += 1;
       carregarAnteriores();
     } else {
+      alvoRef.current = null;
       setAlvoId(null);
     }
     return undefined;
@@ -1134,7 +1149,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
           style={assistenteStyles.convBody}
           contentContainerStyle={assistenteStyles.convBodyContent}
           onContentSizeChange={() => {
-            if (autoScroll.current) scrollRef.current?.scrollToEnd({ animated: false });
+            if (autoScroll.current && alvoRef.current === null) scrollRef.current?.scrollToEnd({ animated: false });
           }}
         >
           {isLoading ? <ActivityIndicator color="#E0002A" style={assistenteStyles.loader} /> : null}
