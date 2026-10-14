@@ -1717,6 +1717,15 @@ function certOrigemLabel(origem: string): string {
   return origem === 'agente' ? 'Agente automático' : origem === 'manual' ? 'Manual' : origem;
 }
 
+// A Lovable manda só os dígitos; o painel mostra com máscara.
+function certDocumento(raw: string | null): string {
+  if (!raw) return '—';
+  const d = raw.replace(/\D/g, '');
+  if (d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+  if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  return raw;
+}
+
 function certDataBR(raw: unknown): string {
   if (typeof raw !== 'string' || !raw) return '—';
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
@@ -2222,7 +2231,7 @@ export function AdministrativoCertificadoScreen({ navigation }: ScreenProps<'Adm
                 return (
                   <Pressable key={item.id} style={adStyles.dreCard} onPress={() => abrirDetalhe(item)}>
                     <Text style={certStyles.cardTitle}>{item.titular}</Text>
-                    <Text style={certStyles.cardMono}>{item.cnpj ?? '—'}</Text>
+                    <Text style={certStyles.cardMono}>{certDocumento(item.cnpj)}</Text>
                     {item.empresa ? <Text style={adStyles.listRowMeta}>{item.empresa}</Text> : null}
                     <Text style={adStyles.listRowMeta}>
                       Validade: {certDataBR(item.validade_inicio)} a {certDataBR(item.validade_fim)}
@@ -2292,7 +2301,7 @@ export function AdministrativoCertificadoScreen({ navigation }: ScreenProps<'Adm
         {detalheItem && !isLoadingDetalhe && !detalheError ? (
           <>
             {[
-              { label: 'CNPJ/CPF', value: detalheItem.cnpj ?? '—' },
+              { label: 'CNPJ/CPF', value: certDocumento(detalheItem.cnpj) },
               { label: 'Empresa', value: detalheItem.empresa ?? '—' },
               {
                 label: 'Validade',
