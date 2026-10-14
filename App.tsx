@@ -739,19 +739,31 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     return () => clearTimeout(timer);
   }, [busca]);
 
+  // Cada contagem é buscada separadamente (e tenta de novo uma vez): se uma
+  // falhar, as outras continuam aparecendo.
   const carregarTotais = useCallback(async () => {
     if (!colaboradorId) return;
-    try {
-      const [alertas, fluxos, naoLidasServidor] = await Promise.all([
-        fetchAssistenteMensagens(colaboradorId, { tipo: 'alerta', limite: 1 }),
-        fetchAssistenteMensagens(colaboradorId, { tipo: 'fluxo', limite: 1 }),
-        fetchAssistenteNaoLidas(colaboradorId),
-      ]);
-      setTotais({ alerta: alertas.total, fluxo: fluxos.total });
-      setNaoLidas(naoLidasServidor.total);
-    } catch {
-      // mantém os últimos valores
-    }
+    const comRetentativa = async <T,>(buscar: () => Promise<T>): Promise<T | null> => {
+      try {
+        return await buscar();
+      } catch {
+        try {
+          return await buscar();
+        } catch {
+          return null;
+        }
+      }
+    };
+    const [alertas, fluxos, naoLidasServidor] = await Promise.all([
+      comRetentativa(() => fetchAssistenteMensagens(colaboradorId, { tipo: 'alerta', limite: 1 })),
+      comRetentativa(() => fetchAssistenteMensagens(colaboradorId, { tipo: 'fluxo', limite: 1 })),
+      comRetentativa(() => fetchAssistenteNaoLidas(colaboradorId)),
+    ]);
+    setTotais((atual) => ({
+      alerta: alertas ? alertas.total : atual.alerta,
+      fluxo: fluxos ? fluxos.total : atual.fluxo,
+    }));
+    if (naoLidasServidor) setNaoLidas(naoLidasServidor.total);
   }, [colaboradorId]);
 
   const carregar = useCallback(async () => {
@@ -1062,9 +1074,6 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     return (
       <>
         <View style={assistenteStyles.convHeader}>
-          <Pressable onPress={voltar} hitSlop={10}>
-            <Feather name="arrow-left" size={20} color="#15203E" />
-          </Pressable>
           <View style={assistenteStyles.avatar}>
             <Feather name="cpu" size={20} color="#E0002A" />
           </View>
@@ -1267,6 +1276,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
           initials={initials}
           variant={activeRole}
           assistente
+          onBack={voltar}
           onAvatarPress={() => navigation.navigate('AssistenteProfile')}
         />
       </View>
@@ -15944,6 +15954,7 @@ export function TopBar({
   variant = 'colaborador',
   onColor = false,
   assistente = false,
+  onBack,
 }: {
   initials: string;
   onAvatarPress?: () => void;
@@ -15951,6 +15962,8 @@ export function TopBar({
   onColor?: boolean;
   // Marca "Assistente IA" no lugar da marca do painel (tela do Assistente).
   assistente?: boolean;
+  // Substitui a ação padrão do botão de voltar.
+  onBack?: () => void;
 }) {
   const { openMenu } = useContext(MenuContext);
   const { readNotificationIds } = useContext(NotificationsReadContext);
@@ -15998,7 +16011,7 @@ export function TopBar({
           </Pressable>
         )}
 
-        <Pressable style={styles.topBarBackButton} onPress={goBackOrHome} hitSlop={8}>
+        <Pressable style={styles.topBarBackButton} onPress={onBack ?? goBackOrHome} hitSlop={8}>
           <Feather name="arrow-left" size={18} color="#313951" />
         </Pressable>
       </View>
