@@ -46,6 +46,8 @@ import {
   Modal,
   Platform,
   KeyboardAvoidingView,
+  type StyleProp,
+  type ViewStyle,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -689,6 +691,43 @@ function assistenteMillis(raw: string | null) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+// A mensagem que você tocou na lista pisca (amarelo) algumas vezes para mostrar
+// qual é, e fica com a borda azul até o destaque acabar.
+function AssistentePiscar({
+  ativo,
+  style,
+  children,
+}: {
+  ativo: boolean;
+  style: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  const valor = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!ativo) {
+      valor.setValue(0);
+      return undefined;
+    }
+    const animacao = Animated.loop(
+      Animated.sequence([
+        Animated.timing(valor, { toValue: 1, duration: 380, useNativeDriver: false }),
+        Animated.timing(valor, { toValue: 0, duration: 380, useNativeDriver: false }),
+      ]),
+      { iterations: 4 }
+    );
+    animacao.start();
+    return () => animacao.stop();
+  }, [ativo, valor]);
+  const fundo = valor.interpolate({ inputRange: [0, 1], outputRange: ['#EEF3FF', '#FFE27A'] });
+  return (
+    <Animated.View
+      style={[style, ativo ? assistenteStyles.bubbleDestaque : null, ativo ? { backgroundColor: fundo } : null]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 function AssistenteProfileScreen({ navigation }: ScreenProps<'AssistenteProfile'>) {
   return <ModuleProfileScreen navigation={navigation} variant="assistente" />;
 }
@@ -878,7 +917,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
         setDestaqueId(alvo);
         alvoRef.current = null;
         setAlvoId(null);
-        setTimeout(() => setDestaqueId(null), 3500);
+        setTimeout(() => setDestaqueId(null), 4200);
       };
       timer = setTimeout(rolar, 200);
       return () => clearTimeout(timer);
@@ -1184,7 +1223,8 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
                   </View>
                 ) : null}
                 {entry.kind === 'chat' ? (
-                  <View
+                  <AssistentePiscar
+                    ativo={destaqueId !== null && entry.key === `s-${destaqueId}`}
                     style={[
                       assistenteStyles.bubble,
                       entry.msg.autor === 'usuario' ? assistenteStyles.bubbleUser : assistenteStyles.bubbleBot,
@@ -1208,15 +1248,15 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
                     >
                       {assistenteHora(entry.at)}
                     </Text>
-                  </View>
+                  </AssistentePiscar>
                 ) : (
-                  <View
+                  <AssistentePiscar
+                    ativo={destaqueId === entry.item.id}
                     style={[
                       assistenteStyles.bubble,
                       assistenteStyles.bubbleBot,
                       assistenteStyles.bubbleNotif,
                       novosIds[entry.item.id] ? assistenteStyles.bubbleNovo : null,
-                      destaqueId === entry.item.id ? assistenteStyles.bubbleDestaque : null,
                     ]}
                   >
                     <View
@@ -1251,7 +1291,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
                       {entry.item.tag ? <Text style={assistenteStyles.notifTag}>{entry.item.tag}</Text> : <View />}
                       <Text style={assistenteStyles.bubbleTime}>{assistenteHora(entry.at)}</Text>
                     </View>
-                  </View>
+                  </AssistentePiscar>
                 )}
               </View>
             );
