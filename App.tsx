@@ -611,6 +611,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
   const [busca, setBusca] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | NotificacaoInboxTipo>('todos');
   const [texto, setTexto] = useState('');
+  const [buscaAberta, setBuscaAberta] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const autoScroll = useRef(true);
 
@@ -909,7 +910,41 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
               {totais.alerta} alertas · {totais.fluxo} fluxos
             </Text>
           </View>
+          <Pressable
+            onPress={() => {
+              if (buscaAberta) setBusca('');
+              autoScroll.current = true;
+              setBuscaAberta((aberta) => !aberta);
+            }}
+            style={[assistenteStyles.searchToggle, buscaAberta ? assistenteStyles.searchToggleActive : null]}
+            hitSlop={8}
+            accessibilityLabel="Pesquisar na conversa"
+          >
+            <Feather name={buscaAberta ? 'x' : 'search'} size={18} color={buscaAberta ? '#FFFFFF' : '#15203E'} />
+          </Pressable>
         </View>
+
+        {buscaAberta ? (
+          <View style={assistenteStyles.convSearchRow}>
+            <Feather name="search" size={16} color="#7C8397" />
+            <TextInput
+              value={busca}
+              onChangeText={(valor) => {
+                autoScroll.current = true;
+                setBusca(valor);
+              }}
+              placeholder="Pesquisar nas mensagens..."
+              placeholderTextColor="#9AA1B5"
+              autoFocus
+              style={assistenteStyles.searchInput}
+            />
+            {busca ? (
+              <Text style={assistenteStyles.convSearchCount}>
+                {timeline.length} {timeline.length === 1 ? 'resultado' : 'resultados'}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         {filtroAtivo ? (
           <View style={assistenteStyles.filterBar}>
@@ -1126,6 +1161,26 @@ const assistenteStyles = StyleSheet.create({
     borderBottomColor: '#E2E6F0',
   },
   convHeaderText: { flex: 1 },
+  searchToggle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F4F5FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchToggleActive: { backgroundColor: '#E0002A' },
+  convSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E6F0',
+  },
+  convSearchCount: { fontSize: 11, fontWeight: '700', color: '#7C8397' },
   convName: { fontSize: 16, fontWeight: '800', color: '#15203E' },
   convStatus: { fontSize: 12, color: '#7C8397', marginTop: 1 },
   avatar: {
