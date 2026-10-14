@@ -49,12 +49,6 @@
           "faceIDPermission": "Use Face ID para entrar no app mais rápido, sem digitar sua senha."
         }
       ],
-      [
-        "expo-notifications",
-        {
-          "color": "#E0002A"
-        }
-      ],
       "./plugins/withBlockMediaPermissions.js"
     ],
     "extra": {

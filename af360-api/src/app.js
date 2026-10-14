@@ -47,7 +47,6 @@ const recrutamentoRoutes = require('./routes/recrutamento');
 const notificacoesRoutes = require('./routes/notificacoes');
 const assistenteRoutes = require('./routes/assistente');
 const certificadosRoutes = require('./routes/certificados');
-const pushRoutes = require('./routes/push');
 
 const app = express();
 
@@ -107,7 +106,6 @@ app.use('/api/recrutamento', recrutamentoRoutes);
 app.use('/api/notificacoes', notificacoesRoutes);
 app.use('/api/assistente', assistenteRoutes);
 app.use('/api/certificados', certificadosRoutes);
-app.use('/api/push', pushRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'af360-api', message: 'Veja /api/health' });

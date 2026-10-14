@@ -2258,21 +2258,6 @@ export async function enviarMensagemAssistente(
   }
 }
 
-// --- Notificações push (token da Expo por colaborador) ---
-
-export async function registrarPushToken(body: {
-  colaboradorId: string;
-  token: string;
-  plataforma: 'ios' | 'android';
-  dispositivoId?: string;
-}): Promise<void> {
-  await api.post('/api/push/registrar', body);
-}
-
-export async function removerPushToken(body: { colaboradorId: string; token: string }): Promise<void> {
-  await api.post('/api/push/remover', body);
-}
-
 // --- Certificado Digital (painel Administrativo) — recursos internos da
 // Lovable (cert-*), confirmados em 14/10/2026. Os nomes dos campos são os da
 // Lovable. ---
