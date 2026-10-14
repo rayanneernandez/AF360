@@ -573,13 +573,23 @@ async function desregistrarPush() {
   }
 }
 
+// Atualiza a contagem de não lidas (usada pelo botão, pelo menu e pelo card).
+async function atualizarNaoLidasAssistente(colaboradorId: string) {
+  try {
+    const contagem = await fetchAssistenteNaoLidas(colaboradorId);
+    setAssistenteState({ naoLidas: contagem.total });
+  } catch {
+    // mantém o último valor
+  }
+}
+
 // Bolinha vermelha com a quantidade de mensagens não lidas do assistente.
 function AssistenteUnreadBadge({ style }: { style?: object }) {
   const { naoLidas } = useAssistenteState();
   if (naoLidas <= 0) return null;
   return (
-    <View style={[assistenteStyles.unreadBadge, style]} pointerEvents="none">
-      <Text style={assistenteStyles.unreadBadgeText}>{naoLidas > 99 ? '99+' : naoLidas}</Text>
+    <View style={[assistenteStyles.unreadPill, style]} pointerEvents="none">
+      <Text style={assistenteStyles.unreadBadgeText}>{naoLidas > 99 ? '+99' : `+${naoLidas}`}</Text>
     </View>
   );
 }
@@ -664,16 +674,11 @@ function AssistenteChat() {
   useEffect(() => {
     if (!colaboradorId || !disponivel) return undefined;
     let ativo = true;
-    const atualizar = async () => {
-      try {
-        const contagem = await fetchAssistenteNaoLidas(colaboradorId);
-        if (ativo) setAssistenteState({ naoLidas: contagem.total });
-      } catch {
-        // mantém o último valor
-      }
+    const atualizar = () => {
+      if (ativo) atualizarNaoLidasAssistente(colaboradorId);
     };
     atualizar();
-    const timer = setInterval(atualizar, 60000);
+    const timer = setInterval(atualizar, 15000);
     return () => {
       ativo = false;
       clearInterval(timer);
@@ -1586,6 +1591,15 @@ const assistenteStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 6,
+  },
+  unreadPill: {
+    minWidth: 30,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#E11D63',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
   },
   unreadBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
   resultsCount: { fontSize: 12, color: '#7C8397', marginBottom: 8 },
@@ -5066,6 +5080,9 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
   const { setActiveRole } = useContext(UserRoleContext);
   const { isBiometricLoginEnabled, isTwoFactorEnabled } = useContext(SecurityPreferencesContext);
   const assistenteState = useAssistenteState();
+  useEffect(() => {
+    if (identity?.colaboradorId) atualizarNaoLidasAssistente(identity.colaboradorId);
+  }, [identity?.colaboradorId]);
   const insets = useSafeAreaInsets();
   // Filtra qualquer papel que o backend mande e que a gente ainda não
   // conhece em PANEL_OPTION_META — sem isso, `meta` vinha undefined e
