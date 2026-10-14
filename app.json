@@ -17,6 +17,7 @@
     },
     "android": {
       "package": "br.com.af360",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/icon-1024.png"

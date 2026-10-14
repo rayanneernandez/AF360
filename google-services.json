@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "172134857051",
+    "project_id": "af360-7f470",
+    "storage_bucket": "af360-7f470.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:172134857051:android:e0a016994edb0eb981827e",
+        "android_client_info": {
+          "package_name": "br.com.af360"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDI2zX9celoAUDUglCiClMRQzxbNgHuwxE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
