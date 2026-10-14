@@ -746,6 +746,11 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
   const scrollRef = useRef<ScrollView>(null);
   const autoScroll = useRef(true);
   const jaMarcouLidas = useRef(false);
+  // Tocar num resultado da lista leva até a mensagem dentro da conversa.
+  const [alvoId, setAlvoId] = useState<string | null>(null);
+  const [destaqueId, setDestaqueId] = useState<string | null>(null);
+  const posicoes = useRef<Record<string, number>>({});
+  const tentativasAlvo = useRef(0);
 
   // Enquanto a tela está aberta, o botão flutuante some. O histórico do chat
   // agora vem do servidor, então as mensagens locais da sessão são descartadas.
@@ -852,6 +857,41 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
 
   const filtroAtivo = buscaAplicada !== '' || filtroTipo !== 'todos';
 
+  const irParaMensagem = (item: AssistenteMensagemServidor) => {
+    tentativasAlvo.current = 0;
+    autoScroll.current = false;
+    setBusca('');
+    setBuscaAplicada('');
+    setFiltroTipo('todos');
+    setBuscaAberta(false);
+    setAlvoId(item.id);
+    setModo('conversa');
+  };
+
+  // Procura a mensagem na conversa inteira (carregando páginas mais antigas se
+  // precisar) e rola até ela, destacando por alguns segundos.
+  useEffect(() => {
+    if (!alvoId || modo !== 'conversa' || isLoading || isLoadingMais || filtroAtivo) return;
+    if (itens.some((item) => item.id === alvoId)) {
+      const alvo = alvoId;
+      const timer = setTimeout(() => {
+        const y = posicoes.current[`s-${alvo}`];
+        if (typeof y === 'number') scrollRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true });
+        setDestaqueId(alvo);
+        setAlvoId(null);
+        setTimeout(() => setDestaqueId(null), 3500);
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+    if (temMais && tentativasAlvo.current < 15) {
+      tentativasAlvo.current += 1;
+      carregarAnteriores();
+    } else {
+      setAlvoId(null);
+    }
+    return undefined;
+  }, [alvoId, modo, isLoading, isLoadingMais, filtroAtivo, itens, temMais]);
+
   const timeline = useMemo<AssistenteTimelineItem[]>(() => {
     const doServidor: AssistenteTimelineItem[] = itens.map((item) =>
       item.tipo === 'chat'
@@ -920,7 +960,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     const ehFluxo = item.tipo === 'fluxo';
     const ehChat = item.tipo === 'chat';
     return (
-      <Pressable key={item.id} style={assistenteStyles.resultCard} onPress={() => setModo('conversa')}>
+      <Pressable key={item.id} style={assistenteStyles.resultCard} onPress={() => irParaMensagem(item)}>
         <View style={assistenteStyles.resultTopRow}>
           <View style={[assistenteStyles.tipoChip, ehFluxo ? assistenteStyles.tipoChipFluxo : null]}>
             <Text style={[assistenteStyles.tipoChipText, ehFluxo ? assistenteStyles.tipoChipTextFluxo : null]}>
@@ -1134,7 +1174,12 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
             const mostrarDia = dia !== '' && dia !== ultimoDia;
             if (dia) ultimoDia = dia;
             return (
-              <View key={entry.key}>
+              <View
+                key={entry.key}
+                onLayout={(event) => {
+                  posicoes.current[entry.key] = event.nativeEvent.layout.y;
+                }}
+              >
                 {mostrarDia ? (
                   <View style={assistenteStyles.dayPill}>
                     <Text style={assistenteStyles.dayPillText}>{dia}</Text>
@@ -1173,6 +1218,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
                       assistenteStyles.bubbleBot,
                       assistenteStyles.bubbleNotif,
                       novosIds[entry.item.id] ? assistenteStyles.bubbleNovo : null,
+                      destaqueId === entry.item.id ? assistenteStyles.bubbleDestaque : null,
                     ]}
                   >
                     <View
@@ -1379,6 +1425,7 @@ const assistenteStyles = StyleSheet.create({
   bubbleBot: { alignSelf: 'flex-start', backgroundColor: '#FFFFFF' },
   bubbleNotif: { borderWidth: 1, borderColor: '#E8EAF2' },
   bubbleNovo: { borderColor: '#E0002A' },
+  bubbleDestaque: { borderColor: '#29448D', borderWidth: 2, backgroundColor: '#EEF3FF' },
   bubbleText: { fontSize: 14, color: '#15203E', lineHeight: 20 },
   bubbleTextUser: { color: '#FFFFFF' },
   bubbleTextError: { color: '#C0182E' },
