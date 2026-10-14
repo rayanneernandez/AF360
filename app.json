@@ -56,7 +56,8 @@
           "color": "#E0002A"
         }
       ],
-      "./plugins/withBlockMediaPermissions.js"
+      "./plugins/withBlockMediaPermissions.js",
+      "expo-asset"
     ],
     "extra": {
       "eas": {
