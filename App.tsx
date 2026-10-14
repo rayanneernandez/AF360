@@ -15992,9 +15992,11 @@ export function TopBar({
   return (
     <View style={styles.topBar}>
       <View style={styles.topBarLeft}>
-        <Pressable style={styles.menuButton} onPress={openMenu}>
-          <Feather name="menu" size={20} color="#313951" />
-        </Pressable>
+        {assistente ? null : (
+          <Pressable style={styles.menuButton} onPress={openMenu}>
+            <Feather name="menu" size={20} color="#313951" />
+          </Pressable>
+        )}
 
         <Pressable style={styles.topBarBackButton} onPress={goBackOrHome} hitSlop={8}>
           <Feather name="arrow-left" size={18} color="#313951" />
