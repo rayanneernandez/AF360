@@ -2162,6 +2162,17 @@ function postChatPortalDisponivel(body) {
 function postChatPortalMensagem(body) {
   return lovablePost('/api/public/internal/chat-portal-mensagem', {}, body);
 }
+// Conversa do Assistente (alertas, fluxos e chat), junta chat_portal_mensagens
+// e notif_inbox. Corpo sempre com colaborador_id.
+function postAssistenteMensagens(body) {
+  return lovablePost('/api/public/internal/assistente-mensagens', {}, body);
+}
+function postAssistenteLidas(body) {
+  return lovablePost('/api/public/internal/assistente-lidas', {}, body);
+}
+function postAssistenteNaoLidas(body) {
+  return lovablePost('/api/public/internal/assistente-nao-lidas', {}, body);
+}
 // Push do app: registra/remove o token da Expo de um colaborador.
 function postPushRegistrar(body) {
   return lovablePost('/api/public/internal/push-registrar', {}, body);
@@ -2856,6 +2867,9 @@ module.exports = {
   postChatPortalDisponivel,
   postCertificado,
   postPushRegistrar,
+  postAssistenteMensagens,
+  postAssistenteLidas,
+  postAssistenteNaoLidas,
   postPushRemover,
   postChatPortalMensagem,
   getMarketingWaTemplates,

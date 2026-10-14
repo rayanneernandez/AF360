@@ -178,6 +178,11 @@ import {
   fetchAssistenteDisponivel,
   fetchCertPermissao,
   registrarPushToken,
+  fetchAssistenteMensagens,
+  marcarAssistenteLidas,
+  fetchAssistenteNaoLidas,
+  type AssistenteMensagemServidor,
+  type AssistenteTipo,
   removerPushToken,
   enviarMensagemAssistente,
   marcarNotificacaoLida,
@@ -448,9 +453,6 @@ const assistenteStore = {
   enviando: false,
   proximoId: 1,
   naoLidas: 0,
-  // Momento em que a conversa foi aberta pela última vez; o que chegou antes
-  // disso não conta como não lido mesmo que o servidor ainda não tenha gravado.
-  lidoLocalAte: 0,
 };
 const assistenteListeners = new Set<() => void>();
 
@@ -648,16 +650,8 @@ function AssistenteChat() {
     let ativo = true;
     const atualizar = async () => {
       try {
-        const [alertas, fluxos] = await Promise.all([
-          fetchNotificacoesInbox({ colaboradorId, tipo: 'alerta', somenteNaoLidas: true, limit: ASSISTENTE_PAGE }),
-          fetchNotificacoesInbox({ colaboradorId, tipo: 'fluxo', somenteNaoLidas: true, limit: ASSISTENTE_PAGE }),
-        ]);
-        if (!ativo) return;
-        const corte = assistenteStore.lidoLocalAte;
-        const naoLidas = corte
-          ? [...alertas.items, ...fluxos.items].filter((item) => assistenteMillis(item.createdAt) > corte).length
-          : alertas.naoLidas.alerta + alertas.naoLidas.fluxo;
-        setAssistenteState({ naoLidas });
+        const contagem = await fetchAssistenteNaoLidas(colaboradorId);
+        if (ativo) setAssistenteState({ naoLidas: contagem.total });
       } catch {
         // mantém o último valor
       }
@@ -703,8 +697,8 @@ function AssistenteChat() {
 }
 
 type AssistenteTimelineItem =
-  | { kind: 'notif'; key: string; at: number; item: NotificacaoInboxItem }
-  | { kind: 'chat'; key: string; at: number; msg: AssistenteMensagem };
+  | { kind: 'notif'; key: string; at: number; item: AssistenteMensagemServidor }
+  | { kind: 'chat'; key: string; at: number; msg: { autor: 'usuario' | 'assistente'; texto: string; erro?: boolean } };
 
 const ASSISTENTE_PAGE = 100;
 
@@ -725,12 +719,6 @@ function assistenteMillis(raw: string | null) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function assistenteCorresponde(item: NotificacaoInboxItem, busca: string) {
-  if (!busca) return true;
-  const termo = busca.toLowerCase();
-  return [item.titulo, item.mensagem, item.tag ?? ''].some((campo) => campo.toLowerCase().includes(termo));
-}
-
 function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
   const { identity } = useContext(AuthIdentityContext);
   const { activeRole } = useContext(UserRoleContext);
@@ -739,26 +727,53 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
   const initials = getInitials(identity?.fullName || identity?.email || 'AF');
 
   const [modo, setModo] = useState<'conversa' | 'lista'>('conversa');
-  const [alertas, setAlertas] = useState<NotificacaoInboxItem[]>([]);
-  const [fluxos, setFluxos] = useState<NotificacaoInboxItem[]>([]);
+  // Mais recentes primeiro (como o servidor devolve); a conversa inverte.
+  const [itens, setItens] = useState<AssistenteMensagemServidor[]>([]);
+  const [totalFiltrado, setTotalFiltrado] = useState(0);
+  const [temMais, setTemMais] = useState(false);
+  const [proximoAntesDe, setProximoAntesDe] = useState<string | null>(null);
   const [totais, setTotais] = useState({ alerta: 0, fluxo: 0 });
-  const [naoLidas, setNaoLidas] = useState({ alerta: 0, fluxo: 0 });
+  const [naoLidas, setNaoLidas] = useState(0);
   const [novosIds, setNovosIds] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMais, setIsLoadingMais] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState<'todos' | NotificacaoInboxTipo>('todos');
+  const [buscaAplicada, setBuscaAplicada] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | AssistenteTipo>('todos');
   const [texto, setTexto] = useState('');
   const [buscaAberta, setBuscaAberta] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const autoScroll = useRef(true);
+  const jaMarcouLidas = useRef(false);
 
-  // Enquanto a tela está aberta, o botão flutuante some.
+  // Enquanto a tela está aberta, o botão flutuante some. O histórico do chat
+  // agora vem do servidor, então as mensagens locais da sessão são descartadas.
   useEffect(() => {
-    setAssistenteState({ aberto: true, naoLidas: 0 });
-    return () => setAssistenteState({ aberto: false, lidoLocalAte: Date.now(), naoLidas: 0 });
+    setAssistenteState({ aberto: true, naoLidas: 0, mensagens: [] });
+    return () => setAssistenteState({ aberto: false });
   }, []);
+
+  // Busca no servidor com pequeno atraso.
+  useEffect(() => {
+    const timer = setTimeout(() => setBuscaAplicada(busca.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [busca]);
+
+  const carregarTotais = useCallback(async () => {
+    if (!colaboradorId) return;
+    try {
+      const [alertas, fluxos, naoLidasServidor] = await Promise.all([
+        fetchAssistenteMensagens(colaboradorId, { tipo: 'alerta', limite: 1 }),
+        fetchAssistenteMensagens(colaboradorId, { tipo: 'fluxo', limite: 1 }),
+        fetchAssistenteNaoLidas(colaboradorId),
+      ]);
+      setTotais({ alerta: alertas.total, fluxo: fluxos.total });
+      setNaoLidas(naoLidasServidor.total);
+    } catch {
+      // mantém os últimos valores
+    }
+  }, [colaboradorId]);
 
   const carregar = useCallback(async () => {
     if (!colaboradorId) {
@@ -767,65 +782,67 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     }
     setIsLoading(true);
     setErrorMessage(null);
+    autoScroll.current = true;
     try {
-      const [paginaAlertas, paginaFluxos] = await Promise.all([
-        fetchNotificacoesInbox({ colaboradorId, tipo: 'alerta', limit: ASSISTENTE_PAGE }),
-        fetchNotificacoesInbox({ colaboradorId, tipo: 'fluxo', limit: ASSISTENTE_PAGE }),
-      ]);
-      setAlertas(paginaAlertas.items);
-      setFluxos(paginaFluxos.items);
-      setTotais({ alerta: paginaAlertas.total, fluxo: paginaFluxos.total });
-      const lidas = { alerta: paginaAlertas.naoLidas.alerta, fluxo: paginaAlertas.naoLidas.fluxo };
-      setNaoLidas(lidas);
-      const novos: Record<string, boolean> = {};
-      [...paginaAlertas.items, ...paginaFluxos.items].forEach((item) => {
-        if (item.unread) novos[item.id] = true;
+      const pagina = await fetchAssistenteMensagens(colaboradorId, {
+        tipo: filtroTipo,
+        busca: buscaAplicada || undefined,
+        limite: ASSISTENTE_PAGE,
       });
-      setNovosIds(novos);
-      // Abrir a conversa conta como ler (igual ao WhatsApp).
-      if (lidas.alerta + lidas.fluxo > 0) {
-        marcarNotificacoesLidas({ colaboradorId })
-          .then(() => setNaoLidas({ alerta: 0, fluxo: 0 }))
-          .catch(() => {});
+      setItens(pagina.itens);
+      setTotalFiltrado(pagina.total);
+      setTemMais(pagina.temMais);
+      setProximoAntesDe(pagina.proximoAntesDe);
+      // Marca como "novas" (borda vermelha) as que chegaram não lidas.
+      if (!jaMarcouLidas.current) {
+        const novos: Record<string, boolean> = {};
+        pagina.itens.forEach((item) => {
+          if (!item.lida) novos[item.id] = true;
+        });
+        setNovosIds(novos);
       }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar suas notificações.');
+      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar as mensagens.');
     } finally {
       setIsLoading(false);
     }
-  }, [colaboradorId]);
+  }, [colaboradorId, filtroTipo, buscaAplicada]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
-  const temMais = alertas.length < totais.alerta || fluxos.length < totais.fluxo;
+  useEffect(() => {
+    carregarTotais();
+  }, [carregarTotais]);
+
+  // Abrir a conversa conta como ler (igual ao WhatsApp): marca tudo como lido
+  // uma vez, depois da primeira carga.
+  useEffect(() => {
+    if (!colaboradorId || isLoading || jaMarcouLidas.current) return;
+    jaMarcouLidas.current = true;
+    marcarAssistenteLidas(colaboradorId, { todas: true })
+      .then(() => setNaoLidas(0))
+      .catch(() => {});
+  }, [colaboradorId, isLoading]);
 
   const carregarAnteriores = async () => {
-    if (!colaboradorId || isLoadingMais) return;
+    if (!colaboradorId || isLoadingMais || !proximoAntesDe) return;
     setIsLoadingMais(true);
     autoScroll.current = false;
     try {
-      const [maisAlertas, maisFluxos] = await Promise.all([
-        alertas.length < totais.alerta
-          ? fetchNotificacoesInbox({ colaboradorId, tipo: 'alerta', limit: ASSISTENTE_PAGE, offset: alertas.length })
-          : Promise.resolve(null),
-        fluxos.length < totais.fluxo
-          ? fetchNotificacoesInbox({ colaboradorId, tipo: 'fluxo', limit: ASSISTENTE_PAGE, offset: fluxos.length })
-          : Promise.resolve(null),
-      ]);
-      if (maisAlertas) {
-        setAlertas((atual) => {
-          const ids = new Set(atual.map((item) => item.id));
-          return [...atual, ...maisAlertas.items.filter((item) => !ids.has(item.id))];
-        });
-      }
-      if (maisFluxos) {
-        setFluxos((atual) => {
-          const ids = new Set(atual.map((item) => item.id));
-          return [...atual, ...maisFluxos.items.filter((item) => !ids.has(item.id))];
-        });
-      }
+      const pagina = await fetchAssistenteMensagens(colaboradorId, {
+        tipo: filtroTipo,
+        busca: buscaAplicada || undefined,
+        limite: ASSISTENTE_PAGE,
+        antesDe: proximoAntesDe,
+      });
+      setItens((atual) => {
+        const ids = new Set(atual.map((item) => item.id));
+        return [...atual, ...pagina.itens.filter((item) => !ids.has(item.id))];
+      });
+      setTemMais(pagina.temMais);
+      setProximoAntesDe(pagina.proximoAntesDe);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar mais mensagens.');
     } finally {
@@ -833,37 +850,31 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     }
   };
 
-  const todasNotificacoes = useMemo(
-    () => [...alertas, ...fluxos].sort((a, b) => assistenteMillis(b.createdAt) - assistenteMillis(a.createdAt)),
-    [alertas, fluxos]
-  );
-  const buscaAtiva = busca.trim();
-  const filtroAtivo = buscaAtiva !== '' || filtroTipo !== 'todos';
-  const resultados = useMemo(
-    () =>
-      todasNotificacoes.filter(
-        (item) => (filtroTipo === 'todos' || item.tipo === filtroTipo) && assistenteCorresponde(item, buscaAtiva)
-      ),
-    [todasNotificacoes, filtroTipo, buscaAtiva]
-  );
+  const filtroAtivo = buscaAplicada !== '' || filtroTipo !== 'todos';
 
   const timeline = useMemo<AssistenteTimelineItem[]>(() => {
-    const doInbox: AssistenteTimelineItem[] = resultados.map((item) => ({
-      kind: 'notif',
-      key: `n-${item.id}`,
-      at: assistenteMillis(item.createdAt),
-      item,
-    }));
-    // As mensagens do chat só entram quando não há filtro de alerta/fluxo; com
-    // busca por texto, entram só as que contêm o termo.
-    const doChat: AssistenteTimelineItem[] =
-      filtroTipo !== 'todos'
-        ? []
-        : mensagens
-            .filter((msg) => !buscaAtiva || msg.texto.toLowerCase().includes(buscaAtiva.toLowerCase()))
-            .map((msg) => ({ kind: 'chat', key: `c-${msg.id}`, at: msg.at, msg }));
-    return [...doInbox, ...doChat].sort((a, b) => a.at - b.at);
-  }, [resultados, mensagens, filtroTipo, buscaAtiva]);
+    const doServidor: AssistenteTimelineItem[] = itens.map((item) =>
+      item.tipo === 'chat'
+        ? {
+            kind: 'chat',
+            key: `s-${item.id}`,
+            at: assistenteMillis(item.created_at),
+            msg: { autor: item.autor === 'usuario' ? 'usuario' : 'assistente', texto: item.texto },
+          }
+        : { kind: 'notif', key: `s-${item.id}`, at: assistenteMillis(item.created_at), item }
+    );
+    // Mensagens enviadas agora, nesta sessão (o servidor só as devolve na
+    // próxima abertura); só sem filtro.
+    const locais: AssistenteTimelineItem[] = filtroAtivo
+      ? []
+      : mensagens.map((msg) => ({
+          kind: 'chat' as const,
+          key: `c-${msg.id}`,
+          at: msg.at,
+          msg: { autor: msg.autor, texto: msg.texto, erro: msg.erro },
+        }));
+    return [...doServidor, ...locais].sort((a, b) => a.at - b.at);
+  }, [itens, mensagens, filtroAtivo]);
 
   const enviar = () => {
     const mensagem = texto.trim();
@@ -875,6 +886,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
 
   const limparFiltro = () => {
     setBusca('');
+    setBuscaAplicada('');
     setFiltroTipo('todos');
   };
 
@@ -888,41 +900,40 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     }
   };
 
-  const ultimaNotificacao = todasNotificacoes[0] ?? null;
   const ultimaMensagem = mensagens.length > 0 ? mensagens[mensagens.length - 1] : null;
+  const ultimoServidor = itens[0] ?? null;
+  const ultimoServidorMs = ultimoServidor ? assistenteMillis(ultimoServidor.created_at) : 0;
   const previaConversa =
-    ultimaMensagem && (!ultimaNotificacao || ultimaMensagem.at >= assistenteMillis(ultimaNotificacao.createdAt))
+    ultimaMensagem && ultimaMensagem.at >= ultimoServidorMs
       ? ultimaMensagem.texto
-      : ultimaNotificacao
-      ? ultimaNotificacao.titulo
+      : ultimoServidor
+      ? ultimoServidor.titulo || ultimoServidor.texto
       : 'Como posso ajudar?';
-  const dataConversa = Math.max(
-    ultimaMensagem?.at ?? 0,
-    ultimaNotificacao ? assistenteMillis(ultimaNotificacao.createdAt) : 0
-  );
-  const totalNaoLidas = naoLidas.alerta + naoLidas.fluxo;
+  const dataConversa = Math.max(ultimaMensagem?.at ?? 0, ultimoServidorMs);
 
   const abrirAnexo = (url: string) => {
     Linking.openURL(url).catch(() => Alert.alert('Não foi possível abrir o arquivo.'));
   };
 
-  const renderResultadoCard = (item: NotificacaoInboxItem) => {
-    const at = assistenteMillis(item.createdAt);
+  const renderResultadoCard = (item: AssistenteMensagemServidor) => {
+    const at = assistenteMillis(item.created_at);
+    const ehFluxo = item.tipo === 'fluxo';
+    const ehChat = item.tipo === 'chat';
     return (
       <Pressable key={item.id} style={assistenteStyles.resultCard} onPress={() => setModo('conversa')}>
         <View style={assistenteStyles.resultTopRow}>
-          <View style={[assistenteStyles.tipoChip, item.tipo === 'fluxo' ? assistenteStyles.tipoChipFluxo : null]}>
-            <Text style={[assistenteStyles.tipoChipText, item.tipo === 'fluxo' ? assistenteStyles.tipoChipTextFluxo : null]}>
-              {item.tipo === 'fluxo' ? 'Fluxo' : 'Alerta'}
+          <View style={[assistenteStyles.tipoChip, ehFluxo ? assistenteStyles.tipoChipFluxo : null]}>
+            <Text style={[assistenteStyles.tipoChipText, ehFluxo ? assistenteStyles.tipoChipTextFluxo : null]}>
+              {ehChat ? 'Chat' : ehFluxo ? 'Fluxo' : 'Alerta'}
             </Text>
           </View>
           {at ? <Text style={assistenteStyles.resultDate}>{assistenteDataCurta(at)}</Text> : null}
         </View>
         <Text style={assistenteStyles.resultTitle} numberOfLines={1}>
-          {item.titulo || '(sem título)'}
+          {item.titulo || (ehChat ? (item.autor === 'usuario' ? 'Você' : 'Assistente') : '(sem título)')}
         </Text>
         <Text style={assistenteStyles.resultPreview} numberOfLines={2}>
-          {item.mensagem}
+          {item.texto}
         </Text>
       </Pressable>
     );
@@ -951,7 +962,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
         </View>
         <View style={assistenteStyles.statCard}>
           <Text style={assistenteStyles.statLabel}>NÃO LIDAS</Text>
-          <Text style={[assistenteStyles.statValue, { color: '#E0002A' }]}>{totalNaoLidas}</Text>
+          <Text style={[assistenteStyles.statValue, { color: '#E0002A' }]}>{naoLidas}</Text>
         </View>
       </View>
 
@@ -974,7 +985,7 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
       <View style={assistenteStyles.chipsRow}>
         {(
           [
-            { id: 'todos', label: `Todos (${totais.alerta + totais.fluxo})` },
+            { id: 'todos', label: 'Todos' },
             { id: 'alerta', label: `Alertas (${totais.alerta})` },
             { id: 'fluxo', label: `Fluxos (${totais.fluxo})` },
           ] as const
@@ -998,12 +1009,12 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
       {filtroAtivo ? (
         <>
           <Text style={assistenteStyles.resultsCount}>
-            {resultados.length} {resultados.length === 1 ? 'resultado' : 'resultados'}
+            {totalFiltrado} {totalFiltrado === 1 ? 'resultado' : 'resultados'}
           </Text>
-          {resultados.length === 0 && !isLoading ? (
+          {itens.length === 0 && !isLoading ? (
             <Text style={assistenteStyles.empty}>Nada encontrado.</Text>
           ) : (
-            resultados.slice(0, 60).map(renderResultadoCard)
+            itens.slice(0, 60).map(renderResultadoCard)
           )}
         </>
       ) : (
@@ -1022,9 +1033,9 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
               {previaConversa}
             </Text>
           </View>
-          {totalNaoLidas > 0 ? (
+          {naoLidas > 0 ? (
             <View style={assistenteStyles.unreadBadge}>
-              <Text style={assistenteStyles.unreadBadgeText}>{totalNaoLidas}</Text>
+              <Text style={assistenteStyles.unreadBadgeText}>{naoLidas}</Text>
             </View>
           ) : null}
         </Pressable>
@@ -1068,18 +1079,15 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
             <Feather name="search" size={16} color="#7C8397" />
             <TextInput
               value={busca}
-              onChangeText={(valor) => {
-                autoScroll.current = true;
-                setBusca(valor);
-              }}
+              onChangeText={setBusca}
               placeholder="Pesquisar nas mensagens..."
               placeholderTextColor="#9AA1B5"
               autoFocus
               style={assistenteStyles.searchInput}
             />
-            {busca ? (
+            {buscaAplicada ? (
               <Text style={assistenteStyles.convSearchCount}>
-                {timeline.length} {timeline.length === 1 ? 'resultado' : 'resultados'}
+                {totalFiltrado} {totalFiltrado === 1 ? 'resultado' : 'resultados'}
               </Text>
             ) : null}
           </View>
@@ -1089,8 +1097,8 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
           <View style={assistenteStyles.filterBar}>
             <Text style={assistenteStyles.filterBarText} numberOfLines={1}>
               Filtrando
-              {filtroTipo !== 'todos' ? ` ${filtroTipo === 'fluxo' ? 'fluxos' : 'alertas'}` : ''}
-              {buscaAtiva ? ` por "${buscaAtiva}"` : ''}
+              {filtroTipo !== 'todos' ? ` ${filtroTipo === 'fluxo' ? 'fluxos' : filtroTipo === 'chat' ? 'chat' : 'alertas'}` : ''}
+              {buscaAplicada ? ` por "${buscaAplicada}"` : ''}
             </Text>
             <Pressable onPress={limparFiltro} hitSlop={8}>
               <Text style={assistenteStyles.filterBarClear}>Limpar</Text>
@@ -1184,12 +1192,12 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
                     </View>
                     {entry.item.titulo ? <Text style={assistenteStyles.notifTitle}>{entry.item.titulo}</Text> : null}
                     <Text selectable style={assistenteStyles.bubbleText}>
-                      {entry.item.mensagem}
+                      {entry.item.texto}
                     </Text>
-                    {entry.item.anexoUrl ? (
+                    {entry.item.anexo_url ? (
                       <Pressable
                         style={assistenteStyles.attachButton}
-                        onPress={() => abrirAnexo(entry.item.anexoUrl as string)}
+                        onPress={() => abrirAnexo(entry.item.anexo_url as string)}
                       >
                         <Feather name="file-text" size={14} color="#29448D" />
                         <Text style={assistenteStyles.attachButtonText}>Abrir relatório (PDF)</Text>

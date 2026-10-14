@@ -2258,6 +2258,52 @@ export async function enviarMensagemAssistente(
   }
 }
 
+// --- Conversa do Assistente (alertas, fluxos e chat juntos) ---
+
+export type AssistenteTipo = 'alerta' | 'fluxo' | 'chat';
+
+export type AssistenteMensagemServidor = {
+  id: string;
+  origem: 'chat' | 'inbox';
+  autor: 'usuario' | 'assistente' | 'n8n';
+  tipo: AssistenteTipo;
+  titulo: string | null;
+  texto: string;
+  tag: string | null;
+  anexo_url: string | null;
+  created_at: string | null;
+  lida: boolean;
+};
+
+export type AssistenteMensagensPagina = {
+  total: number;
+  itens: AssistenteMensagemServidor[];
+  temMais: boolean;
+  proximoAntesDe: string | null;
+};
+
+export async function fetchAssistenteMensagens(
+  colaboradorId: string,
+  params: { tipo?: 'todos' | AssistenteTipo; busca?: string; limite?: number; antesDe?: string | null } = {}
+): Promise<AssistenteMensagensPagina> {
+  const json = await api.post('/api/assistente/mensagens', { colaboradorId, ...params });
+  return json.data as AssistenteMensagensPagina;
+}
+
+export async function marcarAssistenteLidas(
+  colaboradorId: string,
+  alvo: { id: string } | { todas: true; tipo?: AssistenteTipo }
+): Promise<void> {
+  await api.post('/api/assistente/lidas', { colaboradorId, ...alvo });
+}
+
+export async function fetchAssistenteNaoLidas(
+  colaboradorId: string
+): Promise<{ alerta: number; fluxo: number; chat: number; total: number }> {
+  const json = await api.post('/api/assistente/nao-lidas', { colaboradorId });
+  return json.data as { alerta: number; fluxo: number; chat: number; total: number };
+}
+
 // --- Notificações push (token da Expo por colaborador) ---
 
 export async function registrarPushToken(body: {
