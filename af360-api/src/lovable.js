@@ -2162,6 +2162,13 @@ function postChatPortalDisponivel(body) {
 function postChatPortalMensagem(body) {
   return lovablePost('/api/public/internal/chat-portal-mensagem', {}, body);
 }
+// Push do app: registra/remove o token da Expo de um colaborador.
+function postPushRegistrar(body) {
+  return lovablePost('/api/public/internal/push-registrar', {}, body);
+}
+function postPushRemover(body) {
+  return lovablePost('/api/public/internal/push-remover', {}, body);
+}
 // Certificado Digital (Administrativo): recurso = cert-lista, cert-detalhe,
 // cert-download, cert-status, cert-upload, cert-opcoes, cert-contatos ou
 // cert-permissao. Body sempre com colaborador_id.
@@ -2848,6 +2855,8 @@ module.exports = {
   postNotifInboxLidas,
   postChatPortalDisponivel,
   postCertificado,
+  postPushRegistrar,
+  postPushRemover,
   postChatPortalMensagem,
   getMarketingWaTemplates,
   postMarketingWaEnviarTemplate,

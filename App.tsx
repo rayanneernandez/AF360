@@ -10,6 +10,9 @@ import * as Print from 'expo-print';
 import { WebView } from 'react-native-webview';
 import YoutubePlayer, { type YoutubeIframeRef } from 'react-native-youtube-iframe';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as ScreenCapture from 'expo-screen-capture';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -174,6 +177,8 @@ import {
   fetchNotificacoesInbox,
   fetchAssistenteDisponivel,
   fetchCertPermissao,
+  registrarPushToken,
+  removerPushToken,
   enviarMensagemAssistente,
   marcarNotificacaoLida,
   marcarNotificacoesLidas,
@@ -503,6 +508,68 @@ async function enviarAoAssistente(colaboradorId: string, texto: string) {
   setAssistenteState({ mensagens: [...assistenteStore.mensagens, resposta], enviando: false });
 }
 
+// Notificações push (token da Expo guardado por colaborador na Lovable). O
+// próprio painel dispara o aviso quando chega mensagem nova pro Assistente;
+// aqui só registramos o celular de quem tem acesso e abrimos a conversa quando
+// a pessoa toca no aviso. Não funciona na web nem em simulador.
+const PUSH_STORAGE_KEY = 'af360.push.registro';
+let abrirAssistentePendente = false;
+
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      // Com a conversa aberta, a mensagem já aparece nela.
+      shouldShowBanner: !assistenteStore.aberto,
+      shouldShowList: true,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+    }),
+  });
+}
+
+async function registrarPush(colaboradorId: string) {
+  if (Platform.OS === 'web' || !Device.isDevice) return;
+  try {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Notificações',
+        importance: Notifications.AndroidImportance.MAX,
+      });
+    }
+    let { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') status = (await Notifications.requestPermissionsAsync()).status;
+    if (status !== 'granted') return;
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+    const { data: token } = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+    await registrarPushToken({
+      colaboradorId,
+      token,
+      plataforma: Platform.OS === 'ios' ? 'ios' : 'android',
+      dispositivoId: Device.modelName ?? undefined,
+    });
+    await AsyncStorage.setItem(PUSH_STORAGE_KEY, JSON.stringify({ colaboradorId, token }));
+  } catch {
+    // Sem push neste aparelho (permissão negada, sem Google Play etc.): o
+    // restante do app segue normal.
+  }
+}
+
+// Ao sair da conta o celular deixa de receber os avisos dessa pessoa.
+async function desregistrarPush() {
+  try {
+    const raw = await AsyncStorage.getItem(PUSH_STORAGE_KEY);
+    if (!raw) return;
+    const { colaboradorId, token } = JSON.parse(raw) as { colaboradorId: string; token: string };
+    await Promise.race([
+      removerPushToken({ colaboradorId, token }),
+      new Promise((resolve) => setTimeout(resolve, 4000)),
+    ]);
+    await AsyncStorage.removeItem(PUSH_STORAGE_KEY);
+  } catch {
+    // melhor esforço
+  }
+}
+
 // Bolinha vermelha com a quantidade de mensagens não lidas do assistente.
 function AssistenteUnreadBadge({ style }: { style?: object }) {
   const { naoLidas } = useAssistenteState();
@@ -534,13 +601,38 @@ function AssistenteChat() {
     })
   ).current;
 
+  // Toque no aviso: abre a conversa do Assistente (ou espera o login/acesso).
+  useEffect(() => {
+    if (Platform.OS === 'web') return undefined;
+    const abrirPeloAviso = () => {
+      if (assistenteStore.disponivel) abrirAssistente();
+      else abrirAssistentePendente = true;
+    };
+    const subscription = Notifications.addNotificationResponseReceivedListener(abrirPeloAviso);
+    Notifications.getLastNotificationResponseAsync()
+      .then((resposta) => {
+        if (resposta) abrirPeloAviso();
+      })
+      .catch(() => {});
+    return () => subscription.remove();
+  }, []);
+
   useEffect(() => {
     setAssistenteState({ disponivel: false, mensagens: [], enviando: false });
     if (!colaboradorId) return undefined;
     let ativo = true;
     fetchAssistenteDisponivel(colaboradorId)
       .then((ok) => {
-        if (ativo) setAssistenteState({ disponivel: ok });
+        if (!ativo) return;
+        setAssistenteState({ disponivel: ok });
+        if (ok) {
+          registrarPush(colaboradorId);
+          // App aberto pelo toque no aviso (início a frio): abre a conversa.
+          if (abrirAssistentePendente) {
+            abrirAssistentePendente = false;
+            setTimeout(abrirAssistente, 400);
+          }
+        }
       })
       .catch(() => {
         if (ativo) setAssistenteState({ disponivel: false });
@@ -2263,6 +2355,7 @@ async function persistSession(identity: AuthIdentity): Promise<void> {
 }
 
 async function clearPersistedSession(): Promise<void> {
+  await desregistrarPush();
   try {
     await AsyncStorage.multiRemove([SESSION_IDENTITY_STORAGE_KEY, SESSION_SAVED_AT_STORAGE_KEY]);
   } catch {
