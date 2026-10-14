@@ -19,14 +19,14 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path: string, options: { method?: string; body?: unknown } = {}) {
+async function request(path: string, options: { method?: string; body?: unknown; timeoutMs?: number } = {}) {
   let response: Response;
   // Sem timeout, um backend que trava (cold start, função presa, deploy
   // fora do ar sem devolver resposta) deixava o fetch pendurado pra sempre
   // — a tela ficava girando sem NUNCA cair no catch/Alert de erro. Com o
   // AbortController, depois de 20s a gente desiste e mostra erro de verdade.
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs ?? 20000);
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method: options.method ?? 'GET',
@@ -73,7 +73,7 @@ async function request(path: string, options: { method?: string; body?: unknown 
 
 export const api = {
   get: (path: string) => request(path),
-  post: (path: string, body?: unknown) => request(path, { method: 'POST', body }),
+  post: (path: string, body?: unknown, timeoutMs?: number) => request(path, { method: 'POST', body, timeoutMs }),
   patch: (path: string, body?: unknown) => request(path, { method: 'PATCH', body }),
   put: (path: string, body?: unknown) => request(path, { method: 'PUT', body }),
   delete: (path: string, body?: unknown) => request(path, { method: 'DELETE', body }),
@@ -2247,7 +2247,7 @@ export async function enviarMensagemAssistente(
   mensagem: string
 ): Promise<{ ok: boolean; resposta: string; erro: string | null }> {
   try {
-    const json = await api.post('/api/assistente/mensagem', { colaboradorId, mensagem });
+    const json = await api.post('/api/assistente/mensagem', { colaboradorId, mensagem }, 90000);
     return { ok: true, resposta: String((json.data as { resposta?: string } | undefined)?.resposta ?? ''), erro: null };
   } catch (error) {
     return { ok: false, resposta: '', erro: error instanceof Error ? error.message : 'falha' };

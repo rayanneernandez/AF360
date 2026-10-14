@@ -272,6 +272,7 @@ export type RootStackParamList = {
   Payslips: undefined;
   Approvals: undefined;
   Notifications: { role?: UserRole } | undefined;
+  Assistente: undefined;
   Requests: undefined;
   Communications: undefined;
   Profile: undefined;
@@ -411,11 +412,13 @@ const webAlertStyles = StyleSheet.create({
   buttonText: { fontSize: 14, fontWeight: '800' },
 });
 
-// Assistente AF360: botão redondo flutuante + painel de chat, em todas as
-// telas, só para quem o painel web libera (cargo diretor/supervisor/gerente —
-// quem decide é chat-portal-disponivel). Conversa única por colaborador, igual
-// à do web; o histórico fica só na tela, como no painel.
-type AssistenteMensagem = { id: number; autor: 'usuario' | 'assistente'; texto: string; erro?: boolean };
+// Assistente AF360: tela de conversa (estilo WhatsApp) que já abre direto no
+// chat com o assistente de IA e recebe, como mensagens, os Alertas e Fluxos da
+// caixa de notificações. Só aparece para quem o painel web libera (cargo
+// diretor/supervisor/gerente — quem decide é chat-portal-disponivel). A
+// conversa é única por colaborador, igual à do web; o histórico do chat fica só
+// na tela (como no painel), já os alertas/fluxos vêm da caixa (notif_inbox).
+type AssistenteMensagem = { id: number; autor: 'usuario' | 'assistente'; texto: string; at: number; erro?: boolean };
 
 const ASSISTENTE_ERROS: Record<string, string> = {
   sem_acesso: 'Você não tem acesso ao assistente.',
@@ -424,11 +427,19 @@ const ASSISTENTE_ERROS: Record<string, string> = {
   rede: 'Não foi possível falar com o assistente. Tente novamente.',
 };
 
-// Estado compartilhado do assistente (botão flutuante, painel e item do menu
+// Estado compartilhado do assistente (botão flutuante, tela e item do menu
 // lateral). fabVisivel é preferência do aparelho: a pessoa pode tirar o botão
-// da tela e continuar abrindo o assistente pelo menu.
+// da tela e continuar abrindo o assistente pelo menu. As mensagens do chat
+// ficam aqui para não sumirem ao sair da tela.
 const ASSISTENTE_FAB_STORAGE_KEY = 'af360.assistente.fabVisivel';
-const assistenteStore = { disponivel: false, aberto: false, fabVisivel: true };
+const assistenteStore = {
+  disponivel: false,
+  aberto: false,
+  fabVisivel: true,
+  mensagens: [] as AssistenteMensagem[],
+  enviando: false,
+  proximoId: 1,
+};
 const assistenteListeners = new Set<() => void>();
 
 function setAssistenteState(partial: Partial<typeof assistenteStore>) {
@@ -454,12 +465,43 @@ function useAssistenteState() {
   return assistenteStore;
 }
 
+function abrirAssistente() {
+  if (navigationRef.isReady()) navigationRef.navigate('Assistente' as never);
+}
+
+async function enviarAoAssistente(colaboradorId: string, texto: string) {
+  const mensagem = texto.trim();
+  if (!mensagem || assistenteStore.enviando) return;
+  const enviada: AssistenteMensagem = {
+    id: assistenteStore.proximoId++,
+    autor: 'usuario',
+    texto: mensagem,
+    at: Date.now(),
+  };
+  setAssistenteState({ mensagens: [...assistenteStore.mensagens, enviada], enviando: true });
+  const resultado = await enviarMensagemAssistente(colaboradorId, mensagem);
+  const resposta: AssistenteMensagem = resultado.ok
+    ? { id: assistenteStore.proximoId++, autor: 'assistente', texto: resultado.resposta || '—', at: Date.now() }
+    : {
+        id: assistenteStore.proximoId++,
+        autor: 'assistente',
+        erro: true,
+        at: Date.now(),
+        texto:
+          ASSISTENTE_ERROS[resultado.erro ?? ''] ??
+          (resultado.erro && /^http_/.test(resultado.erro)
+            ? 'O assistente está indisponível no momento.'
+            : resultado.erro || 'Não foi possível falar com o assistente. Tente novamente.'),
+      };
+  setAssistenteState({ mensagens: [...assistenteStore.mensagens, resposta], enviando: false });
+}
+
+// Verifica o acesso e mostra o botão flutuante (arrastável e dispensável) em
+// todas as telas. Ele só abre a tela do assistente.
 function AssistenteChat() {
   const { identity } = useContext(AuthIdentityContext);
   const colaboradorId = identity?.colaboradorId ?? null;
   const { disponivel, aberto, fabVisivel } = useAssistenteState();
-  const setDisponivel = (value: boolean) => setAssistenteState({ disponivel: value });
-  const setAberto = (value: boolean) => setAssistenteState({ aberto: value });
   const fabPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const fabPanResponder = useRef(
     PanResponder.create({
@@ -473,146 +515,569 @@ function AssistenteChat() {
       },
     })
   ).current;
-  const [texto, setTexto] = useState('');
-  const [enviando, setEnviando] = useState(false);
-  const [mensagens, setMensagens] = useState<AssistenteMensagem[]>([]);
-  const scrollRef = useRef<ScrollView>(null);
-  const nextId = useRef(1);
 
   useEffect(() => {
-    setAssistenteState({ disponivel: false, aberto: false });
-    setMensagens([]);
+    setAssistenteState({ disponivel: false, mensagens: [], enviando: false });
     if (!colaboradorId) return undefined;
     let ativo = true;
     fetchAssistenteDisponivel(colaboradorId)
       .then((ok) => {
-        if (ativo) setDisponivel(ok);
+        if (ativo) setAssistenteState({ disponivel: ok });
       })
       .catch(() => {
-        if (ativo) setDisponivel(false);
+        if (ativo) setAssistenteState({ disponivel: false });
       });
     return () => {
       ativo = false;
     };
   }, [colaboradorId]);
 
-  if (!colaboradorId || !disponivel) return null;
-
-  const enviar = async () => {
-    const mensagem = texto.trim();
-    if (!mensagem || enviando) return;
-    setTexto('');
-    setEnviando(true);
-    setMensagens((atual) => [...atual, { id: nextId.current++, autor: 'usuario', texto: mensagem }]);
-    const resultado = await enviarMensagemAssistente(colaboradorId, mensagem);
-    const resposta: AssistenteMensagem = resultado.ok
-      ? { id: nextId.current++, autor: 'assistente', texto: resultado.resposta || '—' }
-      : {
-          id: nextId.current++,
-          autor: 'assistente',
-          erro: true,
-          texto:
-            ASSISTENTE_ERROS[resultado.erro ?? ''] ??
-            (resultado.erro && /^http_/.test(resultado.erro)
-              ? 'O assistente está indisponível no momento.'
-              : resultado.erro || 'Não foi possível falar com o assistente. Tente novamente.'),
-        };
-    setMensagens((atual) => [...atual, resposta]);
-    setEnviando(false);
-  };
-
-  const semEnvio = enviando || !texto.trim();
+  if (!colaboradorId || !disponivel || !fabVisivel || aberto) return null;
 
   return (
     <View pointerEvents="box-none" style={assistenteStyles.overlay}>
-      {aberto ? (
+      <Animated.View
+        {...fabPanResponder.panHandlers}
+        style={[assistenteStyles.fabWrap, { transform: fabPan.getTranslateTransform() }]}
+      >
+        <Pressable
+          onPress={abrirAssistente}
+          style={assistenteStyles.fab}
+          accessibilityLabel="Abrir assistente"
+        >
+          <Feather name="message-circle" size={24} color="#FFFFFF" />
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            setAssistenteState({ fabVisivel: false });
+            AsyncStorage.setItem(ASSISTENTE_FAB_STORAGE_KEY, '0').catch(() => {});
+          }}
+          hitSlop={8}
+          style={assistenteStyles.fabDismiss}
+          accessibilityLabel="Tirar o botão da tela"
+        >
+          <Feather name="x" size={11} color="#FFFFFF" />
+        </Pressable>
+      </Animated.View>
+    </View>
+  );
+}
+
+type AssistenteTimelineItem =
+  | { kind: 'notif'; key: string; at: number; item: NotificacaoInboxItem }
+  | { kind: 'chat'; key: string; at: number; msg: AssistenteMensagem };
+
+const ASSISTENTE_PAGE = 100;
+
+function assistenteDiaLabel(at: number) {
+  return new Date(at).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function assistenteHora(at: number) {
+  return new Date(at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function assistenteDataCurta(at: number) {
+  return new Date(at).toLocaleDateString('pt-BR');
+}
+
+function assistenteMillis(raw: string | null) {
+  const parsed = raw ? Date.parse(raw) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function assistenteCorresponde(item: NotificacaoInboxItem, busca: string) {
+  if (!busca) return true;
+  const termo = busca.toLowerCase();
+  return [item.titulo, item.mensagem, item.tag ?? ''].some((campo) => campo.toLowerCase().includes(termo));
+}
+
+function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
+  const { identity } = useContext(AuthIdentityContext);
+  const { activeRole } = useContext(UserRoleContext);
+  const { mensagens, enviando } = useAssistenteState();
+  const colaboradorId = identity?.colaboradorId ?? null;
+  const initials = getInitials(identity?.fullName || identity?.email || 'AF');
+
+  const [modo, setModo] = useState<'conversa' | 'lista'>('conversa');
+  const [alertas, setAlertas] = useState<NotificacaoInboxItem[]>([]);
+  const [fluxos, setFluxos] = useState<NotificacaoInboxItem[]>([]);
+  const [totais, setTotais] = useState({ alerta: 0, fluxo: 0 });
+  const [naoLidas, setNaoLidas] = useState({ alerta: 0, fluxo: 0 });
+  const [novosIds, setNovosIds] = useState<Record<string, boolean>>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMais, setIsLoadingMais] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [busca, setBusca] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | NotificacaoInboxTipo>('todos');
+  const [texto, setTexto] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
+  const autoScroll = useRef(true);
+
+  // Enquanto a tela está aberta, o botão flutuante some.
+  useEffect(() => {
+    setAssistenteState({ aberto: true });
+    return () => setAssistenteState({ aberto: false });
+  }, []);
+
+  const carregar = useCallback(async () => {
+    if (!colaboradorId) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const [paginaAlertas, paginaFluxos] = await Promise.all([
+        fetchNotificacoesInbox({ colaboradorId, tipo: 'alerta', limit: ASSISTENTE_PAGE }),
+        fetchNotificacoesInbox({ colaboradorId, tipo: 'fluxo', limit: ASSISTENTE_PAGE }),
+      ]);
+      setAlertas(paginaAlertas.items);
+      setFluxos(paginaFluxos.items);
+      setTotais({ alerta: paginaAlertas.total, fluxo: paginaFluxos.total });
+      const lidas = { alerta: paginaAlertas.naoLidas.alerta, fluxo: paginaAlertas.naoLidas.fluxo };
+      setNaoLidas(lidas);
+      const novos: Record<string, boolean> = {};
+      [...paginaAlertas.items, ...paginaFluxos.items].forEach((item) => {
+        if (item.unread) novos[item.id] = true;
+      });
+      setNovosIds(novos);
+      // Abrir a conversa conta como ler (igual ao WhatsApp).
+      if (lidas.alerta + lidas.fluxo > 0) {
+        marcarNotificacoesLidas({ colaboradorId })
+          .then(() => setNaoLidas({ alerta: 0, fluxo: 0 }))
+          .catch(() => {});
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar suas notificações.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [colaboradorId]);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const temMais = alertas.length < totais.alerta || fluxos.length < totais.fluxo;
+
+  const carregarAnteriores = async () => {
+    if (!colaboradorId || isLoadingMais) return;
+    setIsLoadingMais(true);
+    autoScroll.current = false;
+    try {
+      const [maisAlertas, maisFluxos] = await Promise.all([
+        alertas.length < totais.alerta
+          ? fetchNotificacoesInbox({ colaboradorId, tipo: 'alerta', limit: ASSISTENTE_PAGE, offset: alertas.length })
+          : Promise.resolve(null),
+        fluxos.length < totais.fluxo
+          ? fetchNotificacoesInbox({ colaboradorId, tipo: 'fluxo', limit: ASSISTENTE_PAGE, offset: fluxos.length })
+          : Promise.resolve(null),
+      ]);
+      if (maisAlertas) {
+        setAlertas((atual) => {
+          const ids = new Set(atual.map((item) => item.id));
+          return [...atual, ...maisAlertas.items.filter((item) => !ids.has(item.id))];
+        });
+      }
+      if (maisFluxos) {
+        setFluxos((atual) => {
+          const ids = new Set(atual.map((item) => item.id));
+          return [...atual, ...maisFluxos.items.filter((item) => !ids.has(item.id))];
+        });
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível carregar mais mensagens.');
+    } finally {
+      setIsLoadingMais(false);
+    }
+  };
+
+  const todasNotificacoes = useMemo(
+    () => [...alertas, ...fluxos].sort((a, b) => assistenteMillis(b.createdAt) - assistenteMillis(a.createdAt)),
+    [alertas, fluxos]
+  );
+  const buscaAtiva = busca.trim();
+  const filtroAtivo = buscaAtiva !== '' || filtroTipo !== 'todos';
+  const resultados = useMemo(
+    () =>
+      todasNotificacoes.filter(
+        (item) => (filtroTipo === 'todos' || item.tipo === filtroTipo) && assistenteCorresponde(item, buscaAtiva)
+      ),
+    [todasNotificacoes, filtroTipo, buscaAtiva]
+  );
+
+  const timeline = useMemo<AssistenteTimelineItem[]>(() => {
+    const doInbox: AssistenteTimelineItem[] = resultados.map((item) => ({
+      kind: 'notif',
+      key: `n-${item.id}`,
+      at: assistenteMillis(item.createdAt),
+      item,
+    }));
+    // As mensagens do chat só entram quando não há filtro de alerta/fluxo; com
+    // busca por texto, entram só as que contêm o termo.
+    const doChat: AssistenteTimelineItem[] =
+      filtroTipo !== 'todos'
+        ? []
+        : mensagens
+            .filter((msg) => !buscaAtiva || msg.texto.toLowerCase().includes(buscaAtiva.toLowerCase()))
+            .map((msg) => ({ kind: 'chat', key: `c-${msg.id}`, at: msg.at, msg }));
+    return [...doInbox, ...doChat].sort((a, b) => a.at - b.at);
+  }, [resultados, mensagens, filtroTipo, buscaAtiva]);
+
+  const enviar = () => {
+    const mensagem = texto.trim();
+    if (!mensagem || enviando || !colaboradorId) return;
+    setTexto('');
+    autoScroll.current = true;
+    enviarAoAssistente(colaboradorId, mensagem);
+  };
+
+  const limparFiltro = () => {
+    setBusca('');
+    setFiltroTipo('todos');
+  };
+
+  const voltar = () => {
+    if (modo === 'conversa') {
+      setModo('lista');
+    } else if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('SelectPanel');
+    }
+  };
+
+  const ultimaNotificacao = todasNotificacoes[0] ?? null;
+  const ultimaMensagem = mensagens.length > 0 ? mensagens[mensagens.length - 1] : null;
+  const previaConversa =
+    ultimaMensagem && (!ultimaNotificacao || ultimaMensagem.at >= assistenteMillis(ultimaNotificacao.createdAt))
+      ? ultimaMensagem.texto
+      : ultimaNotificacao
+      ? ultimaNotificacao.titulo
+      : 'Como posso ajudar?';
+  const dataConversa = Math.max(
+    ultimaMensagem?.at ?? 0,
+    ultimaNotificacao ? assistenteMillis(ultimaNotificacao.createdAt) : 0
+  );
+  const totalNaoLidas = naoLidas.alerta + naoLidas.fluxo;
+
+  const abrirAnexo = (url: string) => {
+    Linking.openURL(url).catch(() => Alert.alert('Não foi possível abrir o arquivo.'));
+  };
+
+  const renderResultadoCard = (item: NotificacaoInboxItem) => {
+    const at = assistenteMillis(item.createdAt);
+    return (
+      <Pressable key={item.id} style={assistenteStyles.resultCard} onPress={() => setModo('conversa')}>
+        <View style={assistenteStyles.resultTopRow}>
+          <View style={[assistenteStyles.tipoChip, item.tipo === 'fluxo' ? assistenteStyles.tipoChipFluxo : null]}>
+            <Text style={[assistenteStyles.tipoChipText, item.tipo === 'fluxo' ? assistenteStyles.tipoChipTextFluxo : null]}>
+              {item.tipo === 'fluxo' ? 'Fluxo' : 'Alerta'}
+            </Text>
+          </View>
+          {at ? <Text style={assistenteStyles.resultDate}>{assistenteDataCurta(at)}</Text> : null}
+        </View>
+        <Text style={assistenteStyles.resultTitle} numberOfLines={1}>
+          {item.titulo || '(sem título)'}
+        </Text>
+        <Text style={assistenteStyles.resultPreview} numberOfLines={2}>
+          {item.mensagem}
+        </Text>
+      </Pressable>
+    );
+  };
+
+  const renderLista = () => (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={assistenteStyles.listaContent}>
+      <View style={assistenteStyles.listaHeader}>
+        <View style={assistenteStyles.listaHeaderIcon}>
+          <Feather name="cpu" size={18} color="#E0002A" />
+        </View>
+        <View style={assistenteStyles.listaHeaderText}>
+          <Text style={assistenteStyles.listaTitle}>Assistente IA</Text>
+          <Text style={assistenteStyles.listaSubtitle}>Alertas, fluxos e conversa com o assistente</Text>
+        </View>
+      </View>
+
+      <View style={assistenteStyles.statsRow}>
+        <View style={assistenteStyles.statCard}>
+          <Text style={assistenteStyles.statLabel}>ALERTAS</Text>
+          <Text style={[assistenteStyles.statValue, { color: '#B7791F' }]}>{totais.alerta}</Text>
+        </View>
+        <View style={assistenteStyles.statCard}>
+          <Text style={assistenteStyles.statLabel}>FLUXOS</Text>
+          <Text style={[assistenteStyles.statValue, { color: '#2F54D0' }]}>{totais.fluxo}</Text>
+        </View>
+        <View style={assistenteStyles.statCard}>
+          <Text style={assistenteStyles.statLabel}>NÃO LIDAS</Text>
+          <Text style={[assistenteStyles.statValue, { color: '#E0002A' }]}>{totalNaoLidas}</Text>
+        </View>
+      </View>
+
+      <View style={assistenteStyles.searchBox}>
+        <Feather name="search" size={16} color="#7C8397" />
+        <TextInput
+          value={busca}
+          onChangeText={setBusca}
+          placeholder="Buscar em alertas, fluxos e mensagens..."
+          placeholderTextColor="#9AA1B5"
+          style={assistenteStyles.searchInput}
+        />
+        {busca ? (
+          <Pressable onPress={() => setBusca('')} hitSlop={8}>
+            <Feather name="x" size={16} color="#7C8397" />
+          </Pressable>
+        ) : null}
+      </View>
+
+      <View style={assistenteStyles.chipsRow}>
+        {(
+          [
+            { id: 'todos', label: `Todos (${totais.alerta + totais.fluxo})` },
+            { id: 'alerta', label: `Alertas (${totais.alerta})` },
+            { id: 'fluxo', label: `Fluxos (${totais.fluxo})` },
+          ] as const
+        ).map((chip) => (
+          <Pressable
+            key={chip.id}
+            onPress={() => setFiltroTipo(chip.id)}
+            style={[assistenteStyles.filterChip, filtroTipo === chip.id ? assistenteStyles.filterChipActive : null]}
+          >
+            <Text
+              style={[assistenteStyles.filterChipText, filtroTipo === chip.id ? assistenteStyles.filterChipTextActive : null]}
+            >
+              {chip.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {errorMessage ? <Text style={assistenteStyles.errorText}>{errorMessage}</Text> : null}
+
+      {filtroAtivo ? (
+        <>
+          <Text style={assistenteStyles.resultsCount}>
+            {resultados.length} {resultados.length === 1 ? 'resultado' : 'resultados'}
+          </Text>
+          {resultados.length === 0 && !isLoading ? (
+            <Text style={assistenteStyles.empty}>Nada encontrado.</Text>
+          ) : (
+            resultados.slice(0, 60).map(renderResultadoCard)
+          )}
+        </>
+      ) : (
+        <Pressable style={assistenteStyles.conversaCard} onPress={() => setModo('conversa')}>
+          <View style={assistenteStyles.avatar}>
+            <Feather name="cpu" size={20} color="#E0002A" />
+          </View>
+          <View style={assistenteStyles.conversaCardBody}>
+            <View style={assistenteStyles.conversaCardTop}>
+              <Text style={assistenteStyles.conversaCardName}>Assistente AF360</Text>
+              {dataConversa ? (
+                <Text style={assistenteStyles.resultDate}>{assistenteDataCurta(dataConversa)}</Text>
+              ) : null}
+            </View>
+            <Text style={assistenteStyles.resultPreview} numberOfLines={1}>
+              {previaConversa}
+            </Text>
+          </View>
+          {totalNaoLidas > 0 ? (
+            <View style={assistenteStyles.unreadBadge}>
+              <Text style={assistenteStyles.unreadBadgeText}>{totalNaoLidas}</Text>
+            </View>
+          ) : null}
+        </Pressable>
+      )}
+    </ScrollView>
+  );
+
+  const renderConversa = () => {
+    let ultimoDia = '';
+    return (
+      <>
+        <View style={assistenteStyles.convHeader}>
+          <Pressable onPress={voltar} hitSlop={10}>
+            <Feather name="arrow-left" size={20} color="#15203E" />
+          </Pressable>
+          <View style={assistenteStyles.avatar}>
+            <Feather name="cpu" size={20} color="#E0002A" />
+          </View>
+          <View style={assistenteStyles.convHeaderText}>
+            <Text style={assistenteStyles.convName}>Assistente AF360</Text>
+            <Text style={assistenteStyles.convStatus}>
+              {totais.alerta} alertas · {totais.fluxo} fluxos
+            </Text>
+          </View>
+        </View>
+
+        {filtroAtivo ? (
+          <View style={assistenteStyles.filterBar}>
+            <Text style={assistenteStyles.filterBarText} numberOfLines={1}>
+              Filtrando
+              {filtroTipo !== 'todos' ? ` ${filtroTipo === 'fluxo' ? 'fluxos' : 'alertas'}` : ''}
+              {buscaAtiva ? ` por "${buscaAtiva}"` : ''}
+            </Text>
+            <Pressable onPress={limparFiltro} hitSlop={8}>
+              <Text style={assistenteStyles.filterBarClear}>Limpar</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <ScrollView
+          ref={scrollRef}
+          style={assistenteStyles.convBody}
+          contentContainerStyle={assistenteStyles.convBodyContent}
+          onContentSizeChange={() => {
+            if (autoScroll.current) scrollRef.current?.scrollToEnd({ animated: false });
+          }}
+        >
+          {isLoading ? <ActivityIndicator color="#E0002A" style={assistenteStyles.loader} /> : null}
+          {errorMessage ? <Text style={assistenteStyles.errorText}>{errorMessage}</Text> : null}
+          {!isLoading && temMais ? (
+            <Pressable style={assistenteStyles.loadMore} onPress={carregarAnteriores} disabled={isLoadingMais}>
+              <Text style={assistenteStyles.loadMoreText}>
+                {isLoadingMais ? 'Carregando...' : 'Carregar mensagens anteriores'}
+              </Text>
+            </Pressable>
+          ) : null}
+          {!isLoading && timeline.length === 0 ? (
+            <Text style={assistenteStyles.empty}>
+              {filtroAtivo ? 'Nada encontrado.' : 'Como posso ajudar?'}
+            </Text>
+          ) : null}
+
+          {timeline.map((entry) => {
+            const dia = entry.at ? assistenteDiaLabel(entry.at) : '';
+            const mostrarDia = dia !== '' && dia !== ultimoDia;
+            if (dia) ultimoDia = dia;
+            return (
+              <View key={entry.key}>
+                {mostrarDia ? (
+                  <View style={assistenteStyles.dayPill}>
+                    <Text style={assistenteStyles.dayPillText}>{dia}</Text>
+                  </View>
+                ) : null}
+                {entry.kind === 'chat' ? (
+                  <View
+                    style={[
+                      assistenteStyles.bubble,
+                      entry.msg.autor === 'usuario' ? assistenteStyles.bubbleUser : assistenteStyles.bubbleBot,
+                    ]}
+                  >
+                    <Text
+                      selectable
+                      style={[
+                        assistenteStyles.bubbleText,
+                        entry.msg.autor === 'usuario' ? assistenteStyles.bubbleTextUser : null,
+                        entry.msg.erro ? assistenteStyles.bubbleTextError : null,
+                      ]}
+                    >
+                      {entry.msg.texto}
+                    </Text>
+                    <Text
+                      style={[
+                        assistenteStyles.bubbleTime,
+                        entry.msg.autor === 'usuario' ? assistenteStyles.bubbleTimeUser : null,
+                      ]}
+                    >
+                      {assistenteHora(entry.at)}
+                    </Text>
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      assistenteStyles.bubble,
+                      assistenteStyles.bubbleBot,
+                      assistenteStyles.bubbleNotif,
+                      novosIds[entry.item.id] ? assistenteStyles.bubbleNovo : null,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        assistenteStyles.tipoChip,
+                        entry.item.tipo === 'fluxo' ? assistenteStyles.tipoChipFluxo : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          assistenteStyles.tipoChipText,
+                          entry.item.tipo === 'fluxo' ? assistenteStyles.tipoChipTextFluxo : null,
+                        ]}
+                      >
+                        {entry.item.tipo === 'fluxo' ? 'Fluxo' : 'Alerta'}
+                      </Text>
+                    </View>
+                    {entry.item.titulo ? <Text style={assistenteStyles.notifTitle}>{entry.item.titulo}</Text> : null}
+                    <Text selectable style={assistenteStyles.bubbleText}>
+                      {entry.item.mensagem}
+                    </Text>
+                    {entry.item.anexoUrl ? (
+                      <Pressable
+                        style={assistenteStyles.attachButton}
+                        onPress={() => abrirAnexo(entry.item.anexoUrl as string)}
+                      >
+                        <Feather name="file-text" size={14} color="#29448D" />
+                        <Text style={assistenteStyles.attachButtonText}>Abrir relatório (PDF)</Text>
+                      </Pressable>
+                    ) : null}
+                    <View style={assistenteStyles.notifFooter}>
+                      {entry.item.tag ? <Text style={assistenteStyles.notifTag}>{entry.item.tag}</Text> : <View />}
+                      <Text style={assistenteStyles.bubbleTime}>{assistenteHora(entry.at)}</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+          {enviando ? <Text style={assistenteStyles.thinking}>Pensando…</Text> : null}
+        </ScrollView>
+
+        <View style={assistenteStyles.inputRow}>
+          <TextInput
+            value={texto}
+            onChangeText={setTexto}
+            placeholder="Digite uma mensagem..."
+            placeholderTextColor="#9AA1B5"
+            maxLength={4000}
+            editable={!enviando}
+            onSubmitEditing={enviar}
+            returnKeyType="send"
+            style={assistenteStyles.input}
+          />
+          <Pressable
+            onPress={enviar}
+            disabled={enviando || !texto.trim()}
+            style={[assistenteStyles.sendButton, enviando || !texto.trim() ? assistenteStyles.sendButtonDisabled : null]}
+          >
+            <Feather name="send" size={16} color="#FFFFFF" />
+          </Pressable>
+        </View>
+      </>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.topBarContainer}>
+        <TopBar initials={initials} variant={activeRole} />
+      </View>
+      {!colaboradorId ? (
+        <Text style={assistenteStyles.empty}>
+          Seu acesso ainda não está vinculado a um colaborador. Procure o RH para liberar o assistente.
+        </Text>
+      ) : modo === 'lista' ? (
+        renderLista()
+      ) : (
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={assistenteStyles.panel}
+          style={assistenteStyles.convWrapper}
         >
-          <View style={assistenteStyles.header}>
-            <Text style={assistenteStyles.headerTitle}>Assistente AF360</Text>
-            <Pressable onPress={() => setAberto(false)} hitSlop={10}>
-              <Feather name="x" size={18} color="#15203E" />
-            </Pressable>
-          </View>
-          <ScrollView
-            ref={scrollRef}
-            style={assistenteStyles.body}
-            contentContainerStyle={assistenteStyles.bodyContent}
-            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-          >
-            {mensagens.length === 0 ? <Text style={assistenteStyles.empty}>Como posso ajudar?</Text> : null}
-            {mensagens.map((item) => (
-              <View
-                key={item.id}
-                style={[
-                  assistenteStyles.bubble,
-                  item.autor === 'usuario' ? assistenteStyles.bubbleUser : assistenteStyles.bubbleBot,
-                ]}
-              >
-                <Text
-                  selectable
-                  style={[
-                    assistenteStyles.bubbleText,
-                    item.autor === 'usuario' ? assistenteStyles.bubbleTextUser : null,
-                    item.erro ? assistenteStyles.bubbleTextError : null,
-                  ]}
-                >
-                  {item.texto}
-                </Text>
-              </View>
-            ))}
-            {enviando ? <Text style={assistenteStyles.thinking}>Pensando…</Text> : null}
-          </ScrollView>
-          <View style={assistenteStyles.inputRow}>
-            <TextInput
-              value={texto}
-              onChangeText={setTexto}
-              placeholder="Digite sua mensagem..."
-              placeholderTextColor="#9AA1B5"
-              maxLength={4000}
-              editable={!enviando}
-              onSubmitEditing={enviar}
-              returnKeyType="send"
-              style={assistenteStyles.input}
-            />
-            <Pressable
-              onPress={enviar}
-              disabled={semEnvio}
-              style={[assistenteStyles.sendButton, semEnvio ? assistenteStyles.sendButtonDisabled : null]}
-            >
-              <Feather name="send" size={16} color="#FFFFFF" />
-            </Pressable>
-          </View>
+          {renderConversa()}
         </KeyboardAvoidingView>
-      ) : null}
-      {fabVisivel ? (
-        <Animated.View
-          {...fabPanResponder.panHandlers}
-          style={[assistenteStyles.fabWrap, { transform: fabPan.getTranslateTransform() }]}
-        >
-          <Pressable
-            onPress={() => setAberto(!aberto)}
-            style={assistenteStyles.fab}
-            accessibilityLabel={aberto ? 'Fechar assistente' : 'Abrir assistente'}
-          >
-            <Feather name={aberto ? 'x' : 'message-circle'} size={24} color="#FFFFFF" />
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              setAssistenteState({ fabVisivel: false, aberto: false });
-              AsyncStorage.setItem(ASSISTENTE_FAB_STORAGE_KEY, '0').catch(() => {});
-            }}
-            hitSlop={8}
-            style={assistenteStyles.fabDismiss}
-            accessibilityLabel="Tirar o botão da tela"
-          >
-            <Feather name="x" size={11} color="#FFFFFF" />
-          </Pressable>
-        </Animated.View>
-      ) : null}
-    </View>
+      )}
+    </SafeAreaView>
   );
 }
 
@@ -649,71 +1114,210 @@ const assistenteStyles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 6,
   },
-  panel: {
-    width: '100%',
-    maxWidth: 380,
-    height: 420,
-    maxHeight: '75%',
+  convWrapper: { flex: 1 },
+  convHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E6F0',
-    marginBottom: 12,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E6F0',
   },
-  header: {
+  convHeaderText: { flex: 1 },
+  convName: { fontSize: 16, fontWeight: '800', color: '#15203E' },
+  convStatus: { fontSize: 12, color: '#7C8397', marginTop: 1 },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FBE4E8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E6F0',
+    paddingVertical: 8,
+    backgroundColor: '#EEF1FA',
   },
-  headerTitle: { fontSize: 15, fontWeight: '800', color: '#15203E' },
-  body: { flex: 1 },
-  bodyContent: { padding: 14, gap: 8, flexGrow: 1 },
-  empty: { color: '#7C8397', fontSize: 13, textAlign: 'center', marginTop: 40 },
-  bubble: { maxWidth: '85%', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
-  bubbleUser: { alignSelf: 'flex-end', backgroundColor: '#1F3A93' },
-  bubbleBot: { alignSelf: 'flex-start', backgroundColor: '#F1F3F9' },
+  filterBarText: { flex: 1, fontSize: 12, color: '#29448D', fontWeight: '600' },
+  filterBarClear: { fontSize: 12, color: '#E0002A', fontWeight: '800' },
+  convBody: { flex: 1, backgroundColor: '#F4F5FA' },
+  convBodyContent: { padding: 14, gap: 8, flexGrow: 1 },
+  loader: { marginVertical: 20 },
+  loadMore: {
+    alignSelf: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D6DBEA',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginBottom: 6,
+  },
+  loadMoreText: { fontSize: 12, fontWeight: '700', color: '#29448D' },
+  empty: { color: '#7C8397', fontSize: 13, textAlign: 'center', marginTop: 40, paddingHorizontal: 24 },
+  errorText: { color: '#C0182E', fontSize: 13, textAlign: 'center', marginVertical: 8 },
+  dayPill: {
+    alignSelf: 'center',
+    backgroundColor: '#E2E6F0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginVertical: 8,
+  },
+  dayPillText: { fontSize: 11, fontWeight: '700', color: '#5E667D' },
+  bubble: { maxWidth: '88%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 4 },
+  bubbleUser: { alignSelf: 'flex-end', backgroundColor: '#29448D' },
+  bubbleBot: { alignSelf: 'flex-start', backgroundColor: '#FFFFFF' },
+  bubbleNotif: { borderWidth: 1, borderColor: '#E8EAF2' },
+  bubbleNovo: { borderColor: '#E0002A' },
   bubbleText: { fontSize: 14, color: '#15203E', lineHeight: 20 },
   bubbleTextUser: { color: '#FFFFFF' },
   bubbleTextError: { color: '#C0182E' },
+  bubbleTime: { fontSize: 10, color: '#9AA1B5', alignSelf: 'flex-end', marginTop: 3 },
+  bubbleTimeUser: { color: '#C9D2F0' },
+  notifTitle: { fontSize: 14, fontWeight: '800', color: '#15203E', marginBottom: 4 },
+  notifFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 4 },
+  notifTag: { fontSize: 10, color: '#5E667D', backgroundColor: '#EEF0F6', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  tipoChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFF4DC',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginBottom: 5,
+  },
+  tipoChipFluxo: { backgroundColor: '#E5ECFF' },
+  tipoChipText: { fontSize: 10, fontWeight: '800', color: '#B7791F' },
+  tipoChipTextFluxo: { color: '#2F54D0' },
+  attachButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D6DBEA',
+    backgroundColor: '#F4F7FF',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  attachButtonText: { fontSize: 12, fontWeight: '700', color: '#29448D' },
   thinking: { alignSelf: 'flex-start', color: '#7C8397', fontSize: 13, fontStyle: 'italic' },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     padding: 10,
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E2E6F0',
   },
   input: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#E2E6F0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    backgroundColor: '#F4F5FA',
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     fontSize: 14,
     color: '#15203E',
   },
   sendButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#1F3A93',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#E0002A',
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendButtonDisabled: { opacity: 0.45 },
+  listaContent: { padding: 16, paddingBottom: 40 },
+  listaHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  listaHeaderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FBE4E8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listaHeaderText: { flex: 1 },
+  listaTitle: { fontSize: 20, fontWeight: '800', color: '#15203E' },
+  listaSubtitle: { fontSize: 12, color: '#7C8397', marginTop: 1 },
+  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  statCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 10 },
+  statLabel: { fontSize: 10, fontWeight: '700', color: '#7C8397' },
+  statValue: { fontSize: 20, fontWeight: '800', marginTop: 2 },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: '#15203E', padding: 0 },
+  chipsRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  filterChip: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E2E6F0',
+    paddingVertical: 9,
+  },
+  filterChipActive: { backgroundColor: '#E0002A', borderColor: '#E0002A' },
+  filterChipText: { fontSize: 12, fontWeight: '700', color: '#15203E' },
+  filterChipTextActive: { color: '#FFFFFF' },
+  conversaCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E8EAF2',
+    padding: 14,
+  },
+  conversaCardBody: { flex: 1 },
+  conversaCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  conversaCardName: { fontSize: 15, fontWeight: '800', color: '#15203E' },
+  unreadBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#E0002A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  unreadBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
+  resultsCount: { fontSize: 12, color: '#7C8397', marginBottom: 8 },
+  resultCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E8EAF2',
+    padding: 12,
+    marginBottom: 8,
+  },
+  resultTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  resultDate: { fontSize: 11, color: '#7C8397' },
+  resultTitle: { fontSize: 14, fontWeight: '800', color: '#15203E' },
+  resultPreview: { fontSize: 13, color: '#5E667D', marginTop: 2 },
 });
+
 
 function WebAlertHost() {
   const [queue, setQueue] = useState<WebAlertRequest[]>([]);
@@ -3574,6 +4178,7 @@ export default function App() {
                     <Stack.Screen name="Payslips" component={PayslipsScreen} />
                     <Stack.Screen name="Approvals" component={ApprovalsScreen} />
                     <Stack.Screen name="Notifications" component={NotificationsScreen} />
+                    <Stack.Screen name="Assistente" component={AssistenteScreen} />
                     <Stack.Screen name="Requests" component={RequestsScreen} />
                     <Stack.Screen name="Communications" component={CommunicationsScreen} />
                     <Stack.Screen name="Profile" component={ProfileScreen} />
@@ -4170,6 +4775,7 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
   const { identity } = useContext(AuthIdentityContext);
   const { setActiveRole } = useContext(UserRoleContext);
   const { isBiometricLoginEnabled, isTwoFactorEnabled } = useContext(SecurityPreferencesContext);
+  const assistenteState = useAssistenteState();
   const insets = useSafeAreaInsets();
   // Filtra qualquer papel que o backend mande e que a gente ainda não
   // conhece em PANEL_OPTION_META — sem isso, `meta` vinha undefined e
@@ -4207,6 +4813,23 @@ function SelectPanelScreen({ navigation }: ScreenProps<'SelectPanel'>) {
       </LinearGradient>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.selectPanelList}>
+        {assistenteState.disponivel ? (
+          <Pressable
+            style={({ pressed }) => [styles.selectPanelCard, pressed && styles.selectPanelCardPressed]}
+            onPress={abrirAssistente}
+          >
+            <View style={[styles.selectPanelIconShell, { backgroundColor: '#EEEBFA' }]}>
+              <Feather name="cpu" size={22} color="#4C3A95" />
+            </View>
+            <View style={styles.selectPanelBody}>
+              <Text style={styles.selectPanelTitle}>Assistente IA</Text>
+              <Text style={styles.selectPanelSubtitle}>Conversa, alertas e fluxos</Text>
+            </View>
+            <View style={[styles.selectPanelChevronShell, { backgroundColor: '#EEEBFA' }]}>
+              <Feather name="chevron-right" size={16} color="#4C3A95" />
+            </View>
+          </Pressable>
+        ) : null}
         {roles.map((role) => {
           const meta = PANEL_OPTION_META[role];
           return (
@@ -15303,7 +15926,7 @@ export function SideMenuOverlay({
                 style={styles.sideMenuItem}
                 onPress={() => {
                   onClose();
-                  setAssistenteState({ aberto: true });
+                  abrirAssistente();
                 }}
               >
                 <Feather name="message-circle" size={18} color="#2B3147" />
