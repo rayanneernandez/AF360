@@ -271,7 +271,7 @@ export type RootStackParamList = {
   Reimbursement: undefined;
   Payslips: undefined;
   Approvals: undefined;
-  Notifications: undefined;
+  Notifications: { role?: UserRole } | undefined;
   Assistente: undefined;
   Requests: undefined;
   Communications: undefined;
@@ -4548,29 +4548,6 @@ function getDashboardRouteForRole(role: UserRole): keyof RootStackParamList {
     : 'Dashboard';
 }
 
-// Cada painel tem sua própria tela de notificações (mesmo padrão de
-// getDashboardRouteForRole) — usado pelo sino do TopBar pra abrir a tela
-// certa conforme o perfil ativo, em vez de sempre a do Colaborador.
-function getNotificationsRouteForRole(role: UserRole): keyof RootStackParamList {
-  return role === 'diretoria'
-    ? 'DirectorNotifications'
-    : role === 'rh'
-    ? 'RHNotifications'
-    : role === 'administrador'
-    ? 'AdminNotifications'
-    : role === 'financeiro'
-    ? 'FinanceiroNotifications'
-    : role === 'gestao'
-    ? 'GestaoNotifications'
-    : role === 'administrativo'
-    ? 'AdministrativoNotifications'
-    : role === 'marketing'
-    ? 'MarketingNotifications'
-    : role === 'recrutamento'
-    ? 'RecrutamentoNotifications'
-    : 'Notifications';
-}
-
 // Decide se pede o código de 2FA (só se a preferência estiver ligada E a
 // última verificação com sucesso NESTE aparelho já passou de 15 dias, ou
 // nunca aconteceu) e navega de acordo — senão vai direto pro destino.
@@ -8652,8 +8629,25 @@ function getColaboradorNotificationTargetRoute(
   return null;
 }
 
-function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>) {
+// O sino de todos os painéis abre esta lista (só o que realmente chega pra
+// pessoa). Rotinas/Templates ficam apenas no item "Notificações" do menu.
+const NOTIFICATIONS_PROFILE_ROUTE: Record<UserRole, keyof RootStackParamList> = {
+  colaborador: 'Profile',
+  diretoria: 'DirectorProfile',
+  rh: 'RHProfile',
+  administrador: 'AdminProfile',
+  financeiro: 'FinanceiroProfile',
+  gestao: 'GestaoProfile',
+  administrativo: 'AdministrativoProfile',
+  marketing: 'MarketingProfile',
+  recrutamento: 'RecrutamentoProfile',
+};
+
+function NotificationsScreen({ navigation, route }: ScreenProps<'Notifications'>) {
   const { identity } = useContext(AuthIdentityContext);
+  const { activeRole } = useContext(UserRoleContext);
+  const role: UserRole = route.params?.role ?? activeRole;
+  const initials = getInitials(identity?.fullName || identity?.email || 'AF');
   const colaboradorId = identity?.colaboradorId ?? null;
   const { readNotificationIds, markNotificationAsRead } = useContext(NotificationsReadContext);
 
@@ -8699,7 +8693,8 @@ function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>) {
   const handleNotificationPress = (item: ColaboradorNotificacaoItem) => {
     markNotificationAsRead(item.id);
 
-    const targetRoute = getColaboradorNotificationTargetRoute(item);
+    // Os atalhos por palavra-chave levam a telas do perfil Colaborador.
+    const targetRoute = role === 'colaborador' ? getColaboradorNotificationTargetRoute(item) : null;
     if (targetRoute) {
       navigation.navigate(targetRoute as any);
       return;
@@ -8712,7 +8707,11 @@ function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>) {
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
       <View style={styles.topBarContainer}>
-        <TopBar initials={currentUserInitials} onAvatarPress={() => navigation.navigate('Profile')} />
+        <TopBar
+          initials={role === 'colaborador' ? currentUserInitials : initials}
+          variant={role}
+          onAvatarPress={() => navigation.navigate(NOTIFICATIONS_PROFILE_ROUTE[role] as never)}
+        />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -15830,7 +15829,7 @@ export function TopBar({
   // continua abrindo a tela de Rotinas/Templates, igual ao painel web.
   const openNotifications = () => {
     if (navigationRef.isReady()) {
-      navigationRef.navigate(getNotificationsRouteForRole(variant) as any);
+      navigationRef.navigate('Notifications', { role: variant });
     }
   };
 
