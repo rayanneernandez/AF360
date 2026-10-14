@@ -903,21 +903,37 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
     if (!alvoId || modo !== 'conversa' || isLoading || isLoadingMais || filtroAtivo) return;
     if (itens.some((item) => item.id === alvoId)) {
       const alvo = alvoId;
-      // Espera a mensagem ser medida (layout) antes de rolar; tenta por ~2s.
-      let tentativas = 0;
+      // As mensagens são longas e a altura delas ainda muda depois do primeiro
+      // layout (texto, emojis, mensagens carregadas acima). Por isso espera a
+      // posição da mensagem ficar estável por duas leituras seguidas antes de
+      // rolar, e confere de novo depois de rolar (corrigindo se mudou).
+      let leituras = 0;
+      let ultimoY: number | null = null;
       let timer: ReturnType<typeof setTimeout>;
+      const rolarPara = (y: number, animado: boolean) =>
+        scrollRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: animado });
+      const conferir = (vez: number) => {
+        const y = posicoes.current[`s-${alvo}`];
+        if (typeof y === 'number' && y !== ultimoY) rolarPara(y, false);
+        ultimoY = typeof y === 'number' ? y : ultimoY;
+        // Timers próprios (não são cancelados quando o efeito reinicia).
+        if (vez < 3) setTimeout(() => conferir(vez + 1), 400);
+      };
       const rolar = () => {
         const y = posicoes.current[`s-${alvo}`];
-        if (typeof y !== 'number' && tentativas < 14) {
-          tentativas += 1;
+        leituras += 1;
+        const estavel = typeof y === 'number' && y === ultimoY;
+        ultimoY = typeof y === 'number' ? y : ultimoY;
+        if (!estavel && leituras < 20) {
           timer = setTimeout(rolar, 150);
           return;
         }
-        if (typeof y === 'number') scrollRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true });
+        if (typeof y === 'number') rolarPara(y, false);
         setDestaqueId(alvo);
         alvoRef.current = null;
         setAlvoId(null);
         setTimeout(() => setDestaqueId(null), 4200);
+        setTimeout(() => conferir(1), 400);
       };
       timer = setTimeout(rolar, 200);
       return () => clearTimeout(timer);
