@@ -620,26 +620,41 @@ function AssistenteChat() {
     return () => subscription.remove();
   }, []);
 
+  // Acesso ao Assistente: o resultado fica guardado no aparelho por colaborador,
+  // então o card/botão já aparece na hora (sem esperar a rede) nas próximas
+  // vezes; a consulta ao servidor confirma e corrige. Tenta de novo se falhar.
   useEffect(() => {
     setAssistenteState({ disponivel: false, mensagens: [], enviando: false });
     if (!colaboradorId) return undefined;
     let ativo = true;
-    fetchAssistenteDisponivel(colaboradorId)
-      .then((ok) => {
-        if (!ativo) return;
-        setAssistenteState({ disponivel: ok });
-        if (ok) {
-          registrarPush(colaboradorId);
-          // App aberto pelo toque no aviso (início a frio): abre a conversa.
-          if (abrirAssistentePendente) {
-            abrirAssistentePendente = false;
-            setTimeout(abrirAssistente, 400);
-          }
-        }
+    const chave = `af360.assistente.disponivel.${colaboradorId}`;
+    AsyncStorage.getItem(chave)
+      .then((valor) => {
+        if (ativo && valor === '1') setAssistenteState({ disponivel: true });
       })
-      .catch(() => {
-        if (ativo) setAssistenteState({ disponivel: false });
-      });
+      .catch(() => {});
+
+    const consultar = (tentativa: number) => {
+      fetchAssistenteDisponivel(colaboradorId)
+        .then((ok) => {
+          if (!ativo) return;
+          setAssistenteState({ disponivel: ok });
+          AsyncStorage.setItem(chave, ok ? '1' : '0').catch(() => {});
+          if (ok) {
+            registrarPush(colaboradorId);
+            // App aberto pelo toque no aviso (início a frio): abre a conversa.
+            if (abrirAssistentePendente) {
+              abrirAssistentePendente = false;
+              setTimeout(abrirAssistente, 400);
+            }
+          }
+        })
+        .catch(() => {
+          // Falha de rede: mantém o que estava guardado e tenta de novo.
+          if (ativo && tentativa < 3) setTimeout(() => consultar(tentativa + 1), 3000 * (tentativa + 1));
+        });
+    };
+    consultar(0);
     return () => {
       ativo = false;
     };
