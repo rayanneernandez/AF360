@@ -441,15 +441,11 @@ const ASSISTENTE_ERROS: Record<string, string> = {
   rede: 'Não foi possível falar com o assistente. Tente novamente.',
 };
 
-// Estado compartilhado do assistente (botão flutuante, tela e item do menu
-// lateral). fabVisivel é preferência do aparelho: a pessoa pode tirar o botão
-// da tela e continuar abrindo o assistente pelo menu. As mensagens do chat
-// ficam aqui para não sumirem ao sair da tela.
-const ASSISTENTE_FAB_STORAGE_KEY = 'af360.assistente.fabVisivel';
+// Estado compartilhado do assistente (tela, card e item do menu lateral). As
+// mensagens do chat ficam aqui para não sumirem ao sair da tela.
 const assistenteStore = {
   disponivel: false,
   aberto: false,
-  fabVisivel: true,
   mensagens: [] as AssistenteMensagem[],
   enviando: false,
   proximoId: 1,
@@ -461,12 +457,6 @@ function setAssistenteState(partial: Partial<typeof assistenteStore>) {
   Object.assign(assistenteStore, partial);
   assistenteListeners.forEach((listener) => listener());
 }
-
-AsyncStorage.getItem(ASSISTENTE_FAB_STORAGE_KEY)
-  .then((value) => {
-    if (value === '0') setAssistenteState({ fabVisivel: false });
-  })
-  .catch(() => {});
 
 function useAssistenteState() {
   const [, force] = useState(0);
@@ -599,21 +589,7 @@ function AssistenteUnreadBadge({ style }: { style?: object }) {
 function AssistenteChat() {
   const { identity } = useContext(AuthIdentityContext);
   const colaboradorId = identity?.colaboradorId ?? null;
-  const { disponivel, aberto, fabVisivel } = useAssistenteState();
-  const fabPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const fabPanResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 5 || Math.abs(gesture.dy) > 5,
-      onPanResponderGrant: () => {
-        fabPan.extractOffset();
-      },
-      onPanResponderMove: Animated.event([null, { dx: fabPan.x, dy: fabPan.y }], { useNativeDriver: false }),
-      onPanResponderRelease: () => {
-        fabPan.flattenOffset();
-      },
-    })
-  ).current;
-
+  const { disponivel } = useAssistenteState();
   // Toque no aviso: abre a conversa do Assistente (ou espera o login/acesso).
   useEffect(() => {
     if (Platform.OS === 'web') return undefined;
@@ -683,38 +659,11 @@ function AssistenteChat() {
       ativo = false;
       clearInterval(timer);
     };
-  }, [colaboradorId, disponivel, aberto]);
+  }, [colaboradorId, disponivel]);
 
-  if (!colaboradorId || !disponivel || !fabVisivel || aberto) return null;
-
-  return (
-    <View pointerEvents="box-none" style={assistenteStyles.overlay}>
-      <Animated.View
-        {...fabPanResponder.panHandlers}
-        style={[assistenteStyles.fabWrap, { transform: fabPan.getTranslateTransform() }]}
-      >
-        <Pressable
-          onPress={abrirAssistente}
-          style={assistenteStyles.fab}
-          accessibilityLabel="Abrir assistente"
-        >
-          <Feather name="message-circle" size={24} color="#FFFFFF" />
-        </Pressable>
-        <AssistenteUnreadBadge style={assistenteStyles.fabBadge} />
-        <Pressable
-          onPress={() => {
-            setAssistenteState({ fabVisivel: false });
-            AsyncStorage.setItem(ASSISTENTE_FAB_STORAGE_KEY, '0').catch(() => {});
-          }}
-          hitSlop={8}
-          style={assistenteStyles.fabDismiss}
-          accessibilityLabel="Tirar o botão da tela"
-        >
-          <Feather name="x" size={11} color="#FFFFFF" />
-        </Pressable>
-      </Animated.View>
-    </View>
-  );
+  // O botão flutuante foi removido: o Assistente abre pelo card da tela
+  // "Entrar como..." e pelo item do menu lateral.
+  return null;
 }
 
 type AssistenteTimelineItem =
@@ -1340,13 +1289,6 @@ function AssistenteScreen({ navigation }: ScreenProps<'Assistente'>) {
 }
 
 const assistenteStyles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    alignItems: 'flex-end',
-    padding: 16,
-    paddingBottom: 24,
-  },
   brandIconShell: {
     width: 32,
     height: 32,
@@ -1357,32 +1299,6 @@ const assistenteStyles = StyleSheet.create({
   },
   brandTitle: { color: '#15203E', fontSize: 14, fontWeight: '800' },
   brandSubtitle: { color: '#7C8397', fontSize: 9, fontWeight: '700', letterSpacing: 0.4 },
-  fabWrap: { width: 56, height: 56 },
-  fabBadge: { position: 'absolute', top: -4, left: -4 },
-  fabDismiss: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#5E667D',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#1F3A93',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 6,
-  },
   convWrapper: { flex: 1 },
   convHeader: {
     flexDirection: 'row',
